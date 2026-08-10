@@ -17,7 +17,7 @@ const STYLES = `
   p { color: var(--mut); margin: 0; }
 `;
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
