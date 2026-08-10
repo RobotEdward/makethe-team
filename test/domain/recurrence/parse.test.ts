@@ -64,6 +64,15 @@ describe("parseRecurrenceRule — rejected", () => {
   });
 });
 
+describe("parseRecurrenceRule — non-string input", () => {
+  // The signature promises `string`, but untyped boundaries such as a value read
+  // back from D1 can hand us anything at runtime. The `as unknown as string` casts
+  // below exist only to get past the compiler for this test.
+  it.each([null, undefined, 123])("rejects %s with RecurrenceError, not a raw TypeError", (input) => {
+    expect(() => parseRecurrenceRule(input as unknown as string)).toThrow(RecurrenceError);
+  });
+});
+
 describe("formatRecurrenceRule", () => {
   it("round trips", () => {
     const input = "FREQ=WEEKLY;INTERVAL=2;BYDAY=SU";

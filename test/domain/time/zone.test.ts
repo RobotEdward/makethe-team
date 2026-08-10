@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LocalTimeError } from "../../../src/domain/time/local.js";
 import { formatterCacheSize, localWeekday, toLocalParts, toUtc } from "../../../src/domain/time/zone.js";
 
 const LONDON = "Europe/London";
@@ -115,5 +116,25 @@ describe("localWeekday", () => {
     const instant = new Date("2026-08-14T00:30:00Z");
     expect(localWeekday(instant, "UTC")).toBe(5); // Friday
     expect(localWeekday(instant, "America/New_York")).toBe(4); // Thursday
+  });
+});
+
+describe("invalid time zones", () => {
+  const instant = new Date("2026-08-13T18:00:00Z");
+  const localParts = { year: 2026, month: 8, day: 13, hour: 19, minute: 0, second: 0 };
+
+  it.each(["Not/A_Zone", ""])("toUtc throws LocalTimeError for %j", (zone) => {
+    expect(() => toUtc(localParts, zone)).toThrow(LocalTimeError);
+  });
+
+  it.each(["Not/A_Zone", ""])("toLocalParts throws LocalTimeError for %j", (zone) => {
+    expect(() => toLocalParts(instant, zone)).toThrow(LocalTimeError);
+  });
+
+  it("does not grow the formatter cache on a failed lookup", () => {
+    const before = formatterCacheSize();
+    expect(() => toLocalParts(instant, "Not/A_Zone")).toThrow(LocalTimeError);
+    expect(() => toUtc(localParts, "")).toThrow(LocalTimeError);
+    expect(formatterCacheSize()).toBe(before);
   });
 });

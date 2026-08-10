@@ -23,6 +23,9 @@ function isWeekday(value: string): value is Weekday {
  * unsupported part would schedule a game on the wrong days.
  */
 export function parseRecurrenceRule(input: string): WeeklyRule {
+  if (typeof input !== "string") {
+    throw new RecurrenceError(`Recurrence rule must be a string, got ${typeof input}`);
+  }
   if (input.length === 0) throw new RecurrenceError("Recurrence rule must not be empty");
   if (input.trim() !== input) throw new RecurrenceError("Recurrence rule must not have surrounding whitespace");
 

@@ -1,4 +1,4 @@
-import type { LocalDate } from "./local.js";
+import { LocalTimeError, type LocalDate } from "./local.js";
 
 export interface LocalParts extends LocalDate {
   hour: number; // 0-23
@@ -22,16 +22,24 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   const cached = formatters.get(timeZone);
   if (cached) return cached;
 
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  });
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  } catch {
+    // Intl.DateTimeFormat throws a raw RangeError for an invalid or empty IANA
+    // zone name. Nothing is cached on this path — the cache must only ever hold
+    // formatters for zones that actually resolved.
+    throw new LocalTimeError(`"${timeZone}" is not a valid IANA time zone`);
+  }
 
   // ICU accepts IANA zone names case-insensitively, so a naive cache keyed on the
   // raw input string lets every distinct spelling of a zone (e.g. "europe/london",
