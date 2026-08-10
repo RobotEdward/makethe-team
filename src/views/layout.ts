@@ -49,6 +49,11 @@ const STYLES = `
   .viewer-headline {
     margin-top: 1.5rem; font-size: 1.4rem; font-weight: 700; color: var(--fg); line-height: 1.3;
   }
+  /* A waitlisted viewer must never read as confirmed (BR-5): same warn
+     colour the roster already uses for a waitlisted row, so it is visually
+     distinct from the accent-coloured "confirmed" badge that can appear
+     right below it. */
+  .viewer-headline.warn { color: var(--warn); }
 
   .read-only {
     margin-top: 1.25rem; padding: 0.85rem 1rem; border-radius: 0.6rem;

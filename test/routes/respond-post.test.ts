@@ -64,6 +64,35 @@ async function tokenFor(fixtureId: string, playerId: string, expiresAt = KICKOFF
   return signResponseToken({ playerId, fixtureId, expiresAt }, SECRET);
 }
 
+/**
+ * A fixture that has never been opened: `scheduled` is the default lifecycle
+ * and `openFixture` is deliberately never called, so — unlike
+ * `seedOpenFixture` — no response rows exist for anyone. In practice a
+ * response token should never be minted before a fixture opens, so this
+ * models a stray or hand-crafted request rather than anything a real player
+ * link can produce.
+ */
+async function seedScheduledFixture(): Promise<SeedResult> {
+  const gameId = await insertGame(db, { maxPlayers: 14 });
+  const fixtureId = crypto.randomUUID();
+  await db.insert(fixtures).values({
+    id: fixtureId,
+    gameId,
+    kicksOffAt: KICKOFF,
+    minPlayers: 1,
+    maxPlayers: 14,
+    prefersEvenNumbers: true,
+    shortWarningOffsetHours: 12,
+    durationMinutes: 60,
+  });
+
+  const playerId = crypto.randomUUID();
+  await db.insert(players).values({ id: playerId, name: "Player 1", email: "p1@example.com" });
+  await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId, active: true });
+
+  return { gameId, fixtureId, playerIds: [playerId] };
+}
+
 async function snapshotResponses(fixtureId: string) {
   return db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
 }
@@ -278,5 +307,52 @@ describe("POST /r/:token — a finished fixture records nothing (BR-15)", () => 
     expect(body).toMatch(/cancelled/i);
     expect(body).not.toContain(`method="post"`);
     expect(await snapshotResponses(fixtureId)).toEqual(before);
+  });
+});
+
+describe("POST /r/:token — a scheduled fixture is refused with an explanation, not a silent no-op (fix round 1, finding 2)", () => {
+  it("records nothing and renders read-only, rather than re-showing 'Can you make it?' after a vanished tap", async () => {
+    const { fixtureId, playerIds } = await seedScheduledFixture();
+    const [playerId] = playerIds as [string];
+    const token = await tokenFor(fixtureId, playerId);
+
+    const response = await postIntent(token, "in");
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).not.toContain(`method="post"`);
+    expect(body).not.toMatch(/can you make it\?/i);
+    expect(body).toMatch(/aren.t open yet|not open yet/i);
+
+    // No response row exists at all for a fixture that was never opened —
+    // the Durable Object refused the write (fixture-not-open) before ever
+    // reaching a squad lookup.
+    const rows = await snapshotResponses(fixtureId);
+    expect(rows).toEqual([]);
+  });
+});
+
+describe("POST /r/:token — a waitlisted viewer never reads as confirmed (BR-5, fix round 1, finding 1)", () => {
+  it("renders the warn-treated headline above the badge, with no filled primary 'I'm in', through the real route", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture({ maxPlayers: 1, squadSize: 2 });
+    const [fillerId, latecomerId] = playerIds as [string, string];
+    await setResponse(fixtureId, fillerId, "in");
+
+    const token = await tokenFor(fixtureId, latecomerId);
+    const body = await (await postIntent(token, "in")).text();
+
+    // The waitlist placement is unmissable...
+    expect(body).toMatch(/on the waitlist.*1st in line/i);
+    // ...and visually distinct from a confirmation: warn-coloured headline,
+    // positioned before the fixture's own (still green/"confirmed") badge...
+    expect(body).toMatch(/class="viewer-headline warn"/);
+    const headlineIndex = body.indexOf('<p class="viewer-headline');
+    const badgeIndex = body.indexOf('<p class="status-badge');
+    expect(headlineIndex).toBeGreaterThan(-1);
+    expect(badgeIndex).toBeGreaterThan(-1);
+    expect(headlineIndex).toBeLessThan(badgeIndex);
+    // ...and the "I'm in" button the player just tapped is not shown filled,
+    // which would read as a confirmation that contradicts the headline.
+    expect(body).not.toMatch(/class="button primary"[^>]*name="intent" value="in"/);
   });
 });

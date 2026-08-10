@@ -15,8 +15,15 @@ import { escapeHtml, layout } from "./layout.js";
  * distinct from `played`/`cancelled` is what stops a removed player being
  * told a truthful "confirmed" status right above an unrelated "cancelled"
  * notice, and is why it needs its own headline/notice text below.
+ *
+ * `not-open` is a `scheduled` fixture: responses are not open yet (BR-1), so
+ * there is nothing this viewer — or anyone — can do here regardless of
+ * eligibility. In practice a token should only ever exist for a fixture that
+ * has already opened, so this is expected to be unreachable; it exists so a
+ * stray or hand-crafted request against a not-yet-open fixture still gets an
+ * honest explanation instead of a silently-ignored tap.
  */
-export type ReadOnlyReason = "played" | "cancelled" | "not-eligible";
+export type ReadOnlyReason = "played" | "cancelled" | "not-eligible" | "not-open";
 
 export interface FixturePageOptions {
   gameName: string;
@@ -63,12 +70,12 @@ function viewerHeadline(
   viewer: FixturePageOptions["viewer"],
   readOnlyReason: ReadOnlyReason | undefined,
 ): string {
-  if (readOnlyReason === "not-eligible") {
+  if (readOnlyReason === "not-eligible" || readOnlyReason === "not-open") {
     // No headline about the viewer's own response status makes sense here —
-    // they have none that means anything any more, and the read-only notice
-    // below already says why. Never fall through to a question ("Can you
-    // make it?") or a past-tense claim ("You were in") that isn't true of
-    // this viewer.
+    // for `not-eligible` they have none that means anything any more; for
+    // `not-open` nobody has one yet. The read-only notice below already says
+    // why. Never fall through to a question ("Can you make it?") or a
+    // past-tense claim ("You were in") that isn't true of this viewer.
     return "";
   }
   return readOnlyReason ? viewerHeadlineClosed(viewer, readOnlyReason) : viewerHeadlineOpen(viewer);
@@ -168,10 +175,17 @@ function renderStatusLine(view: FixtureView): string {
 }
 
 function renderButtons(options: FixturePageOptions): string {
-  const { token, intent } = options;
+  const { token, intent, viewer } = options;
   const action = `/r/${encodeURIComponent(token)}`;
-  const inClass = intent === "in" ? "button primary" : "button";
-  const outClass = intent === "out" ? "button primary" : "button";
+  // The emphasised button must reflect what actually got recorded, not what
+  // was tapped: after a full fixture waitlists the player, `intent` is still
+  // "in" from the form submit, but echoing that onto the "I'm in" button
+  // would show a solid, filled confirmation to someone who is, in fact, not
+  // in (BR-5). Neither button is emphasised for a waitlisted viewer — the
+  // warn-coloured headline above is what tells them what happened.
+  const effectiveIntent = viewer.status === "waitlisted" ? null : intent;
+  const inClass = effectiveIntent === "in" ? "button primary" : "button";
+  const outClass = effectiveIntent === "out" ? "button primary" : "button";
 
   return `
     <form method="post" action="${escapeHtml(action)}" class="responses">
@@ -186,7 +200,9 @@ function renderReadOnlyNotice(reason: ReadOnlyReason): string {
       ? "This game has already been played. Responses are closed."
       : reason === "cancelled"
         ? "This fixture was cancelled. Responses are closed."
-        : "You're no longer on the squad for this game, so there's nothing to respond to here. If that doesn't sound right, check with whoever organises it.";
+        : reason === "not-open"
+          ? "Responses for this fixture aren't open yet. Check back closer to kick-off."
+          : "You're no longer on the squad for this game, so there's nothing to respond to here. If that doesn't sound right, check with whoever organises it.";
   return `<p class="read-only">${escapeHtml(message)}</p>`;
 }
 
@@ -201,14 +217,20 @@ export function renderFixturePage(options: FixturePageOptions): string {
   const { gameName, venueName, kicksOffAtLocal, view, squad, viewer, readOnlyReason } = options;
 
   const headline = viewerHeadline(viewer, readOnlyReason);
+  // A waitlisted viewer's headline gets the same warn treatment the roster
+  // already uses for a waitlisted row, so it reads as unmistakably different
+  // from the accent-coloured "confirmed" badge that may sit right below it
+  // (BR-5) — and is placed above that badge, not below, so it is the first
+  // thing read, not a correction to something read already.
+  const headlineClass = `viewer-headline${viewer.status === "waitlisted" ? " warn" : ""}`;
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     <p class="venue">${escapeHtml(venueName)}</p>
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
+    ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
     ${renderStatusLine(view)}
     ${renderNudge(view)}
-    ${headline ? `<p class="viewer-headline">${escapeHtml(headline)}</p>` : ""}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options)}
     <h2>Squad</h2>
     ${renderSquadList(squad)}

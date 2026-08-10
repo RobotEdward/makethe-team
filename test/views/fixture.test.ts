@@ -47,6 +47,44 @@ describe("fixture page", () => {
     expect(html).toContain("2");
   });
 
+  describe("a waitlisted viewer must never read as confirmed (BR-5, fix round 1)", () => {
+    const WAITLISTED_CONFIRMED = {
+      ...BASE,
+      view: { status: "confirmed" as const, flags: [], spotsLeft: 0, needsOwnerAttention: false },
+      viewer: { playerId: "p2", status: "waitlisted" as const, waitlistRank: 1 },
+    };
+
+    it("does not present a filled primary 'I'm in' button", () => {
+      const html = renderFixturePage(WAITLISTED_CONFIRMED);
+      expect(html).not.toMatch(/class="button primary"[^>]*name="intent" value="in"/);
+    });
+
+    it("still shows a filled 'in' button when tapped ?intent=in but the viewer is not waitlisted", () => {
+      // Control: the suppression above is specific to a waitlisted viewer,
+      // not a general regression that disables the ?intent= emphasis.
+      const html = renderFixturePage({ ...WAITLISTED_CONFIRMED, viewer: { playerId: "p2", status: "pending" }, intent: "in" });
+      expect(html).toMatch(/class="button primary"[^>]*name="intent" value="in"/);
+    });
+
+    it("gives the waitlist headline the warn treatment, not the default", () => {
+      const html = renderFixturePage(WAITLISTED_CONFIRMED);
+      expect(html).toMatch(/class="viewer-headline warn"/);
+    });
+
+    it("renders the personal headline before the fixture's own status badge", () => {
+      const html = renderFixturePage(WAITLISTED_CONFIRMED);
+      // Search for the opening tags, not the bare class names — the
+      // stylesheet in <head> mentions both class names ahead of either
+      // actual element, which would make a bare substring search find the
+      // CSS rule instead of the rendered markup.
+      const headlineIndex = html.indexOf('<p class="viewer-headline');
+      const badgeIndex = html.indexOf('<p class="status-badge');
+      expect(headlineIndex).toBeGreaterThan(-1);
+      expect(badgeIndex).toBeGreaterThan(-1);
+      expect(headlineIndex).toBeLessThan(badgeIndex);
+    });
+  });
+
   it("shows an uneven fixture as on, with a nudge", () => {
     const html = renderFixturePage({
       ...BASE,
@@ -110,6 +148,17 @@ describe("fixture page", () => {
       const html = renderFixturePage({ ...BASE, readOnlyReason: "not-eligible" });
       expect(html).toMatch(/no longer on the squad/i);
       expect(html).not.toMatch(/already been played|was cancelled/i);
+    });
+  });
+
+  describe("readOnlyReason: not-open — a scheduled fixture (fix round 1, finding 2)", () => {
+    it("renders read-only with no buttons, no live question, and no viewer headline", () => {
+      const html = renderFixturePage({ ...BASE, readOnlyReason: "not-open" });
+      expect(html).not.toContain('method="post"');
+      expect(html).not.toContain('name="intent"');
+      expect(html).not.toContain('class="viewer-headline"');
+      expect(html).not.toMatch(/can you make it\?/i);
+      expect(html).toMatch(/aren.t open yet|not open yet/i);
     });
   });
 

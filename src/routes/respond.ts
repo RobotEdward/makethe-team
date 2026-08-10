@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import { getFixtureWithSquad } from "../db/queries.js";
-import { getDb } from "../db/client.js";
+import { getDb, type Db } from "../db/client.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { verifyResponseToken } from "../domain/token.js";
+import type { ResponseIntent } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
 import { layout } from "../views/layout.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
@@ -40,26 +41,37 @@ function parseIntent(value: string | undefined): "in" | "out" | null {
   return value === "in" || value === "out" ? value : null;
 }
 
-respond.get("/r/:token", async (c) => {
-  const token = c.req.param("token");
-  // The one place this route reads the real wall clock; everything downstream
-  // takes `now` as a parameter (see the lint rule banning bare `new Date()`).
-  const now = new Date(Date.now());
-  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
-
-  if (!verification.ok) {
-    console.error(`response token rejected: ${verification.reason}`);
-    return c.html(renderLinkProblemPage(), 200);
-  }
-
-  const { playerId, fixtureId } = verification.payload;
-  const db = getDb(c.env.DB);
+/**
+ * Load a fixture and render the page one player sees of it — the read path
+ * shared by the `GET` and, after it has (or has not) written anything, the
+ * `POST`.
+ *
+ * Returns `null` only when the fixture itself cannot be found, which the
+ * caller treats identically to a token failure (never leaking whether a
+ * fixture existed, per the `GET`'s existing behaviour).
+ *
+ * `readOnlyReason` is derived from **`fixture.lifecycle` and squad
+ * membership alone** — never from a Durable Object outcome. That is
+ * deliberate: this function is the single place either handler decides what
+ * a viewer may do here, so the two can no longer disagree about it. A
+ * `scheduled` fixture (`not-open`) and a missing squad row (`not-eligible`)
+ * are exactly the two conditions under which the Durable Object would also
+ * refuse a write (`fixture-not-open` on a lifecycle other than `played`/
+ * `cancelled`, and `not-eligible` respectively), so re-deriving from the
+ * fixture row after the fact gives the same answer without the route having
+ * to interpret the outcome's `reason` at all.
+ */
+async function renderFixtureForViewer(params: {
+  db: Db;
+  fixtureId: string;
+  playerId: string;
+  token: string;
+  now: Date;
+  intent: ResponseIntent | null;
+}): Promise<string | null> {
+  const { db, fixtureId, playerId, token, now, intent } = params;
   const loaded = await getFixtureWithSquad(db, fixtureId);
-
-  if (!loaded) {
-    console.error(`response token verified for a fixture that no longer exists: ${fixtureId}`);
-    return c.html(renderLinkProblemPage(), 200);
-  }
+  if (!loaded) return null;
 
   const { fixture, game, squad } = loaded;
   const view = fixtureView(
@@ -89,13 +101,13 @@ respond.get("/r/:token", async (c) => {
   const readOnlyReason: ReadOnlyReason | undefined =
     fixture.lifecycle === "played" || fixture.lifecycle === "cancelled"
       ? fixture.lifecycle
-      : viewerMember === undefined
-        ? "not-eligible"
-        : undefined;
+      : fixture.lifecycle === "scheduled"
+        ? "not-open"
+        : viewerMember === undefined
+          ? "not-eligible"
+          : undefined;
 
-  const intent = parseIntent(c.req.query("intent"));
-
-  const html = renderFixturePage({
+  return renderFixturePage({
     gameName: game.name,
     venueName: fixture.venueOverride ?? game.venueName,
     kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
@@ -106,6 +118,29 @@ respond.get("/r/:token", async (c) => {
     intent,
     readOnlyReason,
   });
+}
+
+respond.get("/r/:token", async (c) => {
+  const token = c.req.param("token");
+  // The one place this route reads the real wall clock; everything downstream
+  // takes `now` as a parameter (see the lint rule banning bare `new Date()`).
+  const now = new Date(Date.now());
+  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+
+  if (!verification.ok) {
+    console.error(`response token rejected: ${verification.reason}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const { playerId, fixtureId } = verification.payload;
+  const db = getDb(c.env.DB);
+  const intent = parseIntent(c.req.query("intent"));
+
+  const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent });
+  if (html === null) {
+    console.error(`response token verified for a fixture that no longer exists: ${fixtureId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
 
   return c.html(html, 200);
 });
@@ -121,13 +156,16 @@ respond.get("/r/:token", async (c) => {
  * The write goes through `FIXTURE_CAPACITY.getByName(fixtureId).setResponse`
  * and nowhere else — that Durable Object is what serialises capacity-affecting
  * writes (TR-10) and is the only thing that may decide `in` versus
- * `waitlisted`. Every rejection the object can return (`fixture-not-open`,
- * `not-eligible`, `fixture-not-found`) is handled here by re-deriving the read
- * state rather than trusting the outcome's own fields for anything shown to
- * the player: the waitlist number in particular always comes from
- * `getFixtureWithSquad`'s `waitlistRank`, computed fresh from the current
- * squad, never from the object's `waitlistPosition`, which is a permanent,
- * gappy, internal bookkeeping number (spec amendment 5).
+ * `waitlisted`. Its rejections are not otherwise inspected: `fixture-not-open`
+ * and `not-eligible` are re-derived independently by `renderFixtureForViewer`
+ * from the fixture row it reads immediately afterwards (see that function's
+ * doc comment for why that is deliberately the single source of truth for
+ * both handlers), and the waitlist number shown to the player always comes
+ * from `getFixtureWithSquad`'s `waitlistRank`, never from the object's
+ * `waitlistPosition`, which is a permanent, gappy, internal bookkeeping
+ * number (spec amendment 5). Only `fixture-not-found` is checked directly,
+ * because that is the one outcome `renderFixtureForViewer` cannot re-derive —
+ * there is no fixture row left to read.
  */
 respond.post("/r/:token", async (c) => {
   const token = c.req.param("token");
@@ -164,58 +202,11 @@ respond.post("/r/:token", async (c) => {
   }
 
   const db = getDb(c.env.DB);
-  const loaded = await getFixtureWithSquad(db, fixtureId);
-
-  if (!loaded) {
+  const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent });
+  if (html === null) {
     console.error(`fixture disappeared between recording a response and re-rendering it: ${fixtureId}`);
     return c.html(renderLinkProblemPage(), 200);
   }
-
-  const { fixture, game, squad } = loaded;
-  const view = fixtureView(
-    {
-      lifecycle: fixture.lifecycle,
-      kicksOffAt: fixture.kicksOffAt,
-      inCount: fixture.inCount,
-      minPlayers: fixture.minPlayers,
-      maxPlayers: fixture.maxPlayers,
-      prefersEvenNumbers: fixture.prefersEvenNumbers,
-      shortWarningOffsetHours: fixture.shortWarningOffsetHours,
-    },
-    now,
-  );
-
-  const viewerMember = squad.find((member) => member.playerId === playerId);
-  const viewer = {
-    playerId,
-    status: viewerMember?.status ?? ("pending" as const),
-    waitlistRank: viewerMember?.waitlistRank ?? null,
-  };
-
-  // `not-eligible` is read off the outcome, since that is the only thing that
-  // actually attempted the write and found no row for this player (BR-2).
-  // `played`/`cancelled` are read off the freshly loaded fixture rather than
-  // the outcome's generic `fixture-not-open`, because that reason is also
-  // returned for a `scheduled` fixture and only these two lifecycles have
-  // copy of their own (BR-15).
-  const readOnlyReason: ReadOnlyReason | undefined =
-    outcome.kind === "rejected" && outcome.reason === "not-eligible"
-      ? "not-eligible"
-      : fixture.lifecycle === "played" || fixture.lifecycle === "cancelled"
-        ? fixture.lifecycle
-        : undefined;
-
-  const html = renderFixturePage({
-    gameName: game.name,
-    venueName: fixture.venueOverride ?? game.venueName,
-    kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
-    view,
-    squad,
-    viewer,
-    token,
-    intent,
-    readOnlyReason,
-  });
 
   return c.html(html, 200);
 });
