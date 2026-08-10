@@ -31,21 +31,21 @@ Anything that *was* fixed lives in the git history, not here.
 | No CSP or `frame-ancestors` headers. | The only page is a static holding page with no forms and no scripts. Revisit when M2 adds forms. |
 | `test/index.test.ts` asserts the schema-derived fixture count in two places, so changing the materialisation horizon needs edits across four test files. | A shared expected-count constant in `test/support/` would localise it. |
 
-## Not code — an outstanding manual step
+## Edge configuration — applied
 
-The two WAF custom rules in `docs/runbooks/cloudflare.md` (TR-37) are **documented but
-not applied**. Until they are, scanner paths return the Worker's own 404 rather than a
-403 from the edge. The application is written to be safe with the WAF switched off, so
-this is not a security gap — but WAF-blocked requests never invoke the Worker and are
-never billed, so the rules are the only control that stops request volume costing
-anything.
+The two WAF custom rules in `docs/runbooks/cloudflare.md` (TR-37) were applied by hand
+in the dashboard on 10 August 2026 and verified live. Scanner paths and non-standard
+methods now return 403 from the edge rather than reaching the Worker at all, which
+matters for cost as much as for noise: WAF-blocked requests are never billed as Worker
+invocations.
 
-Applying them via the API needs a token with **Zone → Firewall Services → Edit**, which
-the deploy token deliberately does not have.
+Editing them via the API would need a token with **Zone → Firewall Services → Edit**,
+which the deploy token deliberately does not have. Keep it that way — the deploy token
+lives both on the build machine and in GitHub Actions secrets.
 
-The rate-limiting rule that used to be listed here is now **deferred to M2** — the Free
-plan cannot express it, and there is no `POST` endpoint to protect yet. See the runbook
-for the constraints and the replacement rule.
+The rate-limiting rule is **deferred to M2**: the Free plan cannot express the rule as
+originally written, and there is no `POST` endpoint to protect yet. See the runbook for
+the constraints and the replacement.
 
 ## Carry-forward for the next milestone
 

@@ -71,14 +71,46 @@ require a paid Bot Management subscription, which this zone (Free Website plan)
 does not have, so any such rule would fail validation — do not re-add one. The
 application is written to be safe with the WAF switched off entirely.
 
+**Status:** both rules were applied in the dashboard on 10 August 2026 and
+verified live.
+
 ### Verifying the rules are live
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://makethe.team/wp-admin
+# Blocked at the edge — expect 403
+for p in /wp-admin /wordpress/ /.env /.git/config /phpmyadmin \
+         /vendor/autoload.php /.aws/credentials /config.json; do
+  printf '%-24s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "https://makethe.team$p")"
+done
+curl -s -X PUT -o /dev/null -w 'PUT / -> %{http_code}\n' https://makethe.team/
+
+# Must keep working — expect 200, 200, 404
+curl -s -o /dev/null -w 'GET  /            -> %{http_code}\n' https://makethe.team/
+curl -s -o /dev/null -w 'GET  /robots.txt  -> %{http_code}\n' https://makethe.team/robots.txt
+curl -s -X POST -o /dev/null -w 'POST /            -> %{http_code}\n' https://makethe.team/
 ```
 
-`403` means `block-scanner-paths` is live. `404` means the request reached the
-Worker and the rules have not been applied yet. Either is safe.
+`403` means the rule is live and the request never reached the Worker. `404`
+means it reached the Worker, so the rule is not applied. Either is safe — the
+application does not depend on the WAF — but only `403` avoids the request being
+billed as a Worker invocation.
+
+### These rules do not collide with the application's own routes
+
+Checked against the route shapes the next milestones introduce — response links
+(`/r/<token>`), invite links (`/j/<token>`), game pages and the dashboard. All
+reach the Worker rather than being blocked, **including** deliberately awkward
+tokens containing `wp-`, `.env`, `config.json` and `vendor-`.
+
+They are safe because every pattern in `block-scanner-paths` requires a literal
+`/` immediately before it, and HMAC tokens are base64url or hex, neither of which
+can contain a slash. `/config.json` uses `eq` rather than `contains`, so it only
+matches at the root.
+
+If a future route is ever added whose path segment could begin with `.` or could
+contain one of those literals after a slash, re-run the check above with that
+shape before shipping it. A WAF false positive on `/r/` would silently break the
+one journey the whole product depends on.
 
 ## Custom domain
 
