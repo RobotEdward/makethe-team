@@ -11,22 +11,39 @@ const SECOND_MS = 1_000;
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
+/** Read-only view of the formatter cache size, for tests only. */
+export function formatterCacheSize(): number {
+  return formatters.size;
+}
+
 function formatterFor(timeZone: string): Intl.DateTimeFormat {
-  let formatter = formatters.get(timeZone);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    });
-    formatters.set(timeZone, formatter);
-  }
-  return formatter;
+  // Fast path: the input is already the canonical spelling we cached last time
+  // (the common case — callers pass a single consistent IANA spelling).
+  const cached = formatters.get(timeZone);
+  if (cached) return cached;
+
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+
+  // ICU accepts IANA zone names case-insensitively, so a naive cache keyed on the
+  // raw input string lets every distinct spelling of a zone (e.g. "europe/london",
+  // "EUROPE/LONDON" — 2^13 spellings for "Europe/London" alone) mint its own entry,
+  // growing the cache unboundedly once a zone string is attacker-influenced.
+  // Canonicalise on the resolved zone name and key the cache by that alone, so every
+  // spelling of a zone shares one entry regardless of how it was cased on input.
+  const canonical = formatter.resolvedOptions().timeZone;
+  const canonicalFormatter = formatters.get(canonical) ?? formatter;
+  formatters.set(canonical, canonicalFormatter);
+
+  return canonicalFormatter;
 }
 
 export function toLocalParts(instant: Date, timeZone: string): LocalParts {

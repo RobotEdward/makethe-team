@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localWeekday, toLocalParts, toUtc } from "../../../src/domain/time/zone.js";
+import { formatterCacheSize, localWeekday, toLocalParts, toUtc } from "../../../src/domain/time/zone.js";
 
 const LONDON = "Europe/London";
 
@@ -85,6 +85,27 @@ describe("round trip", () => {
   it.each(cases)("%s %s-%s-%s %s:00 survives a round trip", (tz, year, month, day, hour) => {
     const instant = toUtc({ year, month, day, hour, minute: 0, second: 0 }, tz);
     expect(toLocalParts(instant, tz)).toEqual({ year, month, day, hour, minute: 0, second: 0 });
+  });
+});
+
+describe("formatter cache canonicalisation", () => {
+  it("shares one cache entry across case-permuted spellings of the same zone", () => {
+    // A zone not referenced elsewhere in this file, so the cache-growth assertion
+    // below isn't sensitive to test execution order.
+    const spellings = ["Europe/Madrid", "europe/madrid", "EUROPE/MADRID", "eUrOpE/mAdRiD"];
+    const instant = new Date("2026-08-13T18:00:00Z");
+
+    const before = formatterCacheSize();
+    const results = spellings.map((tz) => toLocalParts(instant, tz));
+    const after = formatterCacheSize();
+
+    for (const parts of results) {
+      expect(parts).toEqual({ year: 2026, month: 8, day: 13, hour: 20, minute: 0, second: 0 });
+    }
+
+    // Every case permutation resolves to the same canonical zone, so the cache
+    // should grow by exactly one entry no matter how many spellings were looked up.
+    expect(after).toBe(before + 1);
   });
 });
 
