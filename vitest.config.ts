@@ -23,7 +23,14 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: "./wrangler.jsonc" },
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations },
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            // CI has no `.dev.vars` (gitignored, local-dev-only), so any test
+            // that reads RESPONSE_TOKEN_SECRET off the binding gets undefined
+            // there unless it's provided here too. This value is committed on
+            // purpose — it is obviously fake and used nowhere but tests.
+            RESPONSE_TOKEN_SECRET: "test-only-secret-not-used-in-any-real-environment",
+          },
         },
       }),
     ],
