@@ -51,6 +51,12 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
  * and the signature is what makes it unforgeable.
  */
 export async function signResponseToken(payload: ResponseTokenPayload, secret: string): Promise<string> {
+  // Signing with no secret is a programming error (misconfigured binding),
+  // never a runtime/user condition — throw loudly rather than silently
+  // producing an unverifiable token.
+  if (secret.length === 0) {
+    throw new Error("signResponseToken: secret must not be empty (RESPONSE_TOKEN_SECRET unset?)");
+  }
   const body = base64UrlEncode(ENCODER.encode(JSON.stringify(payload)));
   const signature = await crypto.subtle.sign("HMAC", await hmacKey(secret), ENCODER.encode(body));
   return `${body}.${base64UrlEncode(new Uint8Array(signature))}`;
@@ -70,6 +76,20 @@ export async function verifyResponseToken(
   secret: string,
   now: Date,
 ): Promise<TokenVerification> {
+  // A non-string token can arrive from an untyped boundary (e.g. a Hono path
+  // param under a runtime shape that disagrees with its declared type).
+  // Fail closed with the same "malformed" a caller already handles, rather
+  // than letting `.split` throw a raw TypeError into the route.
+  if (typeof token !== "string") return { ok: false, reason: "malformed" };
+
+  // An empty secret means the binding is unset (new env, rotation typo,
+  // forgotten `wrangler secret put`). Unlike signing, this must not throw:
+  // it reaches this function on the hot path for every incoming response
+  // link, and the route's job is to render the normal "this link isn't
+  // working" page, not 500. Every token is unverifiable either way, so
+  // "malformed" is honest — there is nothing more specific to say about it.
+  if (secret.length === 0) return { ok: false, reason: "malformed" };
+
   const parts = token.split(".");
   if (parts.length !== 2) return { ok: false, reason: "malformed" };
 
@@ -96,7 +116,11 @@ export async function verifyResponseToken(
   }
 
   if (!isPayload(parsed)) return { ok: false, reason: "malformed" };
-  if (now.getTime() > parsed.expiresAt) return { ok: false, reason: "expired" };
+  // Inverted so an invalid `now` (e.g. `new Date(NaN)`) fails closed: any
+  // comparison against NaN is false, so writing this as `now > expiresAt`
+  // would fall through to acceptance for a caller mistake. `!(now <= expiresAt)`
+  // rejects unless the token is affirmatively still valid.
+  if (!(now.getTime() <= parsed.expiresAt)) return { ok: false, reason: "expired" };
 
   return { ok: true, payload: parsed };
 }

@@ -128,6 +128,29 @@ describe("cross-fixture safety", () => {
   });
 });
 
+describe("hardening (review round 1)", () => {
+  it("rejects rather than accepts when `now` is invalid (fail closed, not open)", async () => {
+    const token = await signResponseToken(payload({ expiresAt: NOW.getTime() - 1 }), SECRET);
+    const result = await verifyResponseToken(token, SECRET, new Date(NaN));
+    expect(result).toEqual({ ok: false, reason: "expired" });
+  });
+
+  it.each([null, undefined, 42, {}])("rejects a non-string token (%p) as malformed", async (bad) => {
+    const result = await verifyResponseToken(bad as unknown as string, SECRET, NOW);
+    expect(result).toEqual({ ok: false, reason: "malformed" });
+  });
+
+  it("signing with an empty secret throws loudly", async () => {
+    await expect(signResponseToken(payload(), "")).rejects.toThrow();
+  });
+
+  it("verifying with an empty secret returns malformed rather than throwing", async () => {
+    const token = await signResponseToken(payload(), SECRET);
+    const result = await verifyResponseToken(token, "", NOW);
+    expect(result).toEqual({ ok: false, reason: "malformed" });
+  });
+});
+
 describe("responseTokenExpiry", () => {
   it("is 24 hours after kickoff (BR-24)", () => {
     const expiry = responseTokenExpiry(new Date("2026-08-13T18:00:00Z"));
