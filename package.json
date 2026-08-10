@@ -17,7 +17,7 @@
     "show:local": "wrangler d1 execute makethe-team --local --file=scripts/show-fixtures.sql"
   },
   "type": "module",
-  "private": "true",
+  "private": true,
   "dependencies": {
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.1"

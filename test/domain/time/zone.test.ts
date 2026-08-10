@@ -131,6 +131,18 @@ describe("invalid time zones", () => {
     expect(() => toLocalParts(instant, zone)).toThrow(LocalTimeError);
   });
 
+  it.each([
+    ["a plausible but non-existent city", "Europe/Camelot"],
+    ["a country name rather than a zone", "France"],
+    ["an over-qualified zone path", "Europe/London/Islington"],
+    ["whitespace", "  "],
+  ])("rejects %s as a time zone", (_description, zone) => {
+    // This is the path a user reaches the moment a timezone field appears on a
+    // form, so the error has to be the typed domain one, not a raw RangeError.
+    expect(() => toLocalParts(instant, zone)).toThrow(LocalTimeError);
+    expect(() => toLocalParts(instant, zone)).toThrow(/not a valid IANA time zone/);
+  });
+
   it("does not grow the formatter cache on a failed lookup", () => {
     const before = formatterCacheSize();
     expect(() => toLocalParts(instant, "Not/A_Zone")).toThrow(LocalTimeError);

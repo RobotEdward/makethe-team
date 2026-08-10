@@ -11,6 +11,11 @@ export const CRON_DAILY_MATERIALISE = "15 3 * * *";
  *
  * An unrecognised schedule throws: a typo in wrangler.jsonc that silently did
  * nothing would mean fixtures quietly stop being created.
+ *
+ * Materialisation failures throw too, for the same reason. Every game is
+ * processed first — one broken recurrence rule must not stop the others — but
+ * the invocation then ends in a rejection, so the runtime records it as failed
+ * instead of a total outage reading as a clean run.
  */
 export async function handleScheduled(cron: string, env: Bindings, now: Date): Promise<void> {
   switch (cron) {
@@ -19,6 +24,11 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       console.log("materialise", JSON.stringify(result));
       for (const failure of result.failures) {
         console.error(`materialise failed for game ${failure.gameId}: ${failure.message}`);
+      }
+      if (result.failures.length > 0) {
+        throw new Error(
+          `materialise failed for ${result.failures.length} of ${result.gamesProcessed} games`,
+        );
       }
       return;
     }

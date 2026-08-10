@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { INITIAL_LIFECYCLE, LIFECYCLES } from "../domain/lifecycle.js";
 
 const nowMs = sql`(unixepoch() * 1000)`;
 
@@ -67,9 +68,7 @@ export const fixtures = sqliteTable(
     gameId: text("game_id").notNull().references(() => games.id),
     kicksOffAt: integer("kicks_off_at", { mode: "timestamp_ms" }).notNull(),
     // Stored lifecycle only. short/confirmed/uneven are derived (BR-12).
-    lifecycle: text("lifecycle", { enum: ["scheduled", "open", "cancelled", "played"] })
-      .notNull()
-      .default("scheduled"),
+    lifecycle: text("lifecycle", { enum: LIFECYCLES }).notNull().default(INITIAL_LIFECYCLE),
     // Copied from the game at materialisation so edits never rewrite history (§2.8).
     minPlayers: integer("min_players").notNull(),
     maxPlayers: integer("max_players").notNull(),

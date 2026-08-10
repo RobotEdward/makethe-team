@@ -26,6 +26,22 @@ describe("terminal and pre-open lifecycles", () => {
     expect(view.flags).toEqual([]);
     expect(view.needsOwnerAttention).toBe(false);
   });
+
+  it("reports the real remaining capacity on a scheduled fixture", () => {
+    // Every fixture that exists before a fixture opens is scheduled and empty.
+    // Reporting 0 here would have a renderer say "0 spots left" on a fixture
+    // nobody has even been asked about.
+    const empty = fixtureView(facts({ lifecycle: "scheduled", inCount: 0 }), INSIDE_WINDOW);
+    expect(empty.spotsLeft).toBe(14);
+
+    const partial = fixtureView(facts({ lifecycle: "scheduled", inCount: 11 }), INSIDE_WINDOW);
+    expect(partial.spotsLeft).toBe(3);
+  });
+
+  it.each(["cancelled", "played"] as const)("reports no spots left on a %s fixture", (lifecycle) => {
+    // Terminal: nobody can join, so remaining capacity is meaningless.
+    expect(fixtureView(facts({ lifecycle, inCount: 0 }), INSIDE_WINDOW).spotsLeft).toBe(0);
+  });
 });
 
 describe("below the minimum", () => {

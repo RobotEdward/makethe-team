@@ -58,7 +58,7 @@ export function toLocalParts(instant: Date, timeZone: string): LocalParts {
   const parts = formatterFor(timeZone).formatToParts(instant);
   const read = (type: Intl.DateTimeFormatPartTypes): number => {
     const part = parts.find((p) => p.type === type);
-    if (!part) throw new Error(`Intl returned no ${type} for time zone "${timeZone}"`);
+    if (!part) throw new LocalTimeError(`Intl returned no ${type} for time zone "${timeZone}"`);
     return Number(part.value);
   };
 

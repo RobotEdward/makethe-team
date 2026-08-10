@@ -1,11 +1,16 @@
 import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { fixtures, games } from "../db/schema.js";
+import { INITIAL_LIFECYCLE } from "./lifecycle.js";
 import { expandWeekly } from "./recurrence/expand.js";
 import { parseRecurrenceRule } from "./recurrence/parse.js";
 import { parseLocalDate, parseLocalTime } from "./time/local.js";
 
-export const MATERIALISATION_HORIZON_DAYS = 28;
+// BR-10/TR-6 require *at least* 4 weeks of future fixtures. The horizon is
+// measured from `now`, so a flat 28 would decay towards 27 between daily runs
+// and a missed run would breach the guarantee outright. 35 keeps a week of
+// margin at the cost of one extra row per game per week.
+export const MATERIALISATION_HORIZON_DAYS = 35;
 
 const DAY_MS = 86_400_000;
 
@@ -74,7 +79,7 @@ export async function materialiseFixtures(
         id: crypto.randomUUID(),
         gameId: game.id,
         kicksOffAt,
-        lifecycle: "scheduled" as const,
+        lifecycle: INITIAL_LIFECYCLE,
         minPlayers: game.minPlayers,
         maxPlayers: game.maxPlayers,
         prefersEvenNumbers: game.prefersEvenNumbers,

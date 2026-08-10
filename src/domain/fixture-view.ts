@@ -1,4 +1,6 @@
-export type Lifecycle = "scheduled" | "open" | "cancelled" | "played";
+import { isTerminalLifecycle, type Lifecycle } from "./lifecycle.js";
+
+export type { Lifecycle };
 
 /** Lifecycle values plus the two judgements derived from counts and time. */
 export type FixtureStatus = Lifecycle | "short" | "confirmed";
@@ -34,7 +36,15 @@ const HOUR_MS = 3_600_000;
  */
 export function fixtureView(facts: FixtureFacts, now: Date): FixtureView {
   if (facts.lifecycle !== "open") {
-    return { status: facts.lifecycle, flags: [], spotsLeft: 0, needsOwnerAttention: false };
+    // A `scheduled` fixture is empty but joinable-to-be, so it has its full
+    // capacity left — reporting 0 would have a renderer announce "0 spots left"
+    // on a fixture nobody has been asked about yet. After `cancelled` or
+    // `played` nobody can join, so there is genuinely nothing left.
+    const spotsLeft = isTerminalLifecycle(facts.lifecycle)
+      ? 0
+      : Math.max(0, facts.maxPlayers - facts.inCount);
+
+    return { status: facts.lifecycle, flags: [], spotsLeft, needsOwnerAttention: false };
   }
 
   const windowOpensAt = facts.kicksOffAt.getTime() - facts.shortWarningOffsetHours * HOUR_MS;

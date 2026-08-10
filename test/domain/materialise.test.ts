@@ -1,30 +1,19 @@
-import { env } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { getDb } from "../../src/db/client.js";
-import { fixtures, games } from "../../src/db/schema.js";
+import { fixtures } from "../../src/db/schema.js";
 import { materialiseFixtures } from "../../src/domain/materialise.js";
+import {
+  insertGame as insertGameRow,
+  resetDatabase,
+  testDb,
+  type GameInsert,
+} from "../support/factories.js";
 
-const db = getDb(env.DB);
+const db = testDb();
 const NOW = new Date("2026-08-10T08:00:00Z"); // a Monday
 
-async function insertGame(overrides: Partial<typeof games.$inferInsert> = {}): Promise<string> {
-  const id = crypto.randomUUID();
-  await db.insert(games).values({
-    id,
-    name: "Thursday 7-a-side",
-    venueName: "Oxford Sports Park",
-    timezone: "Europe/London",
-    recurrenceRule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=TH",
-    recurrenceStartDate: "2026-08-13",
-    kickoffTime: "19:00",
-    durationMinutes: 60,
-    minPlayers: 10,
-    maxPlayers: 14,
-    inviteToken: crypto.randomUUID(),
-    ...overrides,
-  });
-  return id;
+async function insertGame(overrides: Partial<GameInsert> = {}): Promise<string> {
+  return insertGameRow(db, overrides);
 }
 
 async function fixtureInstants(gameId: string): Promise<string[]> {
@@ -32,10 +21,7 @@ async function fixtureInstants(gameId: string): Promise<string[]> {
   return rows.map((r) => r.kicksOffAt.toISOString()).sort();
 }
 
-beforeEach(async () => {
-  await env.DB.exec("DELETE FROM fixtures");
-  await env.DB.exec("DELETE FROM games");
-});
+beforeEach(resetDatabase);
 
 describe("materialiseFixtures", () => {
   it("creates at least four weeks of fixtures (BR-10)", async () => {
@@ -44,13 +30,30 @@ describe("materialiseFixtures", () => {
     const result = await materialiseFixtures(db, NOW);
 
     expect(result.gamesProcessed).toBe(1);
-    expect(result.fixturesCreated).toBe(4);
+    // Five, not four: the 35-day horizon deliberately overshoots the four weeks
+    // BR-10 demands, so the guarantee survives a day (or a missed run) of decay.
+    expect(result.fixturesCreated).toBe(5);
     expect(await fixtureInstants(gameId)).toEqual([
       "2026-08-13T18:00:00.000Z",
       "2026-08-20T18:00:00.000Z",
       "2026-08-27T18:00:00.000Z",
       "2026-09-03T18:00:00.000Z",
+      "2026-09-10T18:00:00.000Z",
     ]);
+  });
+
+  it("still has four weeks of fixtures ahead the day before the next run", async () => {
+    const gameId = await insertGame();
+    await materialiseFixtures(db, NOW);
+
+    // The horizon is measured from `now`, so it decays between daily runs. The
+    // margin is what keeps BR-10 true at the worst moment rather than only
+    // immediately after a run.
+    const fourWeeksOn = new Date(NOW.getTime() + 28 * 86_400_000);
+    const instants = await fixtureInstants(gameId);
+    const beyond = instants.filter((iso) => new Date(iso).getTime() > fourWeeksOn.getTime());
+
+    expect(beyond.length).toBeGreaterThan(0);
   });
 
   it("creates every fixture in scheduled lifecycle", async () => {
@@ -86,7 +89,7 @@ describe("materialiseFixtures", () => {
     const second = await materialiseFixtures(db, NOW);
     const after = await fixtureInstants(gameId);
 
-    expect(first.fixturesCreated).toBe(4);
+    expect(first.fixturesCreated).toBe(5);
     expect(second.fixturesCreated).toBe(0);
     expect(after).toEqual(before);
   });
@@ -106,6 +109,7 @@ describe("materialiseFixtures", () => {
       "2026-09-03T18:00:00.000Z",
       "2026-09-10T18:00:00.000Z",
       "2026-09-17T18:00:00.000Z",
+      "2026-09-24T18:00:00.000Z",
     ]);
   });
 
@@ -125,7 +129,9 @@ describe("materialiseFixtures", () => {
     await db
       .update(fixtures)
       .set({ lifecycle: "cancelled", cancelledAt: NOW, cancellationReason: "Pitch flooded" })
-      .where(eq(fixtures.kicksOffAt, new Date("2026-08-20T18:00:00Z")));
+      .where(
+        and(eq(fixtures.gameId, gameId), eq(fixtures.kicksOffAt, new Date("2026-08-20T18:00:00Z"))),
+      );
 
     const result = await materialiseFixtures(db, NOW);
 
@@ -135,7 +141,7 @@ describe("materialiseFixtures", () => {
       .from(fixtures)
       .where(eq(fixtures.kicksOffAt, new Date("2026-08-20T18:00:00Z")));
     expect(cancelled?.lifecycle).toBe("cancelled");
-    expect(await fixtureInstants(gameId)).toHaveLength(4);
+    expect(await fixtureInstants(gameId)).toHaveLength(5);
   });
 
   it("holds the local kickoff time across a DST transition", async () => {
@@ -148,6 +154,7 @@ describe("materialiseFixtures", () => {
       "2026-10-22T18:00:00.000Z",
       "2026-10-29T19:00:00.000Z",
       "2026-11-05T19:00:00.000Z",
+      "2026-11-12T19:00:00.000Z",
     ]);
   });
 
@@ -159,7 +166,7 @@ describe("materialiseFixtures", () => {
 
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0]?.message).toMatch(/MONTHLY/);
-    expect(await fixtureInstants(healthy)).toHaveLength(4);
+    expect(await fixtureInstants(healthy)).toHaveLength(5);
   });
 
   it("handles many games in one run", async () => {
@@ -168,7 +175,7 @@ describe("materialiseFixtures", () => {
     const result = await materialiseFixtures(db, NOW);
 
     expect(result.gamesProcessed).toBe(5);
-    expect(result.fixturesCreated).toBe(20);
+    expect(result.fixturesCreated).toBe(25);
   });
 
   it("materialises a long horizon without hitting D1's bound-parameter ceiling", async () => {
@@ -194,7 +201,7 @@ describe("materialiseFixtures", () => {
     for (const result of [first, second, third]) {
       expect(result.failures).toEqual([]);
     }
-    expect(first.fixturesCreated + second.fixturesCreated + third.fixturesCreated).toBe(4);
-    expect(await fixtureInstants(gameId)).toHaveLength(4);
+    expect(first.fixturesCreated + second.fixturesCreated + third.fixturesCreated).toBe(5);
+    expect(await fixtureInstants(gameId)).toHaveLength(5);
   });
 });

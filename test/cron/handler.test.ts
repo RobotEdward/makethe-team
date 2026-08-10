@@ -1,33 +1,19 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { getDb } from "../../src/db/client.js";
-import { fixtures, games } from "../../src/db/schema.js";
+import { fixtures } from "../../src/db/schema.js";
 import {
   CRON_DAILY_MATERIALISE,
   CRON_HOURLY_SWEEP,
   handleScheduled,
 } from "../../src/cron/handler.js";
+import { insertGame, resetDatabase, testDb } from "../support/factories.js";
 
-const db = getDb(env.DB);
+const db = testDb();
 const NOW = new Date("2026-08-10T03:15:00Z");
 
 beforeEach(async () => {
-  await env.DB.exec("DELETE FROM fixtures");
-  await env.DB.exec("DELETE FROM games");
-
-  await db.insert(games).values({
-    id: "game-1",
-    name: "Thursday 7-a-side",
-    venueName: "Oxford Sports Park",
-    timezone: "Europe/London",
-    recurrenceRule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=TH",
-    recurrenceStartDate: "2026-08-13",
-    kickoffTime: "19:00",
-    durationMinutes: 60,
-    minPlayers: 10,
-    maxPlayers: 14,
-    inviteToken: "invite-1",
-  });
+  await resetDatabase();
+  await insertGame(db, { id: "game-1", inviteToken: "invite-1" });
 });
 
 describe("handleScheduled", () => {
@@ -35,7 +21,7 @@ describe("handleScheduled", () => {
     await handleScheduled(CRON_DAILY_MATERIALISE, env, NOW);
 
     const rows = await db.select().from(fixtures);
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
   });
 
   it("does not materialise on the hourly schedule", async () => {
@@ -54,6 +40,26 @@ describe("handleScheduled", () => {
     await handleScheduled(CRON_DAILY_MATERIALISE, env, NOW);
 
     const rows = await db.select().from(fixtures);
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(5);
+  });
+
+  it("rejects when a game fails to materialise, naming the counts", async () => {
+    await insertGame(db, { recurrenceRule: "FREQ=MONTHLY;BYDAY=TH" });
+
+    await expect(handleScheduled(CRON_DAILY_MATERIALISE, env, NOW)).rejects.toThrow(
+      /materialise failed for 1 of 2 games/,
+    );
+  });
+
+  it("still materialises the healthy games before rejecting", async () => {
+    await insertGame(db, { recurrenceRule: "FREQ=MONTHLY;BYDAY=TH" });
+
+    await expect(handleScheduled(CRON_DAILY_MATERIALISE, env, NOW)).rejects.toThrow();
+
+    // The rejection must not have short-circuited the sweep: game-1 is healthy
+    // and its fixtures have to exist regardless of the other game's bad rule.
+    const rows = await db.select().from(fixtures);
+    expect(rows).toHaveLength(5);
+    expect(rows.every((r) => r.gameId === "game-1")).toBe(true);
   });
 });

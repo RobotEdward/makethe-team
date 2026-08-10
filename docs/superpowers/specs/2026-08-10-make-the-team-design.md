@@ -1,7 +1,7 @@
 # Make The Team — Product & Technical Specification
 
 **Status:** v2 — approved for implementation
-**Supersedes:** `spec.md` (Draft v1, working name `kickabout`)
+**Supersedes:** `docs/history/2026-08-10-original-draft-spec.md` (Draft v1, working name `kickabout`; formerly `spec.md` at the repository root)
 **Domain:** `makethe.team`
 **Audience:** A coding agent implementing this from scratch, plus human reviewers
 
@@ -9,7 +9,7 @@
 
 ## Changelog from Draft v1
 
-This document is the single source of truth. `spec.md` is retained for history only.
+This document is the single source of truth. The draft is retained at `docs/history/2026-08-10-original-draft-spec.md` for history only; the root `spec.md` is now a stub pointing here.
 
 **Conflicts resolved**
 
@@ -346,6 +346,11 @@ FREQ=WEEKLY;INTERVAL=1;BYDAY=TH     weekly, Thursdays
 FREQ=WEEKLY;INTERVAL=2;BYDAY=SU     fortnightly, Sundays
 ```
 
+An `INTERVAL` above 8 weeks is rejected. A casual game that meets less often than
+once every two months is not the thing this product schedules, and the cap keeps
+expansion cheap: the materialisation horizon is a matter of weeks, so a very large
+interval would make every daily run walk a long way for no occurrences.
+
 ## 2.4 The scheduler
 
 - **TR-8** Two cron triggers. An **hourly sweep** and a **daily materialisation**. Neither runs per game.
@@ -442,6 +447,7 @@ fixtures
   min_players, max_players,      -- copied from game at materialisation
   prefers_even_numbers,          -- copied from game at materialisation
   short_warning_offset_hours,    -- copied from game at materialisation
+  duration_minutes,              -- copied from game at materialisation
   in_count, waitlist_count,      -- cached; maintained only by the Durable Object
   venue_override, notes,
   cancelled_at, cancellation_reason,
@@ -481,7 +487,7 @@ audit_log
 Notes:
 
 - `recurrence_start_date` anchors the recurrence. Occurrences are the first `BYDAY` on or after it, then every `INTERVAL` weeks. Without an anchor, "every other Thursday" is undefined — there is no way to know which Thursday the fortnight counts from.
-- `fixtures` copies `min_players`, `max_players`, `prefers_even_numbers` and `short_warning_offset_hours` from the Game at materialisation, so changing the Game later doesn't rewrite history.
+- `fixtures` copies `min_players`, `max_players`, `prefers_even_numbers`, `short_warning_offset_hours` and `duration_minutes` from the Game at materialisation, so changing the Game later doesn't rewrite history.
 - A `pending` response row is written **eagerly for every eligible player at the moment the fixture opens** (BR-1). This fixes the eligible set at that instant. (v1 called this "lazily", which was a wording error.)
 - **TR-38 — D1's bound-parameter limit.** A single D1 statement rejects more than 100 bound parameters, failing with `D1_ERROR: too many SQL variables ... SQLITE_ERROR`. This was measured directly: inserting `fixtures` rows at 9 per statement worked, 10 failed. The effective row ceiling depends on the column count of the table being written, and Drizzle may bind more parameters per row than the table has declared columns — so a chunk size must be a conservative constant, not something computed from the column count. Fixture materialisation chunks its inserts at 8 rows per statement and is the reference implementation (`src/domain/materialise.ts`, `INSERT_CHUNK_SIZE`). Any code inserting one row per squad member must chunk the same way — this explicitly includes writing the `pending` response rows required above when a fixture opens, since a squad of twenty is twenty rows in one insert. Chunking means a mid-way failure can leave earlier chunks written and later ones missing; this is safe here only because these operations are idempotent (materialisation via the `(game_id, kicks_off_at)` unique index; opening a fixture must be written the same way), and any caller relying on chunked writes must keep them idempotent.
 - `in_count` and `waitlist_count` are a cache, written only inside the Durable Object's critical section alongside the response row, in the same `batch()`. A test asserts they match a `COUNT(*)` after a randomised sequence of operations.
@@ -518,7 +524,7 @@ Environments: production only to begin with. A staging Worker and second D1 data
 
 - **TR-27** Vitest with `@cloudflare/vitest-pool-workers`, running in workerd against real D1 and Durable Object bindings. Do not mock the database.
 - **TR-28** The test database is built by applying the real migrations via `readD1Migrations` / `applyD1Migrations`, so a broken migration fails CI rather than production.
-- **TR-29** Route tests use the Hono test client.
+- **TR-29** Route tests drive the Worker through `SELF.fetch` from `cloudflare:test` rather than the Hono test client. `SELF` dispatches through the deployed module's default export, so a test exercises the real entry point — middleware, route registration and the `fetch` handler wiring included. The Hono test client would call the app object directly and skip all of that, which is exactly the layer a route test should be proving.
 
 Required test coverage, at minimum:
 

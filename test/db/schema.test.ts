@@ -1,33 +1,10 @@
-import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { getDb } from "../../src/db/client.js";
 import { games, players } from "../../src/db/schema.js";
+import { gameRow, resetDatabase, testDb } from "../support/factories.js";
 
-const db = getDb(env.DB);
+const db = testDb();
 
-function gameRow(overrides: Partial<typeof games.$inferInsert> = {}): typeof games.$inferInsert {
-  return {
-    id: crypto.randomUUID(),
-    name: "Thursday 7-a-side",
-    venueName: "Oxford Sports Park",
-    timezone: "Europe/London",
-    recurrenceRule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=TH",
-    recurrenceStartDate: "2026-08-13",
-    kickoffTime: "19:00",
-    durationMinutes: 60,
-    minPlayers: 10,
-    maxPlayers: 14,
-    inviteToken: crypto.randomUUID(),
-    ...overrides,
-  };
-}
-
-beforeEach(async () => {
-  await env.DB.exec("DELETE FROM memberships");
-  await env.DB.exec("DELETE FROM fixtures");
-  await env.DB.exec("DELETE FROM games");
-  await env.DB.exec("DELETE FROM players");
-});
+beforeEach(resetDatabase);
 
 describe("players", () => {
   it("allows many guests with no email", async () => {

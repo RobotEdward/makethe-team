@@ -1,6 +1,6 @@
 import type { LocalDate, LocalTime } from "../time/local.js";
 import { toUtc } from "../time/zone.js";
-import { WEEKDAYS, type WeeklyRule } from "./parse.js";
+import { RecurrenceError, WEEKDAYS, type WeeklyRule } from "./parse.js";
 
 const DAY_MS = 86_400_000;
 const MAX_ITERATIONS = 1_000;
@@ -56,7 +56,10 @@ export function expandWeekly(
     if (instant.getTime() >= from.getTime()) occurrences.push(instant);
   }
 
-  throw new Error(
-    `expandWeekly exceeded ${MAX_ITERATIONS} iterations — window is too wide for interval ${rule.interval}`,
+  // Typed, like every other error the recurrence modules raise, so a caller can
+  // tell bad configuration from a bug. The interval is not the culprit — a
+  // larger interval produces fewer occurrences, not more — the window is.
+  throw new RecurrenceError(
+    `expandWeekly exceeded ${MAX_ITERATIONS} iterations — the requested window is too wide to expand (interval ${rule.interval} weeks)`,
   );
 }
