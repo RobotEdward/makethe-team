@@ -1,0 +1,3 @@
+# Copy to .dev.vars (gitignored) for local development.
+# Any string works locally; production uses a Worker secret.
+RESPONSE_TOKEN_SECRET=local-development-secret-do-not-use-in-production
