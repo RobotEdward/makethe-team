@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import type { Db } from "../db/client.js";
 import { fixtures, games } from "../db/schema.js";
 import { INITIAL_LIFECYCLE } from "./lifecycle.js";
@@ -14,21 +15,8 @@ export const MATERIALISATION_HORIZON_DAYS = 35;
 
 const DAY_MS = 86_400_000;
 
-// D1 rejects a statement with more than 100 bound parameters. The effective
-// per-row parameter count is a Drizzle implementation detail (measured at 11
-// for the 9 declared `fixtures` columns we insert here, not a 1:1 mapping),
-// so we do not compute a chunk size from arithmetic on the column count.
-// A small, conservative constant leaves headroom for extra columns, longer
-// horizons, or sub-weekly recurrence rules that produce more rows per game.
-const INSERT_CHUNK_SIZE = 8;
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-  return chunks;
-}
+// See src/db/chunk.ts for why rows are chunked and how the constant was
+// measured.
 
 export interface MaterialisationResult {
   gamesProcessed: number;

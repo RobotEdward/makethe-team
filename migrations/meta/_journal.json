@@ -8,6 +8,13 @@
       "when": 1786368425548,
       "tag": "0000_lonely_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786392375309,
+      "tag": "0001_gifted_preak",
+      "breakpoints": true
     }
   ]
 }

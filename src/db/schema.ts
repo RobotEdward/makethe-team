@@ -1,6 +1,11 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { INITIAL_LIFECYCLE, LIFECYCLES } from "../domain/lifecycle.js";
+import {
+  INITIAL_RESPONSE_STATUS,
+  RESPONSE_SOURCES,
+  RESPONSE_STATUSES,
+} from "../domain/response-status.js";
 
 const nowMs = sql`(unixepoch() * 1000)`;
 
@@ -88,5 +93,30 @@ export const fixtures = sqliteTable(
   (t) => [
     uniqueIndex("fixtures_game_kickoff_unique").on(t.gameId, t.kicksOffAt),
     index("fixtures_lifecycle_kickoff_idx").on(t.lifecycle, t.kicksOffAt),
+  ],
+);
+
+export const responses = sqliteTable(
+  "responses",
+  {
+    id: text("id").primaryKey(),
+    fixtureId: text("fixture_id").notNull().references(() => fixtures.id),
+    playerId: text("player_id").notNull().references(() => players.id),
+    status: text("status", { enum: RESPONSE_STATUSES }).notNull().default(INITIAL_RESPONSE_STATUS),
+    // Null unless waitlisted. Ordering is strictly by when the player joined
+    // the waitlist (BR-6) — no priority, no reordering.
+    waitlistPosition: integer("waitlist_position"),
+    // Null while pending: the player has not answered yet, and silence is not
+    // consent (§1.4).
+    respondedAt: integer("responded_at", { mode: "timestamp_ms" }),
+    // Null when the player set it themselves; the owner's id for an override (BR-27).
+    setByPlayerId: text("set_by_player_id").references(() => players.id),
+    source: text("source", { enum: RESPONSE_SOURCES }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [
+    uniqueIndex("responses_fixture_player_unique").on(t.fixtureId, t.playerId),
+    index("responses_fixture_status_idx").on(t.fixtureId, t.status),
+    index("responses_player_idx").on(t.playerId),
   ],
 );
