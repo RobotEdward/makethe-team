@@ -287,6 +287,45 @@ describe("GET /r/:token — a finished fixture renders read-only (BR-24)", () =>
   });
 });
 
+describe("GET /r/:token — a valid token for a player no longer on the squad", () => {
+  it("renders read-only with a neutral explanation, not the generic failure page", async () => {
+    const { fixtureId, playerId } = await seedOpenFixture();
+    const token = await tokenFor(fixtureId, playerId);
+    // Simulate the player having been removed from the squad after their
+    // link was sent: the token still verifies, but their response row is
+    // gone.
+    await db.delete(responses).where(eq(responses.playerId, playerId));
+
+    const response = await SELF.fetch(`https://makethe.team/r/${token}`);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    // Not the shared token-failure page — the token is legitimate.
+    expect(body).not.toMatch(/isn.t working/i);
+    // Still the real fixture page.
+    expect(body).toContain("Thursday 7-a-side");
+    // Read-only: no buttons, no live question.
+    expect(body).not.toContain(`method="post"`);
+    expect(body).not.toContain(`name="intent"`);
+    expect(body).not.toMatch(/can you make it\?/i);
+    expect(body).toMatch(/no longer on the squad|not on the squad/i);
+  });
+
+  it("does not mutate anything", async () => {
+    const { fixtureId, playerId } = await seedOpenFixture();
+    const token = await tokenFor(fixtureId, playerId);
+    await db.delete(responses).where(eq(responses.playerId, playerId));
+
+    const before = await snapshotResponses(fixtureId);
+    const countsBefore = await snapshotCounts(fixtureId);
+
+    await SELF.fetch(`https://makethe.team/r/${token}`);
+
+    expect(await snapshotResponses(fixtureId)).toEqual(before);
+    expect(await snapshotCounts(fixtureId)).toEqual(countsBefore);
+  });
+});
+
 describe("vocabulary and safety", () => {
   it("never uses forbidden vocabulary on the failure page", async () => {
     const response = await SELF.fetch("https://makethe.team/r/not-a-real-token");

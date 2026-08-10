@@ -83,6 +83,36 @@ describe("fixture page", () => {
     expect(html).toMatch(/you're in/i);
   });
 
+  describe("readOnlyReason: not-eligible — a valid token for a player no longer on the squad", () => {
+    it("renders read-only with no buttons and no viewer headline", () => {
+      const html = renderFixturePage({
+        ...BASE,
+        readOnlyReason: "not-eligible",
+      });
+      expect(html).not.toContain('method="post"');
+      expect(html).not.toContain('name="intent"');
+      expect(html).not.toContain('class="viewer-headline"');
+    });
+
+    it("never asks a live question, regardless of the viewer's stale status", () => {
+      for (const status of ["pending", "in", "out", "waitlisted"] as const) {
+        const html = renderFixturePage({
+          ...BASE,
+          viewer: { playerId: "p2", status, waitlistRank: status === "waitlisted" ? 1 : null },
+          readOnlyReason: "not-eligible",
+        });
+        expect(html).not.toMatch(/can you make it\?/i);
+        expect(html).not.toContain('class="viewer-headline"');
+      }
+    });
+
+    it("explains the squad situation, distinct from a played/cancelled fixture", () => {
+      const html = renderFixturePage({ ...BASE, readOnlyReason: "not-eligible" });
+      expect(html).toMatch(/no longer on the squad/i);
+      expect(html).not.toMatch(/already been played|was cancelled/i);
+    });
+  });
+
   describe("viewer headline never contradicts a readOnlyReason", () => {
     const reasons = ["played", "cancelled"] as const;
     const statuses = ["pending", "in", "out"] as const;

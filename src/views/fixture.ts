@@ -4,6 +4,20 @@ import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
 
+/**
+ * Why this page is read-only, if it is.
+ *
+ * `played`/`cancelled` describe the fixture: it is finished, for everyone.
+ * `not-eligible` describes the viewer alone — a token that verifies
+ * cryptographically fine, for a player who is no longer on the squad (most
+ * likely removed after their link was sent). The fixture itself may still be
+ * wide open; only this viewer's ability to act on it is closed. Keeping this
+ * distinct from `played`/`cancelled` is what stops a removed player being
+ * told a truthful "confirmed" status right above an unrelated "cancelled"
+ * notice, and is why it needs its own headline/notice text below.
+ */
+export type ReadOnlyReason = "played" | "cancelled" | "not-eligible";
+
 export interface FixturePageOptions {
   gameName: string;
   venueName: string;
@@ -17,8 +31,8 @@ export interface FixturePageOptions {
   token: string;
   /** From `?intent=`. Emphasises one button with CSS. Never records anything. */
   intent: ResponseIntent | null;
-  /** Set when the fixture is played or cancelled: render read-only, no buttons. */
-  readOnlyReason?: "played" | "cancelled";
+  /** Set when there is nothing this viewer can do here: render read-only, no buttons. */
+  readOnlyReason?: ReadOnlyReason;
 }
 
 const STATUS_LABEL: Record<FixtureView["status"], string> = {
@@ -47,8 +61,16 @@ function ordinal(n: number): string {
 
 function viewerHeadline(
   viewer: FixturePageOptions["viewer"],
-  readOnlyReason: "played" | "cancelled" | undefined,
+  readOnlyReason: ReadOnlyReason | undefined,
 ): string {
+  if (readOnlyReason === "not-eligible") {
+    // No headline about the viewer's own response status makes sense here —
+    // they have none that means anything any more, and the read-only notice
+    // below already says why. Never fall through to a question ("Can you
+    // make it?") or a past-tense claim ("You were in") that isn't true of
+    // this viewer.
+    return "";
+  }
   return readOnlyReason ? viewerHeadlineClosed(viewer, readOnlyReason) : viewerHeadlineOpen(viewer);
 }
 
@@ -158,11 +180,13 @@ function renderButtons(options: FixturePageOptions): string {
     </form>`;
 }
 
-function renderReadOnlyNotice(reason: "played" | "cancelled"): string {
+function renderReadOnlyNotice(reason: ReadOnlyReason): string {
   const message =
     reason === "played"
       ? "This game has already been played. Responses are closed."
-      : "This fixture was cancelled. Responses are closed.";
+      : reason === "cancelled"
+        ? "This fixture was cancelled. Responses are closed."
+        : "You're no longer on the squad for this game, so there's nothing to respond to here. If that doesn't sound right, check with whoever organises it.";
   return `<p class="read-only">${escapeHtml(message)}</p>`;
 }
 

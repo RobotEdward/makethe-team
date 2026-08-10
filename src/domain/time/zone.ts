@@ -10,30 +10,32 @@ const DAY_MS = 86_400_000;
 const SECOND_MS = 1_000;
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
+const displayFormatters = new Map<string, Intl.DateTimeFormat>();
 
 /** Read-only view of the formatter cache size, for tests only. */
 export function formatterCacheSize(): number {
   return formatters.size;
 }
 
-function formatterFor(timeZone: string): Intl.DateTimeFormat {
+/**
+ * Build (or reuse) a cached `Intl.DateTimeFormat` for `timeZone`, sharing the
+ * error handling and cache-canonicalisation every caller in this module needs
+ * regardless of which display options it wants.
+ */
+function cachedFormatter(
+  timeZone: string,
+  cache: Map<string, Intl.DateTimeFormat>,
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormat {
   // Fast path: the input is already the canonical spelling we cached last time
   // (the common case — callers pass a single consistent IANA spelling).
-  const cached = formatters.get(timeZone);
+  const cached = cache.get(timeZone);
   if (cached) return cached;
 
   let formatter: Intl.DateTimeFormat;
   try {
-    formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    });
+    formatter = new Intl.DateTimeFormat(locale, { timeZone, ...options });
   } catch {
     // Intl.DateTimeFormat throws a raw RangeError for an invalid or empty IANA
     // zone name. Nothing is cached on this path — the cache must only ever hold
@@ -48,10 +50,51 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   // Canonicalise on the resolved zone name and key the cache by that alone, so every
   // spelling of a zone shares one entry regardless of how it was cased on input.
   const canonical = formatter.resolvedOptions().timeZone;
-  const canonicalFormatter = formatters.get(canonical) ?? formatter;
-  formatters.set(canonical, canonicalFormatter);
+  const canonicalFormatter = cache.get(canonical) ?? formatter;
+  cache.set(canonical, canonicalFormatter);
 
   return canonicalFormatter;
+}
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  return cachedFormatter(timeZone, formatters, "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
+function displayFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  // en-GB, not en-US: this is what src/routes/respond.ts used before this
+  // formatter moved here, and it's what produces "Thursday 13 August at
+  // 19:00" rather than the US month-first ordering.
+  return cachedFormatter(timeZone, displayFormatters, "en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
+/**
+ * Format an instant for a human reading it in `timeZone`, e.g.
+ * "Thursday 13 August at 19:00".
+ *
+ * All timezone conversion lives in this module and nowhere else — routes and
+ * views must call this rather than constructing their own
+ * `Intl.DateTimeFormat`. That keeps an invalid zone failing as the typed
+ * `LocalTimeError` below rather than a raw `RangeError` surfacing wherever a
+ * caller happened to build its own formatter, and keeps every caller sharing
+ * one canonicalised cache instead of building a fresh formatter per call.
+ */
+export function formatLocalDateTime(instant: Date, timeZone: string): string {
+  return displayFormatterFor(timeZone).format(instant);
 }
 
 export function toLocalParts(instant: Date, timeZone: string): LocalParts {

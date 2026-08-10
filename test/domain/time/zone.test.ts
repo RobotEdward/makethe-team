@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { LocalTimeError } from "../../../src/domain/time/local.js";
-import { formatterCacheSize, localWeekday, toLocalParts, toUtc } from "../../../src/domain/time/zone.js";
+import {
+  formatLocalDateTime,
+  formatterCacheSize,
+  localWeekday,
+  toLocalParts,
+  toUtc,
+} from "../../../src/domain/time/zone.js";
 
 const LONDON = "Europe/London";
 
@@ -107,6 +113,35 @@ describe("formatter cache canonicalisation", () => {
     // Every case permutation resolves to the same canonical zone, so the cache
     // should grow by exactly one entry no matter how many spellings were looked up.
     expect(after).toBe(before + 1);
+  });
+});
+
+describe("formatLocalDateTime", () => {
+  it("formats an instant for display in the target zone", () => {
+    const instant = new Date("2026-08-13T18:00:00Z");
+    expect(formatLocalDateTime(instant, LONDON)).toBe("Thursday 13 August at 19:00");
+  });
+
+  it("reflects a different zone's own wall-clock reading, not London's", () => {
+    const instant = new Date("2026-08-13T18:00:00Z");
+    expect(formatLocalDateTime(instant, "America/New_York")).toBe("Thursday 13 August at 14:00");
+  });
+
+  it("throws the typed LocalTimeError, not a raw RangeError, for an invalid zone", () => {
+    const instant = new Date("2026-08-13T18:00:00Z");
+    expect(() => formatLocalDateTime(instant, "Not/A_Zone")).toThrow(LocalTimeError);
+    expect(() => formatLocalDateTime(instant, "Not/A_Zone")).toThrow(/not a valid IANA time zone/);
+  });
+
+  it("shares a canonicalised cache across case-permuted spellings, separate from toLocalParts' cache", () => {
+    // A zone not referenced elsewhere in this file, so this assertion isn't
+    // sensitive to test execution order.
+    const spellings = ["Europe/Berlin", "europe/berlin", "EUROPE/BERLIN"];
+    const instant = new Date("2026-08-13T18:00:00Z");
+
+    for (const tz of spellings) {
+      expect(formatLocalDateTime(instant, tz)).toBe(formatLocalDateTime(instant, "Europe/Berlin"));
+    }
   });
 });
 

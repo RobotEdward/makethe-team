@@ -2,10 +2,11 @@ import { Hono } from "hono";
 import { getFixtureWithSquad } from "../db/queries.js";
 import { getDb } from "../db/client.js";
 import { fixtureView } from "../domain/fixture-view.js";
+import { formatLocalDateTime } from "../domain/time/zone.js";
 import { verifyResponseToken } from "../domain/token.js";
 import type { AppEnv } from "../env.js";
 import { layout } from "../views/layout.js";
-import { renderFixturePage } from "../views/fixture.js";
+import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
 
 export const respond = new Hono<AppEnv>();
 
@@ -74,6 +75,10 @@ respond.get("/r/:token", async (c) => {
     now,
   );
 
+  // A player with no response row was eligible when the fixture opened but is
+  // not any more (most likely removed from the squad after their link was
+  // sent) — the token still verifies, so this is not a token failure, but
+  // there is nothing for them to do here.
   const viewerMember = squad.find((member) => member.playerId === playerId);
   const viewer = {
     playerId,
@@ -81,15 +86,19 @@ respond.get("/r/:token", async (c) => {
     waitlistRank: viewerMember?.waitlistRank ?? null,
   };
 
-  const readOnlyReason: "played" | "cancelled" | undefined =
-    fixture.lifecycle === "played" || fixture.lifecycle === "cancelled" ? fixture.lifecycle : undefined;
+  const readOnlyReason: ReadOnlyReason | undefined =
+    fixture.lifecycle === "played" || fixture.lifecycle === "cancelled"
+      ? fixture.lifecycle
+      : viewerMember === undefined
+        ? "not-eligible"
+        : undefined;
 
   const intent = parseIntent(c.req.query("intent"));
 
   const html = renderFixturePage({
     gameName: game.name,
     venueName: fixture.venueOverride ?? game.venueName,
-    kicksOffAtLocal: formatKickoff(fixture.kicksOffAt, game.timezone),
+    kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
     view,
     squad,
     viewer,
@@ -100,16 +109,3 @@ respond.get("/r/:token", async (c) => {
 
   return c.html(html, 200);
 });
-
-/** Formats kickoff for display in the game's own timezone, e.g. "Thursday 13 August, 19:00". */
-function formatKickoff(kicksOffAt: Date, timeZone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone,
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(kicksOffAt);
-}
