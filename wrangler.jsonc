@@ -16,8 +16,11 @@
     {
       "binding": "DB",
       "database_name": "makethe-team",
-      "database_id": "0000-local-until-task-11",
+      "database_id": "3dd1de85-a391-44ec-98a2-9e04fd543919",
       "migrations_dir": "migrations"
     }
+  ],
+  "routes": [
+    { "pattern": "makethe.team", "custom_domain": true }
   ]
 }
