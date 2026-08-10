@@ -8,5 +8,13 @@
   "vars": {
     "NOTIFIER": "console",
     "MAX_EMAILS_PER_DAY": "50"
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "makethe-team",
+      "database_id": "0000-local-until-task-11",
+      "migrations_dir": "migrations"
+    }
+  ]
 }
