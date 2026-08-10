@@ -5,6 +5,24 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // Bounds the cost of a runaway invocation (Cloudflare has no account-level
+  // spend cap — budget alerts only notify). Defaults are 30s for HTTP and 15
+  // minutes for cron triggers on an hourly-or-longer interval, so this is a
+  // reduction of 30x and 900x respectively.
+  //
+  // Measured August 2026: the holding page is ~0.5ms CPU (p50 in production,
+  // 430 requests); recurrence expansion is ~0.2ms per game warm and ~0.5ms per
+  // first-touch timezone; full materialisation including D1 writes is ~1.6ms
+  // per game wall-clock, so 25 games run in ~41ms. 1000ms leaves roughly 25x
+  // headroom over that, which matters because the daily materialisation cron is
+  // the binding path here — terminating it means no fixtures get created.
+  //
+  // Not tighter, deliberately: the realistic risk is a bug looping forever, and
+  // a loop blows through 200ms just as surely as 1000ms. CPU overage is $0.02
+  // per million CPU-ms, so the cost difference between the two is a fraction of
+  // a penny, while the false-termination risk is real. Revisit if the cron ever
+  // approaches this in production.
+  "limits": { "cpu_ms": 1000 },
   "triggers": {
     "crons": ["0 * * * *", "15 3 * * *"]
   },
