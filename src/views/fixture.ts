@@ -45,7 +45,15 @@ function ordinal(n: number): string {
   }
 }
 
-function viewerHeadline(viewer: FixturePageOptions["viewer"]): string {
+function viewerHeadline(
+  viewer: FixturePageOptions["viewer"],
+  readOnlyReason: "played" | "cancelled" | undefined,
+): string {
+  return readOnlyReason ? viewerHeadlineClosed(viewer, readOnlyReason) : viewerHeadlineOpen(viewer);
+}
+
+/** The headline while the fixture can still be responded to. */
+function viewerHeadlineOpen(viewer: FixturePageOptions["viewer"]): string {
   switch (viewer.status) {
     case "in":
       return "You're in.";
@@ -62,6 +70,35 @@ function viewerHeadline(viewer: FixturePageOptions["viewer"]): string {
     case "withdrawn":
       // Not expected to reach the page for a withdrawn viewer, but a plain
       // fallback is safer than throwing on a display path.
+      return "You're no longer in this squad.";
+  }
+}
+
+/**
+ * The headline once the fixture is played or cancelled.
+ *
+ * Never a question — asking "Can you make it?" about a game that has already
+ * happened or been called off is exactly the contradiction a confused,
+ * never-responded player must not see. `pending` gets no headline at all: the
+ * read-only notice already explains why responses are closed, and there is
+ * nothing this player's own (non-)response adds. Every other status is put in
+ * the past tense so it reads correctly next to that notice.
+ */
+function viewerHeadlineClosed(
+  viewer: FixturePageOptions["viewer"],
+  reason: "played" | "cancelled",
+): string {
+  const cancelledSuffix = reason === "cancelled" ? " before it was cancelled" : "";
+  switch (viewer.status) {
+    case "in":
+      return `You were in${cancelledSuffix}.`;
+    case "waitlisted":
+      return `You were on the waitlist${cancelledSuffix}.`;
+    case "out":
+      return "You said you couldn't make it.";
+    case "pending":
+      return "";
+    case "withdrawn":
       return "You're no longer in this squad.";
   }
 }
@@ -91,7 +128,7 @@ function renderSquadList(squad: readonly SquadMember[]): string {
     )
     .join("");
 
-  return `<ul class="squad">${items}</ul>`;
+  return `<ul class="roster">${items}</ul>`;
 }
 
 function renderNudge(view: FixtureView): string {
@@ -139,13 +176,15 @@ function renderReadOnlyNotice(reason: "played" | "cancelled"): string {
 export function renderFixturePage(options: FixturePageOptions): string {
   const { gameName, venueName, kicksOffAtLocal, view, squad, viewer, readOnlyReason } = options;
 
+  const headline = viewerHeadline(viewer, readOnlyReason);
+
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     <p class="venue">${escapeHtml(venueName)}</p>
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     ${renderStatusLine(view)}
     ${renderNudge(view)}
-    <p class="viewer-headline">${escapeHtml(viewerHeadline(viewer))}</p>
+    ${headline ? `<p class="viewer-headline">${escapeHtml(headline)}</p>` : ""}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options)}
     <h2>Squad</h2>
     ${renderSquadList(squad)}

@@ -82,4 +82,61 @@ describe("fixture page", () => {
     });
     expect(html).toMatch(/you're in/i);
   });
+
+  describe("viewer headline never contradicts a readOnlyReason", () => {
+    const reasons = ["played", "cancelled"] as const;
+    const statuses = ["pending", "in", "out"] as const;
+
+    for (const readOnlyReason of reasons) {
+      for (const status of statuses) {
+        it(`renders sensibly for a ${status} viewer when the fixture was ${readOnlyReason}`, () => {
+          const html = renderFixturePage({
+            ...BASE,
+            view: { status: readOnlyReason, flags: [], spotsLeft: 0, needsOwnerAttention: false },
+            viewer: { playerId: "p2", status },
+            readOnlyReason,
+          });
+
+          // Never a live question about a fixture that is already over.
+          expect(html).not.toMatch(/can you make it\?/i);
+          // No response controls at all.
+          expect(html).not.toContain('method="post"');
+          expect(html).not.toContain('name="intent"');
+          // The read-only explanation is always present.
+          expect(html).toMatch(readOnlyReason === "played" ? /already been played/i : /was cancelled/i);
+        });
+      }
+    }
+
+    it("tells a player who was in that they were in, in the past tense, when played", () => {
+      const html = renderFixturePage({
+        ...BASE,
+        view: { status: "played", flags: [], spotsLeft: 0, needsOwnerAttention: false },
+        viewer: { playerId: "p1", status: "in" },
+        readOnlyReason: "played",
+      });
+      expect(html).toMatch(/you were in/i);
+      expect(html).not.toMatch(/you're in/i);
+    });
+
+    it("tells a player who was in that the fixture was cancelled", () => {
+      const html = renderFixturePage({
+        ...BASE,
+        view: { status: "cancelled", flags: [], spotsLeft: 0, needsOwnerAttention: false },
+        viewer: { playerId: "p1", status: "in" },
+        readOnlyReason: "cancelled",
+      });
+      expect(html).toMatch(/you were in.*cancelled/i);
+    });
+
+    it("gives a pending viewer no headline at all against a terminal fixture", () => {
+      const html = renderFixturePage({
+        ...BASE,
+        view: { status: "played", flags: [], spotsLeft: 0, needsOwnerAttention: false },
+        viewer: { playerId: "p2", status: "pending" },
+        readOnlyReason: "played",
+      });
+      expect(html).not.toContain('class="viewer-headline"');
+    });
+  });
 });
