@@ -10,17 +10,34 @@ GitHub Actions is the only thing that deploys this Worker (§2.9). If the repo i
 ever connected to Cloudflare Workers Builds, **disable automatic deployments
 there**. Two systems deploying one Worker is a failure mode.
 
-## Rate limiting (TR-37)
+## Rate limiting (TR-37) — deferred to M2
 
-Security → WAF → Rate limiting rules. One rule:
+**Not configured yet, deliberately.** An earlier version of this runbook specified
+a rule matching `http.request.method eq "POST"` with a 60-second mitigation
+timeout. That rule cannot be created on this zone, and the reasons are worth
+recording so nobody tries again:
 
-- **Name:** `post-throttle`
-- **Match:** `http.request.method eq "POST"`
+On the Free plan, rate limiting rules are restricted well beyond the one-rule
+count. They may match on **path and verified-bot only** — `http.request.method`
+is not an available field — the counting period is fixed at **10 seconds**, and
+the mitigation timeout is capped at **10 seconds**. Counting is per-IP only.
+Those limits apply to rate limiting rules specifically, not to the WAF custom
+rules below, which have the ordinary expression language available.
+
+There is also nothing to protect yet: the Worker currently serves only a holding
+page and has no `POST` endpoint at all.
+
+When M2 adds the response endpoints under `/r/`, create the single Free-plan rule
+then, matching on path rather than method:
+
+- **Name:** `respond-throttle`
+- **Match:** `http.request.uri.path contains "/r/"`
 - **Rate:** 20 requests per 10 seconds, per IP
-- **Action:** Block, 60-second timeout
+- **Action:** Block, 10-second timeout (the Free maximum)
 
-Response endpoints are `POST` only, so this caps both accidental double-taps and
-deliberate hammering without touching page loads.
+A 10-second mitigation window is short, but it is enough to blunt a hammering
+loop, and the response endpoints are idempotent so a blocked retry costs the
+player nothing.
 
 ## WAF custom rules (TR-37)
 

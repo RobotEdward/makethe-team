@@ -33,11 +33,19 @@ Anything that *was* fixed lives in the git history, not here.
 
 ## Not code — an outstanding manual step
 
-The Cloudflare edge rules in `docs/runbooks/cloudflare.md` (TR-37) are **documented but
-not applied**. Two WAF custom rules and one rate-limiting rule need entering in the
-dashboard by hand. Until then, scanner paths return the Worker's own 404 rather than a
+The two WAF custom rules in `docs/runbooks/cloudflare.md` (TR-37) are **documented but
+not applied**. Until they are, scanner paths return the Worker's own 404 rather than a
 403 from the edge. The application is written to be safe with the WAF switched off, so
-this is not urgent — but it is not done.
+this is not a security gap — but WAF-blocked requests never invoke the Worker and are
+never billed, so the rules are the only control that stops request volume costing
+anything.
+
+Applying them via the API needs a token with **Zone → Firewall Services → Edit**, which
+the deploy token deliberately does not have.
+
+The rate-limiting rule that used to be listed here is now **deferred to M2** — the Free
+plan cannot express it, and there is no `POST` endpoint to protect yet. See the runbook
+for the constraints and the replacement rule.
 
 ## Carry-forward for the next milestone
 
