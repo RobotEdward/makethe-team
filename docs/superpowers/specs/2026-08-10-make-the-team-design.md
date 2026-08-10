@@ -419,6 +419,7 @@ games
   id, name, venue_name, venue_address, venue_url,
   timezone,                      -- IANA, e.g. Europe/London
   recurrence_rule,               -- RRULE string, FREQ=WEEKLY only
+  recurrence_start_date,         -- local YYYY-MM-DD anchor for INTERVAL
   kickoff_time, duration_minutes,
   min_players, max_players,
   prefers_even_numbers,          -- boolean, default true
@@ -479,8 +480,10 @@ audit_log
 
 Notes:
 
+- `recurrence_start_date` anchors the recurrence. Occurrences are the first `BYDAY` on or after it, then every `INTERVAL` weeks. Without an anchor, "every other Thursday" is undefined — there is no way to know which Thursday the fortnight counts from.
 - `fixtures` copies `min_players`, `max_players`, `prefers_even_numbers` and `short_warning_offset_hours` from the Game at materialisation, so changing the Game later doesn't rewrite history.
 - A `pending` response row is written **eagerly for every eligible player at the moment the fixture opens** (BR-1). This fixes the eligible set at that instant. (v1 called this "lazily", which was a wording error.)
+- **TR-38 — D1's bound-parameter limit.** A single D1 statement rejects more than 100 bound parameters, failing with `D1_ERROR: too many SQL variables ... SQLITE_ERROR`. This was measured directly: inserting `fixtures` rows at 9 per statement worked, 10 failed. The effective row ceiling depends on the column count of the table being written, and Drizzle may bind more parameters per row than the table has declared columns — so a chunk size must be a conservative constant, not something computed from the column count. Fixture materialisation chunks its inserts at 8 rows per statement and is the reference implementation (`src/domain/materialise.ts`, `INSERT_CHUNK_SIZE`). Any code inserting one row per squad member must chunk the same way — this explicitly includes writing the `pending` response rows required above when a fixture opens, since a squad of twenty is twenty rows in one insert. Chunking means a mid-way failure can leave earlier chunks written and later ones missing; this is safe here only because these operations are idempotent (materialisation via the `(game_id, kicks_off_at)` unique index; opening a fixture must be written the same way), and any caller relying on chunked writes must keep them idempotent.
 - `in_count` and `waitlist_count` are a cache, written only inside the Durable Object's critical section alongside the response row, in the same `batch()`. A test asserts they match a `COUNT(*)` after a randomised sequence of operations.
 - `audit_log` covers BR-27 and is written for all Owner overrides and all lifecycle changes.
 - `notification_log.dedupe_key` replaces v1's `(fixture_id, player_id, notification_type)` constraint, which could not express the notifications that aren't fixture-scoped. One unique text column handles every case:
@@ -574,7 +577,7 @@ A single module wrapping `Intl.DateTimeFormat` with IANA time zones. It is the o
 - `toUtc(localDate, localTime, timezone) → Date` — used by materialisation to place a kickoff, and by the sweep to resolve a reminder instant.
 - `toLocalParts(instant, timezone) → { year, month, day, hour, minute, weekday }` — used by rendering.
 
-Ambiguous and non-existent local times (the DST spring-forward gap and autumn overlap) must have defined behaviour: the gap resolves forward to the next valid instant, the overlap resolves to the first occurrence. Both are tested. A 19:00 kickoff never silently becomes 18:00 or 20:00.
+Ambiguous and non-existent local times (the DST spring-forward gap and autumn overlap) must have defined behaviour: a time inside the spring-forward gap is shifted forward by the length of the gap, so 01:30 during a 01:00→02:00 transition yields 02:30 local — matching Luxon and `date-fns-tz` — and the overlap resolves to the first occurrence. Both are tested. A 19:00 kickoff never silently becomes 18:00 or 20:00.
 
 ## 2.13 Access control during build and trial
 
@@ -604,6 +607,8 @@ Each milestone is independently deployable and demonstrable.
 | **M7** | Polish — empty states, error pages, accessibility pass, unsubscribe and leave-game flows, delete-my-data, `/privacy` stub | Usable by a stranger with no explanation, and a player can remove themselves and their data |
 
 M1–M4 are the product. M5–M7 make it shareable. Team picking, score recording, and the funding page come after, as separate specs.
+
+**Status:** M0 and M1 delivered by `docs/superpowers/plans/2026-08-10-m0-m1-foundation.md`.
 
 ---
 
