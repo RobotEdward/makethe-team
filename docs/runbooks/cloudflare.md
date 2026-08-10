@@ -112,6 +112,36 @@ contain one of those literals after a slash, re-run the check above with that
 shape before shipping it. A WAF false positive on `/r/` would silently break the
 one journey the whole product depends on.
 
+## Bot Fight Mode must stay OFF
+
+Security → Bots → Bot Fight Mode. **Leave it off.** It was briefly enabled on
+10 August 2026 and broke the deploy pipeline within minutes.
+
+Bot Fight Mode challenges traffic from datacenter and cloud IP ranges. GitHub
+Actions runners live on Azure ranges, so every post-deploy smoke check came back
+`403` and three consecutive deploys reported red — while the deploys themselves
+had succeeded. The failure is confusing because the site is demonstrably fine
+from any ordinary connection.
+
+Diagnosing it took a while because the symptom points at the wrong thing. Worth
+recording:
+
+- Neither WAF custom rule can match `GET /`, so the rules were not the cause.
+- User-agent is not the discriminator. `curl`, a browser string, `python-requests`
+  and `GitHub-Actions` all return 200 from a normal connection. Only the source
+  IP differs.
+- Reading Cloudflare's firewall events would have identified it immediately, but
+  that needs a token with zone analytics read, which the deploy token does not
+  have by design.
+
+The same feature would also challenge legitimate players behind corporate
+proxies and some VPNs, for a site whose entire public surface is a holding page.
+The real controls are the two WAF rules, the per-invocation CPU ceiling, and the
+application's own authorisation — none of which care about IP reputation.
+
+If CI ever goes red on the smoke check while the site is fine from a browser,
+check this toggle first.
+
 ## Custom domain
 
 The `makethe.team` route is declared in `wrangler.jsonc` as a custom domain, so
