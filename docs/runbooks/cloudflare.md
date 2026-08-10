@@ -47,13 +47,12 @@ request count, not as a security control.
    not http.request.method in {"GET" "HEAD" "POST"}
    ```
 
-3. **`challenge-known-bad-bots`** — Managed Challenge
+Leave the remaining three slots free.
 
-   ```
-   cf.client.bot_management.score lt 5 and not cf.client.bot_management.verified_bot
-   ```
-
-Leave two slots free.
+There is deliberately no bot-scoring rule. The `cf.bot_management.*` fields
+require a paid Bot Management subscription, which this zone (Free Website plan)
+does not have, so any such rule would fail validation — do not re-add one. The
+application is written to be safe with the WAF switched off entirely.
 
 ### Verifying the rules are live
 
