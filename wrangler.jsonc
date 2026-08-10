@@ -38,6 +38,16 @@
       "migrations_dir": "migrations"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "FIXTURE_CAPACITY", "class_name": "FixtureCapacity" }
+    ]
+  },
+  // Durable Object class migrations — unrelated to the D1 `migrations_dir`
+  // above despite the shared name.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["FixtureCapacity"] }
+  ],
   "routes": [
     { "pattern": "makethe.team", "custom_domain": true }
   ]

@@ -2,6 +2,11 @@ import { createApp } from "./app.js";
 import { handleScheduled } from "./cron/handler.js";
 import type { Bindings } from "./env.js";
 
+// Cloudflare resolves a Durable Object's `class_name` against the Worker's
+// entry module, so the class must be re-exported here even though nothing
+// in this file uses it directly.
+export { FixtureCapacity } from "./capacity/fixture-capacity.js";
+
 const app = createApp();
 
 export default {
