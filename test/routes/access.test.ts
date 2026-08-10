@@ -1,0 +1,57 @@
+import { SELF } from "cloudflare:test";
+import { describe, expect, it } from "vitest";
+
+describe("holding page", () => {
+  it("serves the product name and nothing operational", async () => {
+    const response = await SELF.fetch("https://makethe.team/");
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(body).toContain("Make The Team");
+    expect(body).not.toMatch(/sign in|dashboard|fixture|squad/i);
+  });
+
+  it("is not indexable", async () => {
+    const response = await SELF.fetch("https://makethe.team/");
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it("works with no JavaScript at all", async () => {
+    const body = await (await SELF.fetch("https://makethe.team/")).text();
+    expect(body).not.toContain("<script");
+  });
+});
+
+describe("robots.txt", () => {
+  it("disallows everything", async () => {
+    const response = await SELF.fetch("https://makethe.team/robots.txt");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("User-agent: *\nDisallow: /\n");
+  });
+});
+
+describe("unmatched routes", () => {
+  const probes = [
+    "/wp-admin",
+    "/.env",
+    "/.git/config",
+    "/admin",
+    "/api/v1/games",
+    "/g/some-game",
+  ];
+
+  it.each(probes)("returns a bare 404 for %s", async (path) => {
+    const response = await SELF.fetch(`https://makethe.team${path}`);
+    const body = await response.text();
+
+    expect(response.status).toBe(404);
+    expect(body).toBe("Not found");
+    expect(body).not.toMatch(/makethe|hono|worker|stack|cloudflare/i);
+  });
+
+  it("does not leak a framework header", async () => {
+    const response = await SELF.fetch("https://makethe.team/wp-admin");
+    expect(response.headers.get("x-powered-by")).toBeNull();
+  });
+});

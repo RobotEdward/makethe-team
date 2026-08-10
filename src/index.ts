@@ -1,5 +1,8 @@
+import { createApp } from "./app.js";
+import type { Bindings } from "./env.js";
+
+const app = createApp();
+
 export default {
-  fetch(): Response {
-    return new Response("Make The Team");
-  },
-} satisfies ExportedHandler;
+  fetch: app.fetch,
+} satisfies ExportedHandler<Bindings>;
