@@ -4,7 +4,6 @@ import type { ResponseSource, ResponseStatus } from "../domain/response-status.j
 export type ResponseIntent = "in" | "out";
 
 export interface SetResponseInput {
-  fixtureId: string;
   playerId: string;
   intent: ResponseIntent;
   /** Null when the player set it themselves; the owner's id for an override. */

@@ -34,10 +34,26 @@ export class FixtureCapacity extends DurableObject<Bindings> {
   }
 
   async #setResponseLocked(input: SetResponseInput): Promise<SetResponseOutcome> {
+    // The lock this method runs under is keyed by the object's own identity
+    // (whichever name the caller addressed via `getByName`), so the fixture id
+    // used for every D1 read and write must come from that same identity —
+    // never from an argument. If it came from the input instead, a caller
+    // could address one object while passing a different fixture id, and the
+    // lock and the mutation would no longer agree: two differently-named
+    // objects could serialise separately while writing the same rows,
+    // reintroducing the exact double-booking blockConcurrencyWhile exists to
+    // prevent.
+    const fixtureId = this.ctx.id.name;
+    if (fixtureId === undefined) {
+      throw new Error(
+        "FixtureCapacity was addressed by unique id, not by fixture id — every caller must use getByName(fixtureId)",
+      );
+    }
+
     const db = getDb(this.env.DB);
     const now = new Date(input.now);
 
-    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, input.fixtureId));
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
     if (!fixture) return { kind: "rejected", reason: "fixture-not-found" };
     if (fixture.lifecycle !== "open") return { kind: "rejected", reason: "fixture-not-open" };
 
@@ -53,7 +69,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
         waitlistPosition: responses.waitlistPosition,
       })
       .from(responses)
-      .where(eq(responses.fixtureId, input.fixtureId));
+      .where(eq(responses.fixtureId, fixtureId));
 
     // A row exists for every player eligible when the fixture opened. No row
     // means this player was not in the squad at that moment (BR-2).
@@ -115,7 +131,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
           source: input.source,
         })
         .where(eq(responses.id, existing.id)),
-      db.update(fixtures).set({ inCount, waitlistCount }).where(eq(fixtures.id, input.fixtureId)),
+      db.update(fixtures).set({ inCount, waitlistCount }).where(eq(fixtures.id, fixtureId)),
     ]);
 
     if (status === "waitlisted") {

@@ -31,13 +31,13 @@ function stubFor(fixtureId: string) {
 
 function accept(fixtureId: string, playerId: string) {
   return stubFor(fixtureId).setResponse({
-    fixtureId, playerId, intent: "in", actorPlayerId: null, source: "token", now: NOW.getTime(),
+    playerId, intent: "in", actorPlayerId: null, source: "token", now: NOW.getTime(),
   });
 }
 
 function decline(fixtureId: string, playerId: string) {
   return stubFor(fixtureId).setResponse({
-    fixtureId, playerId, intent: "out", actorPlayerId: null, source: "token", now: NOW.getTime(),
+    playerId, intent: "out", actorPlayerId: null, source: "token", now: NOW.getTime(),
   });
 }
 
@@ -196,6 +196,48 @@ describe("BR-9 — no double-booking, ever", () => {
     expect(positions).toEqual(Array.from({ length: 14 }, (_, i) => i + 1));
   });
 
+  it("cannot be double-booked by addressing the same fixture through two object names", async () => {
+    // A prior version of this object took `fixtureId` as an argument and used
+    // it for every D1 read/write, while the blockConcurrencyWhile lock was
+    // keyed by whatever name the caller addressed via getByName. Those two
+    // things could disagree: two differently-named DO instances, each
+    // serialising independently, could both be told to operate on the same
+    // fixture id and both take the last slot.
+    //
+    // Now the fixture id comes from `this.ctx.id.name` — the object's own
+    // identity — so there is no argument left to disagree with the lock.
+    // Addressing this fixture's rows through a second name doesn't touch this
+    // fixture at all; that second name simply doesn't correspond to any row,
+    // so it can only ever return fixture-not-found. This test can no longer
+    // fail: the class of bug it guards against has no code path left to take.
+    const fixtureId = await seedOpenFixture(6, 3);
+    await accept(fixtureId, "p-0");
+    await accept(fixtureId, "p-1");
+    // One slot left. Half the taps go through the real object name, half
+    // through an unrelated name that does not correspond to any fixture.
+    const wrongName = `${fixtureId}-alt`;
+
+    const outcomes = await Promise.all([
+      accept(fixtureId, "p-2"),
+      accept(fixtureId, "p-3"),
+      env.FIXTURE_CAPACITY.getByName(wrongName).setResponse({
+        playerId: "p-2", intent: "in", actorPlayerId: null, source: "token", now: NOW.getTime(),
+      }),
+      env.FIXTURE_CAPACITY.getByName(wrongName).setResponse({
+        playerId: "p-3", intent: "in", actorPlayerId: null, source: "token", now: NOW.getTime(),
+      }),
+    ]);
+
+    const [, , wrongA, wrongB] = outcomes;
+    expect(wrongA).toMatchObject({ kind: "rejected", reason: "fixture-not-found" });
+    expect(wrongB).toMatchObject({ kind: "rejected", reason: "fixture-not-found" });
+
+    const { inCount, cached } = await counts(fixtureId);
+    expect(inCount).toBeLessThanOrEqual(3);
+    expect(cached).toBeLessThanOrEqual(3);
+    expect(inCount).toBe(cached);
+  });
+
   it("keeps the cached count equal to COUNT(*) after a randomised sequence", async () => {
     const fixtureId = await seedOpenFixture(10, 5);
     const script: Array<[string, "in" | "out"]> = [
@@ -205,7 +247,7 @@ describe("BR-9 — no double-booking, ever", () => {
     ];
     for (const [playerId, intent] of script) {
       await stubFor(fixtureId).setResponse({
-        fixtureId, playerId, intent, actorPlayerId: null, source: "web", now: NOW.getTime(),
+        playerId, intent, actorPlayerId: null, source: "web", now: NOW.getTime(),
       });
     }
 
@@ -232,7 +274,7 @@ describe("rejections", () => {
   it("refuses an unknown fixture", async () => {
     expect(
       await env.FIXTURE_CAPACITY.getByName("nope").setResponse({
-        fixtureId: "nope", playerId: "p-0", intent: "in",
+        playerId: "p-0", intent: "in",
         actorPlayerId: null, source: "token", now: NOW.getTime(),
       }),
     ).toMatchObject({ kind: "rejected", reason: "fixture-not-found" });
