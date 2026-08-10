@@ -109,3 +109,113 @@ respond.get("/r/:token", async (c) => {
 
   return c.html(html, 200);
 });
+
+/**
+ * Record a player's response and re-render the same page in place.
+ *
+ * Deliberately not a redirect (see the design note on `renderLinkProblemPage`
+ * for why the equivalent choice was made on the failure path): a redirect
+ * would have to carry the token in the URL again, and buys nothing without
+ * JavaScript on this page (TR-4, TR-15).
+ *
+ * The write goes through `FIXTURE_CAPACITY.getByName(fixtureId).setResponse`
+ * and nowhere else — that Durable Object is what serialises capacity-affecting
+ * writes (TR-10) and is the only thing that may decide `in` versus
+ * `waitlisted`. Every rejection the object can return (`fixture-not-open`,
+ * `not-eligible`, `fixture-not-found`) is handled here by re-deriving the read
+ * state rather than trusting the outcome's own fields for anything shown to
+ * the player: the waitlist number in particular always comes from
+ * `getFixtureWithSquad`'s `waitlistRank`, computed fresh from the current
+ * squad, never from the object's `waitlistPosition`, which is a permanent,
+ * gappy, internal bookkeeping number (spec amendment 5).
+ */
+respond.post("/r/:token", async (c) => {
+  const token = c.req.param("token");
+  const now = new Date(Date.now());
+  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+
+  if (!verification.ok) {
+    console.error(`response token rejected: ${verification.reason}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const { playerId, fixtureId } = verification.payload;
+
+  const form = await c.req.parseBody();
+  const rawIntent = form["intent"];
+  const intent = parseIntent(typeof rawIntent === "string" ? rawIntent : undefined);
+  if (intent === null) {
+    return c.text('Bad Request: "intent" must be exactly "in" or "out"', 400);
+  }
+
+  const outcome = await c.env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+    playerId,
+    intent,
+    actorPlayerId: null,
+    source: "token",
+    now: now.getTime(),
+  });
+
+  if (outcome.kind === "rejected" && outcome.reason === "fixture-not-found") {
+    // Same not-yet-fatal race the GET handles: the token verified fine, the
+    // fixture is simply gone by the time the write reached D1.
+    console.error(`response token verified for a fixture that no longer exists: ${fixtureId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const db = getDb(c.env.DB);
+  const loaded = await getFixtureWithSquad(db, fixtureId);
+
+  if (!loaded) {
+    console.error(`fixture disappeared between recording a response and re-rendering it: ${fixtureId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const { fixture, game, squad } = loaded;
+  const view = fixtureView(
+    {
+      lifecycle: fixture.lifecycle,
+      kicksOffAt: fixture.kicksOffAt,
+      inCount: fixture.inCount,
+      minPlayers: fixture.minPlayers,
+      maxPlayers: fixture.maxPlayers,
+      prefersEvenNumbers: fixture.prefersEvenNumbers,
+      shortWarningOffsetHours: fixture.shortWarningOffsetHours,
+    },
+    now,
+  );
+
+  const viewerMember = squad.find((member) => member.playerId === playerId);
+  const viewer = {
+    playerId,
+    status: viewerMember?.status ?? ("pending" as const),
+    waitlistRank: viewerMember?.waitlistRank ?? null,
+  };
+
+  // `not-eligible` is read off the outcome, since that is the only thing that
+  // actually attempted the write and found no row for this player (BR-2).
+  // `played`/`cancelled` are read off the freshly loaded fixture rather than
+  // the outcome's generic `fixture-not-open`, because that reason is also
+  // returned for a `scheduled` fixture and only these two lifecycles have
+  // copy of their own (BR-15).
+  const readOnlyReason: ReadOnlyReason | undefined =
+    outcome.kind === "rejected" && outcome.reason === "not-eligible"
+      ? "not-eligible"
+      : fixture.lifecycle === "played" || fixture.lifecycle === "cancelled"
+        ? fixture.lifecycle
+        : undefined;
+
+  const html = renderFixturePage({
+    gameName: game.name,
+    venueName: fixture.venueOverride ?? game.venueName,
+    kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
+    view,
+    squad,
+    viewer,
+    token,
+    intent,
+    readOnlyReason,
+  });
+
+  return c.html(html, 200);
+});
