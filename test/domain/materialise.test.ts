@@ -170,4 +170,31 @@ describe("materialiseFixtures", () => {
     expect(result.gamesProcessed).toBe(5);
     expect(result.fixturesCreated).toBe(20);
   });
+
+  it("materialises a long horizon without hitting D1's bound-parameter ceiling", async () => {
+    const gameId = await insertGame();
+
+    const result = await materialiseFixtures(db, NOW, 365);
+
+    expect(result.failures).toEqual([]);
+    expect(result.fixturesCreated).toBeGreaterThanOrEqual(50);
+    expect(result.fixturesCreated).toBeLessThanOrEqual(54);
+    expect(await fixtureInstants(gameId)).toHaveLength(result.fixturesCreated);
+  });
+
+  it("stays idempotent and duplicate-free when runs overlap concurrently", async () => {
+    const gameId = await insertGame();
+
+    const [first, second, third] = await Promise.all([
+      materialiseFixtures(db, NOW),
+      materialiseFixtures(db, NOW),
+      materialiseFixtures(db, NOW),
+    ]);
+
+    for (const result of [first, second, third]) {
+      expect(result.failures).toEqual([]);
+    }
+    expect(first.fixturesCreated + second.fixturesCreated + third.fixturesCreated).toBe(4);
+    expect(await fixtureInstants(gameId)).toHaveLength(4);
+  });
 });
