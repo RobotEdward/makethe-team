@@ -5,7 +5,16 @@ import { createNotifier } from "../notify/factory.js";
 import { openAndRemind } from "../sweep/open-and-remind.js";
 import { retirePastFixtures } from "../sweep/retire.js";
 
-export const CRON_HOURLY_SWEEP = "0 * * * *";
+// TEMPORARY TESTING CADENCE: every 5 minutes instead of hourly, so the
+// reminder pipeline can be iterated on against real production data without
+// waiting up to an hour per cycle. The intended production value is hourly
+// ("0 * * * *"). This must stay in sync with wrangler.jsonc's `triggers`
+// entry — handleScheduled throws on any cron string it doesn't recognise, so
+// changing one without the other breaks every invocation. When the testing
+// phase ends, revert both this literal and the wrangler.jsonc trigger to
+// "0 * * * *" (the constant name can stay `CRON_SWEEP`, or be renamed back —
+// either way, update every reference in test/).
+export const CRON_SWEEP = "*/5 * * * *";
 export const CRON_DAILY_MATERIALISE = "15 3 * * *";
 
 /**
@@ -36,7 +45,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       return;
     }
 
-    case CRON_HOURLY_SWEEP: {
+    case CRON_SWEEP: {
       // Step 3 (owner attention email) belongs to M4 and stays absent.
       const db = getDb(env.DB);
       const notifier = createNotifier(env, now);

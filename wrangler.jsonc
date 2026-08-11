@@ -24,7 +24,15 @@
   // approaches this in production.
   "limits": { "cpu_ms": 1000 },
   "triggers": {
-    "crons": ["0 * * * *", "15 3 * * *"]
+    // TEMPORARY TESTING CADENCE: the sweep runs every 5 minutes so the
+    // owner can iterate on the reminder pipeline against real production
+    // data without waiting up to an hour per cycle. The intended production
+    // value is hourly ("0 * * * *"). Revert this entry to "0 * * * *" (and
+    // rename `CRON_SWEEP` back appropriately in src/cron/handler.ts, updating
+    // the matching literal there and every reference in test/) once the
+    // testing phase is done. The daily materialisation trigger below is
+    // unaffected.
+    "crons": ["*/5 * * * *", "15 3 * * *"]
   },
   "vars": {
     "NOTIFIER": "console",

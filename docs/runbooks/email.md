@@ -126,3 +126,36 @@ wiring) is already in place. What remains, in order:
 
 No other code changes are required — `ConsoleNotifier`, `QuotaNotifier`,
 the dedupe keys, and the sweep itself are provider-agnostic already.
+
+## Testing cadence: sweep every 5 minutes (temporary)
+
+While the owner is exercising the reminder pipeline against real
+production data, the sweep runs every **5 minutes** (`*/5 * * * *`)
+instead of the intended hourly cadence, so a change doesn't take up to
+an hour to observe. This is set in two places that must stay in sync —
+`wrangler.jsonc`'s `triggers.crons` entry and the `CRON_SWEEP` constant
+in `src/cron/handler.ts` — both commented as temporary at the point of
+change. `handleScheduled` throws on any cron string it doesn't
+recognise, so editing one without the other breaks every invocation
+rather than silently reverting the cadence.
+
+**To revert to hourly:** change both back to `"0 * * * *"`, run the
+full verification suite, deploy, and confirm via the Cloudflare API
+(as in the deploy runbook) that only `"0 * * * *"` and `"15 3 * * *"`
+are registered.
+
+**Fastest way to re-run a reminder test without waiting for a new
+fixture:** delete that fixture's `n1` rows from `notification_log`:
+
+```sql
+DELETE FROM notification_log
+WHERE fixture_id = '<fixture-id>' AND notification_type = 'n1';
+```
+
+The next sweep will treat those reminders as never sent and send them
+again. This is safe, not a workaround — `notification_log` *is* the
+idempotency record (its unique `dedupe_key` is what makes concurrent
+and repeated sweeps safe in the first place, see above), so removing a
+row is simply a deliberate "send this again" instruction, exactly like
+any other row never having existed. It does not affect the fixture's
+lifecycle, responses, or capacity in any way.

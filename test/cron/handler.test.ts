@@ -5,7 +5,7 @@ import type { Db } from "../../src/db/client.js";
 import { emailQuota, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import {
   CRON_DAILY_MATERIALISE,
-  CRON_HOURLY_SWEEP,
+  CRON_SWEEP,
   handleScheduled,
 } from "../../src/cron/handler.js";
 import { createNotifier } from "../../src/notify/factory.js";
@@ -68,14 +68,14 @@ describe("handleScheduled", () => {
   });
 
   it("does not materialise on the hourly schedule", async () => {
-    await handleScheduled(CRON_HOURLY_SWEEP, env, NOW);
+    await handleScheduled(CRON_SWEEP, env, NOW);
 
     const rows = await db.select().from(fixtures);
     expect(rows).toHaveLength(0);
   });
 
   it("throws on an unrecognised schedule rather than failing silently", async () => {
-    await expect(handleScheduled("*/5 * * * *", env, NOW)).rejects.toThrow(/Unrecognised cron/);
+    await expect(handleScheduled("*/10 * * * *", env, NOW)).rejects.toThrow(/Unrecognised cron/);
   });
 
   it("is safe to run twice", async () => {
@@ -109,7 +109,7 @@ describe("handleScheduled", () => {
 
 describe("handleScheduled: the hourly sweep", () => {
   it("resolves on a healthy run with nothing due", async () => {
-    await expect(handleScheduled(CRON_HOURLY_SWEEP, env, NOW)).resolves.toBeUndefined();
+    await expect(handleScheduled(CRON_SWEEP, env, NOW)).resolves.toBeUndefined();
   });
 
   it("retires an open fixture whose kickoff plus duration has passed", async () => {
@@ -118,7 +118,7 @@ describe("handleScheduled: the hourly sweep", () => {
       durationMinutes: 60,
     });
 
-    await handleScheduled(CRON_HOURLY_SWEEP, env, NOW);
+    await handleScheduled(CRON_SWEEP, env, NOW);
 
     expect(await lifecycleOf(fixtureId)).toBe("played");
   });
@@ -141,7 +141,7 @@ describe("handleScheduled: the hourly sweep", () => {
       durationMinutes: 60,
     });
 
-    await expect(handleScheduled(CRON_HOURLY_SWEEP, env, NOW)).rejects.toThrow();
+    await expect(handleScheduled(CRON_SWEEP, env, NOW)).rejects.toThrow();
 
     // The rejection must not have short-circuited retirement: the healthy
     // fixture still has to retire regardless of the broken game's reminder failure.
@@ -158,7 +158,7 @@ describe("handleScheduled: the hourly sweep", () => {
       kicksOffAt: new Date(NOW.getTime() + 3_600_000),
     });
 
-    await expect(handleScheduled(CRON_HOURLY_SWEEP, env, NOW)).rejects.toThrow(
+    await expect(handleScheduled(CRON_SWEEP, env, NOW)).rejects.toThrow(
       /hourly sweep failed for 1 fixture/,
     );
   });
@@ -171,11 +171,35 @@ describe("handleScheduled: the hourly sweep", () => {
     const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
     await addRespondent(fixtureId, "player@example.com");
 
-    await expect(handleScheduled(CRON_HOURLY_SWEEP, env, remindNow)).resolves.toBeUndefined();
+    await expect(handleScheduled(CRON_SWEEP, env, remindNow)).resolves.toBeUndefined();
 
     const logRows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
     expect(logRows).toHaveLength(1);
     expect(logRows[0]?.status).toBe("sent");
+  });
+
+  it("stays idempotent at the 5-minute cadence: several sweeps over the same due fixture send one notification per player", async () => {
+    // The new `*/5 * * * *` cadence means the sweep can now genuinely run
+    // several times before anything about the fixture changes — a much
+    // tighter version of the old hourly re-run case. `notification_log`'s
+    // unique `dedupe_key` is what makes that safe: this pins that the
+    // guarantee still holds when the sweep is invoked back-to-back rather
+    // than an hour apart.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const remindNow = new Date("2026-08-12T09:00:00Z");
+    const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
+    await addRespondent(fixtureId, "player-a@example.com");
+    await addRespondent(fixtureId, "player-b@example.com");
+
+    // Five consecutive ticks at the same instant, standing in for five
+    // 5-minute-apart invocations where nothing about the fixture changed.
+    for (let i = 0; i < 5; i++) {
+      await expect(handleScheduled(CRON_SWEEP, env, remindNow)).resolves.toBeUndefined();
+    }
+
+    const logRows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    expect(logRows).toHaveLength(2);
+    expect(logRows.every((r) => r.status === "sent")).toBe(true);
   });
 
   it("does not reject when a reminder is only deferred by the daily send ceiling", async () => {
@@ -191,7 +215,7 @@ describe("handleScheduled: the hourly sweep", () => {
     const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
     await addRespondent(fixtureId, "player@example.com");
 
-    await expect(handleScheduled(CRON_HOURLY_SWEEP, env, remindNow)).resolves.toBeUndefined();
+    await expect(handleScheduled(CRON_SWEEP, env, remindNow)).resolves.toBeUndefined();
 
     // Deferred, not sent or failed: the queued row was deleted so a future run retries it.
     expect(await db.select().from(responses).where(eq(responses.fixtureId, fixtureId))).toHaveLength(1);
@@ -224,7 +248,7 @@ describe("handleScheduled: the hourly sweep", () => {
       durationMinutes: 60,
     });
 
-    await expect(handleScheduled(CRON_HOURLY_SWEEP, env, NOW)).resolves.toBeUndefined();
+    await expect(handleScheduled(CRON_SWEEP, env, NOW)).resolves.toBeUndefined();
 
     expect(await lifecycleOf(staleFixtureId)).toBe("played");
     expect(
