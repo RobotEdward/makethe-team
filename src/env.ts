@@ -19,6 +19,17 @@ export interface Bindings {
    * `vars`. Same requirement and same by-name failure as `RESEND_API_KEY`.
    */
   EMAIL_FROM: string;
+  /**
+   * Signing key for Better Auth's own sessions/tokens. Set with
+   * `wrangler secret put`, same as `RESPONSE_TOKEN_SECRET` — never committed,
+   * never printed while setting it.
+   */
+  BETTER_AUTH_SECRET: string;
+  /**
+   * The public base URL Better Auth issues links against (e.g. magic-link
+   * URLs). Not secret; set in `wrangler.jsonc`'s `vars`.
+   */
+  BETTER_AUTH_URL: string;
 }
 
 export type AppEnv = { Bindings: Bindings };

@@ -19,6 +19,8 @@ function bindings(notifier: string): Bindings {
     RESPONSE_TOKEN_SECRET: "test-secret",
     RESEND_API_KEY: "test-resend-key",
     EMAIL_FROM: "reminders@example.com",
+    BETTER_AUTH_SECRET: "test-secret",
+    BETTER_AUTH_URL: "http://localhost:8787",
   };
 }
 

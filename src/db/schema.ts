@@ -168,3 +168,89 @@ export const auditLog = sqliteTable(
     index("audit_log_created_at_idx").on(t.createdAt),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Better Auth tables (M5). Third-party-defined: table and column names below
+// are copied verbatim from `getAuthTables({})` in `@better-auth/core/db`
+// (better-auth@1.6.26), not invented, because the library's Drizzle adapter
+// resolves both by exact string — the JS property key it looks up is the
+// camelCase `fieldName` from that schema, and `drizzleAdapter()` reads the
+// table object off `db._.fullSchema[modelName]`, i.e. by the export's name.
+// Do NOT rename these to match the project's own vocabulary, and do not
+// rename "user" here to "player" — that's Better Auth's own model name and
+// is exempt from the project's vocabulary rule (see plan). Nothing in
+// hand-written project code should say "user"; `players.auth_user_id` (above)
+// is the only link between the two (TR-30, Task 2).
+//
+// One deliberate omission: the upstream `account` model also defines an
+// optional `password` field (used only by its email/password credential
+// provider). This project forbids a password field anywhere in the
+// codebase (TR-16) and never configures that provider — only magic link and
+// passkey, neither of which touches `account.password`. Leaving the column
+// out is safe *and* self-checking: if any future plugin config ever tried to
+// read or write it, the adapter throws `BetterAuthError` immediately
+// ("field does not exist") rather than silently reintroducing a password
+// column.
+// ---------------------------------------------------------------------------
+
+export const user = sqliteTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: integer("emailVerified", { mode: "boolean" }).notNull(),
+  image: text("image"),
+  createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const session = sqliteTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: integer("expiresAt", { mode: "timestamp_ms" }).notNull(),
+    token: text("token").notNull().unique(),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+    ipAddress: text("ipAddress"),
+    userAgent: text("userAgent"),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (t) => [index("session_userId_idx").on(t.userId)],
+);
+
+export const account = sqliteTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("accountId").notNull(),
+    providerId: text("providerId").notNull(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accessToken: text("accessToken"),
+    refreshToken: text("refreshToken"),
+    idToken: text("idToken"),
+    accessTokenExpiresAt: integer("accessTokenExpiresAt", { mode: "timestamp_ms" }),
+    refreshTokenExpiresAt: integer("refreshTokenExpiresAt", { mode: "timestamp_ms" }),
+    scope: text("scope"),
+    // No `password` column — see block comment above (TR-16).
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("account_userId_idx").on(t.userId)],
+);
+
+export const verification = sqliteTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: integer("expiresAt", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }),
+  },
+  (t) => [index("verification_identifier_idx").on(t.identifier)],
+);

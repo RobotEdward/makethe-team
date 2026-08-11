@@ -37,7 +37,10 @@
   "vars": {
     "NOTIFIER": "console",
     "MAX_EMAILS_PER_DAY": "50",
-    "EMAIL_FROM": "Make The Team <no-reply@makethe.team>"
+    "EMAIL_FROM": "Make The Team <no-reply@makethe.team>",
+    // Not secret — Better Auth's public base URL for issuing links against.
+    // BETTER_AUTH_SECRET is a Worker secret (`wrangler secret put`), never here.
+    "BETTER_AUTH_URL": "https://makethe.team"
   },
   "d1_databases": [
     {

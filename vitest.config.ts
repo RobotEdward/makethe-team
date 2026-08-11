@@ -49,6 +49,11 @@ export default defineConfig(async () => {
             // there unless it's provided here too. This value is committed on
             // purpose — it is obviously fake and used nowhere but tests.
             RESPONSE_TOKEN_SECRET: "test-only-secret-not-used-in-any-real-environment",
+            // Same reasoning as RESPONSE_TOKEN_SECRET above: Better Auth's
+            // secret is a Worker secret (`wrangler secret put`), never a
+            // `wrangler.jsonc` var, so it does not exist in CI/local test
+            // runs unless provided here. This value is obviously fake.
+            BETTER_AUTH_SECRET: "test-only-secret-not-used-in-any-real-environment",
           },
         },
       }),
