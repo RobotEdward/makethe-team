@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb, type Db } from "../../src/db/client.js";
-import { fixtures, memberships, notificationLog, players } from "../../src/db/schema.js";
+import { auditLog, fixtures, memberships, notificationLog, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
@@ -424,6 +424,86 @@ describe("openAndRemind", () => {
     const rows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("sent");
+  });
+
+  it("records an audit row naming everyone an N-1 ceiling refusal stopped being told (TR-31)", async () => {
+    // N-1 is the highest-volume notification in the system, and the exact
+    // case TR-31 was filed about: a MAX_EMAILS_PER_DAY typo failing closed to
+    // zero silently stops every reminder. The audit row is the durable trace
+    // that a real message was owed and refused, surviving the deleted
+    // `notification_log` row.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const solo = squad(1);
+    const playerEmail = solo[0]?.email as string;
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: solo });
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add(playerEmail);
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    await openAndRemind(db, notifier, now, SECRET);
+
+    const deferred = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "fixture.reminder_email_deferred"));
+    expect(deferred).toHaveLength(1);
+    expect(deferred[0]?.entityId).toBe(fixtureId);
+    expect(deferred[0]?.actorPlayerId).toBeNull();
+    const after = JSON.parse(deferred[0]?.afterJson ?? "{}") as { notificationType: string; playerIds: string[] };
+    expect(after.notificationType).toBe("n1");
+    expect(after.playerIds).toEqual([solo[0]?.id]);
+  });
+
+  it("writes no reminder deferral audit row when every reminder went out", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    await seedFixture({ kicksOffAt, squad: squad(1) });
+    const notifier = new RecordingNotifier();
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    await openAndRemind(db, notifier, now, SECRET);
+
+    expect(
+      await db.select().from(auditLog).where(eq(auditLog.action, "fixture.reminder_email_deferred")),
+    ).toHaveLength(0);
+  });
+
+  it("collapses repeated N-1 ceiling deferrals for the same fixture within the collapse window, but writes a fresh row once it elapses", async () => {
+    // A sustained ceiling retries N-1 every sweep tick; without a bound this
+    // would write one audit row per tick, forever, into a table nothing
+    // prunes. One row per collapse window still shows the condition is
+    // ongoing, without flooding the table.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const solo = squad(1);
+    const playerEmail = solo[0]?.email as string;
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: solo });
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add(playerEmail);
+
+    const first = new Date("2026-08-12T09:00:00Z");
+    await openAndRemind(db, notifier, first, SECRET);
+    expect(
+      await db.select().from(auditLog).where(eq(auditLog.action, "fixture.reminder_email_deferred")),
+    ).toHaveLength(1);
+
+    // Five minutes later — well inside the one-hour collapse window — the
+    // sweep retries and is refused again. No second row.
+    const second = new Date(first.getTime() + 5 * 60 * 1000);
+    await openAndRemind(db, notifier, second, SECRET);
+    expect(
+      await db.select().from(auditLog).where(eq(auditLog.action, "fixture.reminder_email_deferred")),
+    ).toHaveLength(1);
+
+    // An hour and one minute after the first row, the window has elapsed and
+    // a fresh row is written — proving the condition is still ongoing rather
+    // than a single one-off row that looks identical to a resolved blip.
+    const third = new Date(first.getTime() + 61 * 60 * 1000);
+    await openAndRemind(db, notifier, third, SECRET);
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "fixture.reminder_email_deferred"));
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.entityId === fixtureId)).toBe(true);
   });
 
   it("a provider-failed reminder is left failed and is not retried automatically (fix round 1, finding 3)", async () => {

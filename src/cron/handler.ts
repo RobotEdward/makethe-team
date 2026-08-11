@@ -134,6 +134,21 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
  * empty-string `fixtureId` is deliberate: there is genuinely no one fixture to
  * blame for a whole-step outage, and inventing one would be worse than saying
  * so.
+ *
+ * **No committed test exercises this `try`/`catch` itself.** Two approaches
+ * were tried and both are dead ends under this test pool:
+ * `@cloudflare/vitest-pool-workers` does not let `vi.mock` intercept a
+ * module's own internal import (`handler.ts`'s own call to
+ * `sendOwnerAttention`) — the same limitation already recorded in
+ * `docs/known-issues.md` for `openAndRemind`/`retirePastFixtures` — and there
+ * is no in-band way to make `sendOwnerAttention`'s first query throw, because
+ * D1's foreign-key constraints refuse a `DROP TABLE` on any table this data
+ * references. The material guarantee — that an N-4 failure does not stop
+ * retirement — *is* proven by execution, per-fixture, via the
+ * `CANCEL_TOKEN_SECRET`-unset tests in `test/cron/handler.test.ts`; what is
+ * untested is only this function's own outer `try`/`catch` wrapper. If you
+ * find a way to trip it in-band, do; otherwise this comment is here so the
+ * next person does not spend the same hour rediscovering both dead ends.
  */
 async function runAttentionStep(
   db: Db,

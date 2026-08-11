@@ -1,7 +1,20 @@
+import { and, desc, eq } from "drizzle-orm";
 import { buildAuditInsert } from "../db/audit.js";
 import type { Db } from "../db/client.js";
+import { auditLog } from "../db/schema.js";
 import type { AuditAction } from "../domain/audit.js";
 import type { NotificationType } from "./dedupe-key.js";
+
+/**
+ * The collapse window for sweep-driven ceiling deferrals (N-1, N-4). A
+ * sustained ceiling would otherwise write one row per sweep tick — at the
+ * project's 5-minute cron cadence, roughly 288 identical rows a day per
+ * fixture — into a table nothing prunes. One row per hour still lets an
+ * operator see the condition is *ongoing* (a fresh `created_at` every hour it
+ * persists) rather than collapsing to a single "it happened once" row, while
+ * cutting the worst case by more than an order of magnitude.
+ */
+export const CEILING_DEFERRAL_COLLAPSE_WINDOW_MS = 60 * 60 * 1000;
 
 /**
  * The durable half of TR-31's owner-visible ceiling warning: one `audit_log`
@@ -33,6 +46,25 @@ import type { NotificationType } from "./dedupe-key.js";
  * Deliberately **not** wrapped in a `try`/`catch` here: every caller already
  * runs inside one that is reporting a failure, and swallowing a D1 error at
  * this depth would reintroduce exactly the silence this row exists to break.
+ *
+ * **`collapseWindowMs`.** N-2 and N-3 call this once per route invocation —
+ * a promotion or a cancellation happens once, so the row count is already
+ * bounded by user action. N-1 and N-4 call this from the sweep, which
+ * re-evaluates every tick; under a sustained ceiling they would otherwise
+ * write one row per tick forever. Passing `collapseWindowMs` makes this
+ * write a no-op if the most recent row for the same `(entityId, action)`
+ * pair is younger than the window, so a persistent condition still produces
+ * a fresh row periodically (proving it is ongoing) rather than either
+ * flooding the table or collapsing to a single ever-row that looks identical
+ * to a one-off blip.
+ *
+ * This is a read-then-write and therefore has the same race window as the
+ * `alreadyLogged` pre-check the brief warns against reintroducing — but
+ * unlike that guarantee, nothing here needs to be exact. Losing the race
+ * produces one extra row in the same window, not a missed signal, so a
+ * best-effort collapse is the right level of guarantee for a *volume*
+ * control, as opposed to `notification_log`'s unique index, which guards a
+ * *correctness* property (at-most-once delivery).
  */
 export async function recordCeilingDeferral(
   db: Db,
@@ -43,8 +75,28 @@ export async function recordCeilingDeferral(
     /** Everyone whose copy of the message was refused. One row per event, not per player. */
     playerIds: readonly string[];
     now: Date;
+    /** See "`collapseWindowMs`" above. Omit for a route call that already fires at most once. */
+    collapseWindowMs?: number;
   },
 ): Promise<void> {
+  if (params.collapseWindowMs !== undefined) {
+    const [mostRecent] = await db
+      .select({ createdAt: auditLog.createdAt })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entityType, "fixture"),
+          eq(auditLog.entityId, params.fixtureId),
+          eq(auditLog.action, params.action),
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt))
+      .limit(1);
+    if (mostRecent && params.now.getTime() - mostRecent.createdAt.getTime() < params.collapseWindowMs) {
+      return;
+    }
+  }
+
   await buildAuditInsert(db, {
     // No actor: a ceiling refusal is a system condition, not something any
     // player or owner did — even when the send that hit it was triggered by

@@ -66,6 +66,8 @@ interface SeedOptions {
   /** Squad members with no answer yet, listed in the email. */
   pending?: number;
   durationMinutes?: number;
+  /** Defaults to the factory's own default ("Europe/London"). Overridden only to make `formatLocalDateTime` throw for one fixture in isolation tests. */
+  timezone?: string;
 }
 
 let seq = 0;
@@ -79,6 +81,7 @@ async function seed(opts: SeedOptions): Promise<{ gameId: string; fixtureId: str
     prefersEvenNumbers: opts.prefersEvenNumbers ?? true,
     minPlayers: opts.minPlayers ?? 10,
     maxPlayers: opts.maxPlayers ?? 14,
+    ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
   });
   const fixtureId = nextId("fixture");
 
@@ -389,6 +392,32 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
     expect(brokenRows[0]?.status).toBe("failed");
   });
 
+  it("keeps going for other fixtures when one fixture's prepare stage throws", async () => {
+    // Distinct from "keeps going ... when one fixture's send rejects" above:
+    // that test breaks the *send* boundary (`notifier.send` rejecting). This
+    // one breaks *prepare* — `formatLocalDateTime` throwing on a malformed
+    // timezone inside `processFixture`, before any token is signed or message
+    // built — the per-fixture `try` in `sendOwnerAttention` itself, which
+    // nothing else in the suite exercised with two fixtures in play.
+    const notifier = new RecordingNotifier();
+    const broken = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, timezone: "Not/AZone" });
+    const healthy = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      owners: [{ name: "Healthy Owner", email: "healthy@example.com" }],
+    });
+
+    const result = await run(notifier);
+
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.fixtureId).toBe(broken.fixtureId);
+    expect(result.failures[0]?.stage).toBe("prepare");
+    expect(result.attentionSent).toBe(1);
+    expect(notifier.sent.flat().map((m) => m.to)).toEqual(["healthy@example.com"]);
+    expect(await attentionRows(broken.fixtureId)).toHaveLength(0);
+    expect(await attentionRows(healthy.fixtureId)).toHaveLength(1);
+  });
+
   it("reports a provider failure as a failure without touching the other owner", async () => {
     const notifier = new RecordingNotifier();
     const { fixtureId } = await seed({
@@ -446,6 +475,31 @@ describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
       notificationType: "n4",
       playerIds: [ownerIds[0]],
     });
+  });
+
+  it("collapses repeated N-4 ceiling deferrals for the same fixture within the collapse window, but writes a fresh row once it elapses", async () => {
+    // Unlike N-2/N-3, a deferred N-4 retries every sweep tick (the deleted
+    // log row lets it try again). Without a bound, a sustained ceiling would
+    // write one audit row per tick forever; the collapse window bounds it
+    // while still proving the condition is ongoing via a fresh row per window.
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add("owner@example.com");
+    const { fixtureId } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+
+    await run(notifier, NOW);
+    expect(await db.select().from(auditLog).where(eq(auditLog.entityId, fixtureId))).toHaveLength(1);
+
+    // Five minutes later — the sweep's real cadence, well inside the one-hour
+    // collapse window — the retry is refused again. No second row.
+    const fiveMinutesLater = new Date(NOW.getTime() + 5 * 60 * 1000);
+    await run(notifier, fiveMinutesLater);
+    expect(await db.select().from(auditLog).where(eq(auditLog.entityId, fixtureId))).toHaveLength(1);
+
+    // An hour and a minute after the first row, the window has elapsed and a
+    // fresh row is written.
+    const afterWindow = new Date(NOW.getTime() + 61 * 60 * 1000);
+    await run(notifier, afterWindow);
+    expect(await db.select().from(auditLog).where(eq(auditLog.entityId, fixtureId))).toHaveLength(2);
   });
 
   it("writes no audit row when nothing was refused", async () => {

@@ -7,6 +7,7 @@ import { formatLocalDateTime } from "../domain/time/zone.js";
 import { responseTokenExpiry, signResponseToken } from "../domain/token.js";
 import type { Notifier } from "../notify/notifier.js";
 import { reminderKey } from "../notify/dedupe-key.js";
+import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import {
   applySendResult,
   insertQueuedLogRows,
@@ -328,6 +329,7 @@ async function sendDueReminders(
       // miss. A reaper would work too, but this needs no new scheduled job,
       // no new query, and no new state — the recovery sits at the only place
       // that knows which rows were left behind.
+      const deferredPlayerIds: string[] = [];
       const sendFailureReasons: string[] = [];
       let applied = 0;
       try {
@@ -337,8 +339,10 @@ async function sendDueReminders(
           if (!entry) continue;
           const outcome = await applySendResult(db, entry, result, now);
           if (outcome.kind === "sent") remindersSent++;
-          else if (outcome.kind === "deferred") remindersDeferred++;
-          else {
+          else if (outcome.kind === "deferred") {
+            remindersDeferred++;
+            deferredPlayerIds.push(entry.playerId);
+          } else {
             remindersFailed++;
             sendFailureReasons.push(outcome.reason);
           }
@@ -355,6 +359,22 @@ async function sendDueReminders(
           message: `${message} (${orphaned.length} row(s) left unapplied and marked failed)`,
         });
         continue;
+      }
+
+      if (deferredPlayerIds.length > 0) {
+        // TR-31's durable signal for N-1 — the highest-volume notification in
+        // the system, and the exact case TR-31 was filed about (a
+        // `MAX_EMAILS_PER_DAY` typo failing closed to zero silently stopping
+        // every reminder). Retried every sweep tick like N-4, so the same
+        // collapse window applies — see `src/notify/ceiling-audit.ts`.
+        await recordCeilingDeferral(db, {
+          action: "fixture.reminder_email_deferred",
+          notificationType: "n1",
+          fixtureId: fixture.id,
+          playerIds: deferredPlayerIds,
+          now,
+          collapseWindowMs: CEILING_DEFERRAL_COLLAPSE_WINDOW_MS,
+        });
       }
 
       if (sendFailureReasons.length > 0) {

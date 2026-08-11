@@ -34,9 +34,15 @@ export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
  * possible. That asymmetry is right, and is deliberately not being changed —
  * but its side effect is that the deletion also erases the only trace that
  * the message was ever owed to anyone. Without a row here, "was this player
- * ever told?" becomes unanswerable, and for two of the three cases nothing
+ * ever told?" becomes unanswerable, and for two of the four cases nothing
  * retries:
  *
+ * - `fixture.reminder_email_deferred` (N-1) — the highest-volume
+ *   notification in the system, and the exact case TR-31 was filed about: a
+ *   `MAX_EMAILS_PER_DAY` typo failing closed to zero silently stops every
+ *   reminder. Mild on its own (the sweep retries every run), but it is the
+ *   case most likely to hit the ceiling first, so it is the case the durable
+ *   half must not miss.
  * - `fixture.promotion_email_deferred` (N-2) — a player was promoted off the
  *   waitlist and never told. No later message corrects it, and a retry is
  *   impossible in any case because `promotedAt` — which the dedupe key needs
@@ -44,18 +50,25 @@ export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
  * - `fixture.cancellation_email_deferred` (N-3) — materially worse: the
  *   fixture is terminal, so no reminder or any other message follows, and the
  *   players turn up to a game that is off.
- * - `fixture.attention_email_deferred` (N-4) — the mildest of the three,
+ * - `fixture.attention_email_deferred` (N-4) — the mildest of the four,
  *   because the sweep re-evaluates every run and *will* retry it once the
  *   ceiling lifts. Recorded anyway, because it is the case that proves the
  *   ceiling is biting on the very channel TR-31's warning was supposed to
  *   travel down.
  *
- * They are three actions rather than one with a type field because their
+ * N-1 and N-4 fire from the sweep, not from a one-shot route call, so a
+ * sustained ceiling would otherwise write one row per sweep tick, forever,
+ * into a table nothing prunes; `recordCeilingDeferral`'s `collapseWindowMs`
+ * bounds that (see `src/notify/ceiling-audit.ts`). N-2 and N-3 fire from
+ * routes and are naturally bounded by user action, so they do not pass it.
+ *
+ * They are four actions rather than one with a type field because their
  * severities differ that much: an operator wants to alert on the N-3 one
- * immediately and merely count the N-4 one.
+ * immediately and merely count the N-1 and N-4 ones.
  */
 export const AUDIT_ACTIONS = [
   "fixture.cancelled",
+  "fixture.reminder_email_deferred",
   "fixture.promotion_email_deferred",
   "fixture.cancellation_email_deferred",
   "fixture.attention_email_deferred",

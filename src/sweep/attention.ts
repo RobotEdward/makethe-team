@@ -5,7 +5,7 @@ import { fixtures, games, memberships, notificationLog, players } from "../db/sc
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { cancelTokenExpiry, signCancelToken } from "../domain/token.js";
-import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
+import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { attentionKey } from "../notify/dedupe-key.js";
 import {
   applySendResult,
@@ -330,6 +330,10 @@ async function processFixture(
       fixtureId,
       playerIds: deferredPlayerIds,
       now,
+      // N-4 retries every sweep tick, so a sustained ceiling would otherwise
+      // write one row per tick, forever — see `collapseWindowMs`'s doc in
+      // `src/notify/ceiling-audit.ts`.
+      collapseWindowMs: CEILING_DEFERRAL_COLLAPSE_WINDOW_MS,
     });
   }
 
