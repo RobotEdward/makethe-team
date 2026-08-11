@@ -1,13 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { env } from "cloudflare:test";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createNotifier } from "../../src/notify/factory.js";
 import { ConsoleNotifier } from "../../src/notify/console-notifier.js";
 import { NullNotifier } from "../../src/notify/null-notifier.js";
+import { QuotaNotifier } from "../../src/notify/quota.js";
 import type { Message, Notifier } from "../../src/notify/notifier.js";
 import type { Bindings } from "../../src/env.js";
+import { resetDatabase } from "../support/factories.js";
+
+const NOW = new Date("2026-08-11T09:00:00Z");
 
 function bindings(notifier: string): Bindings {
   return {
-    DB: {} as Bindings["DB"],
+    DB: env.DB,
     FIXTURE_CAPACITY: {} as Bindings["FIXTURE_CAPACITY"],
     NOTIFIER: notifier,
     MAX_EMAILS_PER_DAY: "50",
@@ -16,6 +21,10 @@ function bindings(notifier: string): Bindings {
     EMAIL_FROM: "reminders@example.com",
   };
 }
+
+beforeEach(async () => {
+  await resetDatabase();
+});
 
 function message(overrides: Partial<Message> = {}): Message {
   return {
@@ -141,20 +150,42 @@ describe("NullNotifier", () => {
 });
 
 describe("createNotifier", () => {
-  it("selects ConsoleNotifier for env.NOTIFIER === 'console'", () => {
-    expect(createNotifier(bindings("console"))).toBeInstanceOf(ConsoleNotifier);
+  // createNotifier always wraps its choice in QuotaNotifier (TR-31, TR-32) so
+  // nothing downstream can bypass the daily send ceiling — that is now the
+  // one type every caller ever sees back.
+  it("wraps the selection in QuotaNotifier so the ceiling cannot be bypassed", () => {
+    expect(createNotifier(bindings("console"), NOW)).toBeInstanceOf(QuotaNotifier);
+    expect(createNotifier(bindings("null"), NOW)).toBeInstanceOf(QuotaNotifier);
   });
 
-  it("selects NullNotifier for env.NOTIFIER === 'null'", () => {
-    expect(createNotifier(bindings("null"))).toBeInstanceOf(NullNotifier);
+  it("still delegates to ConsoleNotifier's behaviour for env.NOTIFIER === 'console'", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const results = await createNotifier(bindings("console"), NOW).send([message()]);
+      expect(results).toEqual([{ ok: true, providerMessageId: null }]);
+      expect(logSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("still delegates to NullNotifier's behaviour for env.NOTIFIER === 'null'", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const results = await createNotifier(bindings("null"), NOW).send([message()]);
+      expect(results).toEqual([{ ok: true, providerMessageId: null }]);
+      expect(logSpy).not.toHaveBeenCalled();
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it("throws at startup with a clear message for an unrecognised value", () => {
-    expect(() => createNotifier(bindings("resend-but-typoed"))).toThrow(/resend-but-typoed/);
-    expect(() => createNotifier(bindings("resend-but-typoed"))).toThrow(/NOTIFIER/);
+    expect(() => createNotifier(bindings("resend-but-typoed"), NOW)).toThrow(/resend-but-typoed/);
+    expect(() => createNotifier(bindings("resend-but-typoed"), NOW)).toThrow(/NOTIFIER/);
   });
 
   it("throws for an empty string binding rather than defaulting silently", () => {
-    expect(() => createNotifier(bindings(""))).toThrow();
+    expect(() => createNotifier(bindings(""), NOW)).toThrow();
   });
 });
