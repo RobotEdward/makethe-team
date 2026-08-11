@@ -118,7 +118,7 @@ describe("fixture page", () => {
       ...BASE,
       viewer: { playerId: "p1", status: "in" },
     });
-    expect(html).toMatch(/you're in/i);
+    expect(html).toMatch(/you(&#39;|')re in/i);
   });
 
   describe("readOnlyReason: not-eligible — a valid token for a player no longer on the squad", () => {
@@ -158,7 +158,7 @@ describe("fixture page", () => {
       expect(html).not.toContain('name="intent"');
       expect(html).not.toContain('class="viewer-headline"');
       expect(html).not.toMatch(/can you make it\?/i);
-      expect(html).toMatch(/aren.t open yet|not open yet/i);
+      expect(html).toMatch(/aren(&#39;|')t open yet|not open yet/i);
     });
   });
 

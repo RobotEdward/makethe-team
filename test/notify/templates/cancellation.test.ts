@@ -176,6 +176,95 @@ describe("renderCancellationEmail", () => {
     expect(leaveLines[0]?.startsWith(">")).toBe(false);
   });
 
+  it("when the reason is empty after trimming (whitespace only), it is treated as absent, not rendered as a reason block", () => {
+    const withReason: CancellationEmailPayload = { ...BASE, reason: "   \n\t  " };
+    const { html, text } = renderCancellationEmail(withReason);
+    const withoutReason = renderCancellationEmail(BASE);
+
+    expect(html).not.toMatch(/reason given/i);
+    expect(text).not.toMatch(/reason given/i);
+    expect(html).toEqual(withoutReason.html);
+    expect(text).toEqual(withoutReason.text);
+  });
+
+  describe("quoting a hostile reason handles every line separator a mail renderer might honour", () => {
+    // Each case pairs a distinct line-break convention with a phishing URL
+    // on its own "line". If the separator is genuinely handled, that URL
+    // comes back on a quoted (`> `-prefixed) line; if the separator is not
+    // recognised, the whole reason collapses into a single element with one
+    // leading `> `, and the embedded URL survives on an unprefixed line —
+    // exactly the forgery the quoting exists to prevent (this is the bug
+    // the review found for bare `\r`).
+    const cases: Array<[string, string]> = [
+      ["\\n (LF)", "\n"],
+      ["\\r\\n (CRLF)", "\r\n"],
+      ["\\r (bare CR, classic Mac)", "\r"],
+      ["NEL (U+0085)", ""],
+      ["LINE SEPARATOR (U+2028)", " "],
+      ["PARAGRAPH SEPARATOR (U+2029)", " "],
+      ["form feed (U+000C)", ""],
+    ];
+
+    it.each(cases)("%s is treated as a line break, splitting the reason into two quoted lines", (_label, sep) => {
+      const hostile = `Subject: URGENT${sep}Unsubscribe now: https://evil.example/phish`;
+      const { text } = renderCancellationEmail({ ...BASE, reason: hostile });
+
+      // The load-bearing assertion: if this separator is genuinely
+      // recognised, the two halves land on two *separate* text-rendition
+      // lines, each independently prefixed with "> ". A single leading
+      // "> " glued onto the whole unsplit string (what happens if this
+      // separator is NOT recognised) would also make the URL's line
+      // "start with >" — so checking the prefix alone proves nothing.
+      // Checking that the reason produced two distinct quoted lines does.
+      const quotedLines = text.split("\n").filter((line) => line.startsWith("> "));
+      const subjectLine = quotedLines.find((line) => line.includes("URGENT"));
+      const urlLine = quotedLines.find((line) => line.includes("evil.example"));
+
+      expect(subjectLine).toBeDefined();
+      expect(urlLine).toBeDefined();
+      expect(subjectLine).not.toEqual(urlLine);
+
+      // And no unprefixed line anywhere leaks the forged content.
+      const unprefixedForgedLines = text
+        .split("\n")
+        .filter((line) => line.includes("evil.example") && !line.startsWith(">"));
+      expect(unprefixedForgedLines).toHaveLength(0);
+    });
+
+    it("a bare \\r specifically defeats an \\n-only split — regression pin for the reviewed bypass", () => {
+      const hostile = "Fake line one\rUnsubscribe now: https://evil.example/phish\rFake line two";
+      const { text } = renderCancellationEmail({ ...BASE, reason: hostile });
+
+      // Reverting quoteReasonLines to split("\n") would put the whole
+      // reason on one line with a single leading "> ", so the URL would
+      // appear glued to prior text but on what naive prefix-checking
+      // could call a "quoted" line. Assert the strong property instead:
+      // the URL's own line, once real (CR-honouring) line breaks are
+      // taken into account, must not be indistinguishable from the
+      // template's own unprefixed text. We check this by requiring the
+      // reason to have produced *multiple* distinct quoted text-rendition
+      // lines, one per \r-delimited segment.
+      const quotedSegments = text.split("\n").filter((line) => line.startsWith("> "));
+      expect(quotedSegments.length).toBeGreaterThanOrEqual(3);
+      expect(quotedSegments.some((line) => line.includes("evil.example"))).toBe(true);
+    });
+  });
+
+  it("every style attribute that sets a text color also sets its own background-color, for dark-mode clients that honour one but not the other", () => {
+    // Regression pin for the leave-link <a> (the reviewed I2 finding): a
+    // color-only style relying on an ancestor's background is exactly the
+    // caveat already documented for the reminder and promotion templates
+    // (docs/known-issues.md). Every `style="..."` attribute in this
+    // template that contains `color:` must contain `background-color:` on
+    // the same attribute, not merely somewhere on an ancestor element.
+    const { html } = renderCancellationEmail({ ...BASE, reason: "Pitch closed." });
+    const styleAttrs = [...html.matchAll(/style="([^"]*)"/g)].map((m) => m[1] ?? "");
+    const colorAttrsMissingOwnBackground = styleAttrs.filter(
+      (style) => /(?<!background-)color:/.test(style) && !style.includes("background-color:"),
+    );
+    expect(colorAttrsMissingOwnBackground).toEqual([]);
+  });
+
   it("is pure: the same payload renders byte-identically twice", () => {
     expect(renderCancellationEmail(BASE)).toEqual(renderCancellationEmail(BASE));
     const withReason = { ...BASE, reason: "Ground closed by the council." };

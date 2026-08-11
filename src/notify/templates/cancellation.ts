@@ -24,7 +24,10 @@ export interface CancellationEmailPayload {
   /**
    * Free text typed by the Owner when they cancelled the fixture (BR-20).
    * Optional: absent when no reason was given, in which case the message
-   * still reads correctly without it.
+   * still reads correctly without it. A reason that is empty or
+   * whitespace-only after trimming is treated the same as absent — there is
+   * nothing worth a "Reason given" block if the Owner typed nothing but
+   * spaces.
    *
    * This is the first genuinely owner-authored free text to reach an email
    * in this project — everything else so far is server-constructed or a
@@ -71,6 +74,41 @@ export function isCancellationRecipient(status: ResponseStatus, isGuest: boolean
 }
 
 /**
+ * Every line-terminator this quoting treats as a line break. A reason is
+ * hostile input — chosen by whoever typed the cancellation reason, not by a
+ * text editor — so "what line separators does a real editor produce" is
+ * the wrong question; the right one is "what will some plain-text renderer
+ * on the receiving end treat as a line break."
+ *
+ * - `\r\n` and `\n` are the obvious cases (network/Unix line endings).
+ * - Bare `\r` (classic Mac line endings) is still honoured by plenty of
+ *   lenient text widgets and MUAs — this is the exact bypass the review
+ *   found, and `\r\n` must be tried before bare `\r` in the alternation so
+ *   a CRLF pair is not split into a spurious blank line.
+ * - NEL (U+0085) and form feed (U+000C) are treated as line breaks by
+ *   common "split into lines" implementations (e.g. Python's
+ *   `str.splitlines`, Java's `Scanner`), and NEL specifically has a long
+ *   history as a line terminator outside ASCII-only systems. Including
+ *   them costs nothing and closes the same class of gap.
+ * - U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH SEPARATOR) are
+ *   Unicode-mandated line breaks (UAX #14) that browsers honour in
+ *   rendered text and that some HTML-izing plain-text-to-HTML mail
+ *   converters follow. The *text* rendition is delivered as MIME
+ *   `text/plain`, so most direct plain-text viewers won't act on them —
+ *   but since some renderers do, and the cost of handling them is one
+ *   more character class, they're included too.
+ *
+ * Deliberately not included: things that merely look like whitespace but
+ * carry no line-break convention anywhere (e.g. U+00A0 no-break space,
+ * ordinary tabs) — treating those as line breaks would just fragment
+ * ordinary reason text for no anti-forgery benefit.
+ */
+// \u000c (form feed) below is deliberately included as a line-break
+// convention, not an accidental control character; see the doc comment above.
+// eslint-disable-next-line no-control-regex
+const LINE_SEPARATOR = /\r\n|[\r\n\u0085\u2028\u2029\u000c]/;
+
+/**
  * Quote an owner-authored reason line-by-line, the way a reply quotes an
  * earlier message. Every line — including blank ones — gets a `> ` prefix.
  *
@@ -79,11 +117,12 @@ export function isCancellationRecipient(status: ResponseStatus, isGuest: boolean
  * this Game for your squad.\nUnsubscribe: https://evil.example" would be
  * indistinguishable from the template's own footer once concatenated into
  * one string. Prefixing every line means an attacker's "---" reads as
- * `> ---`, never as the real separator, no matter what the reason contains.
+ * `> ---`, never as the real separator, no matter what the reason contains
+ * or which of `LINE_SEPARATOR`'s line-break conventions it uses.
  */
 function quoteReasonLines(reason: string): string {
   return reason
-    .split("\n")
+    .split(LINE_SEPARATOR)
     .map((line) => `> ${line}`)
     .join("\n");
 }
@@ -99,7 +138,10 @@ function quoteReasonLines(reason: string): string {
  * promotion and reminder emails use for a still-on fixture.
  */
 export function renderCancellationEmail(payload: CancellationEmailPayload): CancellationEmail {
-  const { playerName, gameName, venueName, kicksOffAtLocal, reason, leaveUrl } = payload;
+  const { playerName, gameName, venueName, kicksOffAtLocal, leaveUrl } = payload;
+  // A reason that is empty or whitespace-only after trimming is treated as
+  // absent, same as no reason at all — see the payload's `reason` doc.
+  const reason = payload.reason && payload.reason.trim().length > 0 ? payload.reason : undefined;
 
   const subject = `${gameName} — cancelled`;
   const lead = "This game has been cancelled — it is not going ahead.";
@@ -146,7 +188,7 @@ ${
 <p style="margin:0; font-size:12px; line-height:1.6; color:#928d84; background-color:#ffffff;">
 Make The Team — organising this Game for your squad.
 <br>
-Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">See how to leave this Game</a>.
+Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84; background-color:#ffffff;">See how to leave this Game</a>.
 </p>
 
 </td>

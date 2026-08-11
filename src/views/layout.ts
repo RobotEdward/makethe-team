@@ -99,12 +99,27 @@ const STYLES = `
   .roster .status-waitlisted { color: var(--warn); font-weight: 600; }
 `;
 
+/**
+ * Escapes the five characters HTML gives special meaning: `&`, `<`, `>`,
+ * `"` and `'`. Every caller in this codebase interpolates into either a
+ * text node or a double-quoted attribute — never a single-quoted attribute,
+ * never inline JS/CSS — so `"` alone was long enough to stop attribute
+ * breakout. `'` is escaped anyway (as `&#39;`, the conventional numeric
+ * form, since HTML has no named entity for it) because this function is
+ * shared: the moment a future caller interpolates into a single-quoted
+ * attribute, the gap becomes exploitable, and there is no test today that
+ * would catch that caller being added. Backtick (`` ` ``) is deliberately
+ * left unescaped: it has no special meaning in HTML text, attributes, or
+ * attribute-quoting in any browser, so escaping it would be theatre, not
+ * defence — see `docs/known-issues.md` if this reasoning needs revisiting.
+ */
 export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 export function layout({ title, body }: LayoutOptions): string {

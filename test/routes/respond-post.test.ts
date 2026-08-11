@@ -171,7 +171,7 @@ describe("POST /r/:token — recording a plain response", () => {
     const body = await response.text();
 
     expect(response.status).toBe(200);
-    expect(body).toContain("You're in.");
+    expect(body).toContain("You&#39;re in.");
 
     const [row] = await db.select().from(responses).where(eq(responses.playerId, playerId));
     expect(row?.status).toBe("in");
@@ -365,7 +365,7 @@ describe("POST /r/:token — a scheduled fixture is refused with an explanation,
     expect(response.status).toBe(200);
     expect(body).not.toContain(`method="post"`);
     expect(body).not.toMatch(/can you make it\?/i);
-    expect(body).toMatch(/aren.t open yet|not open yet/i);
+    expect(body).toMatch(/aren(&#39;|')t open yet|not open yet/i);
 
     // No response row exists at all for a fixture that was never opened —
     // the Durable Object refused the write (fixture-not-open) before ever
