@@ -2,7 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, emailQuota, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
@@ -485,6 +485,37 @@ describe("POST /r/:token — the promoted player is told (N-2, BR-7, J4)", () =>
     // And the promotion itself is untouched by the email having failed.
     const [promotedRow] = await db.select().from(responses).where(eq(responses.playerId, waiterId));
     expect(promotedRow?.status).toBe("in");
+  });
+
+  it("records an audit row when the daily send ceiling stops the promoted player being told (TR-31)", async () => {
+    // `MAX_EMAILS_PER_DAY` is "50" (wrangler.jsonc); pre-filling today's
+    // quota to the ceiling makes QuotaNotifier refuse the N-2. The refusal
+    // deletes the `notification_log` row, which keeps a retry *possible* —
+    // but nothing retries it, and it could not be retried faithfully anyway,
+    // because `promotedAt` (which `promotionKey` needs) is persisted nowhere.
+    // Task 4's review accepted the delete on the condition that this row
+    // exists; this is that row.
+    const { fixtureId, holderId, waiterId } = await seedPromotionReady();
+    await db.insert(emailQuota).values({ day: new Date(Date.now()).toISOString().slice(0, 10), sentCount: 50 });
+
+    const token = await tokenFor(fixtureId, holderId);
+    expect((await postIntent(token, "out")).status).toBe(200);
+
+    const deadline = Date.now() + 3000;
+    let rows = await db.select().from(auditLog);
+    while (rows.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      rows = await db.select().from(auditLog);
+    }
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.action).toBe("fixture.promotion_email_deferred");
+    expect(rows[0]?.entityId).toBe(fixtureId);
+    expect(rows[0]?.actorPlayerId).toBeNull();
+    expect(JSON.parse(rows[0]?.afterJson ?? "{}")).toEqual({ notificationType: "n2", playerIds: [waiterId] });
+
+    // The row was deleted, not left `failed` — the asymmetry is unchanged.
+    expect(await db.select().from(notificationLog)).toEqual([]);
   });
 
   it("writes no log row at all when the promoted player is a guest with no address (BR-32)", async () => {

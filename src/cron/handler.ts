@@ -1,7 +1,9 @@
-import { getDb } from "../db/client.js";
+import { getDb, type Db } from "../db/client.js";
 import { materialiseFixtures } from "../domain/materialise.js";
 import type { Bindings } from "../env.js";
-import { createNotifier } from "../notify/factory.js";
+import { createNotifier, parseMaxEmailsPerDay } from "../notify/factory.js";
+import type { Notifier } from "../notify/notifier.js";
+import { sendOwnerAttention, type AttentionResult } from "../sweep/attention.js";
 import { openAndRemind } from "../sweep/open-and-remind.js";
 import { retirePastFixtures } from "../sweep/retire.js";
 
@@ -46,7 +48,6 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
     }
 
     case CRON_SWEEP: {
-      // Step 3 (owner attention email) belongs to M4 and stays absent.
       const db = getDb(env.DB);
       const notifier = createNotifier(env, now);
 
@@ -77,17 +78,43 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
         );
       }
 
-      // Runs regardless of the outcome above: a reminder failure must not
-      // stop fixtures being retired, and retiring is independent of whether
-      // any reminder went out.
+      // Step 3: the owner attention email (N-4, BR-31), between the reminder
+      // sweep and retirement.
+      //
+      // Wrapped whole, on top of the per-fixture isolation `sendOwnerAttention`
+      // already applies internally. That function is written not to throw for
+      // an ordinary failure, but "written not to throw" is not the same as
+      // "cannot throw" — a D1 error in its very first query would escape it —
+      // and this project has already been bitten twice by one fixture taking
+      // down a whole run (one rejecting notifier aborting a sweep, one bad
+      // timezone silencing every game). Retirement runs below regardless.
+      //
+      // `ceilingReached` is TR-31's owner-visible warning, decided here
+      // because this is the only place that knows both halves: reminders
+      // deferred on *this* run, and a `MAX_EMAILS_PER_DAY` that failed closed
+      // to zero (the config-typo case `docs/known-issues.md` names, which
+      // refuses every send with no reminders needing to be due to reveal it).
+      const attentionResult = await runAttentionStep(
+        db,
+        notifier,
+        now,
+        env.CANCEL_TOKEN_SECRET,
+        remindResult.remindersDeferred > 0 || parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY) === 0,
+      );
+
+      // Runs regardless of the outcome above: a reminder or attention failure
+      // must not stop fixtures being retired, and retiring is independent of
+      // whether any email went out.
       const retireResult = await retirePastFixtures(db, now);
       console.log("retire-past-fixtures", JSON.stringify(retireResult));
 
-      if (remindResult.failures.length > 0) {
+      const failed = remindResult.failures.length + attentionResult.failures.length;
+      if (failed > 0) {
         throw new Error(
-          `sweep failed for ${remindResult.failures.length} fixture(s) during open/remind ` +
+          `sweep failed for ${failed} fixture(s) during open/remind/attention ` +
             `(opened ${remindResult.fixturesOpened}, sent ${remindResult.remindersSent}, ` +
-            `failed ${remindResult.remindersFailed}, retired ${retireResult.retired})`,
+            `failed ${remindResult.remindersFailed}, attention sent ${attentionResult.attentionSent}, ` +
+            `retired ${retireResult.retired})`,
         );
       }
       return;
@@ -95,5 +122,55 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
 
     default:
       throw new Error(`Unrecognised cron schedule "${cron}"`);
+  }
+}
+
+/**
+ * Sweep step 3, with its own outer failure boundary.
+ *
+ * A throw that escapes `sendOwnerAttention` entirely is reported as a single
+ * synthetic failure with no fixture id — enough for the invocation to be
+ * recorded as failed, without letting it take retirement down with it. The
+ * empty-string `fixtureId` is deliberate: there is genuinely no one fixture to
+ * blame for a whole-step outage, and inventing one would be worse than saying
+ * so.
+ */
+async function runAttentionStep(
+  db: Db,
+  notifier: Notifier,
+  now: Date,
+  cancelTokenSecret: string,
+  ceilingReached: boolean,
+): Promise<AttentionResult> {
+  try {
+    const result = await sendOwnerAttention({ db, notifier, now, cancelTokenSecret, ceilingReached });
+    console.log("owner-attention", JSON.stringify(result));
+    for (const failure of result.failures) {
+      console.error(
+        `owner-attention failed for fixture ${failure.fixtureId} (game ${failure.gameId ?? "unknown"}) at stage ${failure.stage}: ${failure.message}`,
+      );
+    }
+    if (result.attentionDeferred > 0) {
+      // The recursion TR-31 cannot escape: the ceiling is refusing the very
+      // email that carries the ceiling warning. Loud here, and durable in
+      // `audit_log` (`fixture.attention_email_deferred`), because neither an
+      // owner's inbox nor a log line alone is a signal that survives this.
+      console.warn(
+        `DAILY EMAIL CEILING REACHED: ${result.attentionDeferred} owner attention email(s) deferred on this sweep run; they will be retried on the next one, and an audit_log row records each`,
+      );
+    }
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`owner-attention step failed outright and no owner was told anything: ${message}`);
+    return {
+      fixturesNeedingAttention: 0,
+      attentionSent: 0,
+      attentionFailed: 0,
+      attentionDeferred: 0,
+      ownersSkippedNoRecipient: 0,
+      alreadyLogged: 0,
+      failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],
+    };
   }
 }

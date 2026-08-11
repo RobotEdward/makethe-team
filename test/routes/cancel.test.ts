@@ -2,7 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { auditLog, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, emailQuota, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import type { ResponseStatus } from "../../src/domain/response-status.js";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
@@ -380,6 +380,44 @@ describe("POST /cancel/:token", () => {
 
     expect(body).toMatch(/cancelled/i);
     expect(body).toMatch(/3 players/i);
+  });
+
+  it("records an audit row naming everyone the daily send ceiling stopped being told (TR-31)", async () => {
+    // `MAX_EMAILS_PER_DAY` is "50" (wrangler.jsonc); pre-filling today's
+    // quota to the ceiling makes QuotaNotifier refuse every N-3 this request
+    // would send. The refusal deletes each `notification_log` row so a retry
+    // stays possible — but nothing retries a cancellation, the fixture is
+    // terminal, and the squad would otherwise turn up to a game that is off.
+    // The audit row is the only durable record that happened.
+    const { fixtureId } = await seedSquad();
+    await db.insert(emailQuota).values({ day: new Date(Date.now()).toISOString().slice(0, 10), sentCount: 50 });
+
+    const response = await postCancel(await cancelToken(fixtureId), "Pitch flooded");
+    expect(response.status).toBe(200);
+
+    // Deleted, exactly as before — the retryability asymmetry is unchanged.
+    expect(await n3Rows(fixtureId)).toHaveLength(0);
+
+    const deferred = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "fixture.cancellation_email_deferred"));
+    expect(deferred).toHaveLength(1);
+    expect(deferred[0]?.entityId).toBe(fixtureId);
+    expect(deferred[0]?.actorPlayerId).toBeNull();
+    const after = JSON.parse(deferred[0]?.afterJson ?? "{}") as { notificationType: string; playerIds: string[] };
+    expect(after.notificationType).toBe("n3");
+    expect(after.playerIds.sort()).toEqual([OWNER, "p-in", "p-wait"].sort());
+  });
+
+  it("writes no deferral audit row when every cancellation email went out", async () => {
+    const { fixtureId } = await seedSquad();
+
+    await postCancel(await cancelToken(fixtureId), "Pitch flooded");
+
+    expect(
+      await db.select().from(auditLog).where(eq(auditLog.action, "fixture.cancellation_email_deferred")),
+    ).toHaveLength(0);
   });
 
   it("accepts an empty reason and stores it verbatim", async () => {

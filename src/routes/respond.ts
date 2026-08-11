@@ -6,6 +6,7 @@ import { formatLocalDateTime } from "../domain/time/zone.js";
 import { verifyResponseToken } from "../domain/token.js";
 import type { ResponseIntent, WaitlistPromotion } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
+import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { escapeHtml, layout } from "../views/layout.js";
@@ -267,9 +268,10 @@ async function notifyPromotedPlayer(
   now: Date,
 ): Promise<void> {
   const who = `fixture ${fixtureId}, player ${promoted.playerId}`;
+  const db = getDb(env.DB);
   try {
     const outcome = await sendPromotionEmail({
-      db: getDb(env.DB),
+      db,
       notifier: createNotifier(env, now),
       fixtureId,
       promoted,
@@ -285,7 +287,26 @@ async function notifyPromotedPlayer(
         console.log(`promotion email (N-2) skipped, no usable address: ${who}`);
         return;
       case "deferred":
-        console.warn(`promotion email (N-2) refused by the daily send ceiling: ${who}`);
+        // Task 4's review ruled on this branch and deferred the fix to the
+        // task that built TR-31's warning, because both need the same durable
+        // signal. The ruling stands as written: the ceiling refusal *deletes*
+        // the `notification_log` row — correct, because the message never
+        // reached a provider — but that deletion also erases the only record
+        // that a promoted player was never told, and no retry is even
+        // possible, because `promotedAt` (which `promotionKey` needs) is
+        // persisted nowhere. So: keep the delete, add the audit row. Written
+        // before the log line so a D1 failure here cannot be mistaken for the
+        // row having been written.
+        await recordCeilingDeferral(db, {
+          action: "fixture.promotion_email_deferred",
+          notificationType: "n2",
+          fixtureId,
+          playerIds: [promoted.playerId],
+          now,
+        });
+        console.error(
+          `promotion email (N-2) refused by the daily send ceiling and NOTHING WILL RETRY IT (audit_log row written): ${who}`,
+        );
         return;
       case "already-logged":
         console.warn(`promotion email (N-2) already logged for this exact promotion, not resent: ${who}`);

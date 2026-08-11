@@ -26,6 +26,14 @@ export interface CancellationSendSummary {
   sent: number;
   /** Refused by the daily send ceiling (TR-31); row removed, so a retry is possible — but nothing retries it today. See the route. */
   deferred: number;
+  /**
+   * Exactly who those deferrals were for. Carried out of here rather than
+   * left as a bare count because the route writes them into `audit_log`
+   * (`fixture.cancellation_email_deferred`): the deleted `notification_log`
+   * rows are otherwise the only record of who was never told a game was off,
+   * and "how many" does not answer "which of my squad do I have to ring".
+   */
+  deferredPlayerIds: string[];
   /** A provider error or a rejected notifier; row left `failed`, never retried (BR-19). */
   failed: number;
   /** A recipient with no usable address. Permanent, not an error, and deliberately no log row (BR-32). */
@@ -84,6 +92,7 @@ export async function sendCancellationEmails(
   const summary: CancellationSendSummary = {
     sent: 0,
     deferred: 0,
+    deferredPlayerIds: [],
     failed: 0,
     skippedNoRecipient: 0,
     alreadyLogged: 0,
@@ -181,8 +190,10 @@ export async function sendCancellationEmails(
       if (!entry) continue;
       const outcome = await applySendResult(db, entry, results[applied], now);
       if (outcome.kind === "sent") summary.sent++;
-      else if (outcome.kind === "deferred") summary.deferred++;
-      else {
+      else if (outcome.kind === "deferred") {
+        summary.deferred++;
+        summary.deferredPlayerIds.push(entry.playerId);
+      } else {
         summary.failed++;
         summary.failures.push(outcome.reason);
       }

@@ -1,0 +1,477 @@
+import { env } from "cloudflare:test";
+import { and, eq } from "drizzle-orm";
+import { beforeEach, describe, expect, it } from "vitest";
+import { getDb } from "../../src/db/client.js";
+import { auditLog, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
+import { verifyCancelToken } from "../../src/domain/token.js";
+import { sendOwnerAttention } from "../../src/sweep/attention.js";
+import { insertGame, resetDatabase } from "../support/factories.js";
+
+const db = getDb(env.DB);
+const SECRET = "test-cancel-secret";
+
+/**
+ * Every time is constructed explicitly rather than derived from the clock:
+ * `Date.now()` is frozen between I/O in workerd and the test isolate's clock
+ * drifts, and the warning window is exactly the kind of boundary that turns
+ * that into a flake.
+ */
+const NOW = new Date("2026-08-13T09:00:00Z");
+/** 12 hours before kickoff is the default `shortWarningOffsetHours`. */
+const KICKOFF_INSIDE_WINDOW = new Date("2026-08-13T18:00:00Z"); // NOW + 9h
+const KICKOFF_OUTSIDE_WINDOW = new Date("2026-08-14T18:00:00Z"); // NOW + 33h
+
+class RecordingNotifier implements Notifier {
+  readonly sent: Message[][] = [];
+  readonly ceilingFor = new Set<string>();
+  readonly failFor = new Set<string>();
+
+  send(messages: readonly Message[]): Promise<SendResult[]> {
+    this.sent.push([...messages]);
+    return Promise.resolve(
+      messages.map((m): SendResult => {
+        if (this.ceilingFor.has(m.to)) return { ok: false, error: "daily-ceiling-reached" };
+        if (this.failFor.has(m.to)) return { ok: false, error: "simulated-provider-failure" };
+        return { ok: true, providerMessageId: `prov-${m.dedupeKey}` };
+      }),
+    );
+  }
+}
+
+/** Rejects outright for one fixture — the shape of a D1 error inside `QuotaNotifier.reserve()`. */
+class RejectingNotifier implements Notifier {
+  readonly sent: Message[][] = [];
+  readonly rejectForFixture = new Set<string>();
+
+  send(messages: readonly Message[]): Promise<SendResult[]> {
+    this.sent.push([...messages]);
+    const first = messages[0];
+    if (first && this.rejectForFixture.has(first.dedupeKey.split(":")[1] ?? "")) {
+      return Promise.reject(new Error("simulated D1 failure inside QuotaNotifier.reserve()"));
+    }
+    return Promise.resolve(messages.map((m): SendResult => ({ ok: true, providerMessageId: `prov-${m.dedupeKey}` })));
+  }
+}
+
+interface SeedOptions {
+  kicksOffAt: Date;
+  /** How many players hold a slot. Drives both `fixtures.in_count` and the `in` response rows. */
+  inCount: number;
+  minPlayers?: number;
+  maxPlayers?: number;
+  prefersEvenNumbers?: boolean;
+  lifecycle?: "scheduled" | "open" | "cancelled" | "played";
+  owners?: Array<{ name: string; email: string | null; isGuest?: boolean; active?: boolean }>;
+  /** Squad members with no answer yet, listed in the email. */
+  pending?: number;
+  durationMinutes?: number;
+}
+
+let seq = 0;
+function nextId(kind: string): string {
+  seq += 1;
+  return `${kind}-${seq}`;
+}
+
+async function seed(opts: SeedOptions): Promise<{ gameId: string; fixtureId: string; ownerIds: string[] }> {
+  const gameId = await insertGame(db, {
+    prefersEvenNumbers: opts.prefersEvenNumbers ?? true,
+    minPlayers: opts.minPlayers ?? 10,
+    maxPlayers: opts.maxPlayers ?? 14,
+  });
+  const fixtureId = nextId("fixture");
+
+  await db.insert(fixtures).values({
+    id: fixtureId,
+    gameId,
+    kicksOffAt: opts.kicksOffAt,
+    lifecycle: opts.lifecycle ?? "open",
+    minPlayers: opts.minPlayers ?? 10,
+    maxPlayers: opts.maxPlayers ?? 14,
+    prefersEvenNumbers: opts.prefersEvenNumbers ?? true,
+    shortWarningOffsetHours: 12,
+    durationMinutes: opts.durationMinutes ?? 60,
+    inCount: opts.inCount,
+  });
+
+  for (let i = 0; i < opts.inCount; i++) {
+    const playerId = nextId("in");
+    await db.insert(players).values({ id: playerId, name: `In ${i}`, email: `${playerId}@example.com` });
+    await db.insert(memberships).values({ id: nextId("m"), gameId, playerId, role: "player", active: true });
+    await db.insert(responses).values({ id: nextId("r"), fixtureId, playerId, status: "in", source: "token" });
+  }
+
+  for (let i = 0; i < (opts.pending ?? 0); i++) {
+    const playerId = nextId("pending");
+    await db.insert(players).values({ id: playerId, name: `Pending ${i}`, email: `${playerId}@example.com` });
+    await db.insert(memberships).values({ id: nextId("m"), gameId, playerId, role: "player", active: true });
+    await db.insert(responses).values({ id: nextId("r"), fixtureId, playerId, status: "pending", source: "system" });
+  }
+
+  const ownerIds: string[] = [];
+  for (const owner of opts.owners ?? [{ name: "Olive Owner", email: "owner@example.com" }]) {
+    const playerId = nextId("owner");
+    ownerIds.push(playerId);
+    await db
+      .insert(players)
+      .values({ id: playerId, name: owner.name, email: owner.email, isGuest: owner.isGuest ?? false });
+    await db.insert(memberships).values({
+      id: nextId("m"),
+      gameId,
+      playerId,
+      role: "owner",
+      active: owner.active ?? true,
+    });
+  }
+
+  return { gameId, fixtureId, ownerIds };
+}
+
+function run(notifier: Notifier, now: Date = NOW, ceilingReached = false) {
+  return sendOwnerAttention({ db, notifier, now, cancelTokenSecret: SECRET, ceilingReached });
+}
+
+async function attentionRows(fixtureId: string) {
+  return db
+    .select()
+    .from(notificationLog)
+    .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n4")));
+}
+
+beforeEach(async () => {
+  await resetDatabase();
+});
+
+describe("sendOwnerAttention (N-4, BR-31)", () => {
+  it("emails the owner when a fixture is short inside the warning window", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId, ownerIds } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, pending: 3 });
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(1);
+    expect(notifier.sent.flat()).toHaveLength(1);
+    const message = notifier.sent.flat()[0];
+    expect(message?.to).toBe("owner@example.com");
+    expect(message?.dedupeKey).toBe(`n4:${fixtureId}:${ownerIds[0]}`);
+    expect(message?.text).toContain("2 players short");
+
+    const rows = await attentionRows(fixtureId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("sent");
+  });
+
+  it("does not email while the fixture is still outside the warning window", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({ kicksOffAt: KICKOFF_OUTSIDE_WINDOW, inCount: 8 });
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(0);
+    expect(notifier.sent).toHaveLength(0);
+    expect(await attentionRows(fixtureId)).toHaveLength(0);
+  });
+
+  it("does not email a fixture that is merely below its minimum, when the window has not opened", async () => {
+    // Distinct from the case above in intent: this pins that being below
+    // `minPlayers` is *not* on its own enough. The same fixture, moved inside
+    // the window by nothing but the clock, does fire — asserted second so the
+    // first assertion cannot pass because the fixture was unfireable for some
+    // unrelated reason.
+    const notifier = new RecordingNotifier();
+    await seed({ kicksOffAt: KICKOFF_OUTSIDE_WINDOW, inCount: 3, minPlayers: 10 });
+
+    expect((await run(notifier)).attentionSent).toBe(0);
+
+    const insideWindow = new Date(KICKOFF_OUTSIDE_WINDOW.getTime() - 11 * 3_600_000);
+    expect((await run(notifier, insideWindow)).attentionSent).toBe(1);
+  });
+
+  it("emails the owner about an odd number, in different words from being short", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 11, minPlayers: 10, prefersEvenNumbers: true });
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(1);
+    const message = notifier.sent.flat()[0];
+    expect(message?.text).toContain("odd number");
+    expect(message?.text).not.toContain("short");
+  });
+
+  it("does not email an even, sufficient fixture inside the window", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 12, minPlayers: 10 });
+
+    expect((await run(notifier)).attentionSent).toBe(0);
+  });
+
+  it("does not email a game that does not care about even numbers", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 11, minPlayers: 10, prefersEvenNumbers: false });
+
+    expect((await run(notifier)).attentionSent).toBe(0);
+  });
+
+  it("sends exactly one email across short, then fixed, then uneven", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, minPlayers: 10 });
+
+    // Short: fires.
+    expect((await run(notifier)).attentionSent).toBe(1);
+
+    // Fixed: nothing to say, and nothing to send.
+    await db.update(fixtures).set({ inCount: 12 }).where(eq(fixtures.id, fixtureId));
+    expect((await run(notifier)).attentionSent).toBe(0);
+
+    // Uneven: a *new* problem — but the owner has already been told once, and
+    // BR-31 says once per owner per fixture, ever.
+    await db.update(fixtures).set({ inCount: 11 }).where(eq(fixtures.id, fixtureId));
+    const third = await run(notifier);
+    expect(third.attentionSent).toBe(0);
+    expect(third.alreadyLogged).toBe(1);
+
+    expect(notifier.sent.flat()).toHaveLength(1);
+    expect(await attentionRows(fixtureId)).toHaveLength(1);
+  });
+
+  it("goes to owners only, never to ordinary players", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, pending: 4 });
+
+    await run(notifier);
+
+    const recipients = notifier.sent.flat().map((m) => m.to);
+    expect(recipients).toEqual(["owner@example.com"]);
+    expect(recipients.some((to) => to.startsWith("in-") || to.startsWith("pending-"))).toBe(false);
+  });
+
+  it("emails both owners of a game with two, exactly once each", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      owners: [
+        { name: "Owner One", email: "one@example.com" },
+        { name: "Owner Two", email: "two@example.com" },
+      ],
+    });
+
+    const result = await run(notifier);
+    // A second run must add nothing.
+    await run(notifier);
+
+    expect(result.attentionSent).toBe(2);
+    expect(notifier.sent.flat().map((m) => m.to).sort()).toEqual(["one@example.com", "two@example.com"]);
+    expect(await attentionRows(fixtureId)).toHaveLength(2);
+  });
+
+  it("skips an owner who is no longer active on the squad", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      owners: [
+        { name: "Current", email: "current@example.com" },
+        { name: "Former", email: "former@example.com", active: false },
+      ],
+    });
+
+    await run(notifier);
+
+    expect(notifier.sent.flat().map((m) => m.to)).toEqual(["current@example.com"]);
+  });
+
+  it("skips an owner with no usable address without writing a log row (BR-32)", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      owners: [
+        { name: "Reachable", email: "reachable@example.com" },
+        { name: "Blank", email: "   " },
+        { name: "Guest Owner", email: "guest@example.com", isGuest: true },
+      ],
+    });
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(1);
+    expect(result.ownersSkippedNoRecipient).toBe(2);
+    expect(await attentionRows(fixtureId)).toHaveLength(1);
+  });
+
+  it("ignores fixtures that are not open", async () => {
+    const notifier = new RecordingNotifier();
+    for (const lifecycle of ["scheduled", "cancelled", "played"] as const) {
+      await seed({
+        kicksOffAt: KICKOFF_INSIDE_WINDOW,
+        inCount: 8,
+        lifecycle,
+        owners: [{ name: "Olive Owner", email: `${lifecycle}-owner@example.com` }],
+      });
+    }
+
+    expect((await run(notifier)).attentionSent).toBe(0);
+  });
+
+  it("ignores a fixture that has already ended", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({
+      kicksOffAt: new Date(NOW.getTime() - 2 * 3_600_000),
+      inCount: 8,
+      durationMinutes: 60,
+    });
+
+    expect((await run(notifier)).attentionSent).toBe(0);
+  });
+
+  it("carries a working cancel link scoped to that owner and fixture", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId, ownerIds } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+
+    await run(notifier);
+
+    const text = notifier.sent.flat()[0]?.text ?? "";
+    const match = /https:\/\/makethe\.team\/cancel\/([\w.-]+)/.exec(text);
+    expect(match).not.toBeNull();
+
+    const verified = await verifyCancelToken(match?.[1] ?? "", SECRET, NOW);
+    expect(verified.ok).toBe(true);
+    if (verified.ok) {
+      expect(verified.payload.fixtureId).toBe(fixtureId);
+      expect(verified.payload.ownerPlayerId).toBe(ownerIds[0]);
+    }
+  });
+
+  it("records a failure naming CANCEL_TOKEN_SECRET when it is unset, and mails nobody", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+
+    const result = await sendOwnerAttention({
+      db,
+      notifier,
+      now: NOW,
+      // Exactly what an unset Worker secret binding arrives as at runtime,
+      // despite `Bindings` declaring it a `string`.
+      cancelTokenSecret: undefined as unknown as string,
+      ceilingReached: false,
+    });
+
+    expect(result.attentionSent).toBe(0);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]?.message).toContain("CANCEL_TOKEN_SECRET");
+    expect(result.failures[0]?.fixtureId).toBe(fixtureId);
+    expect(notifier.sent).toHaveLength(0);
+    // Nothing was queued for a message that could never be built.
+    expect(await attentionRows(fixtureId)).toHaveLength(0);
+  });
+
+  it("keeps going for other fixtures when one fixture's send rejects", async () => {
+    const notifier = new RejectingNotifier();
+    const broken = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+    await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      owners: [{ name: "Healthy Owner", email: "healthy@example.com" }],
+    });
+    notifier.rejectForFixture.add(broken.fixtureId);
+
+    const result = await run(notifier);
+
+    expect(result.failures.map((f) => f.fixtureId)).toEqual([broken.fixtureId]);
+    expect(result.attentionSent).toBe(1);
+    expect(notifier.sent.flat().map((m) => m.to)).toContain("healthy@example.com");
+    // The rejected fixture's row is left `failed`, never retried (BR-19).
+    const brokenRows = await attentionRows(broken.fixtureId);
+    expect(brokenRows).toHaveLength(1);
+    expect(brokenRows[0]?.status).toBe("failed");
+  });
+
+  it("reports a provider failure as a failure without touching the other owner", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      owners: [
+        { name: "Owner One", email: "one@example.com" },
+        { name: "Owner Two", email: "two@example.com" },
+      ],
+    });
+    notifier.failFor.add("one@example.com");
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(1);
+    expect(result.attentionFailed).toBe(1);
+    expect(result.failures).toHaveLength(1);
+
+    const rows = await attentionRows(fixtureId);
+    expect(rows.filter((r) => r.status === "failed")).toHaveLength(1);
+    expect(rows.filter((r) => r.status === "sent")).toHaveLength(1);
+  });
+});
+
+describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
+  it("deletes the log row on a ceiling refusal so the next run retries it", async () => {
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add("owner@example.com");
+    const { fixtureId } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+
+    const result = await run(notifier);
+
+    expect(result.attentionDeferred).toBe(1);
+    expect(result.attentionFailed).toBe(0);
+    expect(result.failures).toHaveLength(0);
+    expect(await attentionRows(fixtureId)).toHaveLength(0);
+
+    // The ceiling lifts; the next run gets it out.
+    notifier.ceilingFor.clear();
+    expect((await run(notifier)).attentionSent).toBe(1);
+  });
+
+  it("records a durable audit row for every ceiling-refused attention email", async () => {
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add("owner@example.com");
+    const { fixtureId, ownerIds } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+
+    await run(notifier);
+
+    const rows = await db.select().from(auditLog).where(eq(auditLog.entityId, fixtureId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.action).toBe("fixture.attention_email_deferred");
+    expect(rows[0]?.actorPlayerId).toBeNull();
+    expect(JSON.parse(rows[0]?.afterJson ?? "{}")).toEqual({
+      notificationType: "n4",
+      playerIds: [ownerIds[0]],
+    });
+  });
+
+  it("writes no audit row when nothing was refused", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+
+    await run(notifier);
+
+    expect(await db.select().from(auditLog)).toHaveLength(0);
+  });
+
+  it("tells the owner the daily email limit is biting when it is", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+
+    await run(notifier, NOW, true);
+
+    expect(notifier.sent.flat()[0]?.text).toContain("daily email limit");
+  });
+
+  it("says nothing about the limit when it is not biting", async () => {
+    const notifier = new RecordingNotifier();
+    await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+
+    await run(notifier, NOW, false);
+
+    expect(notifier.sent.flat()[0]?.text).not.toContain("daily email limit");
+  });
+});

@@ -12,6 +12,7 @@ import {
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { verifyCancelToken } from "../domain/token.js";
 import type { AppEnv } from "../env.js";
+import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendCancellationEmails } from "../notify/send-cancellation.js";
 import {
@@ -324,9 +325,10 @@ async function sendCancellation(
   now: Date,
 ): Promise<{ sent: number }> {
   const who = `fixture ${context.fixture.id}`;
+  const db = getDb(env.DB);
   try {
     const summary = await sendCancellationEmails({
-      db: getDb(env.DB),
+      db,
       notifier: createNotifier(env, now),
       fixture: context.fixture,
       game: context.game,
@@ -345,12 +347,24 @@ async function sendCancellation(
       console.warn(`cancellation email (N-3) already logged for ${summary.alreadyLogged} player(s), not resent: ${who}`);
     }
     if (summary.deferred > 0) {
-      // The gap Task 4's review accepted for N-2 and this route inherits:
-      // a ceiling refusal deletes the log row so a retry *could* happen, but
-      // nothing sweeps for one. For a cancellation that means a player who
-      // was never told the game is off — see the task report. Loud on
-      // purpose; this is the line that has to be noticed.
-      console.error(`cancellation email (N-3) refused by the daily send ceiling for ${summary.deferred} player(s) and NOTHING WILL RETRY IT: ${who}`);
+      // The gap Task 4's review accepted for N-2 and this route inherited —
+      // now closed the same way, and for a stronger reason. A ceiling refusal
+      // deletes the log row so a retry *could* happen, but nothing sweeps for
+      // one, and unlike N-2 there is no later message that corrects the
+      // silence: the fixture is terminal, so no reminder follows, and the
+      // players turn up to a game that is off. A `console.error` that ages
+      // out of Workers Logs is not an adequate record of that. The audit row
+      // names the fixture and every player who was never told, in a table
+      // nothing prunes, so the question "who do I have to ring" is still
+      // answerable next week.
+      await recordCeilingDeferral(db, {
+        action: "fixture.cancellation_email_deferred",
+        notificationType: "n3",
+        fixtureId: context.fixture.id,
+        playerIds: summary.deferredPlayerIds,
+        now,
+      });
+      console.error(`cancellation email (N-3) refused by the daily send ceiling for ${summary.deferred} player(s) and NOTHING WILL RETRY IT (audit_log row written): ${who}`);
     }
     if (summary.failed > 0) {
       console.error(`cancellation email (N-3) failed for ${summary.failed} player(s): ${who}: ${summary.failures.join("; ")}`);

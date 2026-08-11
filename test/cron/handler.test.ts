@@ -1,5 +1,5 @@
 import { env } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Db } from "../../src/db/client.js";
 import { emailQuota, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
@@ -47,6 +47,14 @@ async function addRespondent(fixtureId: string, email: string): Promise<void> {
     status: "pending",
     source: "system",
   });
+}
+
+/** Adds an active owner to a game, so the attention email (N-4) has a recipient. */
+async function addOwner(gameId: string, email: string): Promise<string> {
+  const playerId = crypto.randomUUID();
+  await db.insert(players).values({ id: playerId, name: "Olive Owner", email });
+  await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId, role: "owner", active: true });
+  return playerId;
 }
 
 async function lifecycleOf(fixtureId: string): Promise<string | undefined> {
@@ -253,6 +261,56 @@ describe("handleScheduled: the sweep", () => {
     expect(await lifecycleOf(staleFixtureId)).toBe("played");
     expect(
       await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, staleFixtureId)),
+    ).toHaveLength(0);
+  });
+
+  it("sends the owner attention email as sweep step 3 (N-4, BR-31)", async () => {
+    // 9 hours before kickoff, inside the 12-hour warning window, 8 in against
+    // a minimum of 10. Times are constructed explicitly, never derived from
+    // the clock.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const attentionNow = new Date("2026-08-13T09:00:00Z");
+    const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
+    await db.update(fixtures).set({ inCount: 8 }).where(eq(fixtures.id, fixtureId));
+    await addOwner("game-1", "owner@example.com");
+
+    await expect(handleScheduled(CRON_SWEEP, env, attentionNow)).resolves.toBeUndefined();
+
+    const rows = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n4")));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("sent");
+  });
+
+  it("retires past fixtures even when the attention step fails for want of CANCEL_TOKEN_SECRET", async () => {
+    // Exactly production's situation at the time of writing: the binding is
+    // not set, so `signCancelToken` throws by name. The attention email
+    // cannot go out — but that must cost nothing else on the run.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const attentionNow = new Date("2026-08-13T09:00:00Z");
+    const shortFixtureId = await insertOpenFixture("game-1", { kicksOffAt });
+    await db.update(fixtures).set({ inCount: 8 }).where(eq(fixtures.id, shortFixtureId));
+    await addOwner("game-1", "owner@example.com");
+
+    const endedFixtureId = await insertOpenFixture("game-1", {
+      kicksOffAt: new Date(attentionNow.getTime() - 2 * 3_600_000),
+      durationMinutes: 60,
+    });
+
+    await expect(
+      handleScheduled(CRON_SWEEP, { ...env, CANCEL_TOKEN_SECRET: "" }, attentionNow),
+    ).rejects.toThrow(/sweep failed for 1 fixture/);
+
+    // Retirement ran anyway.
+    expect(await lifecycleOf(endedFixtureId)).toBe("played");
+    // And nothing half-built was left behind for the fixture that failed.
+    expect(
+      await db
+        .select()
+        .from(notificationLog)
+        .where(eq(notificationLog.notificationType, "n4")),
     ).toHaveLength(0);
   });
 
