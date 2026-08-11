@@ -197,6 +197,79 @@ describe("openAndRemind", () => {
     expect(fixture?.lifecycle).toBe("scheduled");
   });
 
+  it("does not open or remind a stale scheduled fixture whose kickoff-plus-duration has already passed", async () => {
+    // A backlog shape: both the reminder instant and the fixture's own end
+    // are in the past relative to `now` (fix round 1, finding: a cron gap
+    // must not turn into a "tomorrow" email for a game that already finished).
+    const kicksOffAt = new Date("2026-08-01T18:00:00Z");
+    const now = new Date("2026-08-11T09:00:00Z");
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(1), lifecycle: "scheduled" });
+    const notifier = new RecordingNotifier();
+
+    const result = await openAndRemind(db, notifier, now, SECRET);
+
+    expect(result.fixturesOpened).toBe(0);
+    expect(result.remindersSent).toBe(0);
+    expect(result.failures).toHaveLength(0);
+    expect(notifier.sent).toHaveLength(0);
+
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(fixture?.lifecycle).toBe("scheduled");
+    expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(0);
+  });
+
+  it("does not remind a stale open fixture whose kickoff-plus-duration has already passed", async () => {
+    const kicksOffAt = new Date("2026-08-01T18:00:00Z");
+    const now = new Date("2026-08-11T09:00:00Z");
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(1), lifecycle: "open" });
+    const notifier = new RecordingNotifier();
+
+    const result = await openAndRemind(db, notifier, now, SECRET);
+
+    expect(result.remindersSent).toBe(0);
+    expect(result.failures).toHaveLength(0);
+    expect(notifier.sent).toHaveLength(0);
+    expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(0);
+  });
+
+  it("still reminds a fixture that has kicked off but not yet ended (mid-game)", async () => {
+    // 90 minutes into a 120-minute fixture: kicked off, not yet ended, and its
+    // reminder instant (a day before) is naturally long past — a real, if
+    // unusual, situation that must stay distinct from the stale/backlog case.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const now = new Date(kicksOffAt.getTime() + 90 * 60_000);
+    const { fixtureId } = await seedFixture({
+      kicksOffAt,
+      squad: squad(1),
+      lifecycle: "open",
+      // seedFixture's default duration is 60; override via a direct update so
+      // "mid-game" (90 minutes in) is unambiguous.
+    });
+    await db.update(fixtures).set({ durationMinutes: 120 }).where(eq(fixtures.id, fixtureId));
+    const notifier = new RecordingNotifier();
+
+    const result = await openAndRemind(db, notifier, now, SECRET);
+
+    expect(result.remindersSent).toBe(1);
+    expect(result.failures).toHaveLength(0);
+    const logRows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    expect(logRows).toHaveLength(1);
+    expect(logRows[0]?.status).toBe("sent");
+  });
+
+  it("a normal future fixture is entirely unaffected by the end check", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const now = new Date("2026-08-12T09:00:00Z");
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(2), lifecycle: "open" });
+    const notifier = new RecordingNotifier();
+
+    const result = await openAndRemind(db, notifier, now, SECRET);
+
+    expect(result.remindersSent).toBe(2);
+    expect(result.failures).toHaveLength(0);
+    expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(2);
+  });
+
   it("skips guests: no message, no log row, not a failure", async () => {
     const kicksOffAt = new Date("2026-08-13T18:00:00Z");
     const mixed: SeedOptions["squad"] = [

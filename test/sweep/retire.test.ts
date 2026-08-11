@@ -82,10 +82,19 @@ describe("retirePastFixtures", () => {
     expect(await lifecycleOf(id)).toBe("cancelled");
   });
 
-  it("does not touch a scheduled fixture, even one whose kickoff-plus-duration has passed", async () => {
+  it("retires a scheduled fixture whose kickoff-plus-duration has passed, so a stale one is never left dangling", async () => {
     const id = await seedFixture({ lifecycle: "scheduled" });
 
     const result = await retirePastFixtures(db, new Date(END.getTime() + 1));
+
+    expect(result.retired).toBe(1);
+    expect(await lifecycleOf(id)).toBe("played");
+  });
+
+  it("leaves a scheduled fixture alone until it has actually ended", async () => {
+    const id = await seedFixture({ lifecycle: "scheduled" });
+
+    const result = await retirePastFixtures(db, new Date(END.getTime() - 1));
 
     expect(result.retired).toBe(0);
     expect(await lifecycleOf(id)).toBe("scheduled");

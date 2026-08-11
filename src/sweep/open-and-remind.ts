@@ -118,9 +118,24 @@ async function openDueFixtures(db: Db, now: Date): Promise<{ opened: number; fai
   return { opened, failures };
 }
 
+const MINUTE_MS = 60_000;
+
 /**
  * Fixtures in `lifecycle` whose `reminderInstant` (computed from their
- * Game's timezone and reminder configuration) has passed.
+ * Game's timezone and reminder configuration) has passed, and which have not
+ * already ended.
+ *
+ * The end check is what keeps a cron gap from mattering here: without it, a
+ * fixture whose reminder instant *and* whose kickoff-plus-duration have both
+ * already passed — the exact shape of a backlog after a missed run or two —
+ * would still be opened and mailed as if it were upcoming, then retired by
+ * the very same sweep tick. A fixture is `ended` on the identical boundary
+ * `retirePastFixtures` uses (`kicksOffAt + durationMinutes <= now`), so the
+ * instant a fixture would be retired is also the instant it stops being
+ * reminder- or open-eligible — nothing is ever both mailed and closed out in
+ * the same run. A fixture that has kicked off but not yet ended (mid-game)
+ * is deliberately still eligible: that's a real, if unusual, situation and
+ * not the backlog case this guards against.
  *
  * `reminderInstant` throws on a malformed timezone or reminder time
  * (`LocalTimeError`, `src/domain/time/local.ts`/`zone.ts`). Computing it
@@ -142,6 +157,7 @@ async function fixturesDueByLifecycle(
       id: fixtures.id,
       gameId: fixtures.gameId,
       kicksOffAt: fixtures.kicksOffAt,
+      durationMinutes: fixtures.durationMinutes,
       timezone: games.timezone,
       reminderDaysBefore: games.reminderDaysBefore,
       reminderLocalTime: games.reminderLocalTime,
@@ -154,6 +170,9 @@ async function fixturesDueByLifecycle(
   const failures: SweepFailure[] = [];
 
   for (const row of rows) {
+    const endedAt = row.kicksOffAt.getTime() + row.durationMinutes * MINUTE_MS;
+    if (endedAt <= now.getTime()) continue;
+
     const fixture: DueFixture = {
       id: row.id,
       gameId: row.gameId,

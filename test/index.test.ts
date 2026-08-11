@@ -115,7 +115,11 @@ describe("the exported scheduled handler", () => {
     await db.insert(fixtures).values({
       id: crypto.randomUUID(),
       gameId,
-      kicksOffAt: new Date(SCHEDULED_TIME - 100 * 86_400_000),
+      // Not yet ended (kickoff an hour from now, default 60-minute duration) —
+      // deliberately distinct from the stale/backlog case, so the invalid
+      // timezone is what causes the failure rather than the end-check
+      // skipping the fixture before `reminderInstant` is even attempted.
+      kicksOffAt: new Date(SCHEDULED_TIME + 3_600_000),
       lifecycle: "open",
       minPlayers: 10,
       maxPlayers: 14,

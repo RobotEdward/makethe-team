@@ -1,12 +1,16 @@
 import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { emailQuota, fixtures, notificationLog, players, responses } from "../../src/db/schema.js";
+import type { Db } from "../../src/db/client.js";
+import { emailQuota, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import {
   CRON_DAILY_MATERIALISE,
   CRON_HOURLY_SWEEP,
   handleScheduled,
 } from "../../src/cron/handler.js";
+import { createNotifier } from "../../src/notify/factory.js";
+import { openAndRemind } from "../../src/sweep/open-and-remind.js";
+import { retirePastFixtures } from "../../src/sweep/retire.js";
 import { insertGame, resetDatabase, testDb } from "../support/factories.js";
 
 const db = testDb();
@@ -123,9 +127,13 @@ describe("handleScheduled: the hourly sweep", () => {
     // An invalid IANA timezone makes `reminderInstant` throw, which
     // `openAndRemind` records as a per-fixture failure rather than letting it
     // abort the run (src/sweep/open-and-remind.ts, `fixturesDueByLifecycle`).
+    // Not yet ended (kickoff an hour from now, default 60-minute duration) —
+    // deliberately distinct from the stale/backlog case, so the invalid
+    // timezone is what causes the failure rather than the end-check skipping
+    // it silently before `reminderInstant` is even attempted.
     const brokenGameId = await insertGame(db, { id: "game-broken", inviteToken: "invite-broken", timezone: "Not/AZone" });
     await insertOpenFixture(brokenGameId, {
-      kicksOffAt: new Date(NOW.getTime() - 100 * 86_400_000),
+      kicksOffAt: new Date(NOW.getTime() + 3_600_000),
     });
 
     const dueFixtureId = await insertOpenFixture("game-1", {
@@ -141,9 +149,13 @@ describe("handleScheduled: the hourly sweep", () => {
   });
 
   it("rejects and names the failure count when open-and-remind fails", async () => {
+    // Not yet ended (kickoff an hour from now, default 60-minute duration) —
+    // deliberately distinct from the stale/backlog case, so the invalid
+    // timezone is what causes the failure rather than the end-check skipping
+    // it silently before `reminderInstant` is even attempted.
     const brokenGameId = await insertGame(db, { id: "game-broken", inviteToken: "invite-broken", timezone: "Not/AZone" });
     await insertOpenFixture(brokenGameId, {
-      kicksOffAt: new Date(NOW.getTime() - 100 * 86_400_000),
+      kicksOffAt: new Date(NOW.getTime() + 3_600_000),
     });
 
     await expect(handleScheduled(CRON_HOURLY_SWEEP, env, NOW)).rejects.toThrow(
@@ -183,5 +195,88 @@ describe("handleScheduled: the hourly sweep", () => {
 
     // Deferred, not sent or failed: the queued row was deleted so a future run retries it.
     expect(await db.select().from(responses).where(eq(responses.fixtureId, fixtureId))).toHaveLength(1);
+  });
+
+  it("reproduces the reviewer's stale-fixture case: no email sent, and it is retired in the same run", async () => {
+    // A `scheduled` fixture whose kickoff was 10 days ago — the shape a
+    // multi-day cron gap leaves behind. Fix round 1's finding: this used to
+    // be opened and mailed "tomorrow", then retired by the very same tick.
+    const playerId = crypto.randomUUID();
+    await db.insert(players).values({ id: playerId, name: "Stale Squad Member", email: "stale@example.com" });
+    await db.insert(memberships).values({
+      id: crypto.randomUUID(),
+      gameId: "game-1",
+      playerId,
+      role: "player",
+      active: true,
+    });
+
+    const staleFixtureId = crypto.randomUUID();
+    await db.insert(fixtures).values({
+      id: staleFixtureId,
+      gameId: "game-1",
+      kicksOffAt: new Date(NOW.getTime() - 10 * 86_400_000),
+      lifecycle: "scheduled",
+      minPlayers: 10,
+      maxPlayers: 14,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      durationMinutes: 60,
+    });
+
+    await expect(handleScheduled(CRON_HOURLY_SWEEP, env, NOW)).resolves.toBeUndefined();
+
+    expect(await lifecycleOf(staleFixtureId)).toBe("played");
+    expect(
+      await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, staleFixtureId)),
+    ).toHaveLength(0);
+  });
+
+  it("keeps reminders already committed even if retirement itself were to fail afterwards", async () => {
+    // Pins the ordering by construction rather than leaving it incidental: if
+    // a future edit reversed the two steps, or made a `retirePastFixtures`
+    // failure somehow roll back or skip the reminder step's own writes, this
+    // would catch it.
+    //
+    // `handleScheduled` builds its own `db`/`notifier` internally and offers
+    // no seam to inject a failure into just one of its two steps — and
+    // `vi.mock`ing `src/sweep/retire.js` does not intercept the call
+    // `handleScheduled` makes under `vitest-pool-workers` (verified: the
+    // mock's call count stayed 0 while the real function ran), so this
+    // exercises the exact same two calls, in the exact same order, with the
+    // exact same real `db`, that `handleScheduled`'s hourly branch makes.
+    // Step 1 uses the real `db` throughout, so its commit is genuinely
+    // durable in D1 before step 2 is ever attempted. Step 2 is handed a
+    // `db` stand-in that throws the moment it is used, standing in for a
+    // genuine mid-step outage (a rejected D1 call) without touching schema
+    // or state any other test in this file depends on.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const remindNow = new Date("2026-08-12T09:00:00Z");
+    const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
+    await addRespondent(fixtureId, "player@example.com");
+
+    const notifier = createNotifier(env, remindNow);
+    const remindResult = await openAndRemind(db, notifier, remindNow, env.RESPONSE_TOKEN_SECRET);
+    expect(remindResult.remindersSent).toBe(1);
+    expect(remindResult.failures).toHaveLength(0);
+
+    // Committed to real D1 before retirement is ever attempted.
+    const committedBefore = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    expect(committedBefore).toHaveLength(1);
+    expect(committedBefore[0]?.status).toBe("sent");
+
+    const brokenDb = new Proxy(db, {
+      get(): never {
+        throw new Error("simulated retirement outage");
+      },
+    }) as Db;
+
+    await expect(retirePastFixtures(brokenDb, remindNow)).rejects.toThrow(/simulated retirement outage/);
+
+    // Still there: the induced failure in retirement did not touch — let
+    // alone roll back — the reminder step's already-committed write.
+    const committedAfter = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    expect(committedAfter).toHaveLength(1);
+    expect(committedAfter[0]?.status).toBe("sent");
   });
 });

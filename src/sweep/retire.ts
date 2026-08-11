@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import type { Db } from "../db/client.js";
 import { fixtures } from "../db/schema.js";
@@ -10,16 +10,27 @@ export interface RetireResult {
 const MINUTE_MS = 60_000;
 
 /**
- * Step 3 of the hourly sweep (§2.4): transition every `open` fixture whose
- * kickoff-plus-duration has passed to `played` (BR-13).
+ * Step 3 of the hourly sweep (§2.4): transition every `open` **or**
+ * `scheduled` fixture whose kickoff-plus-duration has passed to `played`
+ * (BR-13).
  *
- * `scheduled` fixtures are untouched — they haven't kicked off in the model's
- * terms regardless of the clock, so it would be wrong to retire one that was
- * never opened. `cancelled` fixtures are untouched too: they are already
- * terminal, and BR-16 says a cancelled fixture must never be resurrected into
- * another lifecycle, including `played`. `played` itself is excluded by the
- * `open` filter below, so a fixture already retired is simply not selected
- * again — re-running this after every fixture is retired changes nothing.
+ * `scheduled` is included alongside `open` because `openAndRemind` (step 1/2
+ * of the same sweep) now deliberately declines to open — or remind anyone
+ * about — a fixture that has already ended (see `fixturesDueByLifecycle` in
+ * `src/sweep/open-and-remind.ts`), which exists to stop a cron backlog from
+ * mailing "tomorrow" for a game that finished days ago. Without this,
+ * a `scheduled` fixture that step 1 declines to open that way would never
+ * transition at all — not opened (correctly declined), not retired (wrong
+ * lifecycle for the old filter) — an orphan stuck `scheduled` forever,
+ * never reminded and never closed out. Retiring it here trades a bad email
+ * for silent, correct cleanup: nobody is notified about a fixture that never
+ * got its reminder, which is the right outcome for something this stale.
+ *
+ * `cancelled` fixtures are untouched: they are already terminal, and BR-16
+ * says a cancelled fixture must never be resurrected into another lifecycle,
+ * including `played`. `played` itself is excluded by the filter below, so a
+ * fixture already retired is simply not selected again — re-running this
+ * after every fixture is retired changes nothing.
  *
  * Once a fixture is `played`, responses lock (BR-15); that's enforced by the
  * response route (`src/routes/respond.ts`), not here — this function only
@@ -36,16 +47,16 @@ const MINUTE_MS = 60_000;
  * `src/sweep/open-and-remind.ts`) already does it.
  */
 export async function retirePastFixtures(db: Db, now: Date): Promise<RetireResult> {
-  const openFixtures = await db
+  const candidateFixtures = await db
     .select({
       id: fixtures.id,
       kicksOffAt: fixtures.kicksOffAt,
       durationMinutes: fixtures.durationMinutes,
     })
     .from(fixtures)
-    .where(eq(fixtures.lifecycle, "open"));
+    .where(inArray(fixtures.lifecycle, ["open", "scheduled"]));
 
-  const dueIds = openFixtures
+  const dueIds = candidateFixtures
     .filter((fixture) => fixture.kicksOffAt.getTime() + fixture.durationMinutes * MINUTE_MS <= now.getTime())
     .map((fixture) => fixture.id);
 
