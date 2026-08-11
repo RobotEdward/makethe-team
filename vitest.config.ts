@@ -55,6 +55,12 @@ export default defineConfig(async () => {
     ],
     test: {
       setupFiles: ["./test/apply-migrations.ts"],
+      // Parallel milestone work lives in git worktrees under `.worktrees/`,
+      // which sits inside this directory. Vitest's discovery does not consult
+      // .gitignore, so without this the primary checkout also collects every
+      // sibling branch's tests — a run here reported 1245 tests instead of 416,
+      // silently mixing three branches' suites together.
+      exclude: ["**/node_modules/**", "**/dist/**", "**/.wrangler/**", ".worktrees/**"],
     },
   };
 });
