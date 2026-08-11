@@ -9,6 +9,40 @@ import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { renderDashboardPage, type DashboardRow } from "../views/dashboard.js";
+import type { SetResponseOutcome } from "../capacity/types.js";
+
+/**
+ * A mechanical tripwire for the M4 merge marker below, not decoration.
+ *
+ * A prose comment sitting over the `setResponse` call is not enough: this
+ * file does not exist on the M4 branch, so merging M4 produces no conflict
+ * here, and `outcome.kind === "rejected"` keeps compiling and passing once
+ * M4 adds a `promoted` field to the `recorded`/`waitlisted` variants of
+ * `SetResponseOutcome` — `tsc` stays green while the notification is
+ * silently dropped. Typing `outcome` as `NoPromotion<SetResponseOutcome>`
+ * makes that impossible: the moment `"promoted"` becomes a key of any member
+ * of `SetResponseOutcome`, this alias collapses that member to `never`, the
+ * assignment below fails to compile, and the merger lands on this exact line
+ * with no archaeology required.
+ *
+ * Written as `T extends unknown ? (... : T)` rather than the more obvious
+ * `"promoted" extends keyof T ? never : T` on purpose: `keyof` of a *union*
+ * type is the intersection of each member's keys (only a key common to every
+ * branch is safe to read without narrowing first), so a bare `keyof T` over
+ * `SetResponseOutcome` never sees `"promoted"` even after M4 adds it to just
+ * the `recorded`/`waitlisted` variants — that version of this type silently
+ * never fires. `T extends unknown ? X : never` is the standard trick to force
+ * a naked type parameter to distribute over the union first, so each variant
+ * is checked against `keyof` on its own, whether the field M4 adds is
+ * optional or required.
+ *
+ * **Discharging it (do this, don't delete the annotation to make the build
+ * green):** handle `outcome.promoted` the way `POST /r/:token` does — send
+ * the promoted player the N-2 "you're in" email, using one `db` handle per
+ * request for the notifier, never a second Drizzle wrapper — and only then
+ * remove this type and the `NoPromotion<...>` annotation on `outcome` below.
+ */
+type NoPromotion<T> = T extends unknown ? ("promoted" extends keyof T ? never : T) : never;
 
 export const dashboard = new Hono<AppEnv>();
 
@@ -123,7 +157,7 @@ dashboard.post(DASHBOARD_PATH, requirePlayer, async (c) => {
   // waitlist and into the squad silently and never told. Copy whatever
   // `POST /r/:token` does with `promoted` (notifier construction included: one
   // `db` handle per request, never a second Drizzle wrapper) to this site.
-  const outcome = await c.env.FIXTURE_CAPACITY.getByName(actionable.fixtureId).setResponse({
+  const outcome: NoPromotion<SetResponseOutcome> = await c.env.FIXTURE_CAPACITY.getByName(actionable.fixtureId).setResponse({
     playerId: player.id,
     intent,
     // The player set it themselves. An owner override is a different route

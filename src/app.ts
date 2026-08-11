@@ -18,6 +18,17 @@ export function createApp(): Hono<AppEnv> {
     c.header("X-Content-Type-Options", "nosniff");
   });
 
+  // A signed-in player's own data must never be written to a shared or disk
+  // cache. Scoped to `AUTHENTICATED_PREFIX` for the same blast-radius reason
+  // `sessionMiddleware` is (see its own doc comment): the public holding page
+  // and `/r/:token`/`/leave/:token` are reached by everyone including
+  // logged-out strangers and must keep whatever caching behaviour they already
+  // have, so this must not become a global mount.
+  app.use(AUTHENTICATED_PREFIX, async (c, next) => {
+    await next();
+    c.header("Cache-Control", "private, no-store");
+  });
+
   // Session resolution, deliberately scoped to the authenticated prefix rather
   // than `*` — the reasoning is on `sessionMiddleware`. Public paths (`/`,
   // `/r/:token`, `/leave/:token`, robots) pay nothing for it.

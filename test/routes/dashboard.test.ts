@@ -324,6 +324,21 @@ describe("GET /app", () => {
 
     expect(somebody).toEqual(nobody);
   });
+
+  /**
+   * This is the first page behind sign-in that renders a signed-in player's
+   * own data (their games, their responses). Without this header a shared or
+   * disk cache — a corporate proxy, a browser's back/forward cache on a
+   * shared machine — could serve one player's dashboard to the next visitor.
+   */
+  it("sends Cache-Control: private, no-store on the authenticated page", async () => {
+    const { cookie } = await signIn();
+    await seedFixtureFor(await viewerId());
+
+    const response = await get(cookie);
+
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
 });
 
 describe("POST /app", () => {

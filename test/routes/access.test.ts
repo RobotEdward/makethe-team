@@ -17,6 +17,17 @@ describe("holding page", () => {
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
   });
 
+  /**
+   * `Cache-Control: private, no-store` is mounted on `AUTHENTICATED_PREFIX`
+   * only (`/app` and below), for the same blast-radius reason
+   * `sessionMiddleware` is scoped there — this page has no signed-in visitor
+   * to protect and must keep whatever caching it already had.
+   */
+  it("carries no Cache-Control directive of its own", async () => {
+    const response = await SELF.fetch("https://makethe.team/");
+    expect(response.headers.get("cache-control")).toBeNull();
+  });
+
   it("works with no JavaScript at all", async () => {
     const body = await (await SELF.fetch("https://makethe.team/")).text();
     expect(body).not.toContain("<script");

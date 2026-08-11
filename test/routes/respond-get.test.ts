@@ -102,6 +102,21 @@ describe("GET /r/:token — rendering", () => {
     expect(body).not.toContain("<script");
   });
 
+  /**
+   * `Cache-Control: private, no-store`, added for the dashboard, is mounted on
+   * `AUTHENTICATED_PREFIX` (`/app` and below) only — `/r/:token` is reached by
+   * a signed token, not a session, and must keep whatever caching behaviour it
+   * already had.
+   */
+  it("carries no Cache-Control directive of its own", async () => {
+    const { fixtureId, playerId } = await seedOpenFixture();
+    const token = await tokenFor(fixtureId, playerId);
+
+    const response = await SELF.fetch(`https://makethe.team/r/${token}`);
+
+    expect(response.headers.get("cache-control")).toBeNull();
+  });
+
   it("shows two response buttons for an open fixture", async () => {
     const { fixtureId, playerId } = await seedOpenFixture();
     const token = await tokenFor(fixtureId, playerId);

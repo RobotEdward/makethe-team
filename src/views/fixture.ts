@@ -91,8 +91,13 @@ function viewerHeadline(
  * with no waitlist rank to hand (the dashboard: see `DashboardFixture` for why
  * it deliberately has none) passes `waitlistRank: null` and gets the
  * unnumbered wording.
+ *
+ * Takes only the two fields it reads, not the whole `FixturePageOptions`
+ * `viewer` shape — so a caller with no `playerId` to hand (the dashboard,
+ * which never has another player's id and has no reason to echo the
+ * viewer's own) has nothing to fabricate a dummy value for.
  */
-export function viewerHeadlineOpen(viewer: FixturePageOptions["viewer"]): string {
+export function viewerHeadlineOpen(viewer: Pick<FixturePageOptions["viewer"], "status" | "waitlistRank">): string {
   switch (viewer.status) {
     case "in":
       return "You're in.";

@@ -52,7 +52,7 @@ function renderRow(row: DashboardRow): string {
   // Same sentences the fixture page uses for the same statuses — imported, not
   // restated, so a waitlisted player can never read as confirmed on one page
   // and not the other (BR-5).
-  const headline = viewerHeadlineOpen({ playerId: "", status: row.myStatus, waitlistRank: null });
+  const headline = viewerHeadlineOpen({ status: row.myStatus, waitlistRank: null });
   const headlineClass = `viewer-headline${row.myStatus === "waitlisted" ? " warn" : ""}`;
 
   return `

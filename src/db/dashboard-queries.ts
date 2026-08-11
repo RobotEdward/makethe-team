@@ -63,6 +63,19 @@ export interface DashboardFixture {
  * and would make the page's contents depend on an instant D1 and the Durable
  * Object can disagree about. Past fixtures as a *feature* — a history view —
  * are out of scope for this milestone.
+ *
+ * **Driving the join from `responses` has a consequence worth stating out
+ * loud: a player who joins a Game *after* a fixture has already opened has no
+ * `responses` row for it, so that fixture never appears on their dashboard and
+ * cannot be answered here.** This is not a bug. BR-1/BR-2 fix the eligible
+ * squad, and therefore the set of players a fixture mints a response row for,
+ * at the moment it opens; `/r/:token` behaves identically for the same
+ * player — no token was ever minted for them either, so they have no way to
+ * reach that fixture from a reminder email — and this route re-uses that same
+ * eligible set rather than inventing a second one. No later milestone is
+ * expected to need to revisit this: it would require retroactively minting a
+ * response row (and a token) for a fixture that has already opened, which is
+ * a change to BR-1/BR-2's eligibility rule, not to this query.
  */
 function entitledTo(playerId: string, extra?: SQL): SQL | undefined {
   return and(
