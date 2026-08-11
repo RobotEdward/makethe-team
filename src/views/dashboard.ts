@@ -72,13 +72,16 @@ function renderRow(row: DashboardRow): string {
  * the viewer is an active member of, with the response they can change.
  *
  * Server-rendered, no `<script>`, no `type="password"` (TR-4, TR-15, TR-16).
- * The passkey link below is a plain `<a>` to a page that *does* carry script:
- * this page stays scriptless, which is why the passkey affordance lives on its
- * own page rather than inline here.
  * This is the *only* renderer for this page: `POST` redirects back to `GET`
  * rather than rendering a second time, so there is no second copy of this
  * markup to keep in step (see `src/routes/dashboard.ts` for why the dashboard
  * redirects where `POST /r/:token` deliberately does not).
+ *
+ * The passkey link is a plain `<a>` to a page that *does* carry script. That
+ * is the whole reason `/app/passkeys` is a separate page rather than a panel
+ * here: this page — the one a player actually uses every week — stays
+ * scriptless, and the enhancement is quarantined on the page that cannot
+ * exist without it.
  */
 export function renderDashboardPage({ playerName, rows }: DashboardPageOptions): string {
   const body = `
