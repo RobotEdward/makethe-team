@@ -46,11 +46,11 @@ function bindings(overrides: Partial<Bindings> = {}): Bindings {
 }
 
 /** `POST /sign-in` exactly as the page's form does it: urlencoded, same-origin. */
-function requestLink(email: string, extra: Record<string, string> = {}) {
+function requestLink(email: string) {
   return new Request(`${ORIGIN}${SIGN_IN_PATH}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
-    body: new URLSearchParams({ email, ...extra }),
+    body: new URLSearchParams({ email }),
   });
 }
 
@@ -451,19 +451,22 @@ describe("sign out", () => {
    * any page in the world. Pinned on its own, both spellings, because "the
    * form uses POST" is not the same statement as "GET cannot do it".
    */
-  it.each([SIGN_OUT_PATH, "/signout"])("does not sign out on GET %s", async (path) => {
-    const { cookie } = await signIn();
+  it.each([SIGN_OUT_PATH, "/signout", "/api/auth/sign-out"])(
+    "does not sign out on GET %s",
+    async (path) => {
+      const { cookie } = await signIn();
 
-    const response = await createApp().fetch(
-      new Request(`${ORIGIN}${path}`, { headers: { cookie } }),
-      bindings(),
-    );
+      const response = await createApp().fetch(
+        new Request(`${ORIGIN}${path}`, { headers: { cookie } }),
+        bindings(),
+      );
 
-    expect(response.status).not.toBe(302);
-    expect(response.headers.getSetCookie()).toEqual([]);
-    // The only thing that matters: the session is still there afterwards.
-    expect(await getDb(env.DB).select().from(sessionTable)).toHaveLength(1);
-  });
+      expect(response.status).not.toBe(302);
+      expect(response.headers.getSetCookie()).toEqual([]);
+      // The only thing that matters: the session is still there afterwards.
+      expect(await getDb(env.DB).select().from(sessionTable)).toHaveLength(1);
+    },
+  );
 
   it("refuses a cross-site POST", async () => {
     const { cookie } = await signIn();
