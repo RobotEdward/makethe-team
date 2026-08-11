@@ -34,7 +34,8 @@ Do not rebuild any of this. All of it is on `main`, deployed, and covered by 152
 ## Global Constraints
 
 - **Language:** TypeScript, `strict: true` with `noUncheckedIndexedAccess`. No `any` outside a documented type-guard boundary.
-- **No JavaScript on any critical path** (TR-4). Every page must be fully usable with scripting disabled. **There is no auto-submit anywhere in this codebase** (TR-15) — the email link opens a page with two explicit buttons that POST.
+- **Every page must be fully usable with scripting disabled** (TR-4). JavaScript may be added as progressive enhancement where it earns its place — this is a strong default, not an absolute ban, relaxed by the project owner on 11 August 2026 — but nothing on the response path may *require* it. Build server-first; if you add script, justify it and keep the no-JS path working.
+- **There is no auto-submit anywhere in this codebase, and `GET` must never mutate** (TR-15). This survives the relaxation above and is not negotiable, because its justification is different: email clients and security appliances follow every link automatically, **and some of them execute JavaScript**. An auto-submitting page hands a prefetcher the ability to answer on a player's behalf. The email link opens a page with two explicit buttons that POST.
 - **`GET` must never mutate** (TR-15). Email scanners and link prefetchers follow every `GET` in an email. A `GET` that records a response causes phantom acceptances.
 - **The word "team" is brand-only.** Never in a table, column, type, function or variable name. Product name and user-facing copy only.
 - **Vocabulary is fixed** (§1.7): Game, Fixture, Player, Membership, Squad, Response, Reminder, Lifecycle, Display status, Short, Uneven. Never "event", "match", "user", or "RSVP" — including in user-facing copy, where the word is "response".
