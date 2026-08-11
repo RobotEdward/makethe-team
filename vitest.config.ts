@@ -49,6 +49,15 @@ export default defineConfig(async () => {
             // there unless it's provided here too. This value is committed on
             // purpose — it is obviously fake and used nowhere but tests.
             RESPONSE_TOKEN_SECRET: "test-only-secret-not-used-in-any-real-environment",
+            // Pinned so the suite does not inherit whatever `vars.NOTIFIER` in
+            // wrangler.jsonc happens to say. It said "console" for the whole of
+            // M0-M3, so every test that exercises the sweep was implicitly
+            // relying on a production config value; flipping that var to
+            // "resend" for the first live send turned 13 tests red at once,
+            // all of them on the factory's fail-closed guard rather than on
+            // anything they were written to check. Tests that want another
+            // notifier construct it themselves.
+            NOTIFIER: "console",
           },
         },
       }),

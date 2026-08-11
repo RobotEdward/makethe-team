@@ -35,7 +35,7 @@
     "crons": ["*/5 * * * *", "15 3 * * *"]
   },
   "vars": {
-    "NOTIFIER": "console",
+    "NOTIFIER": "resend",
     "MAX_EMAILS_PER_DAY": "50",
     "EMAIL_FROM": "Make The Team <no-reply@makethe.team>"
   },
