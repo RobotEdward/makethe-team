@@ -4,6 +4,7 @@ import { cancel } from "./routes/cancel.js";
 import { home } from "./routes/home.js";
 import { respond } from "./routes/respond.js";
 import { robots } from "./routes/robots.js";
+import { cspHeader } from "./security/csp.js";
 import { renderLinkProblemPage } from "./views/link-problem.js";
 
 export function createApp(): Hono<AppEnv> {
@@ -14,6 +15,7 @@ export function createApp(): Hono<AppEnv> {
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
     c.header("X-Content-Type-Options", "nosniff");
+    c.header("Content-Security-Policy", await cspHeader());
   });
 
   app.route("/", robots);

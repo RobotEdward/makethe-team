@@ -55,9 +55,13 @@ export interface CancelConfirmPageOptions extends CancelPreview {
  * The button is `--warn`, not `--accent`: every other primary button in this
  * product confirms something good is happening ("I'm in"), and this one ends
  * a game. It must not look like them.
+ *
+ * Exported as bare CSS, without the `<style>` tags, so `src/security/csp.ts`
+ * can hash exactly what ends up between them (see `STYLES` in
+ * `src/views/layout.ts` for the same reasoning) — the wrapping tags are
+ * added once, at the single call site below.
  */
-const CANCEL_STYLES = `
-<style>
+export const CANCEL_STYLES_CSS = `
   .cancel-form { margin-top: 1.5rem; text-align: left; }
   .cancel-form label { display: block; margin-bottom: 0.4rem; color: var(--fg); font-weight: 600; }
   .cancel-form textarea {
@@ -75,8 +79,10 @@ const CANCEL_STYLES = `
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
     background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left;
   }
-</style>
 `;
+
+/** `CANCEL_STYLES_CSS`, wrapped exactly as it is inlined into the page body. */
+const CANCEL_STYLES_TAG = `\n<style>${CANCEL_STYLES_CSS}</style>\n`;
 
 function fixtureHeading(preview: CancelPreview): string {
   return `
@@ -105,7 +111,7 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
   const reachable = options.recipientCount - options.unreachableCount;
 
   const body = `
-    ${CANCEL_STYLES}
+    ${CANCEL_STYLES_TAG}
     <h2 style="text-align:center; margin-top:0; color:var(--warn);">Cancel this game?</h2>
     ${fixtureHeading(options)}
     <p class="spots">${options.inCount} ${plural(options.inCount, "player is", "players are")} in.</p>

@@ -3,7 +3,13 @@ export interface LayoutOptions {
   body: string;
 }
 
-const STYLES = `
+/**
+ * The single stylesheet inlined into every page's `<head>`. Exported so
+ * `src/security/csp.ts` can hash its exact content rather than a pasted
+ * value — the hash is computed from this constant, so it can never drift
+ * from what actually ships.
+ */
+export const STYLES = `
   :root {
     color-scheme: light dark;
     --fg: #1c1b19; --bg: #fbfaf8; --mut: #6b6862; --line: #e3ded4;
