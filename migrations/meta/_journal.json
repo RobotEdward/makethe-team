@@ -22,6 +22,13 @@
       "when": 1786419324148,
       "tag": "0002_freezing_skaar",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786443451262,
+      "tag": "0003_curious_joshua_kane",
+      "breakpoints": true
     }
   ]
 }

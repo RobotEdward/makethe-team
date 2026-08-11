@@ -42,6 +42,7 @@ export async function insertGame(db: Db, overrides: Partial<GameInsert> = {}): P
  * Call from `beforeEach` so tests never inherit another test's rows.
  */
 export async function resetDatabase(): Promise<void> {
+  await env.DB.exec("DELETE FROM audit_log");
   await env.DB.exec("DELETE FROM notification_log");
   await env.DB.exec("DELETE FROM email_quota");
   await env.DB.exec("DELETE FROM responses");

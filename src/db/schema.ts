@@ -147,3 +147,23 @@ export const emailQuota = sqliteTable("email_quota", {
   day: text("day").primaryKey(),
   sentCount: integer("sent_count").notNull().default(0),
 });
+
+export const auditLog = sqliteTable(
+  "audit_log",
+  {
+    id: text("id").primaryKey(),
+    // Nullable: cron and other system actions have no actor (BR-27, §2.8).
+    actorPlayerId: text("actor_player_id").references(() => players.id),
+    // Polymorphic reference; not a foreign key (the entity table varies).
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    action: text("action").notNull(),
+    beforeJson: text("before_json"),
+    afterJson: text("after_json"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [
+    index("audit_log_entity_idx").on(t.entityType, t.entityId),
+    index("audit_log_created_at_idx").on(t.createdAt),
+  ],
+);
