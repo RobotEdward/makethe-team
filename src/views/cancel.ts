@@ -79,6 +79,7 @@ export const CANCEL_STYLES_CSS = `
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
     background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left;
   }
+  .cancel-heading { text-align: center; margin-top: 0; color: var(--warn); }
 `;
 
 /** `CANCEL_STYLES_CSS`, wrapped exactly as it is inlined into the page body. */
@@ -112,7 +113,7 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
 
   const body = `
     ${CANCEL_STYLES_TAG}
-    <h2 style="text-align:center; margin-top:0; color:var(--warn);">Cancel this game?</h2>
+    <h2 class="cancel-heading">Cancel this game?</h2>
     ${fixtureHeading(options)}
     <p class="spots">${options.inCount} ${plural(options.inCount, "player is", "players are")} in.</p>
     <p class="spots">${reachable} ${plural(reachable, "person", "people")} will be emailed to say it's off.</p>

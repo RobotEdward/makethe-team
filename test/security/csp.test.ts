@@ -175,3 +175,86 @@ describe("Content-Security-Policy", () => {
     expectFixedDirectives(response.headers.get("content-security-policy"));
   });
 });
+
+/**
+ * The guard the suite lacked when the cancellation confirm page shipped an
+ * inline `style="…"` heading: `style-src`'s hashes cover `<style>` *blocks*
+ * only (`STYLES`, `CANCEL_STYLES_CSS`), never a `style=""` *attribute* — that
+ * additionally needs `'unsafe-hashes'`, which this policy deliberately omits
+ * (see `src/security/csp.ts`). A header-string assertion can never catch
+ * that gap, because the header does not change when a page grows an inline
+ * attribute; only inspecting what each page actually renders can.
+ *
+ * Every page this branch serves is captured here, driven through the real
+ * app (not the bare view functions, so a future page that bypasses `layout`
+ * is still covered), each with a phrase distinctive to *that* page so a 404
+ * or an empty body can never masquerade as coverage of the page it stands
+ * in for — the same shape as the sibling M5 branch's
+ * "no password field anywhere" enumeration in `test/routes/signin.test.ts`.
+ */
+describe("no inline style attribute on any served page", () => {
+  it("renders no style=\"…\" attribute anywhere (style-src hashes don't cover attributes)", async () => {
+    type Page = { name: string; html: string; distinctive: RegExp };
+    const pages: Page[] = [];
+
+    async function capture(name: string, distinctive: RegExp, url: string) {
+      const html = await (await SELF.fetch(url)).text();
+      pages.push({ name, html, distinctive });
+    }
+
+    await capture("holding page", /Make The Team/, "https://makethe.team/");
+
+    const { fixtureId, playerId } = await seedOpenFixture();
+    const respondToken = await signResponseToken(
+      { playerId, fixtureId, expiresAt: KICKOFF.getTime() + 86_400_000 },
+      RESPONSE_SECRET,
+    );
+    await capture(
+      "respond, intent=in",
+      /class="button primary" name="intent" value="in"/,
+      `https://makethe.team/r/${respondToken}?intent=in`,
+    );
+    await capture(
+      "respond, intent=out",
+      /class="button primary" name="intent" value="out"/,
+      `https://makethe.team/r/${respondToken}?intent=out`,
+    );
+    await capture("bad respond token", /This link isn't working/, "https://makethe.team/r/not-a-real-token");
+    await capture("leave", /Thursday 7-a-side/, `https://makethe.team/leave/${respondToken}`);
+
+    const cancelToken = await signCancelToken(
+      { ownerPlayerId: playerId, fixtureId, expiresAt: KICKOFF.getTime() },
+      CANCEL_SECRET,
+    );
+    await capture("cancel confirm", /Cancel this game\?/, `https://makethe.team/cancel/${cancelToken}`);
+
+    await capture("robots.txt", /User-agent/i, "https://makethe.team/robots.txt");
+    await capture("404", /Not found/, "https://makethe.team/no-such-route");
+
+    expect(pages.map((page) => page.name).sort()).toEqual(
+      [
+        "holding page",
+        "respond, intent=in",
+        "respond, intent=out",
+        "bad respond token",
+        "leave",
+        "cancel confirm",
+        "robots.txt",
+        "404",
+      ].sort(),
+    );
+
+    // Matches any opening tag carrying a `style="…"` attribute. Does not
+    // match the `<style>` tag itself (no attribute follows the tag name
+    // there), so a legitimate `<style>` block never trips this.
+    const styleAttribute = /<[a-zA-Z][a-zA-Z0-9-]*\b[^>]*\sstyle\s*=/i;
+
+    for (const { name, html, distinctive } of pages) {
+      expect(html, `${name} must actually be that page`).toMatch(distinctive);
+      expect(
+        html,
+        `${name} must not carry an inline style="" attribute — style-src's hashes don't cover it without 'unsafe-hashes'`,
+      ).not.toMatch(styleAttribute);
+    }
+  });
+});
