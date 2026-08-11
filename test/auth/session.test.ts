@@ -225,13 +225,19 @@ describe("session middleware", () => {
     // A broken binding is the one case where the middleware cannot answer
     // honestly. It must still not take a public-looking page down: anonymous,
     // logged, no throw.
-    const broken = {
-      prepare: () => {
-        throw new Error("D1 is unavailable");
-      },
-    } as unknown as D1Database;
+    //
+    // The cookie is what makes this test load-bearing. Without one Better Auth
+    // short-circuits to null before touching D1, the binding below is never
+    // called, and the middleware's `catch` is never entered — an earlier
+    // version of this test did exactly that and passed with the `catch`
+    // replaced by a rethrow.
+    const { cookie } = await signIn();
+    const fail = () => {
+      throw new Error("D1 is unavailable");
+    };
+    const broken = { prepare: fail, batch: fail, exec: fail } as unknown as D1Database;
 
-    const response = await guardedApp().fetch(get("/app/whoami"), bindings({ DB: broken }));
+    const response = await guardedApp().fetch(get("/app/whoami", cookie), bindings({ DB: broken }));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ userId: null, playerId: null });
