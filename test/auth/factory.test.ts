@@ -52,10 +52,27 @@ describe("createAuth", () => {
     expect(rows[0]?.emailVerified).toBe(false);
   });
 
-  it("constructs a fresh instance per call rather than sharing state", () => {
+  it("constructs a fresh instance per call rather than sharing state", async () => {
+    // `expect(authA).not.toBe(authB)` alone would not catch the regression
+    // this test exists to catch: a factory that returns a distinct
+    // `betterAuth()` object each call (so the two top-level objects are
+    // never `===`) but resolves the same underlying adapter under the hood —
+    // e.g. by memoising the *resolved* adapter and handing back a wrapper
+    // function that always returns it. Comparing `(await
+    // auth.$context).adapter` is what actually distinguishes "genuinely
+    // separate per-request construction" from "looks separate, shares
+    // state". Verified by temporarily rewriting `createAuth` to cache the
+    // resolved adapter behind such a wrapper: `authA !== authB` still
+    // passed, but `ctxA.adapter !== ctxB.adapter` failed, confirming this
+    // assertion (and not the identity check above it) is what catches that
+    // regression. Reverted after confirming.
     const db = getDb(env.DB);
     const authA = createAuth({ ...env, BETTER_AUTH_URL: "http://localhost:8787" }, db);
     const authB = createAuth({ ...env, BETTER_AUTH_URL: "http://localhost:8787" }, db);
     expect(authA).not.toBe(authB);
+
+    const ctxA = await authA.$context;
+    const ctxB = await authB.$context;
+    expect(ctxA.adapter).not.toBe(ctxB.adapter);
   });
 });

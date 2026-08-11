@@ -191,6 +191,12 @@ export const auditLog = sqliteTable(
 // read or write it, the adapter throws `BetterAuthError` immediately
 // ("field does not exist") rather than silently reintroducing a password
 // column.
+//
+// `verification.createdAt`/`updatedAt` are declared NOT NULL here, matching
+// `getAuthTables({}).verification` upstream (`required: true` for both).
+// An earlier pass of this schema left them nullable by mistake; there was no
+// deliberate reason to diverge, so they were corrected to match upstream
+// rather than documented as an intentional exception.
 // ---------------------------------------------------------------------------
 
 export const user = sqliteTable("user", {
@@ -249,8 +255,8 @@ export const verification = sqliteTable(
     identifier: text("identifier").notNull(),
     value: text("value").notNull(),
     expiresAt: integer("expiresAt", { mode: "timestamp_ms" }).notNull(),
-    createdAt: integer("createdAt", { mode: "timestamp_ms" }),
-    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [index("verification_identifier_idx").on(t.identifier)],
 );
