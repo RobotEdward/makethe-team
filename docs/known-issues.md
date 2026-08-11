@@ -19,6 +19,12 @@ Anything that *was* fixed lives in the git history, not here.
 | TR-31's "owner-visible warning" on reaching the daily send ceiling is not implemented anywhere — only a code comment marks the gap. Combined with the deliberate fail-closed-to-0 behaviour on missing config, a `MAX_EMAILS_PER_DAY` config typo would silently stop all email with nothing but a `console.error` in Workers Logs. | `src/cron/handler.ts`, `src/notify/quota.ts` | M4, when N-4 (owner attention email) gives this a natural delivery channel |
 | **BR-22 is not yet satisfied.** Every reminder carries a `GET /leave/:token` link so no message 404s, but the route only renders a page explaining that leaving is not self-service yet — it performs no write and is not a leave mechanism. | `src/routes/respond.ts` (`renderLeavePage`) | M7 ("unsubscribe and leave-game flows" in the spec's build order) |
 
+## Accepted breaking changes
+
+| Item | Why accepted |
+|---|---|
+| **M4's owner-cancellation task added a `kind` discriminator inside the signed body of every response token** (`src/domain/token.ts`), so that a response token and a cancel token cannot be swapped for one another. A token minted before this change carries no `kind` and is now rejected as `malformed` by the new verifier — there is no dual-accept or version fallback. Tokens are not persisted (see `src/sweep/open-and-remind.ts`); they exist only inside already-delivered emails, so this invalidates any availability link still sitting in a recipient's inbox at deploy time. **Accepted** because production's only recipients at the time of this change were the project's own plus-addressed test addresses, and the next hourly sweep re-mints every link regardless. **A future change to the token format, once real players exist, would need a versioned or dual-accept verification path** rather than repeating this break — the trigger is the same one already tracked above for enabling required reviewers: the first real squad member's address going in. | Task 2, M4 |
+
 ## Deferred indefinitely — theoretical or negligible
 
 | Item | Why it can wait |

@@ -41,6 +41,16 @@ export type TokenVerification<Payload> =
  */
 type TokenKind = "response" | "cancel";
 
+/**
+ * The env binding each token kind's secret is expected to live under, used
+ * only to make the "secret unset" error actionable — not a claim about how
+ * the binding is actually wired (that is Task 7's decision for `cancel`).
+ */
+const SECRET_BINDING_NAME: Record<TokenKind, string> = {
+  response: "RESPONSE_TOKEN_SECRET",
+  cancel: "CANCEL_TOKEN_SECRET",
+};
+
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -99,15 +109,23 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
  * and cancel tokens today) so there is exactly one signing routine to keep
  * correct, rather than one hand-maintained copy per token type quietly
  * drifting apart.
+ *
+ * `kind` is spread in *after* `payload`, not before: if the caller's payload
+ * object happened to carry its own `kind` property (a widened type, a DB
+ * row, a spread of a larger record), the discriminator baked into the signed
+ * bytes must still be the one this function was told to sign for — never
+ * whatever the caller's object happened to contain. The discriminator is the
+ * only thing standing between the two token types; it must not be
+ * overridable by construction.
  */
-async function signToken(kind: TokenKind, payload: Record<string, unknown>, secret: string, label: string): Promise<string> {
+async function signToken<Payload extends object>(kind: TokenKind, payload: Payload, secret: string): Promise<string> {
   // Signing with no secret is a programming error (misconfigured binding),
   // never a runtime/user condition — throw loudly rather than silently
   // producing an unverifiable token.
   if (secret.length === 0) {
-    throw new Error(`${label}: secret must not be empty (token secret unset?)`);
+    throw new Error(`${SECRET_BINDING_NAME[kind]} must not be empty (secret unset?)`);
   }
-  const body = base64UrlEncode(ENCODER.encode(JSON.stringify({ kind, ...payload })));
+  const body = base64UrlEncode(ENCODER.encode(JSON.stringify({ ...payload, kind })));
   const signature = await crypto.subtle.sign("HMAC", await hmacKey(secret), ENCODER.encode(body));
   return `${body}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
@@ -172,8 +190,7 @@ async function verifyToken<Payload extends { expiresAt: number }>(
   }
 
   if (typeof parsed !== "object" || parsed === null) return { ok: false, reason: "malformed" };
-  const raw = parsed as Record<string, unknown>;
-  const candidate = raw;
+  const candidate = parsed as Record<string, unknown>;
 
   // The discriminator lives inside the signed bytes, so a token minted for
   // the other purpose cannot reach this point by presenting a different
@@ -192,7 +209,10 @@ async function verifyToken<Payload extends { expiresAt: number }>(
 
   // Strip the discriminator before handing the payload back: it is part of
   // the signed bytes, not part of the public shape callers were promised.
-  const rest = { ...raw };
+  // Cast back to an unnarrowed record for the deletion — `isPayload` above
+  // narrowed `candidate` to `Payload`, whose type has no `kind` property to
+  // index once narrowed.
+  const rest = { ...candidate } as Record<string, unknown>;
   delete rest["kind"];
   return { ok: true, payload: rest as Payload };
 }
@@ -204,7 +224,7 @@ async function verifyToken<Payload extends { expiresAt: number }>(
  * and the signature is what makes it unforgeable.
  */
 export async function signResponseToken(payload: ResponseTokenPayload, secret: string): Promise<string> {
-  return signToken("response", { ...payload }, secret, "signResponseToken");
+  return signToken("response", payload, secret);
 }
 
 /** Verify and decode a response token (TR-14). See {@link verifyToken}. */
@@ -239,7 +259,7 @@ export function responseTokenExpiry(kicksOffAt: Date): Date {
  * attention email a one-tap cancel link.
  */
 export async function signCancelToken(payload: CancelTokenPayload, secret: string): Promise<string> {
-  return signToken("cancel", { ...payload }, secret, "signCancelToken");
+  return signToken("cancel", payload, secret);
 }
 
 /** Verify and decode a cancel token. See {@link verifyToken}. */

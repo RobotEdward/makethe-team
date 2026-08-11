@@ -288,6 +288,84 @@ describe("cross-purpose safety: a token minted for one purpose is not usable for
     expect(result.ok).toBe(false);
     if (!result.ok) expect(["bad-signature", "malformed"]).toContain(result.reason);
   });
+
+  // The two tests above are satisfied by the *opposing shape guard* alone: a
+  // response token's body has no `ownerPlayerId`, so `isCancelPayload`
+  // rejects it regardless of whether the discriminator check even runs, and
+  // vice versa. Neither one actually exercises the discriminator. These two
+  // use a body that satisfies *both* shape guards — every field either
+  // payload type needs — signed with the real secret, so only the
+  // discriminator itself can be the reason for rejection. (Verified
+  // load-bearing: deleting the `candidate["kind"] !== kind` check in
+  // `verifyToken` makes both of these fail; restoring it makes them pass
+  // again. See the fix-round report.)
+  it("a same-secret body satisfying both shapes is rejected by verifyResponseToken when kind is cancel", async () => {
+    const body = encodeBase64Url(
+      new TextEncoder().encode(
+        JSON.stringify({
+          kind: "cancel",
+          playerId: "player-edward",
+          ownerPlayerId: "player-edward",
+          fixtureId: "fixture-thursday",
+          expiresAt: NOW.getTime() + 1000,
+        }),
+      ),
+    );
+    const key = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    );
+    const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+    const token = `${body}.${encodeBase64Url(signature)}`;
+
+    const result = await verifyResponseToken(token, SECRET, NOW);
+    expect(result).toEqual({ ok: false, reason: "malformed" });
+  });
+
+  it("a same-secret body satisfying both shapes is rejected by verifyCancelToken when kind is response", async () => {
+    const body = encodeBase64Url(
+      new TextEncoder().encode(
+        JSON.stringify({
+          kind: "response",
+          playerId: "player-edward",
+          ownerPlayerId: "player-edward",
+          fixtureId: "fixture-thursday",
+          expiresAt: NOW.getTime() + 1000,
+        }),
+      ),
+    );
+    const key = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    );
+    const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
+    const token = `${body}.${encodeBase64Url(signature)}`;
+
+    const result = await verifyCancelToken(token, SECRET, NOW);
+    expect(result).toEqual({ ok: false, reason: "malformed" });
+  });
+});
+
+describe("discriminator cannot be overridden by a caller-supplied `kind` in the payload (I1)", () => {
+  it("signResponseToken with a smuggled kind: \"cancel\" in the payload still mints a response token", async () => {
+    // `payload` is typed `ResponseTokenPayload`, which has no `kind` field —
+    // simulate a widened caller (a DB row, a spread of a larger record) by
+    // casting a payload that carries one anyway. If the discriminator can be
+    // overridden by the payload's own `kind`, this mints a token that
+    // `verifyCancelToken` accepts — the exact cross-use the brief calls out.
+    const smuggled = {
+      playerId: "player-edward",
+      fixtureId: "fixture-thursday",
+      expiresAt: NOW.getTime() + 1000,
+      kind: "cancel",
+    } as unknown as Parameters<typeof signResponseToken>[0];
+
+    const token = await signResponseToken(smuggled, SECRET);
+
+    const cancelResult = await verifyCancelToken(token, SECRET, NOW);
+    expect(cancelResult).toEqual({ ok: false, reason: "malformed" });
+
+    const responseResult = await verifyResponseToken(token, SECRET, NOW);
+    expect(responseResult.ok).toBe(true);
+  });
 });
 
 describe("cancel token: round trip", () => {
@@ -374,6 +452,57 @@ describe("cancel token: rejection", () => {
     const token = await signCancelToken(cancelPayload({ expiresAt: NOW.getTime() - 1 }), SECRET);
     const result = await verifyCancelToken(token, SECRET, new Date(NaN));
     expect(result).toEqual({ ok: false, reason: "expired" });
+  });
+});
+
+describe("cancel token canonicality: base64url malleability closed", () => {
+  it("rejects all three non-canonical variants of a valid signature's final character", async () => {
+    const token = await signCancelToken(cancelPayload(), SECRET);
+    const [body, signature] = token.split(".");
+    expect(signature).toBeDefined();
+    const sig = signature as string;
+    const lastChar = sig.at(-1) as string;
+    const prefix = sig.slice(0, -1);
+
+    const canonicalIndex = BASE64URL_ALPHABET.indexOf(lastChar);
+    expect(canonicalIndex).toBeGreaterThanOrEqual(0);
+    const groupBase = canonicalIndex - (canonicalIndex % 4);
+    const equivalentChars = [0, 1, 2, 3].map((offset) => BASE64URL_ALPHABET[groupBase + offset] as string);
+    const nonCanonicalChars = equivalentChars.filter((c) => c !== lastChar);
+    expect(nonCanonicalChars).toHaveLength(3);
+
+    for (const variant of nonCanonicalChars) {
+      const variantToken = `${body}.${prefix}${variant}`;
+      expect(variantToken).not.toBe(token);
+
+      const result = await verifyCancelToken(variantToken, SECRET, NOW);
+      expect(result).toEqual({ ok: false, reason: "malformed" });
+    }
+  });
+
+  it("rejects standard-base64 substitutes (+/ and = padding) as malformed, not silently normalised", async () => {
+    const token = await signCancelToken(cancelPayload(), SECRET);
+    const [body, signature] = token.split(".");
+    expect(body).toBeDefined();
+    expect(signature).toBeDefined();
+
+    const standardBody = (body as string).replace(/-/g, "+").replace(/_/g, "/");
+    const standardSignature = (signature as string).replace(/-/g, "+").replace(/_/g, "/");
+
+    // Only substitute a half that actually contains a `-`/`_` character;
+    // otherwise the "variant" is identical to the original and the test
+    // would prove nothing.
+    if (standardBody !== body) {
+      const result = await verifyCancelToken(`${standardBody}.${signature}`, SECRET, NOW);
+      expect(result).toEqual({ ok: false, reason: "malformed" });
+    }
+    if (standardSignature !== signature) {
+      const result = await verifyCancelToken(`${body}.${standardSignature}`, SECRET, NOW);
+      expect(result).toEqual({ ok: false, reason: "malformed" });
+    }
+
+    const paddedResult = await verifyCancelToken(`${body}=.${signature}`, SECRET, NOW);
+    expect(paddedResult).toEqual({ ok: false, reason: "malformed" });
   });
 });
 
