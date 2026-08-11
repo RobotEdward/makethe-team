@@ -21,6 +21,28 @@ function base64UrlEncode(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/**
+ * Decodes base64url, rejecting anything that is not the *canonical*
+ * encoding of its own decoded bytes.
+ *
+ * Base64 is not injective at the trailing character: the last character of
+ * a 3-byte group can carry unused low-order padding bits that the decoder
+ * discards, so several distinct strings decode to the same bytes (for a
+ * 32-byte HMAC, the final character has 4 significant bits inside a 6-bit
+ * character — 4 encodings decode identically). Left unchecked, that means a
+ * signature — a value that may later be used as a key — has more than one
+ * valid string form, and comparing decoded bytes with `timingSafeEqual`
+ * cannot see the difference. Re-encoding the decoded bytes and requiring
+ * the result to equal the input closes that: only the one canonical string
+ * decodes successfully, so every value this module hands back has exactly
+ * one valid encoding. Applied uniformly to both the payload and the
+ * signature, since both share the property.
+ *
+ * This check happens here, inside decode — before `verifyResponseToken`
+ * ever computes or compares a signature — so a non-canonical input is
+ * rejected on its own shape and never becomes a second timing oracle
+ * layered on top of the signature comparison.
+ */
 function base64UrlDecode(value: string): Uint8Array | null {
   if (value.length === 0 || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
   const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (value.length % 4)) % 4);
@@ -28,6 +50,7 @@ function base64UrlDecode(value: string): Uint8Array | null {
     const binary = atob(padded);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    if (base64UrlEncode(bytes) !== value) return null;
     return bytes;
   } catch {
     return null;

@@ -49,6 +49,31 @@ async function tokenFor(fixtureId: string, playerId: string, expiresAt = KICKOFF
   return signResponseToken({ playerId, fixtureId, expiresAt }, SECRET);
 }
 
+/**
+ * Flips one bit in the first byte of a base64url-encoded signature and
+ * re-encodes, producing a genuinely different, still-canonical value.
+ *
+ * Not done by toggling the string's last character: a 32-byte HMAC's final
+ * base64url character carries unused low-order padding bits, so two
+ * different characters there can decode to byte-identical bytes — a no-op
+ * "tamper" that verifies as valid and made this exact test flake (review
+ * round 2). token.ts's own decoder now rejects any non-canonical encoding
+ * outright, so a naive toggle would in fact be caught too, but flipping the
+ * first byte is the direct fix: it changes real signature bytes, not just
+ * a discarded padding bit, so the result is unambiguously a different
+ * signature every time.
+ */
+function tamperSignature(signature: string): string {
+  const padded = signature.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (signature.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  bytes[0] = (bytes[0] ?? 0) ^ 0x01;
+  let flippedBinary = "";
+  for (const b of bytes) flippedBinary += String.fromCharCode(b);
+  return btoa(flippedBinary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 async function snapshotResponses(fixtureId: string) {
   return db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
 }
@@ -212,7 +237,7 @@ describe("GET /r/:token — token failures render one friendly page (TR-14)", ()
 
     const valid = await tokenFor(fixtureId, playerId);
     const [validBody, validSig] = valid.split(".");
-    const tampered = `${validBody}.${(validSig ?? "").slice(0, -1)}${(validSig ?? "").endsWith("A") ? "B" : "A"}`;
+    const tampered = `${validBody}.${tamperSignature(validSig ?? "")}`;
 
     const wrongFixture = await tokenFor("some-other-fixture-id", playerId);
 
