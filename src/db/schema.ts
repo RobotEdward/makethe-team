@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "../domain/audit.js";
 import { INITIAL_LIFECYCLE, LIFECYCLES } from "../domain/lifecycle.js";
 import { NOTIFICATION_STATUSES, NOTIFICATION_TYPES } from "../notify/dedupe-key.js";
 import {
@@ -155,9 +156,9 @@ export const auditLog = sqliteTable(
     // Nullable: cron and other system actions have no actor (BR-27, §2.8).
     actorPlayerId: text("actor_player_id").references(() => players.id),
     // Polymorphic reference; not a foreign key (the entity table varies).
-    entityType: text("entity_type").notNull(),
+    entityType: text("entity_type", { enum: AUDIT_ENTITY_TYPES }).notNull(),
     entityId: text("entity_id").notNull(),
-    action: text("action").notNull(),
+    action: text("action", { enum: AUDIT_ACTIONS }).notNull(),
     beforeJson: text("before_json"),
     afterJson: text("after_json"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),

@@ -1,3 +1,4 @@
+import type { AuditAction, AuditEntityType } from "../domain/audit.js";
 import type { Db } from "./client.js";
 import { auditLog } from "./schema.js";
 
@@ -11,9 +12,9 @@ import { auditLog } from "./schema.js";
 export interface AuditEntry {
   /** Null for cron and other system actions, which have no actor. */
   actorPlayerId: string | null;
-  entityType: string;
+  entityType: AuditEntityType;
   entityId: string;
-  action: string;
+  action: AuditAction;
   before?: unknown;
   after?: unknown;
   now: Date;
