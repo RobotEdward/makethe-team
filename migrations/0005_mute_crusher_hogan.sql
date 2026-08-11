@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `players_auth_user_id_unique` ON `players` (`auth_user_id`) WHERE "players"."auth_user_id" is not null;

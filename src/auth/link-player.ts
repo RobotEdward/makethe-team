@@ -32,8 +32,9 @@ export interface SignInIdentity {
 
 /**
  * What linking did. Every outcome is distinguishable because the caller has
- * to react differently to each: three of them are a usable Player, and
- * `conflict`/`ambiguous-email` are refusals that need a human, not a retry.
+ * to react differently to each: three of them are a usable Player, three are
+ * refusals that need a human, and one (`create-raced`) is a refusal that
+ * wants a retry.
  */
 export type LinkPlayerResult =
   /** The identity was written onto a previously unlinked matching Player. */
@@ -65,16 +66,62 @@ export type LinkPlayerResult =
    * guest row occupies the address under the unique index. Needs the guest
    * row repaired by a human.
    */
-  | { outcome: "email-held-by-guest"; playerIds: string[] };
+  | { outcome: "email-held-by-guest"; playerIds: string[] }
+  /**
+   * Every attempt lost its race with a concurrent sign-in, and the state the
+   * losses pointed at had changed again by the time it was re-read. Nothing
+   * was written. Unlike the other refusals this one is *retryable* — it says
+   * "the table is moving under us", not "a human must decide" — and it needs
+   * `MAX_ATTEMPTS` consecutive interleavings to happen at all.
+   */
+  | { outcome: "create-raced" };
+
+/**
+ * How many times the whole decision is re-made when a write loses a race.
+ * Each retry re-reads, so an ordinary single interleaving resolves on the
+ * second attempt; the bound exists only so a pathologically busy address
+ * cannot spin.
+ */
+const MAX_ATTEMPTS = 3;
+
+/** "Lost a race, the state has changed, decide again from a fresh read." */
+const RETRY = Symbol("retry");
 
 /**
  * Normalised form of an address, used for *comparison only*.
  *
- * Addresses are matched case-insensitively (trimmed, lower-cased): mail
- * providers treat the domain as case-insensitive and every provider this
- * project uses treats the local part that way too, so `Ada@Example.com` and
- * `ada@example.com` are one person, and refusing to match them would strand
- * them with a second, empty Player.
+ * Addresses are matched case-insensitively: mail providers treat the domain
+ * as case-insensitive and every provider this project uses treats the local
+ * part that way too, so `Ada@Example.com` and `ada@example.com` are one
+ * person, and refusing to match them would strand them with a second, empty
+ * Player.
+ *
+ * **The fold is ASCII-only, and deliberately so.** The comparison happens in
+ * two engines at once — this function folds the incoming address in
+ * JavaScript, and the query folds the stored column with SQLite's `lower()`.
+ * `String.prototype.toLowerCase()` does full Unicode case folding; SQLite's
+ * `lower()` (D1 is built without ICU) only maps `A`-`Z`. Using the two
+ * together meant the sides disagreed, and disagreement in this direction is
+ * account takeover: `K@example.com` with a U+212A KELVIN SIGN folds to
+ * `k@example.com` in JavaScript but not in SQL, so it matched — and claimed —
+ * an existing `k@example.com` Player. (It was also lossy the other way:
+ * `ÄDA@example.com` signing in as itself missed its own row and minted a
+ * duplicate, because JS produced `äda@…` and SQL produced `Äda@…`.)
+ *
+ * So this maps `A`-`Z` and nothing else, which is *exactly* what `lower()`
+ * does. Both sides now apply the identical function, and two distinct strings
+ * fold together only if they differ purely by ASCII case — which is the
+ * intended semantics. Every non-ASCII confusable (U+212A, U+0130 `İ`, U+017F
+ * `ſ`, the `ﬀ` ligatures, full-width forms) is now left alone by both sides
+ * and therefore cannot collide with an ASCII address. The price is a false
+ * *miss*: two addresses differing in non-ASCII case (`Äda@` vs `äda@`) are
+ * treated as two people, and the second gets a new Player. That is the safe
+ * direction — a missed match costs a duplicate row a human can merge, a false
+ * match costs someone their account.
+ *
+ * `trim()` is transport hygiene, not folding: a deliverable address has no
+ * leading or trailing whitespace (a quoted local part's spaces sit inside the
+ * quotes), so trimming cannot bring two real addresses together.
  *
  * Nothing rewrites an existing row's stored `email` to this form — that is a
  * data migration, not a side effect of someone signing in — so matching is
@@ -83,7 +130,7 @@ export type LinkPlayerResult =
  * consistent from the start.
  */
 function normaliseEmail(email: string): string {
-  return email.trim().toLowerCase();
+  return email.trim().replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
 }
 
 /**
@@ -101,17 +148,38 @@ function normaliseEmail(email: string): string {
  * constrained, and a guest row that somehow carried an address must still
  * never be claimable by a sign-in.
  *
- * There is no `db.batch()` here because there is nothing to make atomic: the
- * write is a single statement in every branch. The link is a guarded
- * `UPDATE ... WHERE auth_user_id IS NULL`, i.e. a compare-and-set, so two
- * concurrent sign-ins racing for the same Player cannot both win — the loser
- * sees zero rows changed, re-reads, and reports `already-linked` or
- * `conflict` on what it finds.
+ * **Concurrency.** D1 has no interactive transactions, so every branch here
+ * is a read that decides and a write that could be invalidated in between.
+ * Rather than hope, each write is made *conditional in SQL* — the link is a
+ * compare-and-set (`UPDATE … WHERE auth_user_id IS NULL`), and both creates
+ * are `INSERT … ON CONFLICT DO NOTHING RETURNING`, backed by unique indexes
+ * on `email` and (migration `0005`) on `auth_user_id`. A write that changes
+ * no row means someone else got there first, and the answer is not to guess
+ * but to throw the decision away and make it again from a fresh read: that is
+ * the loop below. The retry converges because the winner's row is visible to
+ * the next attempt's lookups, which then report `already-linked` (the winner
+ * was this same identity, e.g. a double-submitted magic link) or `conflict`
+ * (it was a different one).
  */
 export async function linkPlayerOnSignIn(
   db: Db,
   identity: SignInIdentity,
 ): Promise<LinkPlayerResult> {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    const result = await attemptLink(db, identity);
+    if (result !== RETRY) return result;
+  }
+  return { outcome: "create-raced" };
+}
+
+/**
+ * One pass of the decision. Returns `RETRY` when a conditional write matched
+ * no row, i.e. the read this pass was built on is already stale.
+ */
+async function attemptLink(
+  db: Db,
+  identity: SignInIdentity,
+): Promise<LinkPlayerResult | typeof RETRY> {
   const { authUserId, name, now } = identity;
 
   const [existing] = await db
@@ -120,12 +188,17 @@ export async function linkPlayerOnSignIn(
     .where(eq(players.authUserId, authUserId));
   if (existing) return { outcome: "already-linked", playerId: existing.id };
 
-  const email = identity.verifiedEmail === null ? null : normaliseEmail(identity.verifiedEmail);
+  // `?? null` rather than `=== null`, so an untyped caller's `undefined` takes
+  // the no-address branch instead of throwing inside `normaliseEmail`.
+  const raw = identity.verifiedEmail ?? null;
+  const email = raw === null ? null : normaliseEmail(raw);
   if (email === null || email === "") {
     // No verified address, so no Player can be claimed. They are still a real
     // person who signed in and needs somewhere to stand, so they get a Player
     // of their own with no address on it — which claims nothing and collides
     // with nothing (the unique index on `email` is partial and ignores nulls).
+    // The empty-string case matters: `lower(email) = ''` would happily match a
+    // row whose stored address is the empty string.
     return createPlayer(db, { authUserId, name, email: null, emailVerifiedAt: null, now });
   }
 
@@ -134,6 +207,12 @@ export async function linkPlayerOnSignIn(
   // a guest row holding this address would make the insert below fail the
   // unique index. Reading them is how that turns into an answer instead of a
   // D1 constraint error surfacing at sign-in.
+  //
+  // `lower(email)` cannot use `players_email_unique` (which indexes the raw
+  // column), so this is a full scan of `players`. Deliberate at this scale —
+  // production holds single-digit rows and this runs once per sign-in. An
+  // expression index on `lower(email)` is the fix if the table ever grows;
+  // it would need its own migration and buys nothing today.
   const rows = await db
     .select({ id: players.id, authUserId: players.authUserId, isGuest: players.isGuest })
     .from(players)
@@ -171,38 +250,42 @@ export async function linkPlayerOnSignIn(
       // for: when we first knew.
       emailVerifiedAt: sql`coalesce(${players.emailVerifiedAt}, ${now.getTime()})`,
     })
+    // The compare-and-set. Without `auth_user_id IS NULL` this UPDATE would
+    // overwrite an identity written between the read above and this write —
+    // a silent account transfer, and the only concurrency control the link
+    // branch has.
     .where(and(eq(players.id, match.id), isNull(players.authUserId)))
     .returning({ id: players.id });
 
-  if (linked.length > 0) return { outcome: "linked", playerId: match.id };
-
-  // Lost the compare-and-set: someone linked this Player between the read
-  // and the write. Re-read to say which of the two it was.
-  const [current] = await db
-    .select({ authUserId: players.authUserId })
-    .from(players)
-    .where(eq(players.id, match.id));
-  if (current?.authUserId === authUserId) return { outcome: "already-linked", playerId: match.id };
-  return {
-    outcome: "conflict",
-    playerId: match.id,
-    existingAuthUserId: current?.authUserId ?? "unknown",
-  };
+  if (linked.length === 0) return RETRY;
+  return { outcome: "linked", playerId: match.id };
 }
 
+/**
+ * Insert the new Player, conditionally: `on conflict do nothing` covers both
+ * unique indexes this row can collide with (`players_email_unique` and
+ * `players_auth_user_id_unique`), so a concurrent first sign-in loses the
+ * insert instead of surfacing a raw D1 constraint error mid-sign-in.
+ */
 async function createPlayer(
   db: Db,
   row: { authUserId: string; name: string; email: string | null; emailVerifiedAt: Date | null; now: Date },
-): Promise<LinkPlayerResult> {
+): Promise<LinkPlayerResult | typeof RETRY> {
   const playerId = crypto.randomUUID();
-  await db.insert(players).values({
-    id: playerId,
-    name: row.name,
-    email: row.email,
-    isGuest: false,
-    authUserId: row.authUserId,
-    emailVerifiedAt: row.emailVerifiedAt,
-    createdAt: row.now,
-  });
+  const inserted = await db
+    .insert(players)
+    .values({
+      id: playerId,
+      name: row.name,
+      email: row.email,
+      isGuest: false,
+      authUserId: row.authUserId,
+      emailVerifiedAt: row.emailVerifiedAt,
+      createdAt: row.now,
+    })
+    .onConflictDoNothing()
+    .returning({ id: players.id });
+
+  if (inserted.length === 0) return RETRY;
   return { outcome: "created", playerId };
 }

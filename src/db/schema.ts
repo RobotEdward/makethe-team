@@ -25,7 +25,16 @@ export const players = sqliteTable(
     emailVerifiedAt: integer("email_verified_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
-  (t) => [uniqueIndex("players_email_unique").on(t.email).where(sql`${t.email} is not null`)],
+  (t) => [
+    uniqueIndex("players_email_unique").on(t.email).where(sql`${t.email} is not null`),
+    // Partial, like the one above: most players never sign in and this column
+    // stays null. It is what stops two concurrent first sign-ins by one
+    // identity minting two Players — nothing else can, since D1 has no
+    // interactive transactions (migration 0005, TR-30).
+    uniqueIndex("players_auth_user_id_unique")
+      .on(t.authUserId)
+      .where(sql`${t.authUserId} is not null`),
+  ],
 );
 
 export const games = sqliteTable("games", {
