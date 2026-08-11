@@ -1,7 +1,8 @@
 import { createExecutionContext, env, waitOnExecutionContext } from "cloudflare:test";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { fixtures } from "../src/db/schema.js";
-import { CRON_DAILY_MATERIALISE } from "../src/cron/handler.js";
+import { CRON_DAILY_MATERIALISE, CRON_HOURLY_SWEEP } from "../src/cron/handler.js";
 import worker from "../src/index.js";
 import { insertGame, resetDatabase, testDb } from "./support/factories.js";
 
@@ -76,5 +77,53 @@ describe("the exported scheduled handler", () => {
 
   it("rejects on an unrecognised schedule", async () => {
     await expect(runScheduled("*/5 * * * *")).rejects.toThrow(/Unrecognised cron/);
+  });
+
+  it("resolves on the hourly schedule when the sweep is healthy", async () => {
+    await insertGame(db, { id: "healthy-1", inviteToken: "invite-healthy-1" });
+
+    await expect(runScheduled(CRON_HOURLY_SWEEP)).resolves.toBeUndefined();
+  });
+
+  it("retires an open fixture past kickoff plus duration on the hourly schedule", async () => {
+    const gameId = await insertGame(db, { id: "healthy-1", inviteToken: "invite-healthy-1" });
+    const fixtureId = crypto.randomUUID();
+    await db.insert(fixtures).values({
+      id: fixtureId,
+      gameId,
+      kicksOffAt: new Date(SCHEDULED_TIME - 2 * 3_600_000),
+      lifecycle: "open",
+      minPlayers: 10,
+      maxPlayers: 14,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      durationMinutes: 60,
+    });
+
+    await runScheduled(CRON_HOURLY_SWEEP);
+
+    const [row] = await db.select({ lifecycle: fixtures.lifecycle }).from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(row?.lifecycle).toBe("played");
+  });
+
+  it("rejects on the hourly schedule when open-and-remind reports a failure", async () => {
+    const gameId = await insertGame(db, {
+      id: "broken-1",
+      inviteToken: "invite-broken-1",
+      timezone: "Not/AZone",
+    });
+    await db.insert(fixtures).values({
+      id: crypto.randomUUID(),
+      gameId,
+      kicksOffAt: new Date(SCHEDULED_TIME - 100 * 86_400_000),
+      lifecycle: "open",
+      minPlayers: 10,
+      maxPlayers: 14,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      durationMinutes: 60,
+    });
+
+    await expect(runScheduled(CRON_HOURLY_SWEEP)).rejects.toThrow(/hourly sweep failed/);
   });
 });
