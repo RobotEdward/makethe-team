@@ -11,7 +11,7 @@ import { renderMagicLinkEmail } from "../notify/templates/magic-link.js";
  * How long a sign-in link stays usable. One constant, used both to configure
  * the plugin and to word the email, so the two can never disagree about it.
  */
-const MAGIC_LINK_EXPIRY_MINUTES = 5;
+const MAGIC_LINK_EXPIRY_MINUTES: number = 5;
 
 /**
  * Builds a Better Auth instance for a single request.
@@ -59,7 +59,16 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
           // when the product opens to the public. Nothing else changes. ----
           if (!isSignInAllowlisted(env.SIGNIN_ALLOWLIST, email)) return;
 
-          await sendSignInLink(env, email, url, now, notifier);
+          // Not addressable here: an unbounded-length `email` (Better Auth's
+          // `z.email()` body schema does not cap local-part length) is
+          // written to the `verification` table *before* this callback runs
+          // at all, refused or not. Rejecting long addresses in this gate
+          // would not stop that write, and adding a pre-validation step of
+          // our own would need to answer with the exact same 200 on both
+          // branches (§ the whole point of this gate) or reopen the oracle it
+          // closes. Left as a recorded storage-amplification footnote rather
+          // than a fix; see task-3-report.md.
+          await sendSignInLink(env, db, email, url, now, notifier);
         },
       }),
     ],
@@ -77,6 +86,14 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
  * non-production environment can reach a real inbox. Built lazily, inside the
  * send, so a request that issues no link never constructs one (and never
  * trips `createNotifier`'s by-name failure for a half-configured provider).
+ *
+ * `db` is `createAuth`'s own handle, passed straight through to
+ * `createNotifier` rather than left for it to build with `getDb(env.DB)`.
+ * `getDb` is not memoised, so letting `createNotifier` call it internally
+ * would open a *second* Drizzle wrapper around the same D1 binding inside a
+ * request that already has one — precisely the configuration the doc comment
+ * on `createAuth` above warns about. Threading the existing handle through
+ * keeps this file honest about the invariant it documents.
  *
  * Nothing is written to `notification_log`, on purpose (§2.8's dedupe table):
  * Better Auth owns issuance and rate limiting for this message, and a sign-in
@@ -96,6 +113,7 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
  */
 async function sendSignInLink(
   env: Bindings,
+  db: Db,
   email: string,
   url: string,
   now: Date,
@@ -104,9 +122,9 @@ async function sendSignInLink(
   try {
     const { subject, html, text } = renderMagicLinkEmail({
       signInUrl: url,
-      expiresInLabel: `${MAGIC_LINK_EXPIRY_MINUTES} minutes`,
+      expiresInLabel: `${MAGIC_LINK_EXPIRY_MINUTES} minute${MAGIC_LINK_EXPIRY_MINUTES === 1 ? "" : "s"}`,
     });
-    const notifier = override ?? createNotifier(env, now);
+    const notifier = override ?? createNotifier(env, db, now);
     const [result] = await notifier.send([
       { channel: "email", to: email, subject, html, text, dedupeKey: `n5:${crypto.randomUUID()}` },
     ]);
@@ -152,7 +170,19 @@ export function isSignInAllowlisted(raw: string | undefined, email: string): boo
     .some((entry) => entry !== "" && entry === wanted);
 }
 
-/** Trim, then lowercase `A`-`Z` and nothing else (see `isSignInAllowlisted`). */
+/**
+ * Trim, then lowercase `A`-`Z` and nothing else (see `isSignInAllowlisted`).
+ *
+ * The `trim()` here is for the **allowlist entries** — a human typing a
+ * comma-separated secret into `wrangler secret put` will leave stray spaces
+ * and newlines around addresses, and those must be tolerated. On the
+ * **address** side (the value Better Auth hands the gate) it is currently
+ * unreachable dead weight: Better Auth's Zod body schema rejects any
+ * whitespace-wrapped address with a 400 before `sendMagicLink` ever runs, so
+ * no attacker input reaches this function carrying whitespace to strip. Do
+ * not read the address-side `trim()` as the gate normalising its own input —
+ * it doesn't need to, today, only because of a validator upstream of it.
+ */
 function foldAsciiCase(value: string): string {
   return value.trim().replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
 }

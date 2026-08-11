@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createNotifier } from "../../src/notify/factory.js";
+import { getDb } from "../../src/db/client.js";
 import { ConsoleNotifier } from "../../src/notify/console-notifier.js";
 import { NullNotifier } from "../../src/notify/null-notifier.js";
 import { QuotaNotifier } from "../../src/notify/quota.js";
@@ -9,6 +10,7 @@ import type { Bindings } from "../../src/env.js";
 import { resetDatabase } from "../support/factories.js";
 
 const NOW = new Date("2026-08-11T09:00:00Z");
+const db = getDb(env.DB);
 
 function bindings(notifier: string): Bindings {
   return {
@@ -157,15 +159,15 @@ describe("createNotifier", () => {
   // nothing downstream can bypass the daily send ceiling — that is now the
   // one type every caller ever sees back.
   it("wraps the selection in QuotaNotifier so the ceiling cannot be bypassed", () => {
-    expect(createNotifier(bindings("console"), NOW)).toBeInstanceOf(QuotaNotifier);
-    expect(createNotifier(bindings("null"), NOW)).toBeInstanceOf(QuotaNotifier);
-    expect(createNotifier(bindings("resend"), NOW)).toBeInstanceOf(QuotaNotifier);
+    expect(createNotifier(bindings("console"), db, NOW)).toBeInstanceOf(QuotaNotifier);
+    expect(createNotifier(bindings("null"), db, NOW)).toBeInstanceOf(QuotaNotifier);
+    expect(createNotifier(bindings("resend"), db, NOW)).toBeInstanceOf(QuotaNotifier);
   });
 
   it("still delegates to ConsoleNotifier's behaviour for env.NOTIFIER === 'console'", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
-      const results = await createNotifier(bindings("console"), NOW).send([message()]);
+      const results = await createNotifier(bindings("console"), db, NOW).send([message()]);
       expect(results).toEqual([{ ok: true, providerMessageId: null }]);
       expect(logSpy).toHaveBeenCalledTimes(1);
     } finally {
@@ -176,7 +178,7 @@ describe("createNotifier", () => {
   it("still delegates to NullNotifier's behaviour for env.NOTIFIER === 'null'", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     try {
-      const results = await createNotifier(bindings("null"), NOW).send([message()]);
+      const results = await createNotifier(bindings("null"), db, NOW).send([message()]);
       expect(results).toEqual([{ ok: true, providerMessageId: null }]);
       expect(logSpy).not.toHaveBeenCalled();
     } finally {
@@ -191,7 +193,7 @@ describe("createNotifier", () => {
   // as a guaranteed throw at the top of every sweep.
   describe("env.NOTIFIER === 'resend'", () => {
     it("constructs a working notifier that reaches Resend, still behind the daily ceiling", async () => {
-      const notifier = createNotifier(bindings("resend"), NOW);
+      const notifier = createNotifier(bindings("resend"), db, NOW);
       expect(notifier).toBeInstanceOf(QuotaNotifier);
 
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -224,7 +226,7 @@ describe("createNotifier", () => {
         throw new Error("the daily ceiling let a message through to the network");
       });
       try {
-        const results = await createNotifier(zeroCeiling, NOW).send([message()]);
+        const results = await createNotifier(zeroCeiling, db, NOW).send([message()]);
         expect(results).toEqual([{ ok: false, error: "daily-ceiling-reached" }]);
         expect(fetchSpy).not.toHaveBeenCalled();
       } finally {
@@ -235,31 +237,31 @@ describe("createNotifier", () => {
     it("fails loudly and by name when RESEND_API_KEY is missing or blank", () => {
       for (const value of [undefined as unknown as string, "", "   "]) {
         const broken: Bindings = { ...bindings("resend"), RESEND_API_KEY: value };
-        expect(() => createNotifier(broken, NOW)).toThrow(/RESEND_API_KEY/);
-        expect(() => createNotifier(broken, NOW)).toThrow(/NOTIFIER is "resend"/);
+        expect(() => createNotifier(broken, db, NOW)).toThrow(/RESEND_API_KEY/);
+        expect(() => createNotifier(broken, db, NOW)).toThrow(/NOTIFIER is "resend"/);
       }
     });
 
     it("fails loudly and by name when EMAIL_FROM is missing or blank", () => {
       for (const value of [undefined as unknown as string, "", "   "]) {
         const broken: Bindings = { ...bindings("resend"), EMAIL_FROM: value };
-        expect(() => createNotifier(broken, NOW)).toThrow(/EMAIL_FROM/);
-        expect(() => createNotifier(broken, NOW)).toThrow(/NOTIFIER is "resend"/);
+        expect(() => createNotifier(broken, db, NOW)).toThrow(/EMAIL_FROM/);
+        expect(() => createNotifier(broken, db, NOW)).toThrow(/NOTIFIER is "resend"/);
       }
     });
 
     it("names only the binding that is actually missing, so one log line diagnoses it", () => {
       const broken: Bindings = { ...bindings("resend"), EMAIL_FROM: "" };
-      expect(() => createNotifier(broken, NOW)).not.toThrow(/RESEND_API_KEY/);
+      expect(() => createNotifier(broken, db, NOW)).not.toThrow(/RESEND_API_KEY/);
     });
   });
 
   it("throws at startup with a clear message for an unrecognised value", () => {
-    expect(() => createNotifier(bindings("resend-but-typoed"), NOW)).toThrow(/resend-but-typoed/);
-    expect(() => createNotifier(bindings("resend-but-typoed"), NOW)).toThrow(/NOTIFIER/);
+    expect(() => createNotifier(bindings("resend-but-typoed"), db, NOW)).toThrow(/resend-but-typoed/);
+    expect(() => createNotifier(bindings("resend-but-typoed"), db, NOW)).toThrow(/NOTIFIER/);
   });
 
   it("throws for an empty string binding rather than defaulting silently", () => {
-    expect(() => createNotifier(bindings(""), NOW)).toThrow();
+    expect(() => createNotifier(bindings(""), db, NOW)).toThrow();
   });
 });

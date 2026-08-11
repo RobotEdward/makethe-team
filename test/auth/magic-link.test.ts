@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAuth, isSignInAllowlisted } from "../../src/auth/factory.js";
 import { getDb } from "../../src/db/client.js";
+import { emailQuota } from "../../src/db/schema.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { resetDatabase } from "../support/factories.js";
 
@@ -25,7 +26,7 @@ class RecordingNotifier implements Notifier {
 }
 
 function bindings(allowlist: string | undefined) {
-  return { ...env, BETTER_AUTH_URL: BASE_URL, SIGNIN_ALLOWLIST: allowlist as string };
+  return { ...env, BETTER_AUTH_URL: BASE_URL, SIGNIN_ALLOWLIST: allowlist };
 }
 
 async function requestMagicLink(email: string, allowlist: string | undefined) {
@@ -92,6 +93,47 @@ describe("magic link issuance", () => {
     expect(url.searchParams.get("token")).toBeTruthy();
     expect(message.html).toContain("magic-link/verify");
     expect(message.html).toContain(url.searchParams.get("token")!);
+  });
+
+  it("goes through the real createNotifier branch when no override is given", async () => {
+    // Every other test in this file passes a `notifier` override, so the
+    // `override ?? createNotifier(env, db, now)` branch at
+    // `src/auth/factory.ts` — the one that actually runs in production, with
+    // the quota wrapper and the D1 write — is otherwise never executed by the
+    // suite. This test omits the override on purpose. `env.NOTIFIER` is
+    // `"console"` (wrangler.jsonc's default, unchanged by `bindings()`), and
+    // the repo-wide `outboundService` in vitest.config.ts answers all
+    // outbound `fetch` with a 599, so `console` is the only real branch this
+    // suite can safely exercise.
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      const auth = createAuth(bindings("someone@example.com"), getDb(env.DB), NOW);
+      const response = await auth.handler(
+        new Request(`${BASE_URL}/api/auth/sign-in/magic-link`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: BASE_URL },
+          body: JSON.stringify({ email: "someone@example.com" }),
+        }),
+      );
+      expect(response.status).toBe(200);
+
+      // ConsoleNotifier actually ran — proof this is the real factory
+      // branch, not a stand-in.
+      expect(logSpy).toHaveBeenCalledTimes(1);
+      expect(logSpy.mock.calls[0]?.[0]).toContain("someone@example.com");
+
+      // QuotaNotifier's daily-ceiling reservation is a real D1 write made
+      // through the `db` handle `createNotifier` was given — the same
+      // handle `createAuth` used to write the `verification` row, per I-1.
+      // A second, unmemoised `getDb(env.DB)` wrapper reads it back fine here
+      // (Miniflare's WAL only deadlocks under concurrent cross-wrapper
+      // access, not sequential reads after commit), so this also pins that
+      // the write actually landed rather than merely "did not throw".
+      const rows = await getDb(env.DB).select().from(emailQuota);
+      expect(rows).toEqual([{ day: "2026-08-11", sentCount: 1 }]);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it("sends nothing at all for an address that is not on the allowlist", async () => {

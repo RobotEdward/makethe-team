@@ -39,8 +39,15 @@ export interface Bindings {
    * *nobody* gets a link (`src/auth/factory.ts` fails closed, same convention
    * as `MAX_EMAILS_PER_DAY`), so it must be set before the trial can begin.
    * Deleted outright when the product opens to the public.
+   *
+   * Typed honestly as optional, unlike `RESEND_API_KEY`/`EMAIL_FROM` above:
+   * this binding's whole *purpose* is to be read while unset (that is the
+   * fail-closed default state before the trial begins), so
+   * `isSignInAllowlisted(raw: string | undefined, …)` must be able to accept
+   * `undefined` without a cast standing between the type and the runtime
+   * value it actually receives.
    */
-  SIGNIN_ALLOWLIST: string;
+  SIGNIN_ALLOWLIST: string | undefined;
 }
 
 export type AppEnv = { Bindings: Bindings };

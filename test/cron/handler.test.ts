@@ -279,7 +279,7 @@ describe("handleScheduled: the sweep", () => {
     const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
     await addRespondent(fixtureId, "player@example.com");
 
-    const notifier = createNotifier(env, remindNow);
+    const notifier = createNotifier(env, db, remindNow);
     const remindResult = await openAndRemind(db, notifier, remindNow, env.RESPONSE_TOKEN_SECRET);
     expect(remindResult.remindersSent).toBe(1);
     expect(remindResult.failures).toHaveLength(0);
