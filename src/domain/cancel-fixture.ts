@@ -1,0 +1,152 @@
+import { and, eq } from "drizzle-orm";
+import type { Db } from "../db/client.js";
+import { auditLog, fixtures, memberships, players, responses } from "../db/schema.js";
+import { isCancellationRecipient } from "../notify/templates/cancellation.js";
+import type { Lifecycle } from "./lifecycle.js";
+import type { ResponseStatus } from "./response-status.js";
+
+/**
+ * One player who must be told the fixture is off (N-3, BR-20).
+ *
+ * `email` may be null even here: only guests are excluded by BR-32, and a
+ * non-guest with no address is a data anomaly rather than a category. The
+ * send path already handles that case (`skipped-no-recipient` in
+ * `src/notify/send-promotion.ts`), so this operation reports who *should* be
+ * told and leaves "can we actually reach them" to the layer that sends.
+ */
+export interface CancellationRecipient {
+  playerId: string;
+  name: string;
+  email: string | null;
+  /** `in` or `waitlisted`; the email's copy is the same for both, but the caller logs which. */
+  status: ResponseStatus;
+}
+
+export interface CancelFixtureInput {
+  fixtureId: string;
+  /** Whoever the cancellation token identified. Proving who they are is not proving they may. */
+  actorPlayerId: string;
+  /** Stored verbatim, including empty — see below. */
+  reason: string;
+  now: Date;
+}
+
+/**
+ * `not-entitled` is deliberately one reason, not three. A stranger, a plain
+ * member and an owner who has since been removed from the squad are all
+ * refused with the same value, so nothing reaching a user distinguishes "you
+ * were never an owner" from "you are no longer one".
+ */
+export type CancelFixtureResult =
+  | { cancelled: true; recipients: CancellationRecipient[] }
+  | { cancelled: false; reason: "not-found" | "not-entitled" | "already-cancelled" | "played" };
+
+/**
+ * Cancel a fixture (BR-14) and report who needs telling.
+ *
+ * Always manual, always by an owner, always from a non-terminal lifecycle.
+ * Three things happen: the lifecycle write, an `audit_log` row (BR-27), and
+ * the recipient set for N-3 handed back to the caller. **This function sends
+ * nothing** — keeping the send in the route is what keeps the operation
+ * testable against nothing but a database.
+ *
+ * Deliberately *not* routed through the capacity Durable Object. The object
+ * serialises slot arithmetic; this is a lifecycle change and touches no
+ * counts. Nor does it need the object to fence off late responses: once the
+ * lifecycle is `cancelled`, responses on this fixture are effectively frozen,
+ * because `FixtureCapacity.setResponse` already refuses any fixture whose
+ * lifecycle is not `open` (`src/capacity/fixture-capacity.ts`). A response
+ * racing this write is therefore either accepted before the cancellation —
+ * and its player is simply not in the recipient set, which is the same
+ * outcome as answering a second later — or refused after it.
+ */
+export async function cancelFixture(
+  db: Db,
+  input: CancelFixtureInput,
+): Promise<CancelFixtureResult> {
+  const { fixtureId, actorPlayerId, reason, now } = input;
+
+  const [fixture] = await db
+    .select({ gameId: fixtures.gameId, lifecycle: fixtures.lifecycle })
+    .from(fixtures)
+    .where(eq(fixtures.id, fixtureId));
+  if (!fixture) return { cancelled: false, reason: "not-found" };
+
+  // The entitlement check, and a security boundary rather than a validation
+  // nicety: the token proved *who*, this proves *entitled*. An active owner
+  // membership **of this fixture's Game** is required — "active" being
+  // `memberships.active`, the same flag `openFixture` uses to decide who is
+  // even invited, so an owner removed from the squad after the cancellation
+  // email was sent cannot still act on it.
+  //
+  // Checked before the lifecycle guards so that an unentitled actor learns
+  // nothing about the fixture's state from the refusal they get.
+  const [membership] = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.gameId, fixture.gameId),
+        eq(memberships.playerId, actorPlayerId),
+        eq(memberships.role, "owner"),
+        eq(memberships.active, true),
+      ),
+    );
+  if (!membership) return { cancelled: false, reason: "not-entitled" };
+
+  const before: Lifecycle = fixture.lifecycle;
+  if (before === "cancelled") return { cancelled: false, reason: "already-cancelled" };
+  if (before === "played") return { cancelled: false, reason: "played" };
+
+  const answered = await db
+    .select({
+      playerId: responses.playerId,
+      status: responses.status,
+      name: players.name,
+      email: players.email,
+      isGuest: players.isGuest,
+    })
+    .from(responses)
+    .innerJoin(players, eq(players.id, responses.playerId))
+    .where(eq(responses.fixtureId, fixtureId));
+
+  // BR-20's rule lives in exactly one place — the predicate the N-3 template
+  // exports — rather than being restated as a `where` clause here, so the
+  // recipients this returns cannot drift from the recipients that email was
+  // written for.
+  const recipients: CancellationRecipient[] = answered
+    .filter((row) => isCancellationRecipient(row.status, row.isGuest))
+    .map(({ playerId, name, email, status }) => ({ playerId, name, email, status }));
+
+  // One batch, deliberately. D1 has no interactive transactions, so this is
+  // the only way the lifecycle change and its audit row cannot diverge — and
+  // a lifecycle change recorded nowhere is precisely what BR-27 exists to
+  // prevent. Two statements, so the 100-bound-parameter ceiling is not in
+  // play; nothing here is variable-length, so no chunking either.
+  //
+  // The reason is stored verbatim, including when it is empty or nothing but
+  // whitespace: the database records what the owner typed, and deciding that
+  // a blank reason is the same as no reason is the *template's* judgement
+  // (see `CancellationEmailPayload.reason`), made at render time where it can
+  // be changed without rewriting history.
+  await db.batch([
+    db
+      .update(fixtures)
+      .set({ lifecycle: "cancelled", cancelledAt: now, cancellationReason: reason })
+      .where(eq(fixtures.id, fixtureId)),
+    // Written inline rather than through `recordAudit`, which issues its own
+    // statement and so could not join this batch. The shape is identical.
+    db.insert(auditLog).values({
+      id: crypto.randomUUID(),
+      actorPlayerId,
+      entityType: "fixture",
+      entityId: fixtureId,
+      action: "fixture.cancelled",
+      beforeJson: JSON.stringify({ lifecycle: before }),
+      afterJson: JSON.stringify({ lifecycle: "cancelled", reason }),
+      createdAt: now,
+    }),
+  ]);
+
+  return { cancelled: true, recipients };
+}
