@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
+import { dashboard } from "./routes/dashboard.js";
 import { home } from "./routes/home.js";
 import { respond } from "./routes/respond.js";
 import { robots } from "./routes/robots.js";
@@ -31,6 +32,9 @@ export function createApp(): Hono<AppEnv> {
   app.route("/", home);
   app.route("/", respond);
   app.route("/", signIn);
+  // Behind `AUTHENTICATED_PREFIX`'s session mount above, and behind
+  // `requirePlayer` on each of its own handlers.
+  app.route("/", dashboard);
 
   app.notFound((c) => c.text("Not found", 404));
 

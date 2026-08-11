@@ -13,121 +13,34 @@ import {
   sessionMiddleware,
 } from "../../src/auth/session.js";
 import { getDb } from "../../src/db/client.js";
-import { ConsoleNotifier } from "../../src/notify/console-notifier.js";
-import type { Message } from "../../src/notify/notifier.js";
 import {
+  fixtures,
+  memberships,
   players,
   session as sessionTable,
   user as userTable,
   verification,
 } from "../../src/db/schema.js";
-import type { AppEnv, Bindings } from "../../src/env.js";
-import { resetDatabase } from "../support/factories.js";
+import { openFixture } from "../../src/domain/open-fixture.js";
+import type { AppEnv } from "../../src/env.js";
+import { insertGame, resetDatabase } from "../support/factories.js";
 import { EMAIL_LOOKUP, interferingBinding } from "../support/interference.js";
+// The whole browser journey through sign-in lives in `test/support/sign-in.ts`
+// so the dashboard suite can reach a real session the same way this one does —
+// see that module for why nothing here builds a cookie or a session row.
+import {
+  ALLOWED,
+  ORIGIN,
+  askForLink,
+  bindings,
+  cookieFrom,
+  followLink,
+  linkIn,
+  requestLink,
+  signIn,
+} from "../support/sign-in.js";
 
-/**
- * The origin every request in this file is made against.
- *
- * It matches `BETTER_AUTH_URL` in `wrangler.jsonc`, which is what `SELF.fetch`
- * runs with — Better Auth's origin checks compare against it, so a test that
- * used a different host would be testing the CSRF rejection path by accident.
- */
-const ORIGIN = "https://makethe.team";
-
-/**
- * The address the test bindings allowlist (`vitest.config.ts`). `SELF.fetch`
- * runs the real Worker with the real bindings and gives no way to override
- * them per request, so the happy path has to use this address.
- */
-const ALLOWED = "test-only-not-a-real-address@example.com";
 const NOT_ALLOWED = "stranger@example.com";
-
-function bindings(overrides: Partial<Bindings> = {}): Bindings {
-  return { ...env, BETTER_AUTH_URL: ORIGIN, SIGNIN_ALLOWLIST: ALLOWED, ...overrides };
-}
-
-/** `POST /sign-in` exactly as the page's form does it: urlencoded, same-origin. */
-function requestLink(email: string) {
-  return new Request(`${ORIGIN}${SIGN_IN_PATH}`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
-    body: new URLSearchParams({ email }),
-  });
-}
-
-/**
- * The sign-in link this deployment actually emailed.
- *
- * Captured off `ConsoleNotifier` — the notifier the test bindings select —
- * rather than rebuilt from the `verification` row, because the emailed URL is
- * the only place `POST /sign-in`'s choice of `callbackURL` is observable, and
- * that choice is what makes the linking step run at all. Rebuilding the URL
- * here would have quietly supplied the query parameter the route is supposed
- * to be setting.
- *
- * The spy is installed around a single request and always removed.
- */
-async function askForLink(app: ReturnType<typeof createApp>, email: string) {
-  const sent: Message[] = [];
-  const spy = vi
-    .spyOn(ConsoleNotifier.prototype, "send")
-    .mockImplementation((messages: readonly Message[]) => {
-      sent.push(...messages);
-      return Promise.resolve(messages.map(() => ({ ok: true, providerMessageId: null })));
-    });
-  try {
-    const response = await app.fetch(requestLink(email), bindings());
-    return { response, sent };
-  } finally {
-    spy.mockRestore();
-  }
-}
-
-/** The `/api/auth/magic-link/verify` URL out of the message that was sent. */
-function linkIn(sent: Message[]): string {
-  expect(sent).toHaveLength(1);
-  const match = /https?:\/\/[^\s"]*magic-link\/verify\?[^\s"]*/.exec(sent[0]!.text);
-  expect(match, "the email must carry a verification link").not.toBeNull();
-  return match![0];
-}
-
-/** Follows the emailed link once and returns the cookie a browser would keep. */
-function followLink(url: string, cookie?: string) {
-  return new Request(url, { headers: { origin: ORIGIN, ...(cookie ? { cookie } : {}) } });
-}
-
-function cookieFrom(response: Response): string {
-  return response.headers
-    .getSetCookie()
-    .map((value) => value.split(";")[0]!)
-    .join("; ");
-}
-
-/**
- * The whole browser journey: ask for a link, follow it, arrive wherever the
- * app sends you. Returns the cookie jar and the final redirect target.
- *
- * Only the app's own public surface is used — no hand-built session rows and
- * no hand-built cookies, both of which would prove only that a forgery is
- * accepted.
- */
-async function signIn(email = ALLOWED) {
-  const app = createApp();
-  const { response, sent } = await askForLink(app, email);
-  expect(response.status).toBe(200);
-
-  const verified = await app.fetch(followLink(linkIn(sent)), bindings());
-  const cookie = cookieFrom(verified);
-  expect(cookie).not.toBe("");
-
-  // Better Auth redirects to whatever `POST /sign-in` asked for; following it
-  // is what actually runs the linking step.
-  const landed = await app.fetch(
-    new Request(new URL(verified.headers.get("location")!, ORIGIN), { headers: { cookie } }),
-    bindings(),
-  );
-  return { cookie, verified, landed };
-}
 
 /**
  * `requirePlayer`'s 403 body, reached through the guard itself.
@@ -673,6 +586,37 @@ describe("no password field anywhere (TR-16)", () => {
       );
     }
 
+    // The dashboard, signed in and with a real fixture on it, so the card
+    // markup — not just the empty state — is covered.
+    await resetDatabase();
+    {
+      const { cookie } = await signIn();
+      const db = getDb(env.DB);
+      const [player] = await db.select().from(players);
+      const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+      const fixtureId = crypto.randomUUID();
+      await db.insert(fixtures).values({
+        id: fixtureId,
+        gameId,
+        kicksOffAt: new Date("2030-06-13T18:00:00Z"),
+        minPlayers: 1,
+        maxPlayers: 14,
+        prefersEvenNumbers: true,
+        shortWarningOffsetHours: 12,
+        durationMinutes: 60,
+      });
+      await db
+        .insert(memberships)
+        .values({ id: crypto.randomUUID(), gameId, playerId: player!.id, active: true });
+      await openFixture(db, fixtureId, new Date("2030-06-01T09:00:00Z"));
+
+      await capture(
+        "dashboard",
+        /Your games/,
+        new Request(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } }),
+      );
+    }
+
     // The four `renderLinkRefusalPage` outcomes, each reached through the real
     // `/sign-in/complete` route with the DB state that produces it.
     await resetDatabase();
@@ -751,6 +695,7 @@ describe("no password field anywhere (TR-16)", () => {
         "bad respond token",
         "bad leave token",
         "no player (403)",
+        "dashboard",
         "link conflict (409)",
         "ambiguous email (500)",
         "email held by a guest (500)",

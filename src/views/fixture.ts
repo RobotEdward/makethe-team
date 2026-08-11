@@ -81,8 +81,18 @@ function viewerHeadline(
   return readOnlyReason ? viewerHeadlineClosed(viewer, readOnlyReason) : viewerHeadlineOpen(viewer);
 }
 
-/** The headline while the fixture can still be responded to. */
-function viewerHeadlineOpen(viewer: FixturePageOptions["viewer"]): string {
+/**
+ * The headline while the fixture can still be responded to.
+ *
+ * Exported because the dashboard says the same sentences about the same
+ * statuses (J7, BR-25) and a second set of wordings would be two places for
+ * "You're in." and "You're on the waitlist." to drift apart — and BR-5's whole
+ * point is that a waitlisted player must never read as confirmed. A caller
+ * with no waitlist rank to hand (the dashboard: see `DashboardFixture` for why
+ * it deliberately has none) passes `waitlistRank: null` and gets the
+ * unnumbered wording.
+ */
+export function viewerHeadlineOpen(viewer: FixturePageOptions["viewer"]): string {
   switch (viewer.status) {
     case "in":
       return "You're in.";
@@ -165,7 +175,14 @@ function renderNudge(view: FixtureView): string {
   return `<p class="nudge">The squad has an odd number of players in — one more would even it up.</p>`;
 }
 
-function renderStatusLine(view: FixtureView): string {
+/**
+ * The status badge and the spots-left line, from `fixtureView` alone.
+ *
+ * Exported for the dashboard, which shows the same derived status for each of
+ * the viewer's fixtures — one renderer, so `short`/`confirmed`/`full` can only
+ * ever be worded and coloured one way across the product (BR-12).
+ */
+export function renderStatusLine(view: FixtureView): string {
   const label = STATUS_LABEL[view.status];
   const spots =
     view.status === "cancelled" || view.status === "played"

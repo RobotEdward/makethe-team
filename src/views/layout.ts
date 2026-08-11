@@ -103,6 +103,23 @@ const STYLES = `
      it gets the outlined button rather than the filled one. */
   .signout { margin: 1.25rem 0; }
 
+  /* Cards for a list of games. Each one repeats the single-game page's own
+     stack of elements (heading, kickoff, venue, status badge, headline,
+     buttons) at a smaller scale, so the two pages read as one product rather
+     than two visual languages.
+
+     Deliberately worded without the vocabulary the holding page forbids: this
+     stylesheet is inlined into *every* page, including the public one that is
+     asserted to give nothing operational away (test/routes/access.test.ts). */
+  .game-list { list-style: none; margin: 1.5rem 0 0; padding: 0; }
+  .game-card {
+    padding: 1.1rem 1rem 1.25rem; margin-bottom: 1rem;
+    border: 1px solid var(--line); border-radius: 0.75rem;
+  }
+  .game-card h2 { margin: 0 0 0.25rem; font-size: 1.25rem; text-align: center; }
+  .game-card .viewer-headline { margin-top: 0.9rem; font-size: 1.1rem; }
+  .game-card .responses { margin-bottom: 0; }
+
   .roster {
     list-style: none; margin: 0; padding: 0; text-align: left;
     border-top: 1px solid var(--line);
