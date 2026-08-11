@@ -28,7 +28,8 @@
   },
   "vars": {
     "NOTIFIER": "console",
-    "MAX_EMAILS_PER_DAY": "50"
+    "MAX_EMAILS_PER_DAY": "50",
+    "EMAIL_FROM": "Make The Team <no-reply@makethe.team>"
   },
   "d1_databases": [
     {
