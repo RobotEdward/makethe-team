@@ -239,7 +239,7 @@ Numbered so tests can reference them.
 
 - **BR-4** A fixture is full when the count of `in` responses equals `max_players`.
 - **BR-5** A player choosing "I'm in" on a full fixture is placed `waitlisted`, appended to the end of the waitlist. They must be clearly told this — never silently.
-- **BR-6** Waitlist position is strictly by the time the player joined the waitlist. No priority, seniority, or reordering in v1.
+- **BR-6** Waitlist position is strictly by the time the player joined the waitlist. No priority, seniority, or reordering in v1. The stored `waitlist_position` is fixed for a row once assigned and is never renumbered while that player stays waitlisted, so it develops gaps as earlier positions leave; promotion always takes the **lowest remaining position**, which holds because the lowest live position is always the longest-waiting player. The number **shown** to a player is never this stored column — it is their rank among current waitlisted responses, computed at render time (§2.8).
 - **BR-7** When an `in` player becomes `out` or `withdrawn`, the longest-waiting `waitlisted` player is immediately promoted to `in` and notified. This must be atomic — see TR-10.
 - **BR-8** An Owner may exceed `max_players` via an explicit override. The UI must show the fixture as over capacity when this happens.
 - **BR-9** Simultaneous acceptances for a single remaining slot must resolve deterministically: exactly one player gets `in`, the other gets `waitlisted`. No double-booking, ever.
@@ -268,8 +268,8 @@ Numbered so tests can reference them.
 - **BR-20** Cancellation emails go to everyone who was `in` or `waitlisted`. Not to `out`, `pending` or `withdrawn` players, and never to guests (who have no address).
 - **BR-21** *(superseded by BR-31, number retired to avoid stale references.)*
 - **BR-31** The owner attention email (N-4) goes to Owners only. The hourly sweep evaluates the condition on every run inside the warning window and sends the first time it holds — so a late dropout that leaves an odd number still triggers it. At most one N-4 is ever sent per owner per fixture, enforced by the `notification_log` dedupe key.
-- **BR-22** Every message contains a working unsubscribe/leave-game link.
-- **BR-32** No message is ever sent to a player with a null email. Guests are silently skipped by the Notifier, not treated as failures.
+- **BR-22** Every message contains a working unsubscribe/leave-game link. **Not yet satisfied as of M3.** Every reminder carries a `GET /leave/:token` link so no message ships a 404, but that route only renders a page naming the Game and explaining that leaving is not self-service yet — it is honest, not a leave mechanism, and performs no write. The actual self-service leave flow is M7 ("unsubscribe and leave-game flows" in §2.14's build order), which is what must close this gap. Tracked in `docs/known-issues.md`.
+- **BR-32** No message is ever sent to a player with a null email. Guest filtering is the **caller's** responsibility (the sweep, or whatever builds a batch of `Message`s), not the `Notifier`'s: `Message.to` is typed `string` while `players.email` is nullable, so under strict TypeScript a caller cannot construct a `Message` for a guest without first narrowing the null away — it is a compile-time impossibility rather than a runtime obligation every `Notifier` implementation must remember to honour. A guest is skipped before a `Message` exists at all, and is not recorded in `notification_log` as a failure.
 
 **Access and identity**
 
@@ -331,6 +331,8 @@ Design the data model to accommodate these; build none of them now.
 - **TR-3** The Worker must be stateless between requests. All state lives in D1.
 - **TR-4** Every page must be usable on a phone, on a poor connection, **without JavaScript**. JavaScript enhances; nothing on the response path requires it. There is no auto-submit anywhere.
 
+  **Owner ruling, 11 August 2026: the no-JavaScript rule is relaxed from an absolute to a guideline.** JavaScript is now permitted as progressive enhancement. Two things are unaffected by this and remain absolute: TR-4 itself as stated above — every page still works fully with scripting disabled — and TR-15's `GET`-must-not-mutate / no-auto-submit rule, which stands **independently** of this relaxation. TR-15's justification was never "no JavaScript exists"; it is that link prefetchers and scanners follow every URL in an email, and some of them execute JavaScript, so a mutating `GET` or an auto-submitting form is unsafe regardless of how much scripting a page is allowed to carry.
+
 ## 2.3 Recurrence and fixture materialisation
 
 - **TR-5** A Game stores a recurrence rule and a timezone (IANA identifier, e.g. `Europe/London`). Fixtures are **materialised as rows**, never computed on the fly.
@@ -365,6 +367,10 @@ interval would make every daily run walk a long way for no occurrences.
 
   The dedupe key on the log is what makes this idempotent — a crashed or duplicated run cannot double-send.
 
+- **TR-39 — Reminder retryability is asymmetric, deliberately.** A reminder that was refused for a reason that **provably** means it never left the building — the daily send ceiling was already reached, or there was no usable recipient — has its `notification_log` row **removed** rather than left `failed`, so the next sweep run retries it as if it had never been attempted. A reminder that failed for any other reason (a provider error, a rejected batch, a network failure) is **ambiguous** — it may or may not have sent — and is left `failed` and is never retried automatically. The asymmetry is the point: a duplicate reminder is worse than a missed one, so the system only ever retries a send it can prove did not happen.
+
+- **TR-40 — The sweep must skip fixtures that have already ended.** Before step 2 computes a reminder instant for an `open` fixture, and before step 1 opens a `scheduled` one, the sweep checks `kicks_off_at + duration_minutes` against the current time and skips any fixture already past it — such a fixture is retired directly (step 4) rather than opened or reminded. Without this, a cron gap of more than about a day (a missed run, a redeploy) makes the recovery sweep email players a "tomorrow" reminder about a fixture that finished last week. Because of this, `retirePastFixtures` (step 4) covers `scheduled` fixtures as well as `open` ones — a fixture skipped by steps 1–2 for having already ended must still be retired by step 4, or it is left orphaned in `scheduled` forever.
+
 - **TR-9 (critical)** Cron triggers are configured **per environment**. Non-production environments must have no cron triggers and must use `NullNotifier`. Two environments running the 09:00 sweep means duplicate emails to real people.
 
 - **Timezone handling.** Cron fires in UTC. Reminder times are computed from the Game's IANA timezone so "09:00" stays 09:00 across BST/GMT transitions. There must be a test for a reminder spanning a DST boundary.
@@ -374,6 +380,10 @@ interval would make every daily run walk a long way for no occurrences.
 ## 2.5 Capacity and the waitlist
 
 - **TR-10** Each fixture has a Durable Object instance keyed by fixture ID. **The Durable Object holds no state of its own.** It exists solely to serialise requests: inside its handler it reads current counts from D1, decides the outcome, and writes the response row and updated cached counts back to D1 in a single `batch()`. D1 remains the sole source of truth, so the two can never disagree.
+
+  **This does not happen automatically, and BR-9 depends on the distinction.** A Durable Object's input gating only covers its own *storage* operations; it does not serialise across an `await` on an external call. This object's critical section awaits **D1**, an external call the event loop yields across, so the whole section is wrapped in `ctx.blockConcurrencyWhile()`. Without it, two concurrent responses can both read the same `in_count` before either writes, and both take the last slot — the exact double-booking BR-9 forbids. This was measured, not assumed: removing the block produced **20 of 20 players accepted for 6 slots** in `test/capacity/set-response.test.ts` ("survives a burst of simultaneous acceptances"), which is also the test that proves the block is load-bearing.
+
+  The object is addressed through **RPC**, not `fetch()`: `env.FIXTURE_CAPACITY.getByName(fixtureId)` returns a stub with typed methods (`setResponse(input)`), called directly. It also derives the fixture id it operates on from **its own identity** (`this.ctx.id.name`, the name passed to `getByName`) rather than accepting it as an argument. An earlier version took `fixtureId` on the input and used that for every D1 read and write, while the lock was keyed by the object's identity — the two could disagree, and a test proved it: addressing one fixture through two different object names produced a real double-booking, 7 accepted for a maximum of 6. Deriving the id from identity removes the second source of truth, so there is nothing left for the lock and the mutation to disagree about.
 - **TR-11** Reads (fixture page, squad list, dashboard) go directly to D1 and never touch the Durable Object.
 - **TR-12** Every write that can affect capacity must enter through the Durable Object. That is: a player self-responding, an Owner override, adding a guest, waitlist promotion, and membership withdrawal (BR-3). A write path that bypasses it is a bug, and BR-9 will eventually fail because of it.
 
@@ -386,8 +396,8 @@ Two entirely separate mechanisms.
 **Response tokens (no account)**
 
 - **TR-13** A response token is an HMAC-signed opaque string encoding `player_id`, `fixture_id`, and expiry, signed with a server secret.
-- **TR-14** Tokens are verified in constant time. Invalid or expired tokens render a friendly page offering sign-in, never a raw error.
-- **TR-15** A `GET` on a token link must never mutate state. The email buttons are ordinary links to a page; that page carries the tapped intent only as visual emphasis on one of two `POST` buttons. Email scanners and link prefetchers follow every `GET` in your emails — treating a bare `GET` as a response causes phantom acceptances. There is no auto-submit fallback, so this holds unconditionally.
+- **TR-14** Tokens are verified in constant time, using `crypto.subtle.timingSafeEqual` — a workerd built-in — to compare the decoded signature, never `===`. Invalid or expired tokens render a friendly page offering sign-in, never a raw error.
+- **TR-15** A `GET` on a token link must never mutate state. The email buttons are ordinary links to a page; that page carries the tapped intent only as visual emphasis on one of two `POST` buttons. Email scanners and link prefetchers follow every `GET` in your emails, and **some execute JavaScript** — treating a bare `GET` as a response causes phantom acceptances. There is no auto-submit fallback, so this holds unconditionally, and independently of TR-4's relaxation to a guideline: this rule is not "no JavaScript exists on the page", it is "a `GET` must be safe even against a client that runs whatever JavaScript it likes".
 
 **Sessions (accounts)**
 
@@ -399,10 +409,12 @@ Two entirely separate mechanisms.
 ## 2.7 Notification abstraction
 
 - **TR-19** All sending goes through a `Notifier` interface with a single `send(message)` method. Implementations: `ResendNotifier`, `ConsoleNotifier` (development), `NullNotifier` (tests and non-production environments). Selected by the `NOTIFIER` binding.
+
+  Resend's batch endpoint accepts an `Idempotency-Key` request header, which the provider itself retains for 24 hours; a retried request carrying the same key is deduplicated at Resend rather than resent. `ResendNotifier` derives this key from the batch's own `notification_log.dedupe_key`s, giving a second layer of protection beneath the `dedupe_key` unique constraint (§2.8) — the constraint stops a duplicate row from ever being written, and the idempotency key stops a duplicate HTTP retry of an already-accepted batch from sending twice even before that row is read back.
 - **TR-20** Message content is generated by templates taking a typed payload. Templates render both HTML and plain text.
 - **TR-21** The interface must not assume email. A channel field and per-player channel preference exist in the model from day one, even though only email is implemented.
 - **TR-31** The `Notifier` enforces a hard daily send ceiling (`MAX_EMAILS_PER_DAY`) against a counter in D1. On reaching it, sends are logged as `failed` with a distinct reason and an owner-visible warning; nothing is silently dropped. This is the primary defence against a runaway cost or reputation incident, whatever the cause.
-- **TR-32** Recipients with a null email are skipped before the send attempt and are not written to `notification_log` as failures (BR-32).
+- **TR-32** Recipients with a null email are skipped before the send attempt, by the caller building the batch, and are not written to `notification_log` as failures (BR-32).
 
 Provider constraints worth designing around: the Resend free tier is 3,000 messages per month with a **100/day cap**, and reminders bunch into a single morning burst. Batch where the provider supports it, and keep the provider swappable.
 
@@ -491,6 +503,7 @@ Notes:
 - A `pending` response row is written **eagerly for every eligible player at the moment the fixture opens** (BR-1). This fixes the eligible set at that instant. (v1 called this "lazily", which was a wording error.)
 - **TR-38 — D1's bound-parameter limit.** A single D1 statement rejects more than 100 bound parameters, failing with `D1_ERROR: too many SQL variables ... SQLITE_ERROR`. This was measured directly: inserting `fixtures` rows at 9 per statement worked, 10 failed. The effective row ceiling depends on the column count of the table being written, and Drizzle may bind more parameters per row than the table has declared columns — so a chunk size must be a conservative constant, not something computed from the column count. Fixture materialisation chunks its inserts at 8 rows per statement and is the reference implementation (`src/domain/materialise.ts`, `INSERT_CHUNK_SIZE`). Any code inserting one row per squad member must chunk the same way — this explicitly includes writing the `pending` response rows required above when a fixture opens, since a squad of twenty is twenty rows in one insert. Chunking means a mid-way failure can leave earlier chunks written and later ones missing; this is safe here only because these operations are idempotent (materialisation via the `(game_id, kicks_off_at)` unique index; opening a fixture must be written the same way), and any caller relying on chunked writes must keep them idempotent.
 - `in_count` and `waitlist_count` are a cache, written only inside the Durable Object's critical section alongside the response row, in the same `batch()`. A test asserts they match a `COUNT(*)` after a randomised sequence of operations.
+- `responses.waitlist_position` is **permanent but gappy, not "never reused"** — an earlier draft of this spec claimed positions are never reused, which is wrong. A newly-waitlisted player takes the **highest live** waitlisted position plus one; a departed top position is therefore reused by whoever joins next, and numbering restarts at 1 once the waitlist is empty. What is true, and what BR-7's promotion depends on, is narrower: the position stored for a given row never changes while that row stays waitlisted, so gaps open up as earlier positions leave, and the **lowest live position is always the longest-waiting player**. Promotion (M4) takes that lowest remaining position. The number **shown to a player** is never `waitlist_position` itself — it is that player's rank among currently-waitlisted responses for the fixture, computed at render time from the live set, never persisted (BR-6).
 - `audit_log` covers BR-27 and is written for all Owner overrides and all lifecycle changes.
 - `notification_log.dedupe_key` replaces v1's `(fixture_id, player_id, notification_type)` constraint, which could not express the notifications that aren't fixture-scoped. One unique text column handles every case:
 
@@ -614,7 +627,7 @@ Each milestone is independently deployable and demonstrable.
 
 M1–M4 are the product. M5–M7 make it shareable. Team picking, score recording, and the funding page come after, as separate specs.
 
-**Status:** M0 and M1 delivered by `docs/superpowers/plans/2026-08-10-m0-m1-foundation.md`.
+**Status:** M0 and M1 delivered by `docs/superpowers/plans/2026-08-10-m0-m1-foundation.md`. M2 and M3 delivered by `docs/superpowers/plans/2026-08-10-m2-m3-responses-and-email.md`.
 
 ---
 
