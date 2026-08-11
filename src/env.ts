@@ -30,6 +30,17 @@ export interface Bindings {
    * URLs). Not secret; set in `wrangler.jsonc`'s `vars`.
    */
   BETTER_AUTH_URL: string;
+  /**
+   * Trial-only sign-in allowlist (TR-35): a comma-separated list of addresses
+   * allowed to be sent a magic link. A secret, not a var — the list is a set
+   * of real people's addresses, and this repo is public.
+   *
+   * Set with `wrangler secret put SIGNIN_ALLOWLIST`. Unset or empty means
+   * *nobody* gets a link (`src/auth/factory.ts` fails closed, same convention
+   * as `MAX_EMAILS_PER_DAY`), so it must be set before the trial can begin.
+   * Deleted outright when the product opens to the public.
+   */
+  SIGNIN_ALLOWLIST: string;
 }
 
 export type AppEnv = { Bindings: Bindings };

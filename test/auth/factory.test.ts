@@ -18,12 +18,15 @@ import { user as userTable } from "../../src/db/schema.js";
  * own code: `betterAuth()` -> `drizzleAdapter(db, ...)` -> the adapter
  * factory's `create`, not a raw `db.insert(...)` we wrote ourselves.
  */
+const NOW = new Date("2026-08-11T09:00:00Z");
+
 describe("createAuth", () => {
   it("round-trips a record created through Better Auth's adapter API and read back with Drizzle", async () => {
     const db = getDb(env.DB);
     const auth = createAuth(
       { ...env, BETTER_AUTH_SECRET: env.BETTER_AUTH_SECRET, BETTER_AUTH_URL: "http://localhost:8787" },
       db,
+      NOW,
     );
 
     const ctx = await auth.$context;
@@ -67,8 +70,8 @@ describe("createAuth", () => {
     // assertion (and not the identity check above it) is what catches that
     // regression. Reverted after confirming.
     const db = getDb(env.DB);
-    const authA = createAuth({ ...env, BETTER_AUTH_URL: "http://localhost:8787" }, db);
-    const authB = createAuth({ ...env, BETTER_AUTH_URL: "http://localhost:8787" }, db);
+    const authA = createAuth({ ...env, BETTER_AUTH_URL: "http://localhost:8787" }, db, NOW);
+    const authB = createAuth({ ...env, BETTER_AUTH_URL: "http://localhost:8787" }, db, NOW);
     expect(authA).not.toBe(authB);
 
     const ctxA = await authA.$context;

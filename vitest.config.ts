@@ -54,6 +54,12 @@ export default defineConfig(async () => {
             // `wrangler.jsonc` var, so it does not exist in CI/local test
             // runs unless provided here. This value is obviously fake.
             BETTER_AUTH_SECRET: "test-only-secret-not-used-in-any-real-environment",
+            // Same again for the trial sign-in allowlist (TR-35), also a
+            // Worker secret. Every test that cares supplies its own list
+            // explicitly; this exists so a test reading the binding on CI
+            // gets a string rather than undefined. Obviously fake, and
+            // deliberately an address nobody can receive mail at.
+            SIGNIN_ALLOWLIST: "test-only-not-a-real-address@example.com",
           },
         },
       }),

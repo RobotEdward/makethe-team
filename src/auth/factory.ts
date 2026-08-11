@@ -1,7 +1,17 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { magicLink } from "better-auth/plugins";
 import type { Bindings } from "../env.js";
 import type { Db } from "../db/client.js";
+import { createNotifier } from "../notify/factory.js";
+import type { Notifier } from "../notify/notifier.js";
+import { renderMagicLinkEmail } from "../notify/templates/magic-link.js";
+
+/**
+ * How long a sign-in link stays usable. One constant, used both to configure
+ * the plugin and to word the email, so the two can never disagree about it.
+ */
+const MAGIC_LINK_EXPIRY_MINUTES = 5;
 
 /**
  * Builds a Better Auth instance for a single request.
@@ -35,10 +45,114 @@ import type { Db } from "../db/client.js";
  * will throw `BetterAuthError` ("field does not exist") immediately rather
  * than silently succeeding against a column that isn't there.
  */
-export function createAuth(env: Bindings, db: Db) {
+export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier) {
   return betterAuth({
     database: drizzleAdapter(db, { provider: "sqlite" }),
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    plugins: [
+      magicLink({
+        expiresIn: MAGIC_LINK_EXPIRY_MINUTES * 60,
+        sendMagicLink: async ({ email, url }) => {
+          // ---- TR-35: the trial sign-in gate. Delete this one `if` (and the
+          // `isSignInAllowlisted` function below, which then has no callers)
+          // when the product opens to the public. Nothing else changes. ----
+          if (!isSignInAllowlisted(env.SIGNIN_ALLOWLIST, email)) return;
+
+          await sendSignInLink(env, email, url, now, notifier);
+        },
+      }),
+    ],
   });
+}
+
+/**
+ * Hands the rendered sign-in link to the project's own `Notifier` (N-5).
+ *
+ * Deliberately routed through `createNotifier` rather than a transport of
+ * Better Auth's own: that is where `QuotaNotifier` applies the daily ceiling
+ * — a magic-link endpoint is the one place on the site an anonymous stranger
+ * can cause an email to be sent, so it is the last thing that should be able
+ * to bypass the cost cap — and where `NullNotifier` guarantees that no
+ * non-production environment can reach a real inbox. Built lazily, inside the
+ * send, so a request that issues no link never constructs one (and never
+ * trips `createNotifier`'s by-name failure for a half-configured provider).
+ *
+ * Nothing is written to `notification_log`, on purpose (§2.8's dedupe table):
+ * Better Auth owns issuance and rate limiting for this message, and a sign-in
+ * link is not a fixture notification — there is no fixture, no player and no
+ * once-per-thing key for it to be idempotent against. `dedupeKey` is a fresh
+ * UUID because `Message` requires one and providers use it as an idempotency
+ * key: each issuance is a genuinely distinct message, and the alternative —
+ * keying on the link's token — would write a live credential into
+ * `ConsoleNotifier`'s log line and the provider's dashboard.
+ *
+ * **Every failure here is swallowed** (logged, never thrown). This function
+ * runs only on the allowlisted branch, so a thrown error would turn into a
+ * 500 for allowlisted addresses while non-allowlisted ones still got the
+ * clean 200 — reintroducing exactly the enumeration oracle the gate exists to
+ * prevent, on the day the notifier happened to be misconfigured. The log line
+ * carries the reason and never the address.
+ */
+async function sendSignInLink(
+  env: Bindings,
+  email: string,
+  url: string,
+  now: Date,
+  override: Notifier | undefined,
+): Promise<void> {
+  try {
+    const { subject, html, text } = renderMagicLinkEmail({
+      signInUrl: url,
+      expiresInLabel: `${MAGIC_LINK_EXPIRY_MINUTES} minutes`,
+    });
+    const notifier = override ?? createNotifier(env, now);
+    const [result] = await notifier.send([
+      { channel: "email", to: email, subject, html, text, dedupeKey: `n5:${crypto.randomUUID()}` },
+    ]);
+    if (result && !result.ok) {
+      console.error(`sign-in link not delivered: ${result.error}`);
+    }
+  } catch (error) {
+    console.error(
+      `sign-in link failed to send: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    );
+  }
+}
+
+/**
+ * Whether `email` appears in the comma-separated `SIGNIN_ALLOWLIST` secret.
+ *
+ * Fails **closed**: an unset, empty or all-blank list matches nothing, so
+ * nobody can sign in. This matches the convention `parseMaxEmailsPerDay`
+ * already sets for a missing `MAX_EMAILS_PER_DAY` (fail closed to a ceiling
+ * of 0) and is the only safe direction for a gate — a config mistake that
+ * opened a trial-only site to the whole internet would be silent, whereas one
+ * that closes it is reported by the first person who tries to sign in.
+ *
+ * Entries are trimmed (a comma-separated secret typed by a human will have
+ * spaces and possibly newlines around entries) and empty ones are dropped, so
+ * a trailing comma cannot create an `""` entry that a blank address would
+ * match. Comparison folds ASCII case and nothing else — the same fold as
+ * `normaliseEmail` in `link-player.ts`, for the same reason: a full-Unicode
+ * `toLowerCase()` collapses U+212A KELVIN SIGN onto `k`, which here would let
+ * `K@example.com` walk through a gate meant for `k@example.com`.
+ *
+ * Exported only so its degenerate cases can be pinned directly; the single
+ * call site is the guard in `createAuth` above.
+ */
+export function isSignInAllowlisted(raw: string | undefined, email: string): boolean {
+  const wanted = foldAsciiCase(email);
+  if (wanted === "") return false;
+  if (raw === undefined) return false;
+
+  return raw
+    .split(",")
+    .map(foldAsciiCase)
+    .some((entry) => entry !== "" && entry === wanted);
+}
+
+/** Trim, then lowercase `A`-`Z` and nothing else (see `isSignInAllowlisted`). */
+function foldAsciiCase(value: string): string {
+  return value.trim().replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
 }

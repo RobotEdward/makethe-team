@@ -21,6 +21,7 @@ function bindings(notifier: string): Bindings {
     EMAIL_FROM: "reminders@example.com",
     BETTER_AUTH_SECRET: "test-secret",
     BETTER_AUTH_URL: "http://localhost:8787",
+    SIGNIN_ALLOWLIST: "test-only-not-a-real-address@example.com",
   };
 }
 
