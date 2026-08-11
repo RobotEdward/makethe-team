@@ -2,7 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
+import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
@@ -112,6 +112,49 @@ async function postIntent(token: string, intent?: string) {
   const params = new URLSearchParams();
   if (intent !== undefined) params.set("intent", intent);
   return SELF.fetch(`https://makethe.team/r/${token}`, { method: "POST", body: params });
+}
+
+/**
+ * The N-2 promotion email is handed to `ctx.waitUntil`, so it is still in
+ * flight when the response arrives — every assertion about it has to wait for
+ * the background task rather than read straight after the fetch.
+ *
+ * Polling on the durable side effect (the `notification_log` row) rather than
+ * on a clock: this never asserts that two clocks agree, only that a row the
+ * Worker will certainly write has appeared and reached a terminal status. The
+ * deadline is a backstop against hanging the suite, not a timing assertion.
+ *
+ * Waiting for the status specifically matters: insert-before-send means a row
+ * exists as `queued` for the whole duration of the send, so polling on
+ * existence alone would sample the row mid-flight.
+ */
+async function waitForNotificationRows(atLeast: number, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  const settled = (rows: Array<{ status: string }>) =>
+    rows.length >= atLeast && rows.every((row) => row.status !== "queued");
+
+  let rows = await db.select().from(notificationLog);
+  while (!settled(rows) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    rows = await db.select().from(notificationLog);
+  }
+  return rows;
+}
+
+/**
+ * Give any background send a generous chance to write, then report what is
+ * there. Used by the "nothing was sent" assertions, where the absence of a
+ * row is the whole point and reading immediately would pass even if a send
+ * *had* been started.
+ */
+async function notificationRowsAfterSettling() {
+  const deadline = Date.now() + 500;
+  while (Date.now() < deadline) {
+    const rows = await db.select().from(notificationLog);
+    if (rows.length > 0) return rows;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return db.select().from(notificationLog);
 }
 
 beforeEach(async () => {
@@ -329,6 +372,133 @@ describe("POST /r/:token — a scheduled fixture is refused with an explanation,
     // reaching a squad lookup.
     const rows = await snapshotResponses(fixtureId);
     expect(rows).toEqual([]);
+  });
+});
+
+describe("POST /r/:token — the promoted player is told (N-2, BR-7, J4)", () => {
+  /**
+   * One `in` slot, taken; one player waiting. When the holder drops out the
+   * Durable Object promotes the waiting player inside the capacity lock, and
+   * the route is what has to tell them.
+   */
+  async function seedPromotionReady() {
+    const { fixtureId, playerIds } = await seedOpenFixture({ maxPlayers: 1, squadSize: 2 });
+    const [holderId, waiterId] = playerIds as [string, string];
+    await setResponse(fixtureId, holderId, "in");
+    await setResponse(fixtureId, waiterId, "in"); // waitlisted, position 1
+    return { fixtureId, holderId, waiterId };
+  }
+
+  it("emails the promoted player, and nobody else", async () => {
+    const { fixtureId, holderId, waiterId } = await seedPromotionReady();
+
+    const token = await tokenFor(fixtureId, holderId);
+    const response = await postIntent(token, "out");
+
+    expect(response.status).toBe(200);
+
+    const rows = await waitForNotificationRows(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      notificationType: "n2",
+      fixtureId,
+      playerId: waiterId,
+      channel: "email",
+      status: "sent",
+    });
+    // Keyed to this promotion, not merely to this player (§2.8).
+    expect(rows[0]?.dedupeKey).toMatch(new RegExp(`^n2:${fixtureId}:${waiterId}:.+`));
+    // Nothing at all was sent to the player who dropped out.
+    expect(rows.some((row) => row.playerId === holderId)).toBe(false);
+  });
+
+  it("still confirms the dropping player's own response on their own page", async () => {
+    const { fixtureId, holderId } = await seedPromotionReady();
+
+    const token = await tokenFor(fixtureId, holderId);
+    const body = await (await postIntent(token, "out")).text();
+
+    expect(body).toMatch(/can.t make it/i);
+    await waitForNotificationRows(1);
+  });
+
+  it("sends nothing when the response promoted nobody", async () => {
+    // Plenty of room and an empty waitlist: dropping out frees a slot nobody
+    // was waiting for, so there is no N-2 to send.
+    const { fixtureId, playerIds } = await seedOpenFixture({ maxPlayers: 14, squadSize: 2 });
+    const [holderId] = playerIds as [string, string];
+    await setResponse(fixtureId, holderId, "in");
+
+    const token = await tokenFor(fixtureId, holderId);
+    const response = await postIntent(token, "out");
+
+    expect(response.status).toBe(200);
+    // Insert-before-send: a row lands *before* any message is handed to the
+    // notifier, so no row after settling means no send was ever attempted.
+    expect(await notificationRowsAfterSettling()).toEqual([]);
+  });
+
+  it("sends nothing when a response takes a slot rather than freeing one", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture({ maxPlayers: 14, squadSize: 2 });
+    const [playerId] = playerIds as [string, string];
+
+    const token = await tokenFor(fixtureId, playerId);
+    const response = await postIntent(token, "in");
+
+    expect(response.status).toBe(200);
+    expect(await notificationRowsAfterSettling()).toEqual([]);
+  });
+
+  it("still renders the dropping player's page when the send fails outright", async () => {
+    const { fixtureId, holderId, waiterId } = await seedPromotionReady();
+
+    // Point the Worker at the real provider for this one request. Outbound
+    // network access is blocked repo-wide (`vitest.config.ts` answers 599), so
+    // `ResendNotifier` reports a provider failure — the ambiguous case, which
+    // must leave the row `failed` and must not touch the response at all.
+    const previousNotifier = env.NOTIFIER;
+    const previousKey = env.RESEND_API_KEY;
+    env.NOTIFIER = "resend";
+    env.RESEND_API_KEY = "test-only-not-a-real-key";
+    try {
+      const token = await tokenFor(fixtureId, holderId);
+      const response = await postIntent(token, "out");
+      const body = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(body).toMatch(/can.t make it/i);
+
+      const rows = await waitForNotificationRows(1);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ notificationType: "n2", playerId: waiterId, status: "failed" });
+      // A provider error is ambiguous, so the row stays `failed` forever
+      // rather than being deleted for a retry — the message may have landed.
+      expect(rows[0]?.error).toBeTruthy();
+    } finally {
+      env.NOTIFIER = previousNotifier;
+      env.RESEND_API_KEY = previousKey;
+    }
+
+    // And the promotion itself is untouched by the email having failed.
+    const [promotedRow] = await db.select().from(responses).where(eq(responses.playerId, waiterId));
+    expect(promotedRow?.status).toBe("in");
+  });
+
+  it("writes no log row at all when the promoted player is a guest with no address (BR-32)", async () => {
+    const { fixtureId, holderId, waiterId } = await seedPromotionReady();
+    // The waiting player is a guest with no address — the promotion still
+    // happens in the Durable Object, but there is nobody to email, and unlike
+    // a ceiling refusal there is nothing here worth recording and retrying.
+    await db.update(players).set({ isGuest: true, email: null }).where(eq(players.id, waiterId));
+
+    const token = await tokenFor(fixtureId, holderId);
+    const response = await postIntent(token, "out");
+
+    expect(response.status).toBe(200);
+    expect(await notificationRowsAfterSettling()).toEqual([]);
+    // The promotion itself still happened — only the email was skipped.
+    const [promotedRow] = await db.select().from(responses).where(eq(responses.playerId, waiterId));
+    expect(promotedRow?.status).toBe("in");
   });
 });
 
