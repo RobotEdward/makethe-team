@@ -23,6 +23,7 @@ import {
 } from "../../src/db/schema.js";
 import type { AppEnv, Bindings } from "../../src/env.js";
 import { resetDatabase } from "../support/factories.js";
+import { EMAIL_LOOKUP, interferingBinding } from "../support/interference.js";
 
 /**
  * The origin every request in this file is made against.
@@ -126,6 +127,22 @@ async function signIn(email = ALLOWED) {
     bindings(),
   );
   return { cookie, verified, landed };
+}
+
+/**
+ * `requirePlayer`'s 403 body, reached through the guard itself.
+ *
+ * Behind a probe route rather than the real dashboard because the dashboard
+ * is the next task and does not exist yet — but the guard, the renderer and
+ * the session are all the real ones, so what is asserted here is the page a
+ * person will actually be shown. Shared by "the no-Player exit" tests and the
+ * TR-16 enumeration below, so the two cannot drift onto different probes.
+ */
+function guardedApp() {
+  const app = new Hono<AppEnv>();
+  app.use(AUTHENTICATED_PREFIX, sessionMiddleware);
+  app.get(`${DASHBOARD_PATH}/probe`, requirePlayer, (c) => c.text("ok"));
+  return app;
 }
 
 beforeEach(async () => {
@@ -422,6 +439,52 @@ describe("verification", () => {
     expect(response.status).toBe(500);
     expect(await response.text()).toContain("<h1>");
   });
+
+  /**
+   * `create-raced` is the one outcome `linkPlayerOnSignIn`'s bounded retry loop
+   * produces rather than any single read, so it cannot be reached by seeding a
+   * row and calling the route once — the seam has to be the same deterministic
+   * interleaving `test/auth/link-player.test.ts` uses to drive the function
+   * directly (`../support/interference.js`), run this time through the real
+   * `/sign-in/complete` route so the *page* — not just the function — is pinned.
+   * A rival row for the same address is deleted immediately before every email
+   * lookup and reinserted immediately after, so all three attempts decide to
+   * create and then lose the insert to the row that reappeared underneath them.
+   */
+  it("gives up with create-raced when every attempt loses, and offers a retry", async () => {
+    const app = createApp();
+    const { sent } = await askForLink(app, ALLOWED);
+    const verified = await app.fetch(followLink(linkIn(sent)), bindings());
+    const cookie = cookieFrom(verified);
+    expect(cookie).not.toBe("");
+
+    const rivalId = crypto.randomUUID();
+    const racing = interferingBinding(env.DB, {
+      match: EMAIL_LOOKUP,
+      before: async () => {
+        await getDb(env.DB).delete(players).where(eq(players.id, rivalId));
+      },
+      after: async () => {
+        await getDb(env.DB)
+          .insert(players)
+          .values({ id: rivalId, name: "Rival", email: ALLOWED });
+      },
+    });
+
+    const response = await app.fetch(
+      new Request(`${ORIGIN}${SIGN_IN_COMPLETE_PATH}`, { headers: { cookie } }),
+      bindings({ DB: racing }),
+    );
+
+    expect(response.status).toBe(503);
+    const body = await response.text();
+    // The one page in the flow with a retry link — it is what makes this
+    // outcome different from the three terminal refusals, and a wrong target
+    // here would strand someone in a loop.
+    expect(body).toContain(`href="${SIGN_IN_COMPLETE_PATH}"`);
+    expect(body).toMatch(/try again/i);
+    expect(body).not.toMatch(/type=.?password/i);
+  });
 });
 
 describe("sign out", () => {
@@ -502,13 +565,6 @@ describe("the no-Player exit", () => {
    * the session are all the real ones, so what is asserted here is the page a
    * person will actually be shown.
    */
-  function guardedApp() {
-    const app = new Hono<AppEnv>();
-    app.use(AUTHENTICATED_PREFIX, sessionMiddleware);
-    app.get(`${DASHBOARD_PATH}/probe`, requirePlayer, (c) => c.text("ok"));
-    return app;
-  }
-
   it("offers a way out of the 403 instead of stranding the person", async () => {
     // A session whose identity has no Player: the state every refusal outcome
     // leaves behind, and the one `requirePlayer` answers 403 for.
@@ -551,33 +607,159 @@ describe("the no-Player exit", () => {
 
 describe("no password field anywhere (TR-16)", () => {
   /**
-   * Every page the app can render, driven through the app itself rather than
-   * through the view functions, so a future page that forgets to use `layout`
-   * is still covered. The list is deliberately exhaustive over the app's
-   * routes — a new page that renders a password field has to be added here to
-   * be missed.
+   * Every page the app can actually render HTML for, driven through the app
+   * itself (or, where HTTP cannot reach it in this milestone, through the
+   * real guard/renderer behind a probe route) rather than through the bare
+   * view functions — so a future page that forgets to use `layout` is still
+   * covered. Each entry asserts a phrase distinctive to *that* page, not just
+   * the absence of a password field, so a 404 or an empty redirect body can
+   * never masquerade as coverage of the page it was meant to stand in for.
+   *
+   * `renderLinkProblemPage()` also answers `app.onError`'s 500 (an unexpected
+   * throw), not just the 200 bad-token paths exercised here — but it is the
+   * same renderer producing byte-identical output either way
+   * (`test/routes/error-handler.test.ts` pins that identity independently),
+   * so exercising the 200 path here is exhaustive over its content without
+   * re-deriving a server fault.
+   *
+   * `/sign-in/complete`'s three success outcomes (`linked`, `already-linked`,
+   * `created`) are deliberately absent: all three are a 302 with an empty
+   * body, so there is no HTML there for a password field to hide in, and
+   * asserting on `""` would be exactly the false coverage this test used to
+   * have. What that route *does* render — the four `renderLinkRefusalPage`
+   * outcomes — is covered below instead.
    */
   it("renders no password input on any reachable page", async () => {
-    const { cookie } = await signIn();
-    const db = getDb(env.DB);
-    await db.delete(players);
+    type Page = { name: string; body: string; distinctive: RegExp };
+    const pages: Page[] = [];
 
-    const pages: Array<[string, Request]> = [
-      ["home", new Request(`${ORIGIN}/`)],
-      ["robots", new Request(`${ORIGIN}/robots.txt`)],
-      ["not found", new Request(`${ORIGIN}/nope`)],
-      ["sign-in", new Request(`${ORIGIN}${SIGN_IN_PATH}`)],
-      ["sign-in error", new Request(`${ORIGIN}${SIGN_IN_PATH}?error=INVALID_TOKEN`)],
-      ["check inbox", requestLink(ALLOWED)],
-      ["no player", new Request(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } })],
-      ["complete", new Request(`${ORIGIN}${SIGN_IN_COMPLETE_PATH}`, { headers: { cookie } })],
-      ["bad respond token", new Request(`${ORIGIN}/r/not-a-token`)],
-      ["bad leave token", new Request(`${ORIGIN}/leave/not-a-token`)],
-    ];
-
-    const app = createApp();
-    for (const [name, request] of pages) {
+    async function capture(
+      name: string,
+      distinctive: RegExp,
+      request: Request,
+      app: Hono<AppEnv> = createApp(),
+    ) {
       const body = await (await app.fetch(request, bindings())).text();
+      pages.push({ name, body, distinctive });
+    }
+
+    // Stateless pages: no session, no linking outcome, safe to run in any order.
+    await capture("home", /Getting a regular game on/, new Request(`${ORIGIN}/`));
+    await capture("robots", /User-agent/i, new Request(`${ORIGIN}/robots.txt`));
+    await capture("not found", /Not found/, new Request(`${ORIGIN}/nope`));
+    await capture("sign-in", /Email me a sign-in link/, new Request(`${ORIGIN}${SIGN_IN_PATH}`));
+    await capture(
+      "sign-in error",
+      /expired|already been used/i,
+      new Request(`${ORIGIN}${SIGN_IN_PATH}?error=INVALID_TOKEN`),
+    );
+    await capture("check inbox", /Check your inbox/i, requestLink(ALLOWED));
+    await capture("bad respond token", /This link isn't working/i, new Request(`${ORIGIN}/r/not-a-token`));
+    await capture("bad leave token", /This link isn't working/i, new Request(`${ORIGIN}/leave/not-a-token`));
+
+    // The no-Player 403: reached through the real guard and renderer behind a
+    // probe route, since `/app` has no route of its own until the dashboard
+    // task — a plain `GET DASHBOARD_PATH` here would be a 404 and prove
+    // nothing, which is exactly the defect this rewrite fixes.
+    await resetDatabase();
+    {
+      const { cookie } = await signIn();
+      await getDb(env.DB).delete(players);
+      await capture(
+        "no player (403)",
+        /We can't find your player/,
+        new Request(`${ORIGIN}${DASHBOARD_PATH}/probe`, { headers: { cookie } }),
+        guardedApp(),
+      );
+    }
+
+    // The four `renderLinkRefusalPage` outcomes, each reached through the real
+    // `/sign-in/complete` route with the DB state that produces it.
+    await resetDatabase();
+    {
+      const { cookie } = await signIn();
+      await getDb(env.DB).update(players).set({ authUserId: "some-other-identity" });
+      await capture(
+        "link conflict (409)",
+        /already in use/i,
+        new Request(`${ORIGIN}${SIGN_IN_COMPLETE_PATH}`, { headers: { cookie } }),
+      );
+    }
+
+    await resetDatabase();
+    {
+      const { cookie } = await signIn();
+      const db = getDb(env.DB);
+      await db.update(players).set({ authUserId: null });
+      await db.insert(players).values({ id: crypto.randomUUID(), name: "Ada", email: ALLOWED.toUpperCase() });
+      await capture(
+        "ambiguous email (500)",
+        /more than one player/i,
+        new Request(`${ORIGIN}${SIGN_IN_COMPLETE_PATH}`, { headers: { cookie } }),
+      );
+    }
+
+    await resetDatabase();
+    {
+      const { cookie } = await signIn();
+      const db = getDb(env.DB);
+      await db.delete(players);
+      await db.insert(players).values({ id: crypto.randomUUID(), name: "Ada", email: ALLOWED, isGuest: true });
+      await capture(
+        "email held by a guest (500)",
+        /guest entry/i,
+        new Request(`${ORIGIN}${SIGN_IN_COMPLETE_PATH}`, { headers: { cookie } }),
+      );
+    }
+
+    await resetDatabase();
+    {
+      // The one outcome a single read can't produce — see the route-level
+      // "gives up with create-raced" test above for why the interleaving is
+      // constructed this way.
+      const app = createApp();
+      const { sent } = await askForLink(app, ALLOWED);
+      const verified = await app.fetch(followLink(linkIn(sent)), bindings());
+      const cookie = cookieFrom(verified);
+      const rivalId = crypto.randomUUID();
+      const racing = interferingBinding(env.DB, {
+        match: EMAIL_LOOKUP,
+        before: async () => {
+          await getDb(env.DB).delete(players).where(eq(players.id, rivalId));
+        },
+        after: async () => {
+          await getDb(env.DB).insert(players).values({ id: rivalId, name: "Rival", email: ALLOWED });
+        },
+      });
+      const body = await (
+        await app.fetch(
+          new Request(`${ORIGIN}${SIGN_IN_COMPLETE_PATH}`, { headers: { cookie } }),
+          bindings({ DB: racing }),
+        )
+      ).text();
+      pages.push({ name: "create-raced (503)", body, distinctive: /Nearly there/ });
+    }
+
+    expect(pages.map((page) => page.name).sort()).toEqual(
+      [
+        "home",
+        "robots",
+        "not found",
+        "sign-in",
+        "sign-in error",
+        "check inbox",
+        "bad respond token",
+        "bad leave token",
+        "no player (403)",
+        "link conflict (409)",
+        "ambiguous email (500)",
+        "email held by a guest (500)",
+        "create-raced (503)",
+      ].sort(),
+    );
+
+    for (const { name, body, distinctive } of pages) {
+      expect(body, `${name} must actually be that page`).toMatch(distinctive);
       expect(body, `${name} must not contain a password field`).not.toMatch(/type=.?password/i);
       expect(body, `${name} must not need JavaScript`).not.toContain("<script");
     }
@@ -643,21 +825,32 @@ describe("no open redirect", () => {
     expect(new URL(response.headers.get("location")!, ORIGIN).origin).toBe(ORIGIN);
   });
 
-  it("ignores a callbackURL a stranger puts on the verification link", async () => {
-    const app = createApp();
-    const { sent } = await askForLink(app, ALLOWED);
-    const url = new URL(linkIn(sent));
-    url.searchParams.set("callbackURL", "https://evil.test/steal");
+  /**
+   * The plugin runs `originCheck` over all three of `callbackURL`,
+   * `errorCallbackURL` and `newUserCallbackURL`
+   * (`better-auth/dist/plugins/magic-link/index.mjs:119-127`), and every one is
+   * attacker-settable on the emailed URL — a stranger who intercepts or guesses
+   * the link can rewrite the query string before a victim opens it. All three
+   * must land the same way: a flat 403 with no `Location` and no `Set-Cookie`,
+   * never a redirect off-site and never a session handed out alongside one.
+   * Unconditional (no `if (location !== null)`) so a 500 or a route that
+   * stopped existing would fail this test rather than pass it vacuously.
+   */
+  it.each(["callbackURL", "errorCallbackURL", "newUserCallbackURL"])(
+    "refuses an off-origin %s a stranger puts on the verification link",
+    async (param) => {
+      const app = createApp();
+      const { sent } = await askForLink(app, ALLOWED);
+      const url = new URL(linkIn(sent));
+      url.searchParams.set(param, "https://evil.test/steal");
 
-    const response = await app.fetch(followLink(url.toString()), bindings());
+      const response = await app.fetch(followLink(url.toString()), bindings());
 
-    // Better Auth's own origin check refuses it; what must never happen is a
-    // session cookie leaving alongside a redirect off-site.
-    const location = response.headers.get("location");
-    if (location !== null) {
-      expect(new URL(location, ORIGIN).origin).toBe(ORIGIN);
-    }
-  });
+      expect(response.status).toBe(403);
+      expect(response.headers.get("location")).toBeNull();
+      expect(response.headers.getSetCookie()).toEqual([]);
+    },
+  );
 });
 
 describe("linked identity is idempotent", () => {

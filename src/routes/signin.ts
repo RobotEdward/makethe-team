@@ -83,7 +83,16 @@ signIn.get(SIGN_IN_PATH, (c) => {
  *
  * The internal request is built here rather than forwarding the browser's, for
  * two reasons: the form posts urlencoded and the endpoint wants JSON, and the
- * `callbackURL`/`errorCallbackURL` are this app's decision, not the visitor's.
+ * `callbackURL`/`errorCallbackURL` are *this route's* decision, not this
+ * page's visitor's. That claim is scoped to this handler only —
+ * `POST /api/auth/sign-in/magic-link` is also reachable directly, mounted
+ * whole by `signIn.all(`${AUTH_API_PREFIX}/*`, …)` above, and a third party
+ * can post to it with any same-origin `callbackURL` they like (an off-origin
+ * one is refused by Better Auth's own `originCheck`). The worst case is an
+ * allowlisted victim's emailed link landing somewhere other than
+ * `/sign-in/complete`, so linking never runs and they meet the no-Player 403
+ * — an annoyance with a documented exit, not a takeover. Judged acceptable
+ * rather than worth constraining; see `docs/known-issues.md`.
  * Its `origin` header is this deployment's own, which passes Better Auth's
  * form-CSRF check unconditionally. That is deliberate and not a hole: the only
  * effect a cross-site post could have is to email a sign-in link to an address
@@ -230,8 +239,13 @@ function displayName(user: { name: string; email: string }): string {
  * by `GET` it is reachable by every `<img src>`, prefetcher and link scanner
  * that touches a page, and a `GET` here would sign people out at random.
  *
- * Better Auth's own `/sign-out` endpoint has no origin check of its own, so
- * this one does: a browser always sends `Origin` on a cross-site form post, so
+ * Better Auth *does* origin-check `/api/auth/sign-out` router-wide
+ * (`originCheckMiddleware`, installed on `/**` for every non-GET request) —
+ * but this handler rebuilds the internal request with its own `origin` before
+ * handing it to that endpoint (see `originOf(c.env)` below), which satisfies
+ * Better Auth's check unconditionally and suppresses it on this path. That
+ * rewrite is what makes this local check load-bearing, not an absence of one
+ * upstream: a browser always sends `Origin` on a cross-site form post, so
  * refusing a mismatched one closes cross-site sign-out entirely. A missing
  * `Origin` is allowed through — that is a non-browser client acting on its own
  * behalf, which cannot be a cross-site request.

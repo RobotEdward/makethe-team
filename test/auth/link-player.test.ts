@@ -5,6 +5,7 @@ import { linkPlayerOnSignIn, type LinkPlayerResult } from "../../src/auth/link-p
 import { getDb } from "../../src/db/client.js";
 import { players } from "../../src/db/schema.js";
 import { resetDatabase } from "../support/factories.js";
+import { AUTH_LOOKUP, EMAIL_LOOKUP, interferingBinding, once } from "../support/interference.js";
 
 const db = getDb(env.DB);
 const now = new Date("2026-08-13T18:00:00Z");
@@ -31,78 +32,13 @@ async function playerRow(id: string) {
 // link, `on conflict do nothing` on both creates — is about a second sign-in
 // landing *between* a read and the write it decided on. workerd's test harness
 // runs one request at a time and will never produce that by itself, so the
-// interleaving is constructed: the D1 binding is wrapped, and a hook fires
-// around the statement whose result the decision is built on, writing the
-// competing row with the *unwrapped* handle. Everything else is the real
-// function against the real database.
+// interleaving is constructed via `interferingBinding` (`../support/interference.js`,
+// shared with `test/routes/signin.test.ts`'s route-level `create-raced` test):
+// the D1 binding is wrapped, and a hook fires around the statement whose
+// result the decision is built on, writing the competing row with the
+// *unwrapped* handle. Everything else is the real function against the real
+// database.
 // ---------------------------------------------------------------------------
-
-interface Interference {
-  /** Fires only for statements whose SQL matches. */
-  match: RegExp;
-  /** Runs immediately before the matched statement executes. */
-  before?: () => Promise<void>;
-  /** Runs immediately after it returns, before the caller sees the rows. */
-  after?: () => Promise<void>;
-}
-
-/** Wrap a callback so it fires at most once, however often it is invoked. */
-function once(fn: () => Promise<void>): () => Promise<void> {
-  let fired = false;
-  return async () => {
-    if (fired) return;
-    fired = true;
-    await fn();
-  };
-}
-
-function interferingStatement(
-  stmt: D1PreparedStatement,
-  query: string,
-  hooks: Interference,
-): D1PreparedStatement {
-  const matched = hooks.match.test(query);
-  return new Proxy(stmt, {
-    get(target, prop) {
-      const value = Reflect.get(target, prop, target) as unknown;
-      if (typeof value !== "function") return value;
-      const method = value as (...args: unknown[]) => unknown;
-      if (prop === "bind") {
-        return (...args: unknown[]) =>
-          interferingStatement(method.apply(target, args) as D1PreparedStatement, query, hooks);
-      }
-      if (prop === "all" || prop === "run" || prop === "raw" || prop === "first") {
-        return async (...args: unknown[]) => {
-          if (matched) await hooks.before?.();
-          const result = await (method.apply(target, args) as Promise<unknown>);
-          if (matched) await hooks.after?.();
-          return result;
-        };
-      }
-      return method.bind(target);
-    },
-  });
-}
-
-/** A D1 binding that runs `hooks` around the statements it matches. */
-function interferingBinding(binding: D1Database, hooks: Interference): D1Database {
-  return new Proxy(binding, {
-    get(target, prop) {
-      const value = Reflect.get(target, prop, target) as unknown;
-      if (prop === "prepare") {
-        return (query: string) =>
-          interferingStatement(target.prepare(query), query, hooks);
-      }
-      if (typeof value !== "function") return value;
-      return (value as (...args: unknown[]) => unknown).bind(target);
-    },
-  });
-}
-
-/** The statement whose result the email-match decision is built on. */
-const EMAIL_LOOKUP = /lower\(/;
-/** The statement whose result the `already-linked` decision is built on. */
-const AUTH_LOOKUP = /where "players"\."auth_user_id" = \?/;
 
 describe("linkPlayerOnSignIn", () => {
   it("links an existing Player matched by verified email", async () => {
