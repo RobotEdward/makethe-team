@@ -58,19 +58,39 @@ export interface AppVariables {
 /**
  * Resolves the caller's session, and their Player, onto the context.
  *
- * **Scoped to `AUTHENTICATED_PREFIX`, not `*`, on purpose.** The two busiest
- * paths on this site — the holding page and `/r/:token` — are served to people
- * who have never signed in, plus prefetchers and scanners, and a session
- * lookup for them is pure cost: a Drizzle wrapper, a cookie parse, an HMAC
- * verification and (with any cookie at all) a D1 round trip, all to produce
- * `null`. `/r/:token` in particular authenticates by signed token and must
- * keep working identically whether or not the person happens to be signed in,
- * so there is nothing for a session to contribute there even when one exists.
- * Mounting globally would also mean a change to this file could take the
- * holding page down; scoped, it cannot. The cost of the choice is that a route
- * added outside the prefix silently has no session — which is what the guards'
- * fail-closed reading of `undefined` is for, and why the prefix is one
- * exported constant rather than a string typed twice.
+ * **Scoped to `AUTHENTICATED_PREFIX`, not `*`, on purpose.** In order of
+ * weight:
+ *
+ * 1. **Blast radius.** Mounted globally, a defect in this file could take
+ *    down `/` or `/r/:token` — the only two pages that matter commercially
+ *    today. Scoped to the prefix, it structurally cannot: those routes never
+ *    run this middleware at all.
+ * 2. **`/r/:token` has nothing to gain.** It authenticates by signed token and
+ *    must keep working identically whether or not the caller happens to be
+ *    signed in, so a resolved session there could only ever be cost or a
+ *    source of divergence.
+ * 3. **Cost, precisely stated.** A cookie parse and an HMAC verification are
+ *    paid by every request that reaches this middleware regardless of
+ *    whether a cookie is present; the D1 round trip is paid only when a
+ *    cookie actually is. Cookieless strangers and prefetchers — the bulk of
+ *    traffic to `/` — would therefore cost 0 D1 statements even under a
+ *    global mount; the saving a scoped mount buys is for *signed-in* people
+ *    browsing public pages, which is real but narrower than "every anonymous
+ *    request".
+ *
+ * The cost of the choice is that a route added outside the prefix silently
+ * has no session — which is what the guards' fail-closed reading of
+ * `undefined` is for, and why the prefix is one exported constant rather than
+ * a string typed twice. Hono's `/app/*` matches bare `/app` too, so there is
+ * no gap at the prefix root (verified in review).
+ *
+ * **Expect a second mount, and treat it as normal rather than a violation of
+ * this scoping.** `/sign-in` (next task) must bounce an already-signed-in
+ * visitor to the dashboard, and any nav/header personalisation on a public
+ * page ("Sign in" vs "Your dashboard") would too — both need a session
+ * outside `/app/*`. `AUTHENTICATED_PREFIX` names *the current list of
+ * mounts*, not "everywhere a session is ever needed"; whoever adds that
+ * second mount is fulfilling the design, not undermining it.
  *
  * **Never fatal.** An expired, tampered, truncated or stale-deploy cookie is
  * anonymous, not an error: Better Auth answers `null` for all of those, and
@@ -104,6 +124,16 @@ async function resolveSession(
   } catch (error) {
     // Anonymous, and loudly logged. Never the cookie or the token: this repo
     // is public and a session token in a log line is a live credential.
+    //
+    // Logging `error.stack` (which includes `error.message`) is safe *only*
+    // under an assumption we do not control: that Better Auth never embeds
+    // the raw cookie value or token into an error's message or stack trace.
+    // Verified true empirically for the failure this file can actually
+    // produce (a D1 fault mid-lookup — see `session.test.ts`), but that is
+    // not a guarantee about every error Better Auth's internals might one day
+    // throw. If Better Auth is ever upgraded, re-verify this assumption
+    // before trusting this log line again; do not assume a passing test
+    // suite today covers a different error shape tomorrow.
     console.error(
       `session lookup failed, treating request as anonymous: ${
         error instanceof Error ? (error.stack ?? error.message) : String(error)

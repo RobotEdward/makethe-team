@@ -46,10 +46,28 @@ function bindings(overrides: Partial<Bindings> = {}): Bindings {
  * The structural stand-in for "anonymous traffic is still fast". A wall-clock
  * assertion would be flaky under workerd's frozen `Date.now()`; "no statement
  * was issued at all" is the property that actually matters and it is exact.
+ *
+ * `withSession()` returns its own D1-like session object with its own
+ * `prepare`/`batch`/`exec` — wrapped here too, so a future
+ * `db.withSession(...).prepare(...)` call still gets counted instead of
+ * silently evading it. Proved by the "counts a call made through
+ * withSession()" test below.
  */
 function countingDb(): { binding: D1Database; statements: () => number } {
   let count = 0;
   const real = env.DB;
+  const wrapSession = (session: ReturnType<D1Database["withSession"]>) =>
+    ({
+      prepare(query: string) {
+        count += 1;
+        return session.prepare(query);
+      },
+      batch<T = unknown>(statements: D1PreparedStatement[]) {
+        count += statements.length;
+        return session.batch<T>(statements);
+      },
+      getBookmark: () => session.getBookmark(),
+    }) as unknown as ReturnType<D1Database["withSession"]>;
   const binding = {
     prepare(query: string) {
       count += 1;
@@ -64,7 +82,7 @@ function countingDb(): { binding: D1Database; statements: () => number } {
       return real.exec(query);
     },
     dump: () => real.dump(),
-    withSession: (constraint?: string) => real.withSession(constraint),
+    withSession: (constraint?: string) => wrapSession(real.withSession(constraint)),
   } as unknown as D1Database;
   return { binding, statements: () => count };
 }
@@ -136,6 +154,19 @@ function get(path: string, cookie?: string) {
 
 beforeEach(async () => {
   await resetDatabase();
+});
+
+describe("countingDb", () => {
+  it("counts a call made through withSession(), not just through prepare() directly", async () => {
+    const db = countingDb();
+
+    // Before the fix, withSession() handed back the *real* env.DB's session
+    // object untouched, so a call routed through it evaded the count
+    // entirely — a query that visibly hits D1 here would have reported 0.
+    await db.binding.withSession().prepare("SELECT 1").first();
+
+    expect(db.statements()).toBe(1);
+  });
 });
 
 describe("session middleware", () => {
