@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
@@ -33,15 +33,18 @@ function stubFor(fixtureId: string) {
   return env.FIXTURE_CAPACITY.getByName(fixtureId);
 }
 
-function accept(fixtureId: string, playerId: string) {
+// `now` defaults to the fixed `NOW` but can be overridden per call — needed to
+// give distinct `responded_at` values to different players without sleeping
+// or reading the wall clock (see the BR-7 ordering test below).
+function accept(fixtureId: string, playerId: string, now: number = NOW.getTime()) {
   return stubFor(fixtureId).setResponse({
-    playerId, intent: "in", actorPlayerId: null, source: "token", now: NOW.getTime(),
+    playerId, intent: "in", actorPlayerId: null, source: "token", now,
   });
 }
 
-function decline(fixtureId: string, playerId: string) {
+function decline(fixtureId: string, playerId: string, now: number = NOW.getTime()) {
   return stubFor(fixtureId).setResponse({
-    playerId, intent: "out", actorPlayerId: null, source: "token", now: NOW.getTime(),
+    playerId, intent: "out", actorPlayerId: null, source: "token", now,
   });
 }
 
@@ -136,7 +139,15 @@ describe("capacity and the waitlist", () => {
     await accept(fixtureId, "p-2"); // waitlisted
     await decline(fixtureId, "p-0"); // a slot frees; automatic promotion is M4
 
-    expect(await accept(fixtureId, "p-2")).toMatchObject({ kind: "recorded", status: "in" });
+    const outcome = await accept(fixtureId, "p-2");
+
+    expect(outcome).toMatchObject({ kind: "recorded", status: "in" });
+    // This is self-promotion, not BR-7 promotion: the player made this tap
+    // themselves and is looking at the response page right now, so there is
+    // nobody to send an N-2 to. `promoted` names a player who is told about a
+    // status change they did not make — see the comment in
+    // `fixture-capacity.ts` at the `existing.status === "waitlisted"` branch.
+    expect(outcome).not.toHaveProperty("promoted");
   });
 
   it("keeps the cached waitlist count accurate when positions are gappy", async () => {
@@ -289,12 +300,65 @@ describe("BR-7 — promotion from the waitlist", () => {
     });
   });
 
-  it("makes the promoted row `in` with a null position and keeps both cached counts right", async () => {
+  it("promotes by lowest position even when lowest id and earliest responded_at each name a different player", async () => {
+    // The first ordering test above pins position against id and row order,
+    // but every candidate in it shares one hard-coded `NOW`, so it cannot
+    // tell "lowest position" apart from "earliest responded_at". Here the
+    // three signals point at three different players: p-6 has the lowest
+    // live position, p-2 has the lowest id, and p-5's responded_at is
+    // earlier than either — set explicitly via `now`, never by sleeping or
+    // reading the clock twice. Only the position should decide the winner.
+    const fixtureId = await seedOpenFixture(20, 2);
+    await accept(fixtureId, "p-0");
+    await accept(fixtureId, "p-1");
+    const EARLIER = new Date(NOW.getTime() - 60_000);
+    await accept(fixtureId, "p-6"); // position 1 — lowest position
+    await accept(fixtureId, "p-2"); // position 2 — lowest id
+    await accept(fixtureId, "p-5", EARLIER.getTime()); // position 3 — earliest responded_at
+
+    const outcome = await decline(fixtureId, "p-0");
+
+    expect(outcome).toMatchObject({
+      kind: "recorded",
+      status: "out",
+      promoted: { playerId: "p-6", previousWaitlistPosition: 1 },
+    });
+  });
+
+  it("writes the dropout and the promotion in a single db.batch call (BR-7 atomicity)", async () => {
+    // D1 has no interactive transactions, so `db.batch()` is the only
+    // primitive that makes the dropout and the promotion succeed or fail
+    // together. This spies on the real binding the Durable Object writes
+    // through (`env.DB.batch`) rather than trusting that the source reads a
+    // certain way — moving the promotion UPDATE out of the batch into a
+    // separate `await` would still read plausibly but would show up here as
+    // a second call, or a batch of fewer than three statements.
+    const fixtureId = await seedOpenFixture(6, 2);
+    await accept(fixtureId, "p-0");
+    await accept(fixtureId, "p-1");
+    await accept(fixtureId, "p-2"); // waitlisted, position 1 — will be promoted
+
+    const batchSpy = vi.spyOn(env.DB, "batch");
+    try {
+      const outcome = await decline(fixtureId, "p-0");
+
+      expect(outcome).toMatchObject({ promoted: { playerId: "p-2" } });
+      expect(batchSpy).toHaveBeenCalledTimes(1);
+      expect(batchSpy.mock.calls[0]?.[0]).toHaveLength(3);
+    } finally {
+      batchSpy.mockRestore();
+    }
+  });
+
+  it("makes the promoted row `in` with a null position, source 'system', an untouched responded_at, and keeps both cached counts right", async () => {
     const fixtureId = await seedOpenFixture(6, 2);
     await accept(fixtureId, "p-0");
     await accept(fixtureId, "p-1");
     await accept(fixtureId, "p-2"); // position 1
     await accept(fixtureId, "p-3"); // position 2
+
+    const [beforePromotion] = await db.select().from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-2")));
 
     await decline(fixtureId, "p-0");
 
@@ -302,6 +366,14 @@ describe("BR-7 — promotion from the waitlist", () => {
       .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-2")));
     expect(promotedRow?.status).toBe("in");
     expect(promotedRow?.waitlistPosition).toBeNull();
+    // Both deliberate: `source` becomes "system" because nobody asked for
+    // this write — the object did it on the departing player's behalf, not
+    // the promoted player's own action. `responded_at` is left exactly as it
+    // was: it records when *they* said yes, and `getFixtureWithSquad` orders
+    // the squad by it (src/db/queries.ts:62), so overwriting it would reorder
+    // the squad list as a side effect of a stranger's dropout.
+    expect(promotedRow?.source).toBe("system");
+    expect(promotedRow?.respondedAt?.toISOString()).toBe(beforePromotion?.respondedAt?.toISOString());
 
     expect(await counts(fixtureId)).toEqual({ inCount: 2, cached: 2 });
     const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
@@ -410,6 +482,13 @@ describe("BR-7 — promotion from the waitlist", () => {
     // the fixture behind a mail provider's latency. The module therefore
     // contains no network call at all — asserted directly on its source rather
     // than inferred from a spy that a future edit could quietly bypass.
+    //
+    // Limitation: this reads only `fixture-capacity.ts?raw`, so it guards
+    // this file and no other. If the promotion decision (or anything that
+    // could reach a notifier) is ever extracted into a helper module, this
+    // assertion goes on passing while the guarantee it names no longer holds
+    // for the extracted code — the new module would need its own `?raw`
+    // check, or this one would need to read a wider glob.
     expect(fixtureCapacitySource).not.toMatch(/\bfetch\s*\(/);
     expect(fixtureCapacitySource).not.toMatch(/\bnew\s+Request\s*\(/);
     // Nor does it reach a notifier by any other route: no import of the notify

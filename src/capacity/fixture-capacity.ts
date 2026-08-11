@@ -101,6 +101,14 @@ export class FixtureCapacity extends DurableObject<Bindings> {
           inCount: inCountWithoutThisPlayer,
         };
       }
+      // Self-promotion: a waitlisted player re-tapping once a slot has freed
+      // moves straight to `in` here, without going through the BR-7 promotion
+      // path below — `occupiesSlot("waitlisted")` is false, so `givesUpASlot`
+      // is false and no `promoted` is attached to the outcome. That is
+      // correct, not an oversight: this player is the one making the request
+      // and is looking at the response page right now, so there is nobody to
+      // send an N-2 to. `promoted` exists to tell a player something happened
+      // *without* them tapping; it does not apply here.
       status = "in";
     } else if (inCountWithoutThisPlayer >= fixture.maxPlayers) {
       // Full (BR-4). Appended to the end of the waitlist (BR-5, BR-6) and told
@@ -128,17 +136,29 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // `occupiesSlot` rather than a literal `=== "in"`: BR-3's `withdrawn`
     // frees a slot exactly as `out` does, and this condition should already be
     // right on the day that status is first written.
+    //
+    // No separate "was the fixture full" guard is needed here:
+    // `givesUpASlot` already implies `existing.status` was `in` (or, once
+    // `withdrawn` is written, held a slot some other way), which means
+    // `inCountWithoutThisPlayer` was `inCount - 1` — under `maxPlayers` only if
+    // the fixture had somehow gone over capacity, a data-corruption case this
+    // method does not otherwise guard against.
     const givesUpASlot = occupiesSlot(existing.status) && !occupiesSlot(status);
-    const promotedRow =
-      givesUpASlot && inCountWithoutThisPlayer < fixture.maxPlayers
-        ? waitlistedWithoutThisPlayer
-            .filter((r) => r.waitlistPosition !== null)
-            .reduce<(typeof waitlistedWithoutThisPlayer)[number] | null>(
-              (best, r) =>
-                best === null || (r.waitlistPosition ?? 0) < (best.waitlistPosition ?? 0) ? r : best,
-              null,
-            )
-        : null;
+    // Narrow to rows with a real position once, rather than re-deriving a
+    // fallback (`?? 0`, `?? 1`) at every use below — a filtered row that
+    // still had a null position would be a bug in the filter, not something
+    // to paper over, and a wrong fallback on `previousWaitlistPosition` in
+    // particular would report a false position to the caller.
+    const liveWaitlistCandidates = waitlistedWithoutThisPlayer.filter(
+      (r): r is (typeof waitlistedWithoutThisPlayer)[number] & { waitlistPosition: number } =>
+        r.waitlistPosition !== null,
+    );
+    const promotedRow = givesUpASlot
+      ? liveWaitlistCandidates.reduce<(typeof liveWaitlistCandidates)[number] | null>(
+          (best, r) => (best === null || r.waitlistPosition < best.waitlistPosition ? r : best),
+          null,
+        )
+      : null;
 
     // Exactly one player can be promoted here: this response releases at most
     // one slot. Anything that frees several — a cancellation, a squad change —
@@ -148,7 +168,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
         ? null
         : {
             playerId: promotedRow.playerId,
-            previousWaitlistPosition: promotedRow.waitlistPosition ?? 1,
+            previousWaitlistPosition: promotedRow.waitlistPosition,
             promotedAt: input.now,
           };
 

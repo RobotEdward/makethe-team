@@ -32,6 +32,18 @@ export function reminderKey(fixtureId: string, playerId: string): string {
  * Includes `promotedAt` deliberately — unlike N-4, a player promoted twice
  * (e.g. promoted, drops out, promoted again) is told twice, because each
  * promotion is genuinely new information.
+ *
+ * **Warning for whoever writes the next promotion pass** (cancellation and
+ * BR-3 both need one): `promotedAt` is caller-supplied, and `Date.now()` is
+ * frozen between I/O within a single Worker invocation, so a pass that
+ * promotes several players in one request must not reuse a single `now` for
+ * all of them. `FixtureCapacity#setResponse` gets away with echoing back
+ * `input.now` unmodified only because it promotes at most one player per
+ * call. A multi-slot pass reading one `now` per player it promotes — not one
+ * `now` for the whole pass — keeps this key unique; reusing one `now` across
+ * the pass would give the same player promoted twice in it a colliding key,
+ * and the UNIQUE constraint on `dedupe_key` would silently drop the second
+ * N-2 rather than error.
  */
 export function promotionKey(fixtureId: string, playerId: string, promotedAt: string): string {
   return `n2:${fixtureId}:${playerId}:${promotedAt}`;
