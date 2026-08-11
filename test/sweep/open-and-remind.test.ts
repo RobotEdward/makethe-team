@@ -16,16 +16,39 @@ class RecordingNotifier implements Notifier {
   readonly sent: Message[][] = [];
   /** Player emails (via `to`) this instance should report a failure for. */
   readonly failFor = new Set<string>();
+  /** Player emails this instance should report as refused by the daily ceiling. */
+  readonly ceilingFor = new Set<string>();
 
   send(messages: readonly Message[]): Promise<SendResult[]> {
     this.sent.push([...messages]);
     return Promise.resolve(
-      messages.map((m): SendResult =>
-        this.failFor.has(m.to)
-          ? { ok: false, error: "simulated-provider-failure" }
-          : { ok: true, providerMessageId: `prov-${m.dedupeKey}` },
-      ),
+      messages.map((m): SendResult => {
+        if (this.ceilingFor.has(m.to)) return { ok: false, error: "daily-ceiling-reached" };
+        if (this.failFor.has(m.to)) return { ok: false, error: "simulated-provider-failure" };
+        return { ok: true, providerMessageId: `prov-${m.dedupeKey}` };
+      }),
     );
+  }
+}
+
+/**
+ * Simulates `QuotaNotifier.reserve()` hitting a D1 error mid-batch: `send`
+ * rejects outright rather than returning `SendResult`s. Every batch it is
+ * asked to send is recorded first, exactly like `RecordingNotifier`, so a
+ * test can tell whether a later fixture's batch was ever attempted.
+ */
+class RejectingNotifier implements Notifier {
+  readonly sent: Message[][] = [];
+  /** Fixture ids (matched by `dedupeKey` prefix `n1:<fixtureId>:`) to reject sends for. */
+  readonly rejectForFixture = new Set<string>();
+
+  send(messages: readonly Message[]): Promise<SendResult[]> {
+    this.sent.push([...messages]);
+    const first = messages[0];
+    if (first && this.rejectForFixture.has(first.dedupeKey.split(":")[1] ?? "")) {
+      return Promise.reject(new Error("simulated D1 failure inside QuotaNotifier.reserve()"));
+    }
+    return Promise.resolve(messages.map((m): SendResult => ({ ok: true, providerMessageId: `prov-${m.dedupeKey}` })));
   }
 }
 
@@ -82,8 +105,12 @@ async function seedFixture(opts: SeedOptions): Promise<{ gameId: string; fixture
   return { gameId, fixtureId };
 }
 
-const squad = (n: number): SeedOptions["squad"] =>
-  Array.from({ length: n }, (_, i) => ({ id: `p-${i}`, name: `Player ${i}`, email: `p${i}@example.com` }));
+const squad = (n: number, prefix = crypto.randomUUID().slice(0, 8)): SeedOptions["squad"] =>
+  Array.from({ length: n }, (_, i) => ({
+    id: `${prefix}-${i}`,
+    name: `Player ${i}`,
+    email: `${prefix}-${i}@example.com`,
+  }));
 
 beforeEach(async () => {
   await resetDatabase();
@@ -235,5 +262,103 @@ describe("openAndRemind", () => {
 
     const logRows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
     expect(logRows).toHaveLength(1);
+  });
+
+  it("a rejecting notifier for one fixture does not stop reminders for other fixtures that hour (fix round 1, finding 1)", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const { fixtureId: badFixtureId } = await seedFixture({ kicksOffAt, squad: squad(2) });
+    const { fixtureId: goodFixtureId } = await seedFixture({ kicksOffAt, squad: squad(2) });
+
+    const notifier = new RejectingNotifier();
+    notifier.rejectForFixture.add(badFixtureId);
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    const result = await openAndRemind(db, notifier, now, SECRET);
+
+    // The healthy fixture still got its reminders.
+    expect(result.remindersSent).toBe(2);
+    expect(result.remindersFailed).toBe(2);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({ fixtureId: badFixtureId, stage: "send" });
+
+    const badRows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, badFixtureId));
+    expect(badRows).toHaveLength(2);
+    expect(badRows.every((r) => r.status === "failed")).toBe(true);
+
+    const goodRows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, goodFixtureId));
+    expect(goodRows).toHaveLength(2);
+    expect(goodRows.every((r) => r.status === "sent")).toBe(true);
+  });
+
+  it("one game with an invalid timezone does not silence every other game's reminders (fix round 1, finding 2)", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const { fixtureId: badFixtureId } = await seedFixture({
+      kicksOffAt,
+      timezone: "Not/AZone",
+      squad: squad(1),
+    });
+    const { fixtureId: goodFixtureId } = await seedFixture({ kicksOffAt, squad: squad(2) });
+
+    const notifier = new RecordingNotifier();
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    const result = await openAndRemind(db, notifier, now, SECRET);
+
+    expect(result.remindersSent).toBe(2);
+    expect(result.failures.some((f) => f.fixtureId === badFixtureId && f.stage === "reminder-instant")).toBe(true);
+
+    const goodRows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, goodFixtureId));
+    expect(goodRows).toHaveLength(2);
+    expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, badFixtureId))).toHaveLength(
+      0,
+    );
+  });
+
+  it("a reminder refused by the daily ceiling is retried and sent once quota is available (fix round 1, finding 3)", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const solo = squad(1);
+    const playerEmail = solo[0]?.email as string;
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: solo });
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add(playerEmail);
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    const first = await openAndRemind(db, notifier, now, SECRET);
+    expect(first.remindersSent).toBe(0);
+    expect(first.remindersDeferred).toBe(1);
+    // Definitely-did-not-send: the row is removed, not left `queued`, so a future run retries.
+    expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(0);
+
+    notifier.ceilingFor.delete(playerEmail);
+    const second = await openAndRemind(db, notifier, now, SECRET);
+    expect(second.remindersSent).toBe(1);
+    expect(second.remindersDeferred).toBe(0);
+
+    const rows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("sent");
+  });
+
+  it("a provider-failed reminder is left failed and is not retried automatically (fix round 1, finding 3)", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const solo = squad(1);
+    const playerEmail = solo[0]?.email as string;
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: solo });
+    const notifier = new RecordingNotifier();
+    notifier.failFor.add(playerEmail);
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    const first = await openAndRemind(db, notifier, now, SECRET);
+    expect(first.remindersFailed).toBe(1);
+    expect(first.remindersDeferred).toBe(0);
+
+    notifier.failFor.delete(playerEmail);
+    const second = await openAndRemind(db, notifier, now, SECRET);
+    expect(second.remindersSent).toBe(0);
+    expect(second.remindersFailed).toBe(0);
+
+    const rows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("failed");
   });
 });

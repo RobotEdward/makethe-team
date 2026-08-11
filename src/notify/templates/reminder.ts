@@ -129,7 +129,7 @@ ${escapeHtml(spots)}
 <p style="margin:0; font-size:12px; line-height:1.6; color:#928d84;">
 Make The Team — organising this Game for your squad.
 <br>
-Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">Leave this Game</a>.
+Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">See how to leave this Game</a>.
 </p>
 
 </td>
@@ -162,7 +162,7 @@ Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">Leave t
     "",
     "---",
     "Make The Team — organising this Game for your squad.",
-    `Not playing any more? Leave this Game: ${leaveUrl}`,
+    `Not playing any more? See how to leave this Game: ${leaveUrl}`,
     "",
   ].join("\n");
 

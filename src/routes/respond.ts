@@ -6,7 +6,7 @@ import { formatLocalDateTime } from "../domain/time/zone.js";
 import { verifyResponseToken } from "../domain/token.js";
 import type { ResponseIntent } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
-import { layout } from "../views/layout.js";
+import { escapeHtml, layout } from "../views/layout.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
 
 export const respond = new Hono<AppEnv>();
@@ -39,6 +39,27 @@ function renderLinkProblemPage(): string {
 
 function parseIntent(value: string | undefined): "in" | "out" | null {
   return value === "in" || value === "out" ? value : null;
+}
+
+/**
+ * The interim `/leave/:token` page (BR-22, task-15 fix round 1).
+ *
+ * Leaving a Game is not self-service yet — there is no write path here, on
+ * purpose: this route is `GET`-only and renders, never mutates. It exists so
+ * the reminder email's leave link is truthful rather than a 404: the token
+ * verifies (proving it really was issued to this player for this fixture)
+ * and the page says plainly what a player can and can't do here today,
+ * rather than presenting buttons that quietly do nothing (or, worse, that
+ * look like "I'm in" / "Can't make it" and get mistaken for a real opt-out).
+ * The full self-service leave flow is a later milestone.
+ */
+function renderLeavePage(gameName: string): string {
+  const body = `
+    <h1>Leaving ${escapeHtml(gameName)}</h1>
+    <p>You can't remove yourself from a Game here yet — that isn't self-service yet.</p>
+    <p>Ask whoever organises ${escapeHtml(gameName)} to take you off the squad, or get in touch with them directly.</p>
+  `;
+  return layout({ title: `Leaving ${gameName} — Make The Team`, body });
 }
 
 /**
@@ -209,4 +230,31 @@ respond.post("/r/:token", async (c) => {
   }
 
   return c.html(html, 200);
+});
+
+/**
+ * `GET /leave/:token` — see `renderLeavePage` for why this exists and why it
+ * has no corresponding `POST`. Reuses the same signed response token and the
+ * same "this link isn't working" page a bad or expired token gets on `/r/`,
+ * so an attacker learns nothing new by trying this path instead.
+ */
+respond.get("/leave/:token", async (c) => {
+  const token = c.req.param("token");
+  const now = new Date(Date.now());
+  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+
+  if (!verification.ok) {
+    console.error(`leave link token rejected: ${verification.reason}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const { fixtureId } = verification.payload;
+  const db = getDb(c.env.DB);
+  const loaded = await getFixtureWithSquad(db, fixtureId);
+  if (!loaded) {
+    console.error(`leave link token verified for a fixture that no longer exists: ${fixtureId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  return c.html(renderLeavePage(loaded.game.name), 200);
 });
