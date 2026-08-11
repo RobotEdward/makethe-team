@@ -49,6 +49,13 @@ export default defineConfig(async () => {
             // there unless it's provided here too. This value is committed on
             // purpose — it is obviously fake and used nowhere but tests.
             RESPONSE_TOKEN_SECRET: "test-only-secret-not-used-in-any-real-environment",
+            // The cancel-token key is a *different* secret from the response
+            // one in every environment (see `CANCEL_TOKEN_SECRET` in
+            // src/env.ts for why), so it must differ here too — a test suite
+            // that shared one value could not tell the two apart, and the
+            // "a cancel token signed with the response secret is rejected"
+            // test would pass for the wrong reason.
+            CANCEL_TOKEN_SECRET: "test-only-cancel-secret-not-used-in-any-real-environment",
           },
         },
       }),

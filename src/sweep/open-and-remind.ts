@@ -1,5 +1,4 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
-import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
+import { and, eq, ne } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog, players, responses } from "../db/schema.js";
 import { openFixture } from "../domain/open-fixture.js";
@@ -11,6 +10,7 @@ import { reminderKey } from "../notify/dedupe-key.js";
 import {
   applySendResult,
   insertQueuedLogRows,
+  markOrphanedRowsFailed,
   SITE_ORIGIN,
   type PendingNotification,
 } from "../notify/delivery.js";
@@ -384,41 +384,6 @@ async function sendDueReminders(
   return { remindersSent, remindersFailed, remindersDeferred, guestsSkipped, failures };
 }
 
-/**
- * Mark every `notification_log` row the result-application loop never
- * reached as `failed`, so an aborted loop cannot leave `queued` rows that
- * `existingReminderLog` will mistake for work already done.
- *
- * Best-effort by design: this runs inside a `catch` that is already
- * reporting a failure, so a second failure here must not replace the first
- * (which is the one that says *why* the loop aborted). It is logged and
- * swallowed instead. The worst case then is the status quo ante — orphaned
- * `queued` rows — with a loud error line naming them, rather than a silent
- * hole.
- *
- * Chunked at `INSERT_CHUNK_SIZE` like every other multi-row statement in the
- * repo, so one squad cannot build an unbounded `IN (...)` list.
- */
-async function markOrphanedRowsFailed(
-  db: Db,
-  orphaned: PendingNotification[],
-  message: string,
-): Promise<void> {
-  if (orphaned.length === 0) return;
-  try {
-    for (const batch of chunk(orphaned, INSERT_CHUNK_SIZE)) {
-      await db
-        .update(notificationLog)
-        .set({ status: "failed", error: message })
-        .where(inArray(notificationLog.id, batch.map((entry) => entry.logId)));
-    }
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    console.error(
-      `could not mark ${orphaned.length} orphaned queued notification_log row(s) as failed (${orphaned.map((entry) => entry.logId).join(", ")}): ${reason}`,
-    );
-  }
-}
 
 /**
  * "All eligible players" for N-1 (§2.8's dedupe-key table): every current

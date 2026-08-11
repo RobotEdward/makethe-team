@@ -72,51 +72,17 @@ export async function cancelFixture(
     .where(eq(fixtures.id, fixtureId));
   if (!fixture) return { cancelled: false, reason: "not-found" };
 
-  // The entitlement check, and a security boundary rather than a validation
-  // nicety: the token proved *who*, this proves *entitled*. An active owner
-  // membership **of this fixture's Game** is required — "active" being
-  // `memberships.active`, the same flag `openFixture` uses to decide who is
-  // even invited, so an owner removed from the squad after the cancellation
-  // email was sent cannot still act on it.
-  //
   // Checked before the lifecycle guards so that an unentitled actor learns
   // nothing about the fixture's state from the refusal they get.
-  const [membership] = await db
-    .select({ id: memberships.id })
-    .from(memberships)
-    .where(
-      and(
-        eq(memberships.gameId, fixture.gameId),
-        eq(memberships.playerId, actorPlayerId),
-        eq(memberships.role, "owner"),
-        eq(memberships.active, true),
-      ),
-    );
-  if (!membership) return { cancelled: false, reason: "not-entitled" };
+  if (!(await mayCancelFixture(db, fixture.gameId, actorPlayerId))) {
+    return { cancelled: false, reason: "not-entitled" };
+  }
 
   const before: Lifecycle = fixture.lifecycle;
   if (before === "cancelled") return { cancelled: false, reason: "already-cancelled" };
   if (before === "played") return { cancelled: false, reason: "played" };
 
-  const answered = await db
-    .select({
-      playerId: responses.playerId,
-      status: responses.status,
-      name: players.name,
-      email: players.email,
-      isGuest: players.isGuest,
-    })
-    .from(responses)
-    .innerJoin(players, eq(players.id, responses.playerId))
-    .where(eq(responses.fixtureId, fixtureId));
-
-  // BR-20's rule lives in exactly one place — the predicate the N-3 template
-  // exports — rather than being restated as a `where` clause here, so the
-  // recipients this returns cannot drift from the recipients that email was
-  // written for.
-  const recipients: CancellationRecipient[] = answered
-    .filter((row) => isCancellationRecipient(row.status, row.isGuest))
-    .map(({ playerId, name, email, status }) => ({ playerId, name, email, status }));
+  const recipients = await cancellationRecipients(db, fixtureId);
 
   // One batch, deliberately. D1 has no interactive transactions, so this is
   // the only way the lifecycle change and its audit row cannot diverge — and
@@ -150,4 +116,67 @@ export async function cancelFixture(
   ]);
 
   return { cancelled: true, recipients };
+}
+
+/**
+ * Whether `actorPlayerId` may cancel fixtures of Game `gameId`.
+ *
+ * A security boundary rather than a validation nicety: a token proves *who*,
+ * this proves *entitled*. An active owner membership **of this fixture's
+ * Game** is required — "active" being `memberships.active`, the same flag
+ * `openFixture` uses to decide who is even invited, so an owner removed from
+ * the squad after the cancellation email was sent cannot still act on it.
+ *
+ * Exported so the confirmation page (`src/routes/cancel.ts`) applies the
+ * identical rule on its read-only `GET` before it will render anything about
+ * a fixture. That page must refuse exactly the actors `cancelFixture` would
+ * refuse, and one definition is the only way the two cannot drift into a
+ * page that previews a cancellation the `POST` then declines — or, far
+ * worse, previews a Game's details to somebody entitled to none of it.
+ */
+export async function mayCancelFixture(db: Db, gameId: string, actorPlayerId: string): Promise<boolean> {
+  const [membership] = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.gameId, gameId),
+        eq(memberships.playerId, actorPlayerId),
+        eq(memberships.role, "owner"),
+        eq(memberships.active, true),
+      ),
+    );
+  return membership !== undefined;
+}
+
+/**
+ * Everyone who must be told fixture `fixtureId` is off (BR-20), whether or
+ * not they can actually be reached (see {@link CancellationRecipient}).
+ *
+ * BR-20's rule lives in exactly one place — the predicate
+ * `isCancellationRecipient` that the N-3 template's module exports — rather
+ * than being restated as a `where` clause here, so the recipients this
+ * returns cannot drift from the recipients that email was written for.
+ *
+ * Read-only, and exported for that reason: the confirmation page counts this
+ * exact set to tell an owner how many people a cancellation will email,
+ * *before* anything is cancelled. A separate count query would be a second
+ * definition of "who gets told", free to disagree with the real one.
+ */
+export async function cancellationRecipients(db: Db, fixtureId: string): Promise<CancellationRecipient[]> {
+  const answered = await db
+    .select({
+      playerId: responses.playerId,
+      status: responses.status,
+      name: players.name,
+      email: players.email,
+      isGuest: players.isGuest,
+    })
+    .from(responses)
+    .innerJoin(players, eq(players.id, responses.playerId))
+    .where(eq(responses.fixtureId, fixtureId));
+
+  return answered
+    .filter((row) => isCancellationRecipient(row.status, row.isGuest))
+    .map(({ playerId, name, email, status }) => ({ playerId, name, email, status }));
 }

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import type { Db } from "../db/client.js";
 import { notificationLog } from "../db/schema.js";
@@ -157,4 +157,49 @@ export async function applySendResult(
     .set({ status: "failed", error: reason })
     .where(eq(notificationLog.id, entry.logId));
   return { kind: "failed", reason };
+}
+
+/**
+ * Mark every `notification_log` row a result-application loop never reached
+ * as `failed`, so an aborted loop cannot leave `queued` rows that a later
+ * "already logged for this player" check will mistake for work already done.
+ *
+ * Extracted from `src/sweep/open-and-remind.ts` when the N-3 cancellation
+ * send became its second caller — same reason `insertQueuedLogRows` and
+ * `applySendResult` live here rather than in the sweep.
+ *
+ * Marking them `failed` rather than deleting them for retry follows this
+ * module's existing asymmetry: the notifier already returned results, so a
+ * message whose result was never applied may well have been delivered, and
+ * BR-19 treats a duplicate as strictly worse than a miss.
+ *
+ * Best-effort by design: every caller runs this inside a `catch` that is
+ * already reporting a failure, so a second failure here must not replace the
+ * first (which is the one that says *why* the loop aborted). It is logged and
+ * swallowed instead. The worst case is then the status quo ante — orphaned
+ * `queued` rows — with a loud error line naming them, rather than a silent
+ * hole.
+ *
+ * Chunked at `INSERT_CHUNK_SIZE` like every other multi-row statement in the
+ * repo, so one squad cannot build an unbounded `IN (...)` list.
+ */
+export async function markOrphanedRowsFailed(
+  db: Db,
+  orphaned: readonly PendingNotification[],
+  message: string,
+): Promise<void> {
+  if (orphaned.length === 0) return;
+  try {
+    for (const batch of chunk(orphaned, INSERT_CHUNK_SIZE)) {
+      await db
+        .update(notificationLog)
+        .set({ status: "failed", error: message })
+        .where(inArray(notificationLog.id, batch.map((entry) => entry.logId)));
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(
+      `could not mark ${orphaned.length} orphaned queued notification_log row(s) as failed (${orphaned.map((entry) => entry.logId).join(", ")}): ${reason}`,
+    );
+  }
 }

@@ -17,6 +17,7 @@ function bindings(notifier: string): Bindings {
     NOTIFIER: notifier,
     MAX_EMAILS_PER_DAY: "50",
     RESPONSE_TOKEN_SECRET: "test-secret",
+    CANCEL_TOKEN_SECRET: "test-cancel-secret",
     RESEND_API_KEY: "test-resend-key",
     EMAIL_FROM: "reminders@example.com",
   };

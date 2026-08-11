@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "./env.js";
+import { cancel } from "./routes/cancel.js";
 import { home } from "./routes/home.js";
 import { respond } from "./routes/respond.js";
 import { robots } from "./routes/robots.js";
@@ -18,6 +19,7 @@ export function createApp(): Hono<AppEnv> {
   app.route("/", robots);
   app.route("/", home);
   app.route("/", respond);
+  app.route("/", cancel);
 
   app.notFound((c) => c.text("Not found", 404));
 
