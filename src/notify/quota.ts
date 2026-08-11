@@ -12,6 +12,15 @@ import type { Message, Notifier, SendResult } from "./notifier.js";
 export const DAILY_CEILING_REASON = "daily-ceiling-reached";
 
 /**
+ * The distinct, greppable reason a message is refused for having no usable
+ * recipient address (BR-32, TR-32). `ok: false`, not `ok: true` — a guest
+ * skip must never be byte-identical to a real send, or a caller mapping
+ * results onto `notification_log` rows would record a delivery that never
+ * happened.
+ */
+export const NO_RECIPIENT_REASON = "no-recipient";
+
+/**
  * Wraps a `Notifier` with the project's single most important cost control
  * (TR-31, TR-32/BR-32).
  *
@@ -22,16 +31,21 @@ export const DAILY_CEILING_REASON = "daily-ceiling-reached";
  * refusal comes back as `{ ok: false, error: DAILY_CEILING_REASON }` so a
  * sweep can log it, not misread it as a successful send.
  *
- * Guests (`Message.to` empty) are dropped before they can consume quota,
- * are not failures, and never reach the wrapped notifier (BR-32, TR-32).
- * `Message.to` is typed `string`, so a well-typed caller can never actually
- * construct one of these — every real message a strictly-typed sweep builds
- * already has an email. The check exists anyway, deliberately, because this
- * class is described as "the last thing standing between a mistake and
- * someone's inbox": it must not *trust* that every upstream caller, present
- * or future, got the filtering right. Reading `message.to` as possibly
- * empty despite its declared type is exactly the "documented type-guard
- * boundary" the project's `no any` rule carves out room for.
+ * Guests (`Message.to` empty) are dropped before they can consume quota and
+ * never reach the wrapped notifier — returned as
+ * `{ ok: false, error: NO_RECIPIENT_REASON }`, a distinct reason rather than
+ * a byte-identical-to-success `ok: true`, so a sweep mapping results onto
+ * `notification_log` rows never records a delivery that never happened
+ * (BR-32, TR-32). Filtering guests out is the *caller's* job, not this
+ * class's: `Message.to` stays `string`, which makes an unsendable message a
+ * compile-time impossibility rather than a runtime obligation every
+ * `Notifier` implementation has to remember. This check exists anyway,
+ * purely as a defensive boundary, because this class is described as "the
+ * last thing standing between a mistake and someone's inbox": it must not
+ * *trust* that every upstream caller, present or future, got the filtering
+ * right. Reading `message.to` as possibly empty despite its declared type
+ * is exactly the "documented type-guard boundary" the project's `no any`
+ * rule carves out room for.
  *
  * Preserves the one-result-per-input-in-order contract exactly: every
  * message — sent, refused or skipped — gets exactly one `SendResult` at its
@@ -60,8 +74,12 @@ export class QuotaNotifier implements Notifier {
 
     messages.forEach((message, index) => {
       if (hasNoEmail(message)) {
-        // BR-32/TR-32: silently skipped, not a failure, no quota consumed.
-        results[index] = { ok: true, providerMessageId: null };
+        // BR-32/TR-32: never sent, no quota consumed. `ok: false` with a
+        // distinct, greppable reason — not `ok: true` — because a byte-
+        // identical success would be indistinguishable from a real delivery
+        // to a caller mapping results onto notification_log rows, and the
+        // whole point of this class is that no outcome here is silent.
+        results[index] = { ok: false, error: NO_RECIPIENT_REASON };
       } else {
         eligible.push({ index, message });
       }
@@ -83,9 +101,15 @@ export class QuotaNotifier implements Notifier {
       const sendResults = await this.wrapped.send(toSend.map((entry) => entry.message));
       toSend.forEach((entry, i) => {
         // `wrapped.send` is contractually required to return one result per
-        // input, in order (notifier.ts) — `sendResults[i]` always exists.
+        // input, in order (notifier.ts). A conforming implementation always
+        // has an entry here; a non-conforming one must not leave a typed
+        // hole in `results` (that reads as a crash for any caller doing
+        // `results[i].ok`, not a diagnosable failure) — so a short result
+        // array is itself treated as a fault of the wrapped notifier, not
+        // silently tolerated.
         const result = sendResults[i];
-        if (result !== undefined) results[entry.index] = result;
+        results[entry.index] =
+          result ?? { ok: false, error: "notifier-contract-violation" };
       });
     }
 

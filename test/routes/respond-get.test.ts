@@ -185,8 +185,14 @@ describe("GET /r/:token — token failures render one friendly page (TR-14)", ()
     const { fixtureId, playerId } = await seedOpenFixture();
     // The route verifies against the real wall clock, not the fictional `NOW`
     // used elsewhere in this file for fixture timing — so "expired" must be
-    // relative to `Date.now()`.
-    const expired = await tokenFor(fixtureId, playerId, Date.now() - 1000);
+    // in the past relative to it. Deliberately an absolute instant, not
+    // `Date.now() - 1000`: workerd freezes `Date.now()` between I/O, so the
+    // Worker isolate's clock and this test isolate's clock drift
+    // independently, and after this test's seeding I/O a one-second margin
+    // is easily eaten — the "expired" token then verifies as still valid and
+    // the assertion flakes. An instant years in the past leaves no margin to
+    // eat.
+    const expired = await tokenFor(fixtureId, playerId, new Date("2020-01-01T00:00:00Z").getTime());
 
     const response = await SELF.fetch(`https://makethe.team/r/${expired}`);
 
@@ -199,7 +205,10 @@ describe("GET /r/:token — token failures render one friendly page (TR-14)", ()
   it("gives byte-identical copy for expired, tampered, wrong-fixture and malformed tokens", async () => {
     const { fixtureId, playerId } = await seedOpenFixture();
 
-    const expired = await tokenFor(fixtureId, playerId, Date.now() - 1000);
+    // Absolute past instant, not `Date.now() - 1000` — see the comment on
+    // the identical construction above for the isolate-clock-skew mechanism
+    // a relative margin is vulnerable to.
+    const expired = await tokenFor(fixtureId, playerId, new Date("2020-01-01T00:00:00Z").getTime());
 
     const valid = await tokenFor(fixtureId, playerId);
     const [validBody, validSig] = valid.split(".");

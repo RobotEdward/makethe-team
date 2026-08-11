@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { emailQuota } from "../../src/db/schema.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
-import { DAILY_CEILING_REASON, QuotaNotifier } from "../../src/notify/quota.js";
+import { DAILY_CEILING_REASON, NO_RECIPIENT_REASON, QuotaNotifier } from "../../src/notify/quota.js";
 import { resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
@@ -48,6 +48,18 @@ class RecordingNotifier implements Notifier {
 class ThrowingNotifier implements Notifier {
   send(): Promise<SendResult[]> {
     throw new Error("must not be called");
+  }
+}
+
+/** A Notifier that violates its own contract (notifier.ts) by returning
+ * fewer results than it was given messages — used to prove QuotaNotifier
+ * never leaves a typed hole in its own results array when the notifier it
+ * wraps misbehaves. */
+class ShortNotifier implements Notifier {
+  send(messages: readonly Message[]): Promise<SendResult[]> {
+    return Promise.resolve(
+      messages.slice(0, -1).map((m): SendResult => ({ ok: true, providerMessageId: `id:${m.dedupeKey}` })),
+    );
   }
 }
 
@@ -138,14 +150,14 @@ describe("QuotaNotifier", () => {
     expect(byDay.get("2026-08-12")).toBe(2);
   });
 
-  it("skips a null-email recipient silently: not a failure, no quota consumed, no upstream call for it", async () => {
+  it("skips a null-email recipient with a distinct refusal: no quota consumed, no upstream call for it", async () => {
     const recorder = new RecordingNotifier();
     const notifier = new QuotaNotifier(recorder, db, 50, DAY_ONE);
     const real = message({ to: "real@example.com" });
 
     const results = await notifier.send([guestMessage(), real]);
 
-    expect(results[0]).toEqual({ ok: true, providerMessageId: null });
+    expect(results[0]).toEqual({ ok: false, error: NO_RECIPIENT_REASON });
     expect(results[1]?.ok).toBe(true);
     // The guest never appears in what reaches the wrapped notifier.
     expect(recorder.calls).toEqual([[real]]);
@@ -165,19 +177,19 @@ describe("QuotaNotifier", () => {
 
     expect(results).toHaveLength(3);
     expect(results[0]?.ok).toBe(true);
-    expect(results[1]).toEqual({ ok: true, providerMessageId: null });
+    expect(results[1]).toEqual({ ok: false, error: NO_RECIPIENT_REASON });
     expect(results[2]?.ok).toBe(true);
     expect(recorder.calls).toEqual([[a, c]]);
   });
 
-  it("sends nothing and makes no upstream call for a batch of only guests, returning all-skipped without error", async () => {
+  it("sends nothing and makes no upstream call for a batch of only guests, returning all-refused without error", async () => {
     const notifier = new QuotaNotifier(new ThrowingNotifier(), db, 50, DAY_ONE);
 
     const results = await notifier.send([guestMessage(), guestMessage()]);
 
     expect(results).toEqual([
-      { ok: true, providerMessageId: null },
-      { ok: true, providerMessageId: null },
+      { ok: false, error: NO_RECIPIENT_REASON },
+      { ok: false, error: NO_RECIPIENT_REASON },
     ]);
 
     const rows = await db.select().from(emailQuota);
@@ -208,5 +220,17 @@ describe("QuotaNotifier", () => {
 
     const totalRecorded = recorder.calls.reduce((sum, call) => sum + call.length, 0);
     expect(totalRecorded).toBe(limit);
+  });
+
+  it("fills a gap explicitly, never leaving a hole, when the wrapped notifier returns too few results", async () => {
+    const notifier = new QuotaNotifier(new ShortNotifier(), db, 50, DAY_ONE);
+    const messages = [message(), message(), message()];
+
+    const results = await notifier.send(messages);
+
+    expect(results).toHaveLength(3);
+    expect(results[0]?.ok).toBe(true);
+    expect(results[1]?.ok).toBe(true);
+    expect(results[2]).toEqual({ ok: false, error: "notifier-contract-violation" });
   });
 });
