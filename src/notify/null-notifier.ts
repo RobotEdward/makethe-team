@@ -1,0 +1,15 @@
+import type { Message, Notifier, SendResult } from "./notifier.js";
+
+/**
+ * Discards every message silently and reports success for each.
+ *
+ * This is what tests and every non-production environment use, so that no
+ * environment other than production can ever email a real person. It still
+ * carries `dedupeKey` (and the rest of `Message`) through its input type, so
+ * the shape is exercised everywhere even though nothing is done with it.
+ */
+export class NullNotifier implements Notifier {
+  send(messages: readonly Message[]): Promise<SendResult[]> {
+    return Promise.resolve(messages.map((): SendResult => ({ ok: true, providerMessageId: null })));
+  }
+}
