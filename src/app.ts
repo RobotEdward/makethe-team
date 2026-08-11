@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { AUTHENTICATED_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { home } from "./routes/home.js";
 import { respond } from "./routes/respond.js";
@@ -14,6 +15,11 @@ export function createApp(): Hono<AppEnv> {
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
     c.header("X-Content-Type-Options", "nosniff");
   });
+
+  // Session resolution, deliberately scoped to the authenticated prefix rather
+  // than `*` — the reasoning is on `sessionMiddleware`. Public paths (`/`,
+  // `/r/:token`, `/leave/:token`, robots) pay nothing for it.
+  app.use(AUTHENTICATED_PREFIX, sessionMiddleware);
 
   app.route("/", robots);
   app.route("/", home);

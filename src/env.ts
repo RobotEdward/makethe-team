@@ -1,3 +1,4 @@
+import type { AppVariables } from "./auth/session.js";
 import type { FixtureCapacity } from "./capacity/fixture-capacity.js";
 
 export interface Bindings {
@@ -50,4 +51,14 @@ export interface Bindings {
   SIGNIN_ALLOWLIST: string | undefined;
 }
 
-export type AppEnv = { Bindings: Bindings };
+/**
+ * Hono's per-request generics for this app.
+ *
+ * `Variables` is what `sessionMiddleware` fills in; its shape and its
+ * null-versus-undefined contract are documented on `AppVariables` in
+ * `src/auth/session.ts`. The type-only import above is a deliberate cycle
+ * between these two modules (`session.ts` imports `AppEnv` back) — it is
+ * erased at compile time, so there is no runtime cycle, and it keeps the
+ * session's type defined next to the middleware that produces it.
+ */
+export type AppEnv = { Bindings: Bindings; Variables: AppVariables };
