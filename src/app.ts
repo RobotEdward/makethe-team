@@ -1,9 +1,10 @@
 import { Hono } from "hono";
-import { AUTHENTICATED_PREFIX, sessionMiddleware } from "./auth/session.js";
+import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { home } from "./routes/home.js";
 import { respond } from "./routes/respond.js";
 import { robots } from "./routes/robots.js";
+import { signIn } from "./routes/signin.js";
 import { renderLinkProblemPage } from "./views/link-problem.js";
 
 export function createApp(): Hono<AppEnv> {
@@ -20,10 +21,16 @@ export function createApp(): Hono<AppEnv> {
   // than `*` — the reasoning is on `sessionMiddleware`. Public paths (`/`,
   // `/r/:token`, `/leave/:token`, robots) pay nothing for it.
   app.use(AUTHENTICATED_PREFIX, sessionMiddleware);
+  // The second mount `sessionMiddleware` anticipates: `/sign-in` bounces an
+  // already-signed-in visitor, and `/sign-in/complete` runs behind
+  // `requireSession`. Named prefixes, not `*` — the blast-radius argument for
+  // keeping `/` and `/r/:token` off the session path is unchanged.
+  app.use(SIGN_IN_PREFIX, sessionMiddleware);
 
   app.route("/", robots);
   app.route("/", home);
   app.route("/", respond);
+  app.route("/", signIn);
 
   app.notFound((c) => c.text("Not found", 404));
 

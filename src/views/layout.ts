@@ -85,6 +85,24 @@ const STYLES = `
     background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
   }
 
+  /* Sign-in: the same stacked, full-width, big-tap-target shape as the
+     response buttons above, so the two pages read as one product. The input
+     borrows the button's border, radius and height rather than introducing a
+     second control style. */
+  .signin { display: flex; flex-direction: column; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
+  .signin label { text-align: left; font-size: 0.95rem; color: var(--mut); }
+  .signin input {
+    width: 100%; min-height: 52px; padding: 0.85rem 1rem;
+    border-radius: 0.65rem; border: 2px solid var(--line);
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 1.05rem;
+  }
+  .signin input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .signin .button { margin-top: 0.25rem; }
+
+  /* Sign-out is a real action but never the point of the page it sits on, so
+     it gets the outlined button rather than the filled one. */
+  .signout { margin: 1.25rem 0; }
+
   .roster {
     list-style: none; margin: 0; padding: 0; text-align: left;
     border-top: 1px solid var(--line);

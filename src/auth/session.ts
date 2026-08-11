@@ -6,21 +6,24 @@ import { players } from "../db/schema.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { layout } from "../views/layout.js";
 import { createAuth } from "./factory.js";
+import { SIGN_IN_PATH } from "./paths.js";
+import { signOutForm } from "../views/sign-out-form.js";
 
 /**
- * Where every route that needs a signed-in person lives (the dashboard and
- * everything under it). `sessionMiddleware` is mounted on exactly this prefix
- * in `src/app.ts` — see the note on the middleware for why it is scoped rather
- * than global — so a route added outside it gets no session at all.
+ * Every path this flow uses lives in `./paths.ts` — a module with no imports,
+ * so the views and the routes can both name a path without importing each
+ * other. Re-exported here because this is where a reader looking for "where
+ * does the guard send me" arrives first.
  */
-export const AUTHENTICATED_PREFIX = "/app/*";
-
-/**
- * Where the guards send someone who needs to sign in. Nothing serves it yet;
- * the sign-in page is the next task's job. One constant so the guards and that
- * page cannot disagree about the path.
- */
-export const SIGN_IN_PATH = "/sign-in";
+export {
+  AUTHENTICATED_PREFIX,
+  AUTH_API_PREFIX,
+  DASHBOARD_PATH,
+  SIGN_IN_COMPLETE_PATH,
+  SIGN_IN_PATH,
+  SIGN_IN_PREFIX,
+  SIGN_OUT_PATH,
+} from "./paths.js";
 
 /** The domain Player, as stored. */
 export type Player = typeof players.$inferSelect;
@@ -197,10 +200,14 @@ export const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => {
  * a 500, a crash, or a Player invented on the spot. It is deliberately *not* a
  * redirect back to sign-in — signing in again does not create the Player
  * today, and once linking is wired the refusal outcomes still would not, so
- * that redirect would be a loop. The next task, which wires linking, owns
- * replacing this page's wording with something that tells the affected person
- * what to do; the status and the "handler always gets a Player" guarantee are
- * the parts callers may rely on.
+ * that redirect would be a loop.
+ *
+ * What it *is* instead is a page with a way out. The likeliest real cause is
+ * signing in with an address the squad does not know — a work address instead
+ * of a personal one — and the fix for that is to sign out and try the other
+ * one, which is exactly what the page now offers (see `renderNoPlayerPage`).
+ * Refusing to redirect is not the same thing as leaving someone on a dead
+ * end.
  */
 export const requirePlayer: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!c.get("session")) return c.redirect(SIGN_IN_PATH, 302);
@@ -208,13 +215,25 @@ export const requirePlayer: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
+/**
+ * The 403 body, with the two exits the person actually needs.
+ *
+ * Signing out and trying a different address is first because it is the
+ * likeliest fix: the squad has them under a different email from the one they
+ * just typed. The home link is the second exit, for the case where it isn't.
+ * Neither is a redirect — see `requirePlayer` for why this page must not
+ * bounce anyone back to sign-in on its own.
+ */
 function renderNoPlayerPage(): string {
   return layout({
     title: "We can't find your player — Make The Team",
     body: `
       <h1>We can't find your player</h1>
       <p>You're signed in, but this account isn't connected to a player in any squad yet.</p>
-      <p>Ask whoever organises your game to add you, or get in touch with them directly.</p>
+      <p>If your squad knows you by a different email address, sign out and sign in with that one.</p>
+      ${signOutForm("Sign out and try a different address")}
+      <p><a href="/">Back to Make The Team</a></p>
+      <p>Otherwise, ask whoever organises your game to add you.</p>
     `,
   });
 }
