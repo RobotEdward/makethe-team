@@ -269,3 +269,48 @@ export const verification = sqliteTable(
   },
   (t) => [index("verification_identifier_idx").on(t.identifier)],
 );
+
+/**
+ * `@better-auth/passkey`'s own table (M5 Task 8).
+ *
+ * Third-party-defined in exactly the sense the block comment above describes:
+ * every column name and nullability below is copied from the plugin's
+ * `schema` object in `@better-auth/passkey@1.6.26`
+ * (`node_modules/@better-auth/passkey/dist/index.mjs`, `//#region src/schema.ts`),
+ * whose model name is the singular `passkey` — so this export must keep that
+ * exact name, because `drizzleAdapter()` resolves the table off
+ * `db._.fullSchema["passkey"]`. The two `index: true` fields upstream
+ * (`userId`, `credentialID`) become the two indexes below.
+ *
+ * `credentialID` is **not** unique here, matching upstream: the plugin looks a
+ * credential up with a plain `findOne` and de-duplication is WebAuthn's job
+ * (the browser refuses to register a credential already in
+ * `excludeCredentials`). Adding a uniqueness constraint the library does not
+ * expect would turn a benign duplicate into a 500.
+ *
+ * No password column, and nothing here is a shared secret: `publicKey` is a
+ * public key. The private half never leaves the authenticator, which is the
+ * whole reason this is a safe thing to store (TR-16).
+ */
+export const passkey = sqliteTable(
+  "passkey",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    publicKey: text("publicKey").notNull(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credentialID: text("credentialID").notNull(),
+    counter: integer("counter").notNull(),
+    deviceType: text("deviceType").notNull(),
+    backedUp: integer("backedUp", { mode: "boolean" }).notNull(),
+    transports: text("transports"),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }),
+    aaguid: text("aaguid"),
+  },
+  (t) => [
+    index("passkey_userId_idx").on(t.userId),
+    index("passkey_credentialID_idx").on(t.credentialID),
+  ],
+);

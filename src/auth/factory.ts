@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { passkey } from "@better-auth/passkey";
 import { magicLink } from "better-auth/plugins";
 import type { Bindings } from "../env.js";
 import type { Db } from "../db/client.js";
@@ -71,9 +72,35 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
           await sendSignInLink(env, db, email, url, now, notifier);
         },
       }),
+      passkey({
+        // The name the operating system's own passkey prompt shows. The
+        // hostname is what the plugin would fall back to, and "makethe.team"
+        // is not what a player is being asked to trust.
+        rpName: RELYING_PARTY_NAME,
+        // Pinned to this deployment rather than left to the plugin's default
+        // (`options.origin || ctx.headers.get("origin")`). Trusting the
+        // request's own `Origin` header is trusting the caller to say which
+        // site they are, and `expectedOrigin` is one of the two things
+        // WebAuthn verification checks. `rpID` is deliberately *not* set: the
+        // plugin derives it from `baseURL`'s hostname, which is the same
+        // single source of truth this line uses.
+        origin: new URL(env.BETTER_AUTH_URL).origin,
+        registration: {
+          // The default, restated because it is a security decision and not
+          // an implementation detail: a passkey can only ever be added to an
+          // identity that is *already* signed in (by magic link). There is
+          // deliberately no passkey-first registration path — one would make
+          // a lost authenticator into a lost account, and it is the reason
+          // `registration.resolveUser` is not configured either.
+          requireSession: true,
+        },
+      }),
     ],
   });
 }
+
+/** How this deployment introduces itself to an authenticator (see `passkey`). */
+const RELYING_PARTY_NAME: string = "Make The Team";
 
 /**
  * Hands the rendered sign-in link to the project's own `Notifier` (N-5).

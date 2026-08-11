@@ -1,3 +1,4 @@
+import type { PageScriptBlock } from "./scripts.js";
 import type { PageStyleBlock } from "./styles.js";
 
 export interface LayoutOptions {
@@ -17,6 +18,19 @@ export interface LayoutOptions {
    * under it.
    */
   pageStyles?: readonly PageStyleBlock[];
+  /**
+   * Client-side JavaScript for this page alone — in practice, only the two
+   * passkey enhancements. **Almost every page should leave this unset**, and
+   * a page that sets it must still be completely usable when the script never
+   * runs (see `src/views/scripts.ts` for the whole argument).
+   *
+   * Typed against `PageScriptBlock` — the union of blocks listed in
+   * `PAGE_SCRIPT_BLOCKS` — for the same reason `pageStyles` is: M4's
+   * Content-Security-Policy will allow inline script by SHA-256 hash of that
+   * enumeration, so an un-enumerated block is script the browser silently
+   * drops. Passing anything not enumerated fails to compile.
+   */
+  pageScripts?: readonly PageScriptBlock[];
 }
 
 /**
@@ -42,6 +56,11 @@ export const STYLES = `
     }
   }
   * { box-sizing: border-box; }
+  /* The passkey affordances ship hidden and are revealed by script.
+     display:none is only the UA default, so a later display:flex on the same
+     element would silently un-hide it and show a button to someone whose
+     browser cannot use it. This makes the attribute mean what it says. */
+  [hidden] { display: none !important; }
   body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
     padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
@@ -87,8 +106,12 @@ export function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-export function layout({ title, body, pageStyles }: LayoutOptions): string {
+export function layout({ title, body, pageStyles, pageScripts }: LayoutOptions): string {
   const styleTags = [STYLES, ...(pageStyles ?? [])].map((css) => `<style>${css}</style>`).join("\n");
+  // No attributes on the tag — not `src`, not `type`, not `nonce`. A bare
+  // inline `<script>` is what a CSP SHA-256 hash of the block's exact text
+  // covers, and it is what `test/routes/signin.test.ts` insists on finding.
+  const scriptTags = (pageScripts ?? []).map((js) => `<script>${js}</script>`).join("\n");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -98,7 +121,7 @@ export function layout({ title, body, pageStyles }: LayoutOptions): string {
 <title>${escapeHtml(title)}</title>
 ${styleTags}
 </head>
-<body><main>${body}</main></body>
+<body><main>${body}</main>${scriptTags}</body>
 </html>
 `;
 }

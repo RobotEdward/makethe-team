@@ -62,6 +62,18 @@ export const DASHBOARD_PATH = "/app";
 export const AUTHENTICATED_PREFIX = `${DASHBOARD_PATH}/*`;
 
 /**
+ * Where a signed-in player manages their passkeys (M5 Task 8).
+ *
+ * Under `DASHBOARD_PATH` on purpose, and not a page of its own outside it:
+ * adding a passkey is only ever done by someone already signed in, so it must
+ * sit behind the session mount and the `private, no-store` cache header that
+ * `AUTHENTICATED_PREFIX` carries. There is deliberately no passkey page
+ * reachable while signed out — a passkey-first registration path would turn a
+ * lost authenticator into a lost account.
+ */
+export const PASSKEYS_PATH = `${DASHBOARD_PATH}/passkeys`;
+
+/**
  * Better Auth's own mount point: every endpoint it owns (`/sign-in/magic-link`,
  * `/magic-link/verify`, `/sign-out`, …) hangs off this. It is the framework's
  * default `basePath`, restated here because this project's own code builds

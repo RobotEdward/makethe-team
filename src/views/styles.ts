@@ -152,6 +152,36 @@ export const SIGNIN_STYLES_CSS = `
 `;
 
 /**
+ * The passkey affordance, on the two pages that have one: the sign-in page's
+ * "sign in with a passkey" button and `/app/passkeys`' "add a passkey" button
+ * plus its list of the ones already registered.
+ *
+ * Its own block rather than an extension of `SIGNIN_STYLES_CSS` because the
+ * passkeys page has no email form and the sign-in page has no list, so
+ * sharing one block would ship each page rules it cannot use.
+ *
+ * Both affordances ship `hidden` and are revealed by script
+ * (`src/views/scripts.ts`). Nothing here reserves space for them or draws a
+ * separator above them, so a browser that never runs that script sees a page
+ * indistinguishable from the one before passkeys existed — which is also why
+ * `[hidden] { display: none !important; }` is in `STYLES`: `.passkey`'s
+ * `display: flex` would otherwise beat the UA default and reveal a button to
+ * exactly the people who cannot use it.
+ */
+export const PASSKEY_STYLES_CSS = `
+  .passkey { display: flex; flex-direction: column; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
+  .passkey p { font-size: 0.95rem; }
+
+  .passkey-list {
+    list-style: none; margin: 1.25rem 0 0; padding: 0; text-align: left;
+    border-top: 1px solid var(--line);
+  }
+  .passkey-list li {
+    padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line); color: var(--fg);
+  }
+`;
+
+/**
  * Every page-specific block, for `layout()`'s `pageStyles` parameter to be
  * typed against. See the module comment above for what enforces membership.
  */
@@ -160,6 +190,7 @@ export const PAGE_STYLE_BLOCKS = [
   SQUAD_STYLES_CSS,
   DASHBOARD_STYLES_CSS,
   SIGNIN_STYLES_CSS,
+  PASSKEY_STYLES_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

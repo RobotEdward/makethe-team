@@ -1,4 +1,4 @@
-import { DASHBOARD_PATH } from "../auth/paths.js";
+import { DASHBOARD_PATH, PASSKEYS_PATH } from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import { renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
@@ -72,6 +72,9 @@ function renderRow(row: DashboardRow): string {
  * the viewer is an active member of, with the response they can change.
  *
  * Server-rendered, no `<script>`, no `type="password"` (TR-4, TR-15, TR-16).
+ * The passkey link below is a plain `<a>` to a page that *does* carry script:
+ * this page stays scriptless, which is why the passkey affordance lives on its
+ * own page rather than inline here.
  * This is the *only* renderer for this page: `POST` redirects back to `GET`
  * rather than rendering a second time, so there is no second copy of this
  * markup to keep in step (see `src/routes/dashboard.ts` for why the dashboard
@@ -86,6 +89,7 @@ export function renderDashboardPage({ playerName, rows }: DashboardPageOptions):
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
+    <p><a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
     ${signOutForm("Sign out")}
   `;
 

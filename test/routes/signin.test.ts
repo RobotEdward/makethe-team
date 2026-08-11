@@ -6,6 +6,7 @@ import { createApp } from "../../src/app.js";
 import {
   AUTHENTICATED_PREFIX,
   DASHBOARD_PATH,
+  PASSKEYS_PATH,
   SIGN_IN_COMPLETE_PATH,
   SIGN_IN_PATH,
   SIGN_OUT_PATH,
@@ -16,6 +17,7 @@ import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
   memberships,
+  passkey,
   players,
   session as sessionTable,
   user as userTable,
@@ -23,6 +25,7 @@ import {
 } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import type { AppEnv } from "../../src/env.js";
+import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { EMAIL_LOOKUP, interferingBinding } from "../support/interference.js";
 // The whole browser journey through sign-in lives in `test/support/sign-in.ts`
@@ -75,12 +78,67 @@ describe("GET /sign-in", () => {
     expect(body).not.toContain("password");
   });
 
-  it("works with no JavaScript at all", async () => {
-    const body = await (await SELF.fetch(`${ORIGIN}${SIGN_IN_PATH}`)).text();
+  /**
+   * The rule M5 Task 8 must not break: **with scripting off, this page is
+   * exactly as usable as it was before passkeys existed.**
+   *
+   * This used to be `expect(body).not.toContain("<script")`, which stopped
+   * being true the moment WebAuthn — a browser API with no server-side
+   * substitute — arrived. Asserting the absence of a tag was never the point
+   * though; the point is that nothing a person needs depends on script. So
+   * the page is reduced to what a browser with scripting disabled would
+   * actually have (every `<script>` element deleted, which is *all* of the
+   * behaviour, because the test below this one proves there are no inline
+   * handlers or `javascript:` URLs anywhere), and then the entire magic-link
+   * journey is driven from that reduced markup alone: the request is built
+   * from the form's own `action`, `method` and field name as parsed out of
+   * it, not from constants this test happens to know.
+   *
+   * The passkey affordance is asserted *absent from view* rather than absent
+   * from the markup — it ships `hidden`, and `[hidden] { display: none
+   * !important }` in `STYLES` is what makes that binding rather than a UA
+   * default a later rule could beat.
+   */
+  it("is completely usable with scripting disabled", async () => {
+    const served = await (await SELF.fetch(`${ORIGIN}${SIGN_IN_PATH}`)).text();
 
-    expect(body).not.toContain("<script");
-    expect(body).toContain('method="post"');
-    expect(body).toContain(`action="${SIGN_IN_PATH}"`);
+    // What a browser with scripting turned off is left holding.
+    const withoutScript = served.replace(/<script[\s\S]*?<\/script>/g, "");
+    expect(withoutScript, "removing the scripts must remove all script").not.toContain("<script");
+
+    // The passkey button is in the markup but not on the page: it is revealed
+    // only by the script that was just removed.
+    expect(withoutScript).toMatch(/<div class="passkey" id="passkey" hidden>/);
+
+    // Everything the baseline needs, read *out of the reduced page*.
+    const form = /<form([^>]*)>([\s\S]*?)<\/form>/.exec(withoutScript);
+    expect(form, "the email form must survive with scripting off").not.toBeNull();
+    const formAttributes = form![1]!;
+    const formBody = form![2]!;
+    expect(formAttributes).toMatch(/method="post"/);
+    expect(formAttributes).toMatch(new RegExp(`action="${SIGN_IN_PATH}"`));
+    expect(formBody, "a submit button, not a scripted one").toMatch(/<button[^>]*type="submit"/);
+    expect(formBody).toMatch(/<label for="email"/);
+    const field = /<input[^>]*\bname="([^"]+)"[^>]*>/.exec(formBody);
+    expect(field, "the form must carry an input to type into").not.toBeNull();
+    expect(formBody).toMatch(/\brequired\b/);
+
+    // And it genuinely works end to end, driven only by what is above.
+    const action = /action="([^"]+)"/.exec(formAttributes)![1]!;
+    const app = createApp();
+    const { response, sent } = await askForLink(app, ALLOWED);
+    expect(new URL(requestLink(ALLOWED).url).pathname, "same action the form names").toBe(action);
+    expect(field![1], "same field name the route reads").toBe("email");
+    expect(response.status).toBe(200);
+
+    const verified = await app.fetch(followLink(linkIn(sent)), bindings());
+    const cookie = cookieFrom(verified);
+    expect(cookie).not.toBe("");
+    const landed = await app.fetch(
+      new Request(new URL(verified.headers.get("location")!, ORIGIN), { headers: { cookie } }),
+      bindings(),
+    );
+    expect(landed.headers.get("location")).toBe(DASHBOARD_PATH);
   });
 
   it("explains a link that did not work without echoing the error back", async () => {
@@ -615,6 +673,25 @@ describe("no password field anywhere (TR-16)", () => {
         /Your games/,
         new Request(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } }),
       );
+
+      // The one page whose whole reason to exist is an enhancement (M5 Task
+      // 8). Captured with a passkey already registered so the list branch is
+      // covered too, not just the empty state.
+      await getDb(env.DB).insert(passkey).values({
+        id: crypto.randomUUID(),
+        userId: (await getDb(env.DB).select().from(userTable))[0]!.id,
+        publicKey: "not-a-real-key",
+        credentialID: "not-a-real-credential",
+        counter: 0,
+        deviceType: "singleDevice",
+        backedUp: false,
+        createdAt: new Date("2030-06-01T09:00:00Z"),
+      });
+      await capture(
+        "passkeys",
+        /Add a passkey|You haven't added a passkey yet/,
+        new Request(`${ORIGIN}${PASSKEYS_PATH}`, { headers: { cookie } }),
+      );
     }
 
     // The four `renderLinkRefusalPage` outcomes, each reached through the real
@@ -696,6 +773,7 @@ describe("no password field anywhere (TR-16)", () => {
         "bad leave token",
         "no player (403)",
         "dashboard",
+        "passkeys",
         "link conflict (409)",
         "ambiguous email (500)",
         "email held by a guest (500)",
@@ -703,10 +781,64 @@ describe("no password field anywhere (TR-16)", () => {
       ].sort(),
     );
 
+    /**
+     * The three pages that are *allowed* a `<script>`, and why the assertion
+     * below is not simply "no page has one" any more.
+     *
+     * Until M5 Task 8 this loop asserted `not.toContain("<script")` on every
+     * page, which was the strongest available statement while the codebase
+     * had no client JavaScript at all. Passkeys are a browser API, so that
+     * became false for the two passkey pages — but deleting the assertion
+     * would have given up the property it was really pinning, which is *not*
+     * "there is no script" but **"script appears only where it is needed, in
+     * a form a strict CSP can allow, and nothing depends on it"**. So it is
+     * split three ways instead:
+     *
+     * - every page *not* named here must still contain no `<script` at all —
+     *   the original assertion, unweakened, over eleven of the fourteen pages;
+     * - every page named here must actually carry one (an enhancement that
+     *   silently stopped shipping would otherwise pass);
+     * - and every script that does ship must be a bare `<script>` tag whose
+     *   text is a member of `SCRIPT_BLOCKS`, which is what M4's
+     *   Content-Security-Policy will hash. That closes the hole the type
+     *   system cannot see: `layout()`'s `pageScripts` is typed against the
+     *   enumeration, but a page's `body` is a raw string and could carry a
+     *   `<script>` nobody enumerated.
+     *
+     * Plus, below the loop, the property that makes "scripting disabled" a
+     * single testable condition rather than a per-element question: no page
+     * anywhere attaches behaviour through an inline handler attribute or a
+     * `javascript:` URL, so removing the script blocks removes *all* of it.
+     */
+    const mayCarryScript = new Set(["sign-in", "sign-in error", "passkeys"]);
+
     for (const { name, body, distinctive } of pages) {
       expect(body, `${name} must actually be that page`).toMatch(distinctive);
       expect(body, `${name} must not contain a password field`).not.toMatch(/type=.?password/i);
-      expect(body, `${name} must not need JavaScript`).not.toContain("<script");
+
+      const scripts = [...body.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+
+      if (!mayCarryScript.has(name)) {
+        expect(body, `${name} must not need JavaScript`).not.toContain("<script");
+        continue;
+      }
+
+      expect(scripts.length, `${name} must carry the passkey enhancement`).toBeGreaterThan(0);
+      for (const [, attributes, js] of scripts) {
+        // No `src` (unreachable under M4's `default-src 'none'`), no `type`,
+        // no `nonce`: only a bare inline tag is covered by a SHA-256 hash of
+        // its own text.
+        expect(attributes, `${name}'s script tag must carry no attributes`).toBe("");
+        expect(
+          SCRIPT_BLOCKS as readonly string[],
+          `${name} ships script that is not in SCRIPT_BLOCKS, so M4's CSP will not hash it`,
+        ).toContain(js);
+      }
+    }
+
+    for (const { name, body } of pages) {
+      expect(body, `${name} must attach no inline event handler`).not.toMatch(/\son[a-z]+\s*=/i);
+      expect(body, `${name} must contain no javascript: URL`).not.toMatch(/javascript:/i);
     }
   });
 });

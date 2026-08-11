@@ -1,7 +1,8 @@
 import { SIGN_IN_COMPLETE_PATH, SIGN_IN_PATH } from "../auth/paths.js";
 import { layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
-import { SIGNIN_STYLES_CSS } from "./styles.js";
+import { PASSKEY_SIGN_IN_JS } from "./scripts.js";
+import { PASSKEY_STYLES_CSS, SIGNIN_STYLES_CSS } from "./styles.js";
 
 /**
  * What the sign-in page has to say beyond the form itself.
@@ -22,8 +23,7 @@ export interface SignInPageOptions {
 }
 
 /**
- * The sign-in page: one email field, one button, no password field (TR-16),
- * and no JavaScript.
+ * The sign-in page: one email field, one button, no password field (TR-16).
  *
  * `type="email"` gets the right keyboard on a phone and a free format check in
  * the browser; `required` and `autocomplete="email"` are the rest of what a
@@ -31,6 +31,18 @@ export interface SignInPageOptions {
  * `POST /sign-in` answers identically whatever is typed, deliberately, so
  * client-side strictness would only annoy people whose real address the
  * pattern disagreed with.
+ *
+ * **The email form is the baseline and it is complete on its own.** The
+ * passkey block below it ships `hidden` and is revealed only by
+ * `PASSKEY_SIGN_IN_JS`, which reveals nothing unless the browser has WebAuthn
+ * — so with scripting off this page is byte-for-byte as usable as it was
+ * before passkeys existed, minus an element nobody can see. Note there is no
+ * `onclick` and no `javascript:` anywhere: all behaviour is attached by the
+ * enumerated script or it does not exist, which is what makes "scripting off"
+ * a single, testable condition.
+ *
+ * The passkey block goes *after* the form for the same reason: the thing that
+ * always works is the thing that comes first.
  */
 export function renderSignInPage({ linkFailed, signedOut }: SignInPageOptions): string {
   const notice = linkFailed
@@ -41,7 +53,8 @@ export function renderSignInPage({ linkFailed, signedOut }: SignInPageOptions): 
 
   return layout({
     title: "Sign in — Make The Team",
-    pageStyles: [SIGNIN_STYLES_CSS],
+    pageStyles: [SIGNIN_STYLES_CSS, PASSKEY_STYLES_CSS],
+    pageScripts: [PASSKEY_SIGN_IN_JS],
     body: `
       <h1>Sign in</h1>
       <p>We'll email you a link that signs you in. Nothing to remember, nothing to set up.</p>
@@ -52,6 +65,11 @@ export function renderSignInPage({ linkFailed, signedOut }: SignInPageOptions): 
                autocapitalize="off" spellcheck="false" required autofocus>
         <button class="button primary" type="submit">Email me a sign-in link</button>
       </form>
+      <div class="passkey" id="passkey" hidden>
+        <p>Already added a passkey to this account?</p>
+        <button class="button" type="button" id="passkey-button">Sign in with a passkey</button>
+        <p class="nudge" id="passkey-problem" hidden></p>
+      </div>
     `,
   });
 }
