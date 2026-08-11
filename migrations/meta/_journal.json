@@ -15,6 +15,13 @@
       "when": 1786392375309,
       "tag": "0001_gifted_preak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786419324148,
+      "tag": "0002_freezing_skaar",
+      "breakpoints": true
     }
   ]
 }

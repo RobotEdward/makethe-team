@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { INITIAL_LIFECYCLE, LIFECYCLES } from "../domain/lifecycle.js";
+import { NOTIFICATION_STATUSES, NOTIFICATION_TYPES } from "../notify/dedupe-key.js";
 import {
   INITIAL_RESPONSE_STATUS,
   RESPONSE_SOURCES,
@@ -120,3 +121,29 @@ export const responses = sqliteTable(
     index("responses_player_idx").on(t.playerId),
   ],
 );
+
+export const notificationLog = sqliteTable(
+  "notification_log",
+  {
+    id: text("id").primaryKey(),
+    // The entire idempotency guarantee (§2.8). See src/notify/dedupe-key.ts.
+    dedupeKey: text("dedupe_key").notNull(),
+    notificationType: text("notification_type", { enum: NOTIFICATION_TYPES }).notNull(),
+    // Nullable: N-6 (welcome) is not fixture-scoped (§2.8).
+    fixtureId: text("fixture_id").references(() => fixtures.id),
+    playerId: text("player_id").notNull().references(() => players.id),
+    channel: text("channel", { enum: ["email"] }).notNull().default("email"),
+    status: text("status", { enum: NOTIFICATION_STATUSES }).notNull().default("queued"),
+    providerMessageId: text("provider_message_id"),
+    sentAt: integer("sent_at", { mode: "timestamp_ms" }),
+    error: text("error"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [uniqueIndex("notification_log_dedupe_key_unique").on(t.dedupeKey)],
+);
+
+export const emailQuota = sqliteTable("email_quota", {
+  // UTC date, YYYY-MM-DD (§2.8).
+  day: text("day").primaryKey(),
+  sentCount: integer("sent_count").notNull().default(0),
+});
