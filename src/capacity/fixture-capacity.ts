@@ -2,8 +2,9 @@ import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { fixtures, responses } from "../db/schema.js";
+import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
-import type { SetResponseInput, SetResponseOutcome } from "./types.js";
+import type { SetResponseInput, SetResponseOutcome, WaitlistPromotion } from "./types.js";
 
 /**
  * Serialises every write that can affect a fixture's capacity (TR-10).
@@ -114,14 +115,58 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       status = "in";
     }
 
+    // BR-7 — if this response gives up a slot, the longest-waiting player
+    // takes it immediately, in the same batch as the dropout below.
+    //
+    // "Longest waiting" is the **lowest live `waitlist_position`**. Positions
+    // are permanent and gappy: the next joiner takes the highest live position
+    // plus one, so a departed top position is reused and numbering restarts at
+    // 1 on an empty waitlist. What survives all of that — and what this relies
+    // on — is that among the players currently waitlisted, the lowest position
+    // is the earliest arrival.
+    //
+    // `occupiesSlot` rather than a literal `=== "in"`: BR-3's `withdrawn`
+    // frees a slot exactly as `out` does, and this condition should already be
+    // right on the day that status is first written.
+    const givesUpASlot = occupiesSlot(existing.status) && !occupiesSlot(status);
+    const promotedRow =
+      givesUpASlot && inCountWithoutThisPlayer < fixture.maxPlayers
+        ? waitlistedWithoutThisPlayer
+            .filter((r) => r.waitlistPosition !== null)
+            .reduce<(typeof waitlistedWithoutThisPlayer)[number] | null>(
+              (best, r) =>
+                best === null || (r.waitlistPosition ?? 0) < (best.waitlistPosition ?? 0) ? r : best,
+              null,
+            )
+        : null;
+
+    // Exactly one player can be promoted here: this response releases at most
+    // one slot. Anything that frees several — a cancellation, a squad change —
+    // is a different operation and must do its own promotion pass.
+    const promoted: WaitlistPromotion | null =
+      promotedRow === null
+        ? null
+        : {
+            playerId: promotedRow.playerId,
+            previousWaitlistPosition: promotedRow.waitlistPosition ?? 1,
+            promotedAt: input.now,
+          };
+
     // Recompute both cached counts from the resulting set. Deriving the
     // waitlist count from the assigned position would be wrong: the position
     // is highest-live-plus-one, which says nothing about how many people are
     // waitlisted — a single remaining player who happens to hold position 4
     // makes the next joiner position 5 while the real count is 2.
-    const inCount = inCountWithoutThisPlayer + (status === "in" ? 1 : 0);
-    const waitlistCount = waitlistedWithoutThisPlayer.length + (status === "waitlisted" ? 1 : 0);
+    const inCount =
+      inCountWithoutThisPlayer + (status === "in" ? 1 : 0) + (promotedRow ? 1 : 0);
+    const waitlistCount =
+      waitlistedWithoutThisPlayer.length + (status === "waitlisted" ? 1 : 0) - (promotedRow ? 1 : 0);
 
+    // One batch, deliberately. D1 has no interactive transactions, so
+    // `db.batch` is the only way to make the dropout and the promotion
+    // succeed or fail together. Split across two calls, a failure between them
+    // would either free a slot nobody took or fill one that was never freed —
+    // and the cached counts would then disagree with the rows either way.
     await db.batch([
       db
         .update(responses)
@@ -133,12 +178,34 @@ export class FixtureCapacity extends DurableObject<Bindings> {
           source: input.source,
         })
         .where(eq(responses.id, existing.id)),
+      // The promoted player's `responded_at` is left alone on purpose: it
+      // records when *they* said yes, which is what the squad list orders `in`
+      // players by, and the promotion is not a new answer from them. `source`
+      // becomes "system" because nobody asked for this write — the object did
+      // it on their behalf.
+      ...(promotedRow
+        ? [
+            db
+              .update(responses)
+              .set({ status: "in", waitlistPosition: null, source: "system" })
+              .where(eq(responses.id, promotedRow.id)),
+          ]
+        : []),
       db.update(fixtures).set({ inCount, waitlistCount }).where(eq(fixtures.id, fixtureId)),
     ]);
 
     if (status === "waitlisted") {
       return { kind: "waitlisted", waitlistPosition: waitlistPosition ?? 1, inCount };
     }
-    return { kind: "recorded", status, inCount, spotsLeft: Math.max(0, fixture.maxPlayers - inCount) };
+    return {
+      kind: "recorded",
+      status,
+      inCount,
+      spotsLeft: Math.max(0, fixture.maxPlayers - inCount),
+      // Carried out, never acted on in here: sending the N-2 email inside
+      // `blockConcurrencyWhile` would put every other tap on this fixture
+      // behind a mail provider's latency. See `WaitlistPromotion`.
+      ...(promoted ? { promoted } : {}),
+    };
   }
 }
