@@ -1,14 +1,14 @@
 import { escapeHtml } from "../../views/layout.js";
-import type { ResponseStatus } from "../../domain/response-status.js";
 
 /**
  * Everything the fixture-cancellation email (N-3) needs to render one
  * Player's copy of it. Every string arriving here is already exactly what
  * should be shown — this module does no date maths, no lookups, no
  * formatting of its own. It is pure (TR-20): no clock, no bindings, no
- * database. The caller (a later task's `cancelFixture` operation) resolves
- * the Fixture, decides who to mail with `isCancellationRecipient` below, and
- * builds the leave URL before calling in.
+ * database. The caller (`cancelFixture`) resolves the Fixture, decides who to
+ * mail with `isCancellationRecipient`
+ * (`src/domain/response-status.ts`), and builds the leave URL before calling
+ * in.
  *
  * Unlike the reminder and promotion emails, there is no response link here:
  * the fixture is off, so there is nothing left to accept or decline. The
@@ -56,21 +56,6 @@ export interface CancellationEmail {
 /** Absolute-URL-safe: escapes for use inside a double-quoted HTML attribute. */
 function href(url: string): string {
   return escapeHtml(url);
-}
-
-/**
- * BR-20: who gets told a fixture was cancelled. Exactly the Players who held
- * or wanted a slot — `in` or `waitlisted` — and never a guest, who has no
- * address to mail (BR-32). `pending`, `out`, and `withdrawn` never receive
- * this message: `pending` and `out` never committed to the slot, and
- * `withdrawn` explicitly gave it back.
- *
- * A pure predicate rather than a query, so the recipient rule can be pinned
- * here, independently of however the wiring task ends up selecting rows.
- */
-export function isCancellationRecipient(status: ResponseStatus, isGuest: boolean): boolean {
-  if (isGuest) return false;
-  return status === "in" || status === "waitlisted";
 }
 
 /**

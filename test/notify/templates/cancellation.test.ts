@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  isCancellationRecipient,
   renderCancellationEmail,
   type CancellationEmailPayload,
 } from "../../../src/notify/templates/cancellation.js";
-import { RESPONSE_STATUSES } from "../../../src/domain/response-status.js";
+import { isCancellationRecipient, RESPONSE_STATUSES } from "../../../src/domain/response-status.js";
 
 const BASE: CancellationEmailPayload = {
   playerName: "Edward Cooper",

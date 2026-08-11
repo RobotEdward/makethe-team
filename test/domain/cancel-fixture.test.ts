@@ -253,6 +253,49 @@ describe("cancelFixture", () => {
       expect(await lifecycleOf(fixtureId)).toBe("open");
     });
 
+    it("refuses a non-owner probing a played fixture with not-entitled, not the lifecycle reason", async () => {
+      // Pins the ordering: entitlement is checked before the lifecycle
+      // guards, specifically so a non-owner cannot learn a fixture's state
+      // from the refusal they get. If the check moved after the guards,
+      // this actor — who is entitled to nothing — would instead see
+      // "played", leaking that the fixture happened.
+      const { fixtureId } = await seed(
+        [
+          { id: OWNER, role: "owner" },
+          { id: "player-1", role: "player" },
+        ],
+        { lifecycle: "played" },
+      );
+
+      const result = await cancelFixture(db, {
+        fixtureId,
+        actorPlayerId: "player-1",
+        reason: "probing",
+        now: NOW,
+      });
+
+      expect(result).toEqual({ cancelled: false, reason: "not-entitled" });
+    });
+
+    it("refuses a non-owner probing an already-cancelled fixture with not-entitled, not the lifecycle reason", async () => {
+      const { fixtureId } = await seed(
+        [
+          { id: OWNER, role: "owner" },
+          { id: "player-1", role: "player" },
+        ],
+        { lifecycle: "cancelled" },
+      );
+
+      const result = await cancelFixture(db, {
+        fixtureId,
+        actorPlayerId: "player-1",
+        reason: "probing",
+        now: NOW,
+      });
+
+      expect(result).toEqual({ cancelled: false, reason: "not-entitled" });
+    });
+
     it("refuses a stranger, a player and a former owner identically", async () => {
       const { fixtureId } = await seed([
         { id: OWNER, role: "owner" },

@@ -20,9 +20,18 @@ export interface AuditEntry {
   now: Date;
 }
 
-/** Record one `audit_log` row. `before`/`after` are serialised to JSON. */
-export async function recordAudit(db: Db, entry: AuditEntry): Promise<void> {
-  await db.insert(auditLog).values({
+/**
+ * Build (but do not run) the `insert` statement for one `audit_log` row.
+ * `before`/`after` are serialised to JSON, `undefined` mapping to `NULL`.
+ *
+ * Split out from `recordAudit` so a caller that needs the write inside its
+ * own `db.batch()` — `db.batch()` being D1's only atomicity primitive, since
+ * there are no interactive transactions — can join this statement to others
+ * instead of duplicating the row shape inline. `cancelFixture` is the first
+ * such caller; see `src/domain/cancel-fixture.ts`.
+ */
+export function buildAuditInsert(db: Db, entry: AuditEntry) {
+  return db.insert(auditLog).values({
     id: crypto.randomUUID(),
     actorPlayerId: entry.actorPlayerId,
     entityType: entry.entityType,
@@ -32,4 +41,9 @@ export async function recordAudit(db: Db, entry: AuditEntry): Promise<void> {
     afterJson: entry.after === undefined ? null : JSON.stringify(entry.after),
     createdAt: entry.now,
   });
+}
+
+/** Record one `audit_log` row. `before`/`after` are serialised to JSON. */
+export async function recordAudit(db: Db, entry: AuditEntry): Promise<void> {
+  await buildAuditInsert(db, entry);
 }

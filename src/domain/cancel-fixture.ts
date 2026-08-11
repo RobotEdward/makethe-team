@@ -1,9 +1,9 @@
 import { and, eq } from "drizzle-orm";
+import { buildAuditInsert } from "../db/audit.js";
 import type { Db } from "../db/client.js";
-import { auditLog, fixtures, memberships, players, responses } from "../db/schema.js";
-import { isCancellationRecipient } from "../notify/templates/cancellation.js";
+import { fixtures, memberships, players, responses } from "../db/schema.js";
 import type { Lifecycle } from "./lifecycle.js";
-import type { ResponseStatus } from "./response-status.js";
+import { isCancellationRecipient, type ResponseStatus } from "./response-status.js";
 
 /**
  * One player who must be told the fixture is off (N-3, BR-20).
@@ -134,17 +134,18 @@ export async function cancelFixture(
       .update(fixtures)
       .set({ lifecycle: "cancelled", cancelledAt: now, cancellationReason: reason })
       .where(eq(fixtures.id, fixtureId)),
-    // Written inline rather than through `recordAudit`, which issues its own
-    // statement and so could not join this batch. The shape is identical.
-    db.insert(auditLog).values({
-      id: crypto.randomUUID(),
+    // Built through `buildAuditInsert` rather than `recordAudit` itself,
+    // which issues its own statement and so could not join this batch — but
+    // the row shape now has exactly one definition, shared with every other
+    // `audit_log` writer.
+    buildAuditInsert(db, {
       actorPlayerId,
       entityType: "fixture",
       entityId: fixtureId,
       action: "fixture.cancelled",
-      beforeJson: JSON.stringify({ lifecycle: before }),
-      afterJson: JSON.stringify({ lifecycle: "cancelled", reason }),
-      createdAt: now,
+      before: { lifecycle: before },
+      after: { lifecycle: "cancelled", reason },
+      now,
     }),
   ]);
 
