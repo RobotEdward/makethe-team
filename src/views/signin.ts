@@ -1,6 +1,7 @@
 import { SIGN_IN_COMPLETE_PATH, SIGN_IN_PATH } from "../auth/paths.js";
 import { layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
+import { SIGNIN_STYLES_CSS } from "./styles.js";
 
 /**
  * What the sign-in page has to say beyond the form itself.
@@ -40,6 +41,7 @@ export function renderSignInPage({ linkFailed, signedOut }: SignInPageOptions): 
 
   return layout({
     title: "Sign in — Make The Team",
+    pageStyles: [SIGNIN_STYLES_CSS],
     body: `
       <h1>Sign in</h1>
       <p>We'll email you a link that signs you in. Nothing to remember, nothing to set up.</p>

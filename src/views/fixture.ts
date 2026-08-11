@@ -3,6 +3,7 @@ import type { SquadMember } from "../db/queries.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
+import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 /**
  * Why this page is read-only, if it is.
@@ -172,7 +173,7 @@ function renderSquadList(squad: readonly SquadMember[]): string {
     )
     .join("");
 
-  return `<ul class="roster">${items}</ul>`;
+  return `<ul class="squad">${items}</ul>`;
 }
 
 function renderNudge(view: FixtureView): string {
@@ -258,5 +259,9 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${renderSquadList(squad)}
   `;
 
-  return layout({ title: `${gameName} — Make The Team`, body });
+  return layout({
+    title: `${gameName} — Make The Team`,
+    body,
+    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS],
+  });
 }

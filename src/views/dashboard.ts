@@ -4,6 +4,7 @@ import type { ResponseStatus } from "../domain/response-status.js";
 import { renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
+import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
 
 /**
  * One fixture as the dashboard shows it: the game, when and where, the derived
@@ -56,7 +57,7 @@ function renderRow(row: DashboardRow): string {
   const headlineClass = `viewer-headline${row.myStatus === "waitlisted" ? " warn" : ""}`;
 
   return `
-    <li class="game-card">
+    <li class="fixture-card">
       <h2>${escapeHtml(row.gameName)}</h2>
       <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
@@ -83,10 +84,14 @@ export function renderDashboardPage({ playerName, rows }: DashboardPageOptions):
     ${
       rows.length === 0
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
-        : `<ul class="game-list">${rows.map(renderRow).join("")}</ul>`
+        : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
     ${signOutForm("Sign out")}
   `;
 
-  return layout({ title: "Your games — Make The Team", body });
+  return layout({
+    title: "Your games — Make The Team",
+    body,
+    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS],
+  });
 }
