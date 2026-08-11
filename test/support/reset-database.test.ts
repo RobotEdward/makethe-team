@@ -7,6 +7,7 @@ import {
   games,
   memberships,
   notificationLog,
+  passkey,
   players,
   responses,
   session,
@@ -19,10 +20,11 @@ import { gameRow, resetDatabase, testDb } from "./factories.js";
  * Guards the exact leak class that has already bitten this project once:
  * `resetDatabase()` silently omitting a table, so the next test that writes
  * to it inherits rows from a previous test. Every table `resetDatabase`
- * claims to clear gets a row inserted here (including the four Better Auth
- * tables added in M5), then `resetDatabase()` is called once, and each
- * table is asserted empty *individually* so a failure names the table that
- * was missed rather than a generic "something's left over".
+ * claims to clear gets a row inserted here (including the five Better Auth
+ * tables added in M5 — `passkey` joined the other four in Task 8), then
+ * `resetDatabase()` is called once, and each table is asserted empty
+ * *individually* so a failure names the table that was missed rather than a
+ * generic "something's left over".
  */
 describe("resetDatabase", () => {
   it("empties every table it is responsible for", async () => {
@@ -113,6 +115,17 @@ describe("resetDatabase", () => {
       updatedAt: now,
     });
 
+    await db.insert(passkey).values({
+      id: crypto.randomUUID(),
+      userId,
+      publicKey: "reset-test-not-a-real-key",
+      credentialID: "reset-test-not-a-real-credential",
+      counter: 0,
+      deviceType: "singleDevice",
+      backedUp: false,
+      createdAt: now,
+    });
+
     await resetDatabase();
 
     expect(await db.select().from(players)).toHaveLength(0);
@@ -127,5 +140,6 @@ describe("resetDatabase", () => {
     expect(await db.select().from(session)).toHaveLength(0);
     expect(await db.select().from(account)).toHaveLength(0);
     expect(await db.select().from(verification)).toHaveLength(0);
+    expect(await db.select().from(passkey)).toHaveLength(0);
   });
 });

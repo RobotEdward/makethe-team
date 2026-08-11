@@ -80,6 +80,25 @@ describe("the script enumeration", () => {
    * to complain, so it is worth replacing this with an assertion on the real
    * header once the two branches are one.
    */
+  /**
+   * Strips `//` and `/* *\/` comments before the tripwire below looks for
+   * `SCRIPT_BLOCKS` / `STYLE_BLOCKS`, so that a comment mentioning the name —
+   * "TODO: wire up SCRIPT_BLOCKS" — cannot discharge it. (M5 Task 8 review,
+   * minor #1: the check used to be satisfied by the bare string appearing
+   * anywhere in the file, comments included.) Good enough for this purpose —
+   * it does not need to be a real parser, only to refuse to be satisfied by
+   * prose that never reaches code — but it is still only a source-text check.
+   * **Once M4's `csp.ts` is merged, replace this whole test with an assertion
+   * on the real emitted `Content-Security-Policy` header** (fetch a page,
+   * read the header, assert it contains the hash of every `SCRIPT_BLOCKS` /
+   * `STYLE_BLOCKS` entry) — a header is the actual guarantee; a source-text
+   * check is only ever a stand-in for one that cannot exist until both
+   * branches are one.
+   */
+  function withoutComments(source: string): string {
+    return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  }
+
   it("fails loudly once M4's csp.ts exists without hashing these blocks", () => {
     const cspSources = import.meta.glob("../../src/security/*.ts", {
       query: "?raw",
@@ -90,18 +109,22 @@ describe("the script enumeration", () => {
     for (const [path, source] of Object.entries(cspSources)) {
       if (!path.endsWith("csp.ts")) continue;
 
+      const code = withoutComments(source);
+
       expect(
-        source,
+        code,
         `${path} must compute script-src from SCRIPT_BLOCKS in src/views/scripts.ts — ` +
           "M5 added inline passkey scripts and `script-src 'none'` will drop them silently. " +
-          "Hash every entry, no 'unsafe-inline' and no 'unsafe-hashes'.",
+          "Hash every entry, no 'unsafe-inline' and no 'unsafe-hashes'. (A mention inside a " +
+          "comment does not count — this check strips comments before looking.)",
       ).toContain("SCRIPT_BLOCKS");
 
       expect(
-        source,
+        code,
         `${path} must compute style-src by mapping STYLE_BLOCKS in src/views/styles.ts ` +
           "rather than importing individual blocks, so a page-specific block added later " +
-          "is covered automatically (see that file's module comment).",
+          "is covered automatically (see that file's module comment). (A mention inside a " +
+          "comment does not count — this check strips comments before looking.)",
       ).toContain("STYLE_BLOCKS");
     }
 

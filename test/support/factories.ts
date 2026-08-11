@@ -50,11 +50,14 @@ export async function resetDatabase(): Promise<void> {
   await env.DB.exec("DELETE FROM fixtures");
   await env.DB.exec("DELETE FROM games");
   await env.DB.exec("DELETE FROM players");
-  // Better Auth tables (M5). Children before parent: session and account
-  // both hold a FK to user.id (ON DELETE cascade would make this order
-  // optional, but delete explicitly rather than relying on it).
+  // Better Auth tables (M5). Children before parent: session, account and
+  // passkey all hold a FK to user.id (ON DELETE cascade would make this
+  // order optional, but delete explicitly rather than relying on it — this
+  // project has already been bitten once by a `resetDatabase` that omitted a
+  // table and leant on an implicit cascade to cover the gap).
   await env.DB.exec("DELETE FROM session");
   await env.DB.exec("DELETE FROM account");
+  await env.DB.exec("DELETE FROM passkey");
   await env.DB.exec("DELETE FROM verification");
   await env.DB.exec("DELETE FROM user");
 }

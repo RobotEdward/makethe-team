@@ -78,12 +78,22 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
         // is not what a player is being asked to trust.
         rpName: RELYING_PARTY_NAME,
         // Pinned to this deployment rather than left to the plugin's default
-        // (`options.origin || ctx.headers.get("origin")`). Trusting the
-        // request's own `Origin` header is trusting the caller to say which
-        // site they are, and `expectedOrigin` is one of the two things
-        // WebAuthn verification checks. `rpID` is deliberately *not* set: the
-        // plugin derives it from `baseURL`'s hostname, which is the same
-        // single source of truth this line uses.
+        // (`options.origin || ctx.headers.get("origin")`). This is *not* what
+        // stops a hostile `Origin` header — Better Auth's own trusted-origin
+        // check refuses that earlier and unconditionally, with a flat 403
+        // (`INVALID_ORIGIN`, or `MISSING_OR_NULL_ORIGIN` if it is absent),
+        // before this plugin is ever reached; verified by execution in
+        // `test/auth/passkey.test.ts`. What this pin actually defends against
+        // is a request whose `Origin` header is completely genuine (this
+        // deployment's own) but whose WebAuthn assertion was *signed* for a
+        // different site — the header and the signed `clientDataJSON.origin`
+        // are two independent claims, and only this line, not the header
+        // check, is what compares the second one. It is real defence in
+        // depth rather than a redundant restatement: it is the only thing
+        // standing if `trustedOrigins` is ever widened, or a future Better
+        // Auth upgrade relaxes that earlier check. `rpID` is deliberately
+        // *not* set: the plugin derives it from `baseURL`'s hostname, which
+        // is the same single source of truth this line uses.
         origin: new URL(env.BETTER_AUTH_URL).origin,
         registration: {
           // The default, restated because it is a security decision and not

@@ -840,8 +840,88 @@ describe("no password field anywhere (TR-16)", () => {
       expect(body, `${name} must attach no inline event handler`).not.toMatch(/\son[a-z]+\s*=/i);
       expect(body, `${name} must contain no javascript: URL`).not.toMatch(/javascript:/i);
     }
+
+    pinRoutesToPages(pages.map((page) => page.name));
   });
 });
+
+/**
+ * Ties the enumeration above to what the app actually serves.
+ *
+ * The `capture(...)` list above is hand-maintained by page name — nothing
+ * forces a new route to be added to it. Proved: adding
+ * `app.get("/about", (c) => c.html("<script>window.sneak=1</script>"))` to
+ * `src/app.ts` and re-running `signin.test.ts` + `scripts.test.ts` passed
+ * 47/47 with the script sitting outside every guard above (M5 Task 8 review,
+ * Important-2). So this walks Hono's own `app.routes` — the router's record
+ * of what it actually dispatches, not what a comment says it dispatches — and
+ * demands that every route be either named as the source of one of the
+ * captured pages, or excluded here with a reason. A route that is neither
+ * fails this function immediately, before it matters whether the route's body
+ * has a `<script>` in it at all.
+ *
+ * `ALL`-method routes whose path ends `/*` are middleware mounts (the
+ * site-wide header middleware, the two session mounts, and Better Auth's own
+ * `/api/auth/*` sub-router) rather than page handlers, so they are filtered
+ * out rather than enumerated: middleware renders no page of its own, and
+ * `/api/auth/*` is the plugin's body to guard, not this app's — this project
+ * never writes to it.
+ */
+function pinRoutesToPages(capturedPageNames: readonly string[]): void {
+  const EXCLUDED_ROUTES: Readonly<Record<string, string>> = {
+    "POST /r/:token":
+      "renders through the same two functions as GET /r/:token — " +
+      "renderFixtureForViewer or renderLinkProblemPage (src/routes/respond.ts) " +
+      "— so it has no template of its own that could carry an un-enumerated " +
+      "script; its own script/password assertion lives in " +
+      "test/routes/respond-get.test.ts.",
+    "POST /sign-out":
+      "never returns HTML on any branch — a plain-text 403 or a 302 redirect " +
+      "only (src/routes/signin.ts).",
+    "POST /app":
+      "never returns HTML on any branch — every outcome is a redirect or a " +
+      "plain-text 400/403/404 (src/routes/dashboard.ts).",
+  };
+
+  const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
+    "GET /robots.txt": "robots",
+    "GET /": "home",
+    "GET /r/:token": "bad respond token",
+    "GET /leave/:token": "bad leave token",
+    "GET /sign-in": "sign-in",
+    "POST /sign-in": "check inbox",
+    "GET /sign-in/complete": "link conflict (409)",
+    "GET /app": "dashboard",
+    "GET /app/passkeys": "passkeys",
+  };
+
+  const registered = new Set(
+    createApp()
+      .routes.filter((route) => !(route.method === "ALL" && route.path.endsWith("/*")))
+      .map((route) => `${route.method} ${route.path}`),
+  );
+
+  for (const key of registered) {
+    if (key in EXCLUDED_ROUTES) continue;
+    expect(
+      ROUTE_TO_PAGE,
+      `${key} is a registered route this enumeration does not know about — ` +
+        "capture it as a page above, or add it to EXCLUDED_ROUTES with a reason",
+    ).toHaveProperty(key);
+    expect(
+      capturedPageNames,
+      `${key} claims coverage from a page named "${ROUTE_TO_PAGE[key]}" that was never captured`,
+    ).toContain(ROUTE_TO_PAGE[key]);
+  }
+
+  // The reverse direction: a stale entry naming a route that no longer exists
+  // would silently stop meaning anything.
+  for (const key of [...Object.keys(ROUTE_TO_PAGE), ...Object.keys(EXCLUDED_ROUTES)]) {
+    expect(registered.has(key), `${key} no longer exists as a registered route — remove it`).toBe(
+      true,
+    );
+  }
+}
 
 describe("session scoping", () => {
   it("still resolves no session on the public holding page", async () => {
