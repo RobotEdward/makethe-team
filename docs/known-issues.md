@@ -13,7 +13,7 @@ Anything that *was* fixed lives in the git history, not here.
 | An invalid or out-of-range `LocalParts` silently rolls over (`hour: 25` → next day, `month: 0` → previous December, `hour: NaN` → `RangeError`). Only reachable if a caller builds `LocalParts` without going through `parseLocalTime`. | `src/domain/time/zone.ts` | M6, which puts a kickoff-time field on a form |
 | A rejected time zone re-attempts `Intl.DateTimeFormat` construction on every call — nothing is negative-cached. Harmless until a user-supplied zone arrives at volume. | `src/domain/time/zone.ts` | M6, which adds a timezone picker |
 | A game configured with an odd `max_players` while preferring even numbers, once full, is permanently both `full` and `uneven` with no possible remediation. Faithful to the advisory-only parity rule, but the configuration should be discouraged at creation time. See spec Part 3, open item 6. | `src/domain/fixture-view.ts` | M6, as a soft warning on the game form |
-| The `production` GitHub environment was auto-created with no protection rules, and the deploy secrets are repo-level rather than environment-scoped, so `environment: production` currently gates nothing. Now overdue: M3 makes this the gate in front of real email sends. | `.github/workflows/deploy.yml` | M3 deploy (task 17) |
+| **Required reviewers are not enabled** on the `production` environment, so a compromised token or account can auto-deploy. Deliberately deferred: the database currently holds six plus-addressed test players, and an approval click per deploy is real friction during active development. **The trigger to enable it is the first real squad member's address going in**, not a date. Everything else on this environment is now locked down — see the note below. | GitHub → Settings → Environments → production | Before real players are added |
 | The `respond-throttle` rate-limiting rule for `/r/*` was deliberately deferred in the runbook pending M2 shipping a `POST` endpoint to protect. M2 shipped `POST /r/:token` and the rule still has not been created. | `docs/runbooks/cloudflare.md` | M3 deploy, before production traffic is real |
 | No CSP or `frame-ancestors` headers. Deferred pending M2 adding forms — M2 has now shipped `POST /r/:token`, so the trigger condition has occurred. | Worker response headers (not yet implemented anywhere) | M4, alongside the next page that takes user input |
 | TR-31's "owner-visible warning" on reaching the daily send ceiling is not implemented anywhere — only a code comment marks the gap. Combined with the deliberate fail-closed-to-0 behaviour on missing config, a `MAX_EMAILS_PER_DAY` config typo would silently stop all email with nothing but a `console.error` in Workers Logs. | `src/cron/handler.ts`, `src/notify/quota.ts` | M4, when N-4 (owner attention email) gives this a natural delivery channel |
@@ -78,3 +78,18 @@ environment:
    environment would silently give it both cron schedules. TR-9 exists precisely to stop
    two environments running the reminder sweep against real people. The runbook documents
    the required move; the configuration does not yet enforce it.
+
+## Repository and deploy hardening — applied 11 August 2026
+
+Recorded so nobody re-litigates it, and so the one deliberate omission is visible.
+
+| Control | State |
+|---|---|
+| Deploy secrets scoped to the `production` environment, not the repository | **Applied.** Previously any workflow in the repo could read the Cloudflare token, which owns D1 and the Worker. Now only jobs declaring `environment: production` can. |
+| Deployment branches restricted to `main` | **Applied.** |
+| Ruleset `main-history-protection`: force-push and deletion blocked | **Applied.** Direct pushes to `main` are unaffected, which is the agreed workflow. |
+| Actions restricted to GitHub-authored and verified creators | **Applied.** Only `actions/checkout` and `actions/setup-node` are used. |
+| Required reviewers on `production` | **Deliberately off** — see the row above for the trigger to enable it. |
+| Pull requests required to merge | **Deliberately not used.** Working directly on `main` is the agreed workflow, and `deploy.yml` already runs lint, typecheck and tests before migrations and deploy, so a broken push fails before touching production. |
+
+**Outstanding, needs the Cloudflare dashboard:** the deploy API token carries **Workers KV Storage → Edit**, and this project has no KV binding. Drop that scope the next time the token is rotated.
