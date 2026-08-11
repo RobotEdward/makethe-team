@@ -195,14 +195,25 @@ describe("renderCancellationEmail", () => {
     // leading `> `, and the embedded URL survives on an unprefixed line —
     // exactly the forgery the quoting exists to prevent (this is the bug
     // the review found for bare `\r`).
+    // This table is the enforcement mechanism for the standard
+    // LINE_SEPARATOR's doc comment cites (Python's `str.splitlines()`):
+    // every boundary that standard recognises has its own row here, so
+    // dropping any single one from the implementation — the exact way the
+    // round-2 review found VT/FS/GS/RS missing despite the doc comment
+    // already naming `splitlines()` as the target — fails this table
+    // instead of surviving until someone thinks to try it.
     const cases: Array<[string, string]> = [
       ["\\n (LF)", "\n"],
       ["\\r\\n (CRLF)", "\r\n"],
       ["\\r (bare CR, classic Mac)", "\r"],
+      ["\\v (LINE TABULATION, U+000B)", ""],
+      ["\\f (FORM FEED, U+000C)", ""],
+      ["FILE SEPARATOR (U+001C)", ""],
+      ["GROUP SEPARATOR (U+001D)", ""],
+      ["RECORD SEPARATOR (U+001E)", ""],
       ["NEL (U+0085)", ""],
       ["LINE SEPARATOR (U+2028)", " "],
       ["PARAGRAPH SEPARATOR (U+2029)", " "],
-      ["form feed (U+000C)", ""],
     ];
 
     it.each(cases)("%s is treated as a line break, splitting the reason into two quoted lines", (_label, sep) => {

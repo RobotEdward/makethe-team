@@ -365,7 +365,10 @@ describe("POST /r/:token — a scheduled fixture is refused with an explanation,
     expect(response.status).toBe(200);
     expect(body).not.toContain(`method="post"`);
     expect(body).not.toMatch(/can you make it\?/i);
-    expect(body).toMatch(/aren(&#39;|')t open yet|not open yet/i);
+    // Pins the escaped apostrophe exactly, same reasoning as
+    // test/views/fixture.test.ts — a regex accepting either `'` or
+    // `&#39;` would pass regardless of whether escapeHtml escapes `'`.
+    expect(body).toContain("Responses for this fixture aren&#39;t open yet.");
 
     // No response row exists at all for a fixture that was never opened —
     // the Durable Object refused the write (fixture-not-open) before ever

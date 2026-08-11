@@ -80,33 +80,47 @@ export function isCancellationRecipient(status: ResponseStatus, isGuest: boolean
  * the wrong question; the right one is "what will some plain-text renderer
  * on the receiving end treat as a line break."
  *
- * - `\r\n` and `\n` are the obvious cases (network/Unix line endings).
- * - Bare `\r` (classic Mac line endings) is still honoured by plenty of
- *   lenient text widgets and MUAs — this is the exact bypass the review
- *   found, and `\r\n` must be tried before bare `\r` in the alternation so
- *   a CRLF pair is not split into a spurious blank line.
- * - NEL (U+0085) and form feed (U+000C) are treated as line breaks by
- *   common "split into lines" implementations (e.g. Python's
- *   `str.splitlines`, Java's `Scanner`), and NEL specifically has a long
- *   history as a line terminator outside ASCII-only systems. Including
- *   them costs nothing and closes the same class of gap.
- * - U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH SEPARATOR) are
- *   Unicode-mandated line breaks (UAX #14) that browsers honour in
- *   rendered text and that some HTML-izing plain-text-to-HTML mail
- *   converters follow. The *text* rendition is delivered as MIME
- *   `text/plain`, so most direct plain-text viewers won't act on them —
- *   but since some renderers do, and the cost of handling them is one
- *   more character class, they're included too.
+ * This set is pinned to exactly the boundaries Python's `str.splitlines()`
+ * recognises (CPython's `STRINGLIB_ISLINEBREAK` set) — that standard is
+ * cited explicitly so the set below can be checked against it rather than
+ * argued about one character at a time:
  *
- * Deliberately not included: things that merely look like whitespace but
- * carry no line-break convention anywhere (e.g. U+00A0 no-break space,
- * ordinary tabs) — treating those as line breaks would just fragment
- * ordinary reason text for no anti-forgery benefit.
+ * - `\r\n` (CRLF) — tried before bare `\r` in the alternation so a CRLF
+ *   pair is not split into a spurious blank line.
+ * - `\n` (LF) and bare `\r` (CR, classic Mac line endings) — the original
+ *   review's bypass.
+ * - `\v` / U+000B (LINE TABULATION) and `\f` / U+000C (FORM FEED).
+ * - U+001C (FILE SEPARATOR), U+001D (GROUP SEPARATOR), U+001E (RECORD
+ *   SEPARATOR) — the round-2 review's reproduced bypass: `splitlines()`
+ *   treats all three as line breaks, but the previous version of this set
+ *   omitted them despite citing `splitlines()` as its own justification.
+ * - U+0085 (NEL, NEXT LINE) — a line terminator with a long history outside
+ *   ASCII-only systems.
+ * - U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH SEPARATOR) —
+ *   Unicode-mandated line breaks (UAX #14) that browsers honour in rendered
+ *   text and that some HTML-izing plain-text-to-HTML mail converters follow.
+ *   The *text* rendition here is delivered as MIME `text/plain`, so most
+ *   direct plain-text viewers won't act on these — but since some
+ *   renderers do, and the cost of handling them is one more character
+ *   class, they're included too.
+ *
+ * Deliberately not included: things `splitlines()` itself does not treat as
+ * a line break — e.g. U+00A0 no-break space, ordinary tabs — since treating
+ * those as line breaks would just fragment ordinary reason text for no
+ * anti-forgery benefit.
+ *
+ * `test/notify/templates/cancellation.test.ts` enumerates this exact set
+ * table-driven, one case per separator listed above, so silently dropping
+ * any single member here fails a test instead of surviving until someone
+ * thinks to try it.
  */
-// \u000c (form feed) below is deliberately included as a line-break
-// convention, not an accidental control character; see the doc comment above.
+// \v, \f, and the U+001C–U+001E separators below are deliberately included
+// as line-break conventions (per str.splitlines(), see above), not
+// accidental control characters; ESLint's no-control-regex flags them
+// regardless, so the whole class is disabled here, narrowly, for this one
+// regex literal.
 // eslint-disable-next-line no-control-regex
-const LINE_SEPARATOR = /\r\n|[\r\n\u0085\u2028\u2029\u000c]/;
+const LINE_SEPARATOR = /\r\n|[\r\n\u000b\u000c\u001c\u001d\u001e\u0085\u2028\u2029]/;
 
 /**
  * Quote an owner-authored reason line-by-line, the way a reply quotes an
