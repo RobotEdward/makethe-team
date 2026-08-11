@@ -51,6 +51,24 @@ const SECRET_BINDING_NAME: Record<TokenKind, string> = {
   cancel: "CANCEL_TOKEN_SECRET",
 };
 
+/**
+ * Whether `secret` is actually usable to sign or verify with.
+ *
+ * `secret` is declared `string` throughout this module (per `Bindings` in
+ * `src/env.ts`), but an unset Worker secret binding arrives at runtime as
+ * `undefined` regardless of that declared type — TypeScript's type is a
+ * compile-time promise the platform does not keep. A bare
+ * `secret.length === 0` check dereferences `.length` on that `undefined`
+ * before ever comparing it, throwing a bare `TypeError` from inside
+ * `verifyToken` (which must never throw — see below) and, in `signToken`,
+ * replacing the by-name error operators depend on with an unattributable one.
+ * Checking the runtime type first, and only then the length, makes absent,
+ * wrong-type and empty secrets all take the identical fail-closed path.
+ */
+function isUsableSecret(secret: unknown): secret is string {
+  return typeof secret === "string" && secret.length > 0;
+}
+
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -119,10 +137,16 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
  * overridable by construction.
  */
 async function signToken<Payload extends object>(kind: TokenKind, payload: Payload, secret: string): Promise<string> {
-  // Signing with no secret is a programming error (misconfigured binding),
-  // never a runtime/user condition — throw loudly rather than silently
-  // producing an unverifiable token.
-  if (secret.length === 0) {
+  // Signing with no usable secret is a programming error (misconfigured
+  // binding), never a runtime/user condition — throw loudly rather than
+  // silently producing an unverifiable token. `secret` is typed `string`
+  // (see `Bindings` in src/env.ts), but an *unset* binding arrives at
+  // runtime as `undefined` regardless of that declared type — the same gap
+  // `src/env.ts`'s own `RESEND_API_KEY` comment documents — so this checks
+  // the actual runtime value rather than trusting the type. Absent, wrong
+  // type and empty are all the same failure and must all throw the same
+  // named error.
+  if (!isUsableSecret(secret)) {
     throw new Error(`${SECRET_BINDING_NAME[kind]} must not be empty (secret unset?)`);
   }
   const body = base64UrlEncode(ENCODER.encode(JSON.stringify({ ...payload, kind })));
@@ -156,13 +180,16 @@ async function verifyToken<Payload extends { expiresAt: number }>(
   // than letting `.split` throw a raw TypeError into the route.
   if (typeof token !== "string") return { ok: false, reason: "malformed" };
 
-  // An empty secret means the binding is unset (new env, rotation typo,
-  // forgotten `wrangler secret put`). Unlike signing, this must not throw:
-  // it reaches this function on the hot path for every incoming link, and
-  // the route's job is to render the normal "this link isn't working" page,
-  // not 500. Every token is unverifiable either way, so "malformed" is
-  // honest — there is nothing more specific to say about it.
-  if (secret.length === 0) return { ok: false, reason: "malformed" };
+  // An unusable secret means the binding is unset (new env, rotation typo,
+  // forgotten `wrangler secret put`) — which, like `signToken` above, arrives
+  // at runtime as `undefined` rather than the empty string the declared
+  // `string` type promises, so this checks the runtime value, not the type.
+  // Unlike signing, this must not throw: it reaches this function on the hot
+  // path for every incoming link, and the route's job is to render the
+  // normal "this link isn't working" page, not 500. Every token is
+  // unverifiable either way, so "malformed" is honest — there is nothing
+  // more specific to say about it.
+  if (!isUsableSecret(secret)) return { ok: false, reason: "malformed" };
 
   const parts = token.split(".");
   if (parts.length !== 2) return { ok: false, reason: "malformed" };

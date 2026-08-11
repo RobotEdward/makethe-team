@@ -190,6 +190,36 @@ describe("hardening (review round 1)", () => {
   });
 });
 
+/**
+ * An *absent* Worker secret binding (`CANCEL_TOKEN_SECRET` unset in
+ * production today) arrives at runtime as `undefined`, not the empty string
+ * `secret: string` promises. A guard that only checks `.length === 0` never
+ * runs for that value — it throws a bare `TypeError` before the check is
+ * reached. These cases cast past the type system the way an unset binding
+ * does at runtime, and must land on exactly the same outcome as the
+ * empty-string case: signing throws by name, verification returns
+ * `malformed`.
+ */
+describe("nullish and wrong-type secrets are treated the same as empty, not as a crash", () => {
+  it.each([
+    ["absent (undefined)", undefined],
+    ["null", null],
+    ["a number", 42],
+  ])("signResponseToken with a %s secret throws, naming RESPONSE_TOKEN_SECRET", async (_label, bad) => {
+    await expect(signResponseToken(payload(), bad as unknown as string)).rejects.toThrow(/RESPONSE_TOKEN_SECRET/);
+  });
+
+  it.each([
+    ["absent (undefined)", undefined],
+    ["null", null],
+    ["a number", 42],
+  ])("verifyResponseToken with a %s secret returns malformed rather than throwing", async (_label, bad) => {
+    const token = await signResponseToken(payload(), SECRET);
+    const result = await verifyResponseToken(token, bad as unknown as string, NOW);
+    expect(result).toEqual({ ok: false, reason: "malformed" });
+  });
+});
+
 describe("canonicality (review round 2): base64url malleability closed", () => {
   it("a genuinely valid token still round-trips", async () => {
     const token = await signResponseToken(payload(), SECRET);
@@ -452,6 +482,28 @@ describe("cancel token: rejection", () => {
     const token = await signCancelToken(cancelPayload({ expiresAt: NOW.getTime() - 1 }), SECRET);
     const result = await verifyCancelToken(token, SECRET, new Date(NaN));
     expect(result).toEqual({ ok: false, reason: "expired" });
+  });
+
+  // `CANCEL_TOKEN_SECRET` is genuinely unset in production today, and an
+  // unset Worker secret arrives as `undefined`, not `""` — see the
+  // module-level describe block above this file's response-token tests for
+  // why that is a distinct case from the empty-string one.
+  it.each([
+    ["absent (undefined)", undefined],
+    ["null", null],
+    ["a number", 42],
+  ])("signCancelToken with a %s secret throws, naming CANCEL_TOKEN_SECRET", async (_label, bad) => {
+    await expect(signCancelToken(cancelPayload(), bad as unknown as string)).rejects.toThrow(/CANCEL_TOKEN_SECRET/);
+  });
+
+  it.each([
+    ["absent (undefined)", undefined],
+    ["null", null],
+    ["a number", 42],
+  ])("verifyCancelToken with a %s secret returns malformed rather than throwing", async (_label, bad) => {
+    const token = await signCancelToken(cancelPayload(), SECRET);
+    const result = await verifyCancelToken(token, bad as unknown as string, NOW);
+    expect(result).toEqual({ ok: false, reason: "malformed" });
   });
 });
 

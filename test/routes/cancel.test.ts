@@ -220,6 +220,22 @@ describe("GET /cancel/:token", () => {
     expect(body.match(/type="submit"/g)).toHaveLength(1);
   });
 
+  it("shows the live in-count from responses, not a stale denormalised counter", async () => {
+    const { fixtureId } = await seedSquad();
+    // Force `fixtures.inCount` to disagree with the actual `responses` rows
+    // (3 are genuinely `in`: owner, p-in, p-guest) the way a missed or racing
+    // write to the denormalised counter could in production. The page's
+    // whole purpose is telling the owner what is about to happen before it
+    // happens, so it must read the same table it counts recipients from, not
+    // this counter.
+    await db.update(fixtures).set({ inCount: 99 }).where(eq(fixtures.id, fixtureId));
+
+    const body = await getCancel(await cancelToken(fixtureId)).then((r) => r.text());
+
+    expect(body).not.toMatch(/99 players/i);
+    expect(body).toMatch(/3 players are in/i);
+  });
+
   it("records nothing at all — a prefetcher leaves no trace", async () => {
     const { fixtureId } = await seedSquad();
     const token = await cancelToken(fixtureId);
@@ -397,6 +413,31 @@ describe("POST /cancel/:token", () => {
     expect(body).toMatch(/2000/);
     expect(await snapshotEverything()).toEqual(before);
     expect(await lifecycleOf(fixtureId)).toBe("open");
+  });
+
+  it("truncates an over-long reason on a code point boundary, never a lone surrogate half", async () => {
+    const { fixtureId } = await seedSquad();
+    // A 1-character (2 UTF-16 code unit) emoji straddling the 2000-unit cap:
+    // 1999 filler characters put the astral character's high surrogate at
+    // index 1999 and its low surrogate at 2000 — exactly the boundary
+    // `slice(0, 2000)` would cut through. `slice(0, 2000)` alone leaves a
+    // dangling high surrogate in the JS string; by the time that string is
+    // UTF-8 encoded into the HTTP response body and decoded back by `.text()`
+    // here, the platform's own encoder has already turned the unpaired
+    // surrogate into U+FFFD (the visible "replacement character" glyph the
+    // review observed in the textarea) — so that glyph, not a raw surrogate
+    // code unit, is what a fixed truncation must avoid producing.
+    const reason = "x".repeat(1999) + "\u{1F600}" + "y".repeat(10);
+    const response = await postCancel(await cancelToken(fixtureId), reason);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).not.toContain("�");
+    // The textarea holds only the filler that came before the emoji — the
+    // emoji itself did not fit whole, so it and everything after it was
+    // dropped rather than being split.
+    expect(body).toContain("x".repeat(1999));
+    expect(body).not.toContain("y".repeat(10));
   });
 
   it("accepts a reason exactly at the cap", async () => {

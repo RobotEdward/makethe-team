@@ -4,8 +4,9 @@ import { fixtures, games } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import {
   cancelFixture,
-  cancellationRecipients,
+  cancellationInfo,
   mayCancelFixture,
+  type CancellationInfo,
   type CancellationRecipient,
 } from "../domain/cancel-fixture.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
@@ -106,15 +107,40 @@ function reachableCount(recipients: readonly CancellationRecipient[]): number {
   return recipients.filter((recipient) => (recipient.email?.trim() ?? "") !== "").length;
 }
 
-function previewOf(context: CancelContext, recipients: readonly CancellationRecipient[]): CancelPreview {
+/**
+ * Truncate `reason` to at most `maxLength` UTF-16 code units — matching both
+ * the `.length` comparison the route checks it against and the textarea's
+ * `maxlength` attribute, which also counts UTF-16 code units — without ever
+ * leaving a lone half of a surrogate pair behind.
+ *
+ * A plain `slice(0, maxLength)` can land exactly between the two UTF-16 code
+ * units of an astral character (an emoji, for instance): the result is a
+ * dangling high surrogate, which has no valid Unicode meaning on its own and
+ * renders as a replacement-character glyph in the textarea the owner is
+ * supposed to fix and resubmit. Dropping that trailing high surrogate keeps
+ * the string at or under `maxLength` (never over it, so the cap this feeds
+ * back into still holds) and leaves only whole characters.
+ */
+function truncateReason(reason: string, maxLength: number): string {
+  const truncated = reason.slice(0, maxLength);
+  const lastUnit = truncated.charCodeAt(truncated.length - 1);
+  const isDanglingHighSurrogate = lastUnit >= 0xd800 && lastUnit <= 0xdbff;
+  return isDanglingHighSurrogate ? truncated.slice(0, -1) : truncated;
+}
+
+function previewOf(context: CancelContext, info: CancellationInfo): CancelPreview {
   return {
     gameName: context.game.name,
     venueName: context.fixture.venueOverride ?? context.game.venueName,
     // The single permitted place cross-zone formatting happens (TR-20).
     kicksOffAtLocal: formatLocalDateTime(context.fixture.kicksOffAt, context.game.timezone),
-    inCount: context.fixture.inCount,
-    recipientCount: recipients.length,
-    unreachableCount: recipients.length - reachableCount(recipients),
+    // Both counts below come from the one `cancellationInfo` read of
+    // `responses`, not from `fixtures.inCount` — see that function's doc
+    // comment for why this page in particular must not have two sources of
+    // truth for what is about to happen.
+    inCount: info.inCount,
+    recipientCount: info.recipients.length,
+    unreachableCount: info.recipients.length - reachableCount(info.recipients),
   };
 }
 
@@ -147,8 +173,8 @@ cancel.get("/cancel/:token", async (c) => {
   const terminal = terminalStatePage(context);
   if (terminal) return c.html(terminal, 200);
 
-  const recipients = await cancellationRecipients(db, fixtureId);
-  return c.html(renderCancelConfirmPage({ ...previewOf(context, recipients), token }), 200);
+  const info = await cancellationInfo(db, fixtureId);
+  return c.html(renderCancelConfirmPage({ ...previewOf(context, info), token }), 200);
 });
 
 cancel.post("/cancel/:token", async (c) => {
@@ -163,6 +189,20 @@ cancel.post("/cancel/:token", async (c) => {
   const { ownerPlayerId, fixtureId } = verification.payload;
   const db = getDb(c.env.DB);
 
+  // `parseBody` reads the whole request body before the length check below
+  // ever runs, so the check does not bound what gets buffered — a large body
+  // is read in full and only then rejected. Left unbounded deliberately,
+  // not overlooked: this line is reachable only *after* `verifyCancelToken`
+  // has already accepted the token above, so a request has to carry a
+  // correctly-signed, unexpired cancel token for a real owner of a real
+  // fixture before its body is ever touched — there is no anonymous,
+  // pre-auth path to this buffering. What remains is bounded by the platform
+  // itself (Workers' own request-size ceiling) and by how the token is
+  // minted (rarely, for owners only, expiring at kickoff), not by app code.
+  // A `Content-Length` pre-check would add a second length rule to keep in
+  // sync with `MAX_REASON_LENGTH` for a cost that is already this small and
+  // already gated behind a signature check.
+  //
   // The field must be *present*, and may be empty. A missing field is not an
   // owner who declined to give a reason — it is a request that did not come
   // from this form, and cancelling a game is not something to do on a guess.
@@ -179,15 +219,15 @@ cancel.post("/cancel/:token", async (c) => {
     if (!context) return c.html(renderLinkProblemPage(), 200);
     const terminal = terminalStatePage(context);
     if (terminal) return c.html(terminal, 200);
-    const recipients = await cancellationRecipients(db, fixtureId);
+    const info = await cancellationInfo(db, fixtureId);
     return c.html(
       renderCancelConfirmPage({
-        ...previewOf(context, recipients),
+        ...previewOf(context, info),
         token,
         // Truncated on the way back into the box, so the page the owner gets
         // is one they can actually submit: re-rendering the full over-long
         // value would hand back a form that fails again on every attempt.
-        reason: rawReason.slice(0, MAX_REASON_LENGTH),
+        reason: truncateReason(rawReason, MAX_REASON_LENGTH),
         error: `That reason is too long — ${MAX_REASON_LENGTH} characters at most. It's been shortened to fit; edit it before you send.`,
       }),
       400,

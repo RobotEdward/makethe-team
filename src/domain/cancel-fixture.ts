@@ -150,8 +150,28 @@ export async function mayCancelFixture(db: Db, gameId: string, actorPlayerId: st
 }
 
 /**
- * Everyone who must be told fixture `fixtureId` is off (BR-20), whether or
- * not they can actually be reached (see {@link CancellationRecipient}).
+ * Everything the confirmation page needs to say what a cancellation will do,
+ * read together so the two numbers on it cannot disagree.
+ */
+export interface CancellationInfo {
+  /**
+   * Players currently holding an `in` slot (BR-3), computed the same way
+   * `FixtureCapacity` computes `fixtures.inCount` — every response whose
+   * status is `in`, guest or not — but read live from `responses` rather than
+   * from that denormalised counter. The confirmation page's whole purpose is
+   * telling an owner what is about to happen *before* it happens, so showing
+   * a number that could, in principle, have drifted from the counter that
+   * happens to also say "in" is worse here than it would be anywhere else in
+   * the product: use the same query {@link recipients} already ran, not a
+   * second read of a second source.
+   */
+  inCount: number;
+  recipients: CancellationRecipient[];
+}
+
+/**
+ * Everyone and everything the confirmation page and the cancellation itself
+ * need to know about fixture `fixtureId`'s responses, from a single read.
  *
  * BR-20's rule lives in exactly one place — the predicate
  * `isCancellationRecipient` that the N-3 template's module exports — rather
@@ -161,9 +181,11 @@ export async function mayCancelFixture(db: Db, gameId: string, actorPlayerId: st
  * Read-only, and exported for that reason: the confirmation page counts this
  * exact set to tell an owner how many people a cancellation will email,
  * *before* anything is cancelled. A separate count query would be a second
- * definition of "who gets told", free to disagree with the real one.
+ * definition of "who gets told", free to disagree with the real one — and the
+ * same reasoning is why {@link CancellationInfo.inCount} is derived from
+ * this same read rather than from `fixtures.inCount`.
  */
-export async function cancellationRecipients(db: Db, fixtureId: string): Promise<CancellationRecipient[]> {
+export async function cancellationInfo(db: Db, fixtureId: string): Promise<CancellationInfo> {
   const answered = await db
     .select({
       playerId: responses.playerId,
@@ -176,7 +198,21 @@ export async function cancellationRecipients(db: Db, fixtureId: string): Promise
     .innerJoin(players, eq(players.id, responses.playerId))
     .where(eq(responses.fixtureId, fixtureId));
 
-  return answered
-    .filter((row) => isCancellationRecipient(row.status, row.isGuest))
-    .map(({ playerId, name, email, status }) => ({ playerId, name, email, status }));
+  return {
+    inCount: answered.filter((row) => row.status === "in").length,
+    recipients: answered
+      .filter((row) => isCancellationRecipient(row.status, row.isGuest))
+      .map(({ playerId, name, email, status }) => ({ playerId, name, email, status })),
+  };
+}
+
+/**
+ * Everyone who must be told fixture `fixtureId` is off (BR-20), whether or
+ * not they can actually be reached (see {@link CancellationRecipient}).
+ *
+ * A thin wrapper over {@link cancellationInfo} for the one caller
+ * (`cancelFixture` below) that needs only the recipient list, not the count.
+ */
+export async function cancellationRecipients(db: Db, fixtureId: string): Promise<CancellationRecipient[]> {
+  return (await cancellationInfo(db, fixtureId)).recipients;
 }
