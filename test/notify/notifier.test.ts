@@ -156,6 +156,7 @@ describe("createNotifier", () => {
   it("wraps the selection in QuotaNotifier so the ceiling cannot be bypassed", () => {
     expect(createNotifier(bindings("console"), NOW)).toBeInstanceOf(QuotaNotifier);
     expect(createNotifier(bindings("null"), NOW)).toBeInstanceOf(QuotaNotifier);
+    expect(createNotifier(bindings("resend"), NOW)).toBeInstanceOf(QuotaNotifier);
   });
 
   it("still delegates to ConsoleNotifier's behaviour for env.NOTIFIER === 'console'", async () => {
@@ -178,6 +179,76 @@ describe("createNotifier", () => {
     } finally {
       logSpy.mockRestore();
     }
+  });
+
+  // The branch whose absence was the whole problem: `ResendNotifier` existed,
+  // was fully tested on its own, and was imported by nothing in `src/`. Every
+  // factory branch is now covered, including this one, because a test that
+  // stops at "console" and "null" is exactly what let `NOTIFIER=resend` ship
+  // as a guaranteed throw at the top of every sweep.
+  describe("env.NOTIFIER === 'resend'", () => {
+    it("constructs a working notifier that reaches Resend, still behind the daily ceiling", async () => {
+      const notifier = createNotifier(bindings("resend"), NOW);
+      expect(notifier).toBeInstanceOf(QuotaNotifier);
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ data: [{ id: "resend-msg-1" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      try {
+        const results = await notifier.send([message()]);
+        expect(results).toEqual([{ ok: true, providerMessageId: "resend-msg-1" }]);
+
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        const [url, init] = fetchSpy.mock.calls[0] ?? [];
+        expect(String(url)).toBe("https://api.resend.com/emails/batch");
+        const headers = new Headers(init?.headers);
+        // Built from the bindings, not from anything hardcoded.
+        expect(headers.get("Authorization")).toBe("Bearer test-resend-key");
+        expect(JSON.parse(String(init?.body))).toEqual([
+          expect.objectContaining({ from: "reminders@example.com", to: "player@example.com" }),
+        ]);
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("still refuses to exceed the daily ceiling — the real sender cannot bypass the one cost control", async () => {
+      const zeroCeiling: Bindings = { ...bindings("resend"), MAX_EMAILS_PER_DAY: "0" };
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+        throw new Error("the daily ceiling let a message through to the network");
+      });
+      try {
+        const results = await createNotifier(zeroCeiling, NOW).send([message()]);
+        expect(results).toEqual([{ ok: false, error: "daily-ceiling-reached" }]);
+        expect(fetchSpy).not.toHaveBeenCalled();
+      } finally {
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("fails loudly and by name when RESEND_API_KEY is missing or blank", () => {
+      for (const value of [undefined as unknown as string, "", "   "]) {
+        const broken: Bindings = { ...bindings("resend"), RESEND_API_KEY: value };
+        expect(() => createNotifier(broken, NOW)).toThrow(/RESEND_API_KEY/);
+        expect(() => createNotifier(broken, NOW)).toThrow(/NOTIFIER is "resend"/);
+      }
+    });
+
+    it("fails loudly and by name when EMAIL_FROM is missing or blank", () => {
+      for (const value of [undefined as unknown as string, "", "   "]) {
+        const broken: Bindings = { ...bindings("resend"), EMAIL_FROM: value };
+        expect(() => createNotifier(broken, NOW)).toThrow(/EMAIL_FROM/);
+        expect(() => createNotifier(broken, NOW)).toThrow(/NOTIFIER is "resend"/);
+      }
+    });
+
+    it("names only the binding that is actually missing, so one log line diagnoses it", () => {
+      const broken: Bindings = { ...bindings("resend"), EMAIL_FROM: "" };
+      expect(() => createNotifier(broken, NOW)).not.toThrow(/RESEND_API_KEY/);
+    });
   });
 
   it("throws at startup with a clear message for an unrecognised value", () => {

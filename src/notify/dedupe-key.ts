@@ -2,7 +2,7 @@
  * The one definition of the notification catalogue and its dedupe keys (§2.8).
  *
  * `notification_log.dedupe_key` is the entire idempotency guarantee behind the
- * reminder sweep: the sweep runs hourly, forever, and can be retried or overlap
+ * reminder sweep: the sweep runs on a fixed cadence, forever, and can be retried or overlap
  * with itself, and the UNIQUE constraint on this column is what stops a retry
  * from emailing everyone twice. Every builder here must produce exactly the
  * string documented in §2.8's dedupe-key table — a typo is a duplicate email

@@ -67,7 +67,7 @@ describe("handleScheduled", () => {
     expect(rows).toHaveLength(5);
   });
 
-  it("does not materialise on the hourly schedule", async () => {
+  it("does not materialise on the sweep schedule", async () => {
     await handleScheduled(CRON_SWEEP, env, NOW);
 
     const rows = await db.select().from(fixtures);
@@ -107,7 +107,7 @@ describe("handleScheduled", () => {
   });
 });
 
-describe("handleScheduled: the hourly sweep", () => {
+describe("handleScheduled: the sweep", () => {
   it("resolves on a healthy run with nothing due", async () => {
     await expect(handleScheduled(CRON_SWEEP, env, NOW)).resolves.toBeUndefined();
   });
@@ -159,7 +159,7 @@ describe("handleScheduled: the hourly sweep", () => {
     });
 
     await expect(handleScheduled(CRON_SWEEP, env, NOW)).rejects.toThrow(
-      /hourly sweep failed for 1 fixture/,
+      /sweep failed for 1 fixture/,
     );
   });
 
@@ -181,7 +181,7 @@ describe("handleScheduled: the hourly sweep", () => {
   it("stays idempotent at the 5-minute cadence: several sweeps over the same due fixture send one notification per player", async () => {
     // The new `*/5 * * * *` cadence means the sweep can now genuinely run
     // several times before anything about the fixture changes — a much
-    // tighter version of the old hourly re-run case. `notification_log`'s
+    // tighter version of the old re-run case. `notification_log`'s
     // unique `dedupe_key` is what makes that safe: this pins that the
     // guarantee still holds when the sweep is invoked back-to-back rather
     // than an hour apart.
@@ -268,7 +268,7 @@ describe("handleScheduled: the hourly sweep", () => {
     // `handleScheduled` makes under `vitest-pool-workers` (verified: the
     // mock's call count stayed 0 while the real function ran), so this
     // exercises the exact same two calls, in the exact same order, with the
-    // exact same real `db`, that `handleScheduled`'s hourly branch makes.
+    // exact same real `db`, that `handleScheduled`'s sweep branch makes.
     // Step 1 uses the real `db` throughout, so its commit is genuinely
     // durable in D1 before step 2 is ever attempted. Step 2 is handed a
     // `db` stand-in that throws the moment it is used, standing in for a

@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { getDb } from "../../src/db/client.js";
+import { getDb, type Db } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
@@ -297,7 +297,7 @@ describe("openAndRemind", () => {
       { id: "p-ok", name: "OK Player", email: "ok@example.com" },
       { id: "p-bad", name: "Bad Player", email: "bad@example.com" },
     ];
-    await seedFixture({ kicksOffAt, squad: mixed });
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: mixed });
     const notifier = new RecordingNotifier();
     notifier.failFor.add("bad@example.com");
     const now = new Date("2026-08-12T09:00:00Z");
@@ -306,6 +306,14 @@ describe("openAndRemind", () => {
 
     expect(result.remindersSent).toBe(1);
     expect(result.remindersFailed).toBe(1);
+    // A counter alone is not enough: `handleScheduled` rejects only on a
+    // non-empty `failures`, so without this the twenty-four-reminders-all-fail
+    // case would be recorded by Cloudflare as a completely healthy run. The
+    // entry must carry enough to act on — which fixture, how many, and why.
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({ fixtureId, stage: "send" });
+    expect(result.failures[0]?.message).toContain("1 of 2");
+    expect(result.failures[0]?.message).toContain("simulated-provider-failure");
 
     const rows = await db.select().from(notificationLog);
     const okRow = rows.find((r) => r.playerId === "p-ok");
@@ -318,6 +326,7 @@ describe("openAndRemind", () => {
     const second = await openAndRemind(db, notifier, now, SECRET);
     expect(second.remindersSent).toBe(0);
     expect(second.remindersFailed).toBe(0);
+    expect(second.failures).toHaveLength(0);
     expect(await db.select().from(notificationLog)).toHaveLength(2);
   });
 
@@ -399,6 +408,11 @@ describe("openAndRemind", () => {
     const first = await openAndRemind(db, notifier, now, SECRET);
     expect(first.remindersSent).toBe(0);
     expect(first.remindersDeferred).toBe(1);
+    // A deferral is expected under a low ceiling, so it must NOT reject the
+    // invocation — it is deliberately kept out of `failures`, unlike a send
+    // failure.
+    expect(first.failures).toHaveLength(0);
+    expect(first.remindersFailed).toBe(0);
     // Definitely-did-not-send: the row is removed, not left `queued`, so a future run retries.
     expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(0);
 
@@ -433,5 +447,100 @@ describe("openAndRemind", () => {
     const rows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("failed");
+  });
+
+  it("skips a whitespace-only email like a guest instead of retrying it forever (whole-branch review, important 3)", async () => {
+    // `" "` is truthy, so it used to pass the sweep's `!candidate.email`
+    // guard, get a token signed and a `queued` row written, then be trimmed
+    // to empty inside QuotaNotifier and come back `no-recipient` — which the
+    // sweep treated as retryable and deleted. Every five minutes. Forever.
+    // And it raised a daily-ceiling alarm each time, for a condition that has
+    // nothing to do with the ceiling.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const { fixtureId } = await seedFixture({
+      kicksOffAt,
+      squad: [
+        { id: "p-blank", name: "Blank Address", email: "   " },
+        { id: "p-real", name: "Real Address", email: "real@example.com" },
+      ],
+    });
+    const notifier = new RecordingNotifier();
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    const first = await openAndRemind(db, notifier, now, SECRET);
+    expect(first.remindersSent).toBe(1);
+    expect(first.guestsSkipped).toBe(1);
+    expect(first.remindersDeferred).toBe(0);
+    expect(first.remindersFailed).toBe(0);
+    expect(first.failures).toHaveLength(0);
+
+    // No message was ever built for them, so no row exists to churn.
+    const rows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.playerId).toBe("p-real");
+    expect(notifier.sent.flat().map((m) => m.to)).toEqual(["real@example.com"]);
+
+    // The loop is closed: a second run does exactly the same nothing, rather
+    // than re-signing a token and re-inserting a row.
+    const second = await openAndRemind(db, notifier, now, SECRET);
+    expect(second.remindersSent).toBe(0);
+    expect(second.guestsSkipped).toBe(1);
+    expect(second.remindersDeferred).toBe(0);
+    expect(notifier.sent.flat()).toHaveLength(1);
+    expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(1);
+  });
+
+  it("leaves no orphaned queued rows when applying results aborts part-way (whole-branch review, important 4)", async () => {
+    // The application loop does one sequential D1 write per message. A throw
+    // part-way used to leave the remaining rows `queued` — and
+    // `existingReminderLog` counts `queued` as already handled, so those
+    // players would never be reminded, never marked failed, and never
+    // counted, with nothing anywhere to reap them.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(3) });
+    const notifier = new RecordingNotifier();
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    // Fails the second per-row write; the bulk recovery write that follows
+    // is allowed through, which is the behaviour under test.
+    let updates = 0;
+    const flakyDb = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === "update") {
+          return (...args: Parameters<Db["update"]>) => {
+            updates++;
+            if (updates === 2) throw new Error("simulated D1 outage mid-apply");
+            return target.update(...args);
+          };
+        }
+        const value: unknown = Reflect.get(target, prop, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as Db;
+
+    const result = await openAndRemind(flakyDb, notifier, now, SECRET);
+
+    const rows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    expect(rows).toHaveLength(3);
+    expect(rows.filter((r) => r.status === "queued")).toHaveLength(0);
+    expect(rows.filter((r) => r.status === "sent")).toHaveLength(1);
+
+    const abandoned = rows.filter((r) => r.status === "failed");
+    expect(abandoned).toHaveLength(2);
+    expect(abandoned.every((r) => r.error?.includes("abandoned mid-apply"))).toBe(true);
+
+    expect(result.remindersSent).toBe(1);
+    expect(result.remindersFailed).toBe(2);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({ fixtureId, stage: "apply" });
+    expect(result.failures[0]?.message).toContain("simulated D1 outage mid-apply");
+
+    // Marked failed, not deleted: the notifier already returned results, so
+    // these may well have been delivered, and BR-19 prefers a miss to a
+    // duplicate. A later run must therefore not retry them.
+    const second = await openAndRemind(db, notifier, now, SECRET);
+    expect(second.remindersSent).toBe(0);
+    expect(second.remindersFailed).toBe(0);
+    expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(3);
   });
 });

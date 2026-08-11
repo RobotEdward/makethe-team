@@ -7,36 +7,22 @@ import { verifyResponseToken } from "../domain/token.js";
 import type { ResponseIntent } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
 import { escapeHtml, layout } from "../views/layout.js";
+import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
 
 export const respond = new Hono<AppEnv>();
 
 /**
- * One shared "this link isn't working" page for every way a token can fail to
- * verify, and for a fixture that no longer exists.
- *
- * Deliberately not branching on the reason (bad signature, expired, malformed,
- * fixture-not-found): distinguishing them would turn the page into an oracle
- * that tells a prober which guesses were closer to a real token. The real
- * reason still goes to `console.error` for operators.
- *
- * 200, not 410 or 404: the link the player tapped is not itself gone or
- * malformed from an HTTP point of view — it is simply not something this
- * request can act on right now, and the body says so in plain language. A
- * player's own mail client, and any prefetcher ahead of them, should see an
- * ordinary page, not an error status that might get treated specially (e.g.
- * retried, or flagged) by something in the delivery path. Nothing here is a
- * server fault, so 5xx is never appropriate.
+ * Every `renderLinkProblemPage()` answer from this module is a 200, not a 410
+ * or a 404: the link the player tapped is not itself gone or malformed from an
+ * HTTP point of view — it is simply not something this request can act on
+ * right now, and the body says so in plain language. A player's own mail
+ * client, and any prefetcher ahead of them, should see an ordinary page, not
+ * an error status that might get treated specially (e.g. retried, or flagged)
+ * by something in the delivery path. Nothing on these paths is a server fault,
+ * so 5xx is never appropriate here — `app.onError`, which renders the very
+ * same page for a genuine server fault, answers 500 for exactly that reason.
  */
-function renderLinkProblemPage(): string {
-  const body = `
-    <h1>This link isn't working</h1>
-    <p>It may have expired, already been used for a fixture that's since finished, or been copied incorrectly.</p>
-    <p>Ask whoever organises your game to send you a fresh link, or get in touch with them directly.</p>
-  `;
-  return layout({ title: "This link isn't working — Make The Team", body });
-}
-
 function parseIntent(value: string | undefined): "in" | "out" | null {
   return value === "in" || value === "out" ? value : null;
 }

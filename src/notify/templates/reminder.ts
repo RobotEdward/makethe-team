@@ -35,10 +35,14 @@ export interface ReminderEmailPayload {
   /** As `respondInUrl`, but opens with "Can't make it" emphasised. */
   respondOutUrl: string;
   /**
-   * A working leave-game/unsubscribe link (BR-22). What it currently points
-   * at, and what it must become before this ships, is documented where the
-   * caller builds it (task-14-report.md) — this module only ever embeds
-   * whatever URL it is given.
+   * A working leave-game/unsubscribe link (BR-22).
+   *
+   * The sweep currently builds this as `/leave/:token`
+   * (`src/sweep/open-and-remind.ts`), which renders a page explaining that
+   * leaving is not self-service yet and pointing the player at whoever
+   * organises the Game; the write path arrives in a later milestone. This
+   * module only ever embeds whatever URL it is given and never inspects it,
+   * so that change needs no edit here.
    */
   leaveUrl: string;
 }

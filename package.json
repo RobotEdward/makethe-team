@@ -13,7 +13,7 @@
     "db:migrate:local": "wrangler d1 migrations apply makethe-team --local",
     "db:migrate:remote": "wrangler d1 migrations apply makethe-team --remote",
     "cf-typegen": "wrangler types",
-    "seed:local": "wrangler d1 execute makethe-team --local --file=scripts/seed.sql",
+    "seed:local": "wrangler d1 execute makethe-team --local --command \"CREATE TABLE IF NOT EXISTS seed_guard (ok INTEGER)\" && wrangler d1 execute makethe-team --local --file=scripts/seed.sql",
     "show:local": "wrangler d1 execute makethe-team --local --file=scripts/show-fixtures.sql"
   },
   "type": "module",

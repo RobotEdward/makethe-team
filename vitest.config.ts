@@ -23,6 +23,25 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: "./wrangler.jsonc" },
         miniflare: {
+          // Repo-wide backstop against a test suite reaching the real
+          // internet. Every outbound `fetch` from worker code under test —
+          // `ResendNotifier`'s calls to api.resend.com above all — is answered
+          // here instead of leaving the machine. Until now the only thing
+          // stopping a live send during a test run was each suite remembering
+          // to install its own `fetch` spy; a forgotten one would have hit
+          // Resend for real, with a real API key on CI, once `NOTIFIER=resend`
+          // exists as a working path.
+          //
+          // Returns a 599 with a plainly-worded body rather than throwing:
+          // `ResendNotifier.sendBatch` catches network errors and turns them
+          // into `{ ok: false }` results, so a thrown error would be swallowed
+          // into a generic failure, while this status and body surface
+          // verbatim in the assertion diff and name the cause.
+          outboundService: (request: Request) =>
+            new Response(
+              `outbound network access is disabled in tests (vitest.config.ts). Blocked: ${request.method} ${request.url}. Install a fetch spy in this suite.`,
+              { status: 599 },
+            ),
           bindings: {
             TEST_MIGRATIONS: migrations,
             // CI has no `.dev.vars` (gitignored, local-dev-only), so any test

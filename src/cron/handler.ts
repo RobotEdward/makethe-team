@@ -58,6 +58,13 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
         );
       }
       if (remindResult.remindersDeferred > 0) {
+        // `remindersDeferred` counts the daily ceiling and nothing else —
+        // `applyReminderResult` deliberately keeps every other reason out of
+        // it, so this warning can name the real condition instead of standing
+        // in for "some reminder didn't go out for some reason". (It used to
+        // also cover "no usable recipient", which meant a single whitespace
+        // email address raised a ceiling alarm every five minutes.)
+        //
         // Not a failure: QuotaNotifier deleted the `queued` row so the next
         // sweep run retries it automatically. But it is the only signal that
         // exists today that TR-31's daily send ceiling is biting — there is
@@ -66,7 +73,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
         // stay greppable in Workers Logs. The real fix is an owner-visible
         // warning surfaced in the product itself once that UI exists.
         console.warn(
-          `DAILY EMAIL CEILING REACHED: ${remindResult.remindersDeferred} reminder(s) deferred this hour and will be retried on the next sweep run`,
+          `DAILY EMAIL CEILING REACHED: ${remindResult.remindersDeferred} reminder(s) deferred on this sweep run and will be retried on the next one`,
         );
       }
 
@@ -78,9 +85,9 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
 
       if (remindResult.failures.length > 0) {
         throw new Error(
-          `hourly sweep failed for ${remindResult.failures.length} fixture(s) during open/remind ` +
+          `sweep failed for ${remindResult.failures.length} fixture(s) during open/remind ` +
             `(opened ${remindResult.fixturesOpened}, sent ${remindResult.remindersSent}, ` +
-            `retired ${retireResult.retired})`,
+            `failed ${remindResult.remindersFailed}, retired ${retireResult.retired})`,
         );
       }
       return;

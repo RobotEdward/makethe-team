@@ -115,8 +115,10 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     }
 
     // Recompute both cached counts from the resulting set. Deriving the
-    // waitlist count from the assigned position would be wrong: positions are
-    // never reused, so they develop gaps and drift above the real count.
+    // waitlist count from the assigned position would be wrong: the position
+    // is highest-live-plus-one, which says nothing about how many people are
+    // waitlisted — a single remaining player who happens to hold position 4
+    // makes the next joiner position 5 while the real count is 2.
     const inCount = inCountWithoutThisPlayer + (status === "in" ? 1 : 0);
     const waitlistCount = waitlistedWithoutThisPlayer.length + (status === "waitlisted" ? 1 : 0);
 

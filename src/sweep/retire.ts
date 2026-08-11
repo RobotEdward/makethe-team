@@ -10,11 +10,11 @@ export interface RetireResult {
 const MINUTE_MS = 60_000;
 
 /**
- * Step 3 of the hourly sweep (§2.4): transition every `open` **or**
+ * Step 4 of the sweep (§2.4): transition every `open` **or**
  * `scheduled` fixture whose kickoff-plus-duration has passed to `played`
  * (BR-13).
  *
- * `scheduled` is included alongside `open` because `openAndRemind` (step 1/2
+ * `scheduled` is included alongside `open` because `openAndRemind` (steps 1 and 2
  * of the same sweep) now deliberately declines to open — or remind anyone
  * about — a fixture that has already ended (see `fixturesDueByLifecycle` in
  * `src/sweep/open-and-remind.ts`), which exists to stop a cron backlog from

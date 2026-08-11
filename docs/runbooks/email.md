@@ -98,26 +98,26 @@ wiring) is already in place. What remains, in order:
    Resend dashboard (SPF/DKIM/DMARC all green). Sending through an
    unverified domain either fails outright or lands in spam — do not
    proceed on the strength of "it looks verified."
-2. **Wire `ResendNotifier` into the factory.** `src/notify/factory.ts`'s
-   `selectNotifier` currently only recognises `"console"` and `"null"`;
-   there is no `"resend"` case yet. Add one:
-   ```ts
-   case "resend":
-     return new ResendNotifier(env.RESEND_API_KEY, env.EMAIL_FROM);
-   ```
-   and import `ResendNotifier`. Cover it with a test the same way the
-   existing two cases are covered, and update the "expected `console`
-   or `null`" wording in the error message.
+2. **Nothing to wire.** `src/notify/factory.ts` recognises `"resend"` and
+   constructs `ResendNotifier` from `RESEND_API_KEY` and `EMAIL_FROM`,
+   still wrapped in `QuotaNotifier` so the daily ceiling applies to real
+   sends exactly as it does to console ones. Every factory branch,
+   including this one and both missing-binding failures, is covered in
+   `test/notify/notifier.test.ts`. (Earlier versions of this runbook
+   asked you to add the case by hand — it is already there.)
 3. **Change `wrangler.jsonc`'s `vars.NOTIFIER`** from `"console"` to
    `"resend"`. `EMAIL_FROM` is already set correctly and does not need
-   to change.
+   to change. If `RESEND_API_KEY` is not set (or is blank) at that
+   point, every invocation fails immediately with a single log line
+   naming the binding — that is deliberate, and it is the fastest way to
+   tell this misconfiguration from a provider problem.
 4. Run the full suite (`npm test`, `npm run typecheck`, `npm run lint`),
    commit, push, and watch CI to completion as usual.
-5. **Before the next hourly sweep fires for real**, do a manual smoke
+5. **Before the next sweep fires for real**, do a manual smoke
    send if possible (e.g. a throwaway fixture/game with the owner as
    the only member) so the first real-recipient email isn't also the
    first-ever live test of the Resend path end to end.
-6. Watch the next hourly sweep's `notification_log` rows and Workers
+6. Watch the next sweep's `notification_log` rows and Workers
    Logs the same way the console dry run was watched — `status = 'sent'`
    with a real Resend `provider_message_id`, not a console placeholder.
 7. Only after that succeeds, consider raising `min_players`/`max_players`

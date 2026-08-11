@@ -79,13 +79,13 @@ describe("the exported scheduled handler", () => {
     await expect(runScheduled("*/10 * * * *")).rejects.toThrow(/Unrecognised cron/);
   });
 
-  it("resolves on the hourly schedule when the sweep is healthy", async () => {
+  it("resolves on the sweep schedule when the sweep is healthy", async () => {
     await insertGame(db, { id: "healthy-1", inviteToken: "invite-healthy-1" });
 
     await expect(runScheduled(CRON_SWEEP)).resolves.toBeUndefined();
   });
 
-  it("retires an open fixture past kickoff plus duration on the hourly schedule", async () => {
+  it("retires an open fixture past kickoff plus duration on the sweep schedule", async () => {
     const gameId = await insertGame(db, { id: "healthy-1", inviteToken: "invite-healthy-1" });
     const fixtureId = crypto.randomUUID();
     await db.insert(fixtures).values({
@@ -106,7 +106,7 @@ describe("the exported scheduled handler", () => {
     expect(row?.lifecycle).toBe("played");
   });
 
-  it("rejects on the hourly schedule when open-and-remind reports a failure", async () => {
+  it("rejects on the sweep schedule when open-and-remind reports a failure", async () => {
     const gameId = await insertGame(db, {
       id: "broken-1",
       inviteToken: "invite-broken-1",
@@ -128,6 +128,6 @@ describe("the exported scheduled handler", () => {
       durationMinutes: 60,
     });
 
-    await expect(runScheduled(CRON_SWEEP)).rejects.toThrow(/hourly sweep failed/);
+    await expect(runScheduled(CRON_SWEEP)).rejects.toThrow(/sweep failed for 1 fixture/);
   });
 });

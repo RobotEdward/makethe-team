@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog, players, responses } from "../db/schema.js";
@@ -8,7 +8,7 @@ import { formatLocalDateTime } from "../domain/time/zone.js";
 import { responseTokenExpiry, signResponseToken } from "../domain/token.js";
 import type { Message, Notifier, SendResult } from "../notify/notifier.js";
 import { reminderKey } from "../notify/dedupe-key.js";
-import { DAILY_CEILING_REASON, NO_RECIPIENT_REASON } from "../notify/quota.js";
+import { DAILY_CEILING_REASON, NOTIFIER_CONTRACT_VIOLATION_REASON } from "../notify/quota.js";
 import { renderReminderEmail } from "../notify/templates/reminder.js";
 
 /**
@@ -26,7 +26,7 @@ const SITE_ORIGIN = "https://makethe.team";
 export interface SweepFailure {
   fixtureId: string;
   gameId: string | null;
-  stage: "reminder-instant" | "open" | "prepare" | "send";
+  stage: "reminder-instant" | "open" | "prepare" | "send" | "apply";
   message: string;
 }
 
@@ -35,24 +35,34 @@ export interface SweepResult {
   remindersSent: number;
   remindersFailed: number;
   /**
-   * Reminders that definitely did not go out (daily ceiling reached, or no
-   * usable recipient) and whose `notification_log` row was therefore removed
-   * rather than left `failed`, so the next sweep run retries them. See
-   * `applyReminderResult` for the reasoning.
+   * Reminders refused by the daily send ceiling (TR-31) and *only* that.
+   * Their `notification_log` row is removed rather than left `failed`, so the
+   * next sweep run retries them automatically. This is an expected, benign
+   * outcome under a low ceiling — never a failure, and deliberately never
+   * mixed with any other reason, so `handleScheduled`'s ceiling warning names
+   * the condition it is actually reporting. See `applyReminderResult`.
    */
   remindersDeferred: number;
   guestsSkipped: number;
   /**
    * Every fixture (or game) whose processing failed outright — a bad
-   * timezone, a rejected notifier call, a database error — recorded here
-   * instead of aborting the run. One broken fixture must never silence every
-   * other Game's reminder that hour (mirrors `materialiseFixtures`).
+   * timezone, a rejected notifier call, a database error, or one or more
+   * messages the provider refused — recorded here instead of aborting the
+   * run. One broken fixture must never silence every other Game's reminder
+   * on that run (mirrors `materialiseFixtures`).
+   *
+   * A per-message send failure lands here too, not just in
+   * `remindersFailed`: a total provider outage that failed every reminder
+   * would otherwise leave an integer in a log line as its only trace, and
+   * `handleScheduled` — which rejects only on a non-empty `failures` — would
+   * report the invocation as a clean run. That is precisely the failure mode
+   * this project already fixed once for materialisation.
    */
   failures: SweepFailure[];
 }
 
 /**
- * The hourly sweep's first two steps (§2.4): open fixtures whose reminder
+ * The sweep's first two steps (§2.4): open fixtures whose reminder
  * instant has passed, then send the day-before reminder (N-1) for fixtures
  * that are already open and due one.
  *
@@ -66,7 +76,7 @@ export interface SweepResult {
  * Every fixture is processed independently, and a failure on one is recorded
  * in `failures` rather than thrown — a single bad Game (an invalid timezone)
  * or a single rejected notifier call must not stop reminders going out for
- * every other Game that hour.
+ * every other Game on that run.
  */
 export async function openAndRemind(
   db: Db,
@@ -250,9 +260,20 @@ async function sendDueReminders(
       const toBuild: ReminderCandidate[] = [];
       for (const candidate of candidates) {
         if (alreadyLogged.has(candidate.playerId)) continue;
-        if (candidate.isGuest || !candidate.email) {
-          // BR-32: guests (and anyone with no address) are skipped before a
-          // message is ever built — no message, no log row, not a failure.
+        if (candidate.isGuest || !candidate.email || candidate.email.trim() === "") {
+          // BR-32: guests (and anyone with no usable address) are skipped
+          // before a message is ever built — no message, no log row, not a
+          // failure.
+          //
+          // The `.trim()` is load-bearing, not defensive tidying. A
+          // `players.email` of `" "` is truthy, so it used to pass this guard,
+          // get a token signed and a `queued` row inserted, then be trimmed to
+          // empty inside `QuotaNotifier` and come back `NO_RECIPIENT_REASON` —
+          // which the sweep treated as retryable and deleted, so the whole
+          // cycle repeated on every single sweep run, forever, while raising a
+          // false daily-ceiling alarm each time. Trimming *here*, at the same
+          // place a null address is caught, makes "no usable address" the one
+          // permanent, silent skip it always should have been.
           guestsSkipped++;
           continue;
         }
@@ -283,7 +304,7 @@ async function sendDueReminders(
         // and the fixture is recorded as a failure. Critically this is
         // caught *here*, per fixture, rather than letting it propagate out
         // of `sendDueReminders` — a rejection from one fixture's send must
-        // not stop every other due fixture from being tried this hour.
+        // not stop every other due fixture from being tried on this run.
         const message = error instanceof Error ? error.message : String(error);
         for (const entry of inserted) {
           await db
@@ -306,14 +327,62 @@ async function sendDueReminders(
       // `results` (in violation of the contract) would misapply an outcome
       // to the wrong message content but could not misapply it to the wrong
       // `notification_log` row.
-      for (let i = 0; i < inserted.length; i++) {
-        const entry = inserted[i];
-        const result = results[i];
-        if (!entry) continue;
-        const outcome = await applyReminderResult(db, entry, result, now);
-        if (outcome === "sent") remindersSent++;
-        else if (outcome === "failed") remindersFailed++;
-        else remindersDeferred++;
+      //
+      // The loop does one D1 write per message, sequentially, so it can abort
+      // part-way through with rows still `queued`. Those rows are poison:
+      // `existingReminderLog` counts `queued` as already handled, so nobody
+      // would ever be reminded, marked failed, or counted — an invisible,
+      // permanent hole with nothing to reap it. The `catch` below closes it by
+      // marking every not-yet-applied row `failed` in one statement. Marking
+      // them failed (rather than deleting them for retry) is deliberate and
+      // follows this file's existing asymmetry: the notifier already returned
+      // results, so a message whose result was never applied may well have
+      // been delivered, and BR-19 treats a duplicate as strictly worse than a
+      // miss. A reaper would work too, but this needs no new scheduled job,
+      // no new query, and no new state — the recovery sits at the only place
+      // that knows which rows were left behind.
+      const sendFailureReasons: string[] = [];
+      let applied = 0;
+      try {
+        for (; applied < inserted.length; applied++) {
+          const entry = inserted[applied];
+          const result = results[applied];
+          if (!entry) continue;
+          const outcome = await applyReminderResult(db, entry, result, now);
+          if (outcome.kind === "sent") remindersSent++;
+          else if (outcome.kind === "deferred") remindersDeferred++;
+          else {
+            remindersFailed++;
+            sendFailureReasons.push(outcome.reason);
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const orphaned = inserted.slice(applied);
+        remindersFailed += orphaned.length;
+        await markOrphanedRowsFailed(db, orphaned, `abandoned mid-apply: ${message}`);
+        failures.push({
+          fixtureId: fixture.id,
+          gameId: fixture.gameId,
+          stage: "apply",
+          message: `${message} (${orphaned.length} row(s) left unapplied and marked failed)`,
+        });
+        continue;
+      }
+
+      if (sendFailureReasons.length > 0) {
+        // A per-message failure is a real failure of the run, not just a
+        // counter: without this, a provider outage that failed every reminder
+        // would end in `handleScheduled` reporting success. One entry per
+        // fixture (rather than per message) keeps a large squad from burying
+        // every other fixture's failure, and carries a representative reason
+        // so the cause is legible from the single log line the handler emits.
+        failures.push({
+          fixtureId: fixture.id,
+          gameId: fixture.gameId,
+          stage: "send",
+          message: `${sendFailureReasons.length} of ${inserted.length} reminder(s) failed to send; first reason: ${sendFailureReasons[0]}`,
+        });
       }
     } catch (error) {
       failures.push({
@@ -329,25 +398,49 @@ async function sendDueReminders(
 }
 
 /**
- * Apply one `SendResult` to its `notification_log` row, and report which of
- * three things happened.
+ * What applying one `SendResult` did. `deferred` is reserved for the daily
+ * ceiling alone; every other non-success is a `failed`, carrying the reason
+ * so the caller can report it, and saying whether the row was cleaned up for
+ * a later retry or left `failed` forever.
+ */
+type ApplyOutcome = { kind: "sent" } | { kind: "deferred" } | { kind: "failed"; reason: string };
+
+/**
+ * Apply one `SendResult` to its `notification_log` row, and report what
+ * happened.
  *
- * The asymmetry here is the point: a `SendResult` reports one of three
- * genuinely different situations, and treating them the same loses a real
- * reminder.
+ * The asymmetry here is the point: a `SendResult` reports genuinely
+ * different situations, and treating them the same either loses a real
+ * reminder or sends one twice.
  *
  * - **Sent.** Recorded `sent` with the provider id.
- * - **Definitely did not send** (`DAILY_CEILING_REASON`,
- *   `NO_RECIPIENT_REASON`) — the message never left `QuotaNotifier`, so
- *   nothing can have reached a real inbox. It is therefore safe to retry,
- *   and retried automatically: the `queued` row is *removed* rather than
- *   marked `failed`, so the next sweep run's "already logged" check does not
- *   see this player and tries again. Deleting after the attempt, rather than
- *   never inserting the row at all, is what insert-before-send protects —
- *   the row existed for the whole duration of the attempt, so a crash
- *   between the two writes below still leaves a `queued` row a future run
- *   will not double-send against, just an unreachable one it can safely
- *   clean up and retry rather than one that blocks it.
+ * - **Refused by the daily ceiling** (`DAILY_CEILING_REASON`) — the message
+ *   never left `QuotaNotifier`, so nothing can have reached a real inbox. It
+ *   is therefore safe to retry, and retried automatically: the `queued` row
+ *   is *removed* rather than marked `failed`, so the next sweep run's
+ *   "already logged" check does not see this player and tries again.
+ *   Deleting after the attempt, rather than never inserting the row at all,
+ *   is what insert-before-send protects — the row existed for the whole
+ *   duration of the attempt, so a crash between the two writes below still
+ *   leaves a `queued` row a future run will not double-send against, just an
+ *   unreachable one it can safely clean up and retry rather than one that
+ *   blocks it. This is the *only* outcome reported as `deferred`, because
+ *   `deferred` is what `handleScheduled` turns into its ceiling warning.
+ * - **Contract violation** (`NOTIFIER_CONTRACT_VIOLATION_REASON`) — the
+ *   notifier returned no result at all for this slot. Every implementation
+ *   in the repo builds its results by mapping over its own input, so a
+ *   missing slot means nothing was attempted: the row is removed and retried
+ *   like the ceiling case. Unlike the ceiling case it is still counted and
+ *   reported as a *failure*, because it is a bug in a notifier, not the
+ *   expected behaviour of a cost control.
+ * - **No usable recipient** (`NO_RECIPIENT_REASON` in `notify/quota.ts`) —
+ *   deliberately *not* special-cased here any more, so it falls to the
+ *   ambiguous branch below and is left `failed` forever. It is a permanent
+ *   condition, not a transient one, and it is now unreachable from this
+ *   caller at all: `sendDueReminders` trims and skips such a recipient before
+ *   a message is built. Treating it as retryable is what turned a
+ *   `players.email` of `" "` into an every-five-minutes loop of token
+ *   signing and row churn, under a false daily-ceiling alarm.
  * - **Ambiguous** (any other `ok: false`, e.g. a real provider error) — the
  *   message *may* have reached the provider before the failure was
  *   reported. Recorded `failed` and left alone: retrying an ambiguous
@@ -359,26 +452,68 @@ async function applyReminderResult(
   entry: PendingReminder,
   result: SendResult | undefined,
   now: Date,
-): Promise<"sent" | "failed" | "deferred"> {
+): Promise<ApplyOutcome> {
   if (result?.ok) {
     await db
       .update(notificationLog)
       .set({ status: "sent", providerMessageId: result.providerMessageId, sentAt: now })
       .where(eq(notificationLog.id, entry.logId));
-    return "sent";
+    return { kind: "sent" };
   }
 
-  const reason = result?.error;
-  if (reason === DAILY_CEILING_REASON || reason === NO_RECIPIENT_REASON) {
+  const reason = result?.error ?? NOTIFIER_CONTRACT_VIOLATION_REASON;
+
+  if (reason === DAILY_CEILING_REASON) {
     await db.delete(notificationLog).where(eq(notificationLog.id, entry.logId));
-    return "deferred";
+    return { kind: "deferred" };
+  }
+
+  if (reason === NOTIFIER_CONTRACT_VIOLATION_REASON) {
+    await db.delete(notificationLog).where(eq(notificationLog.id, entry.logId));
+    return { kind: "failed", reason };
   }
 
   await db
     .update(notificationLog)
-    .set({ status: "failed", error: reason ?? "notifier-contract-violation" })
+    .set({ status: "failed", error: reason })
     .where(eq(notificationLog.id, entry.logId));
-  return "failed";
+  return { kind: "failed", reason };
+}
+
+/**
+ * Mark every `notification_log` row the result-application loop never
+ * reached as `failed`, so an aborted loop cannot leave `queued` rows that
+ * `existingReminderLog` will mistake for work already done.
+ *
+ * Best-effort by design: this runs inside a `catch` that is already
+ * reporting a failure, so a second failure here must not replace the first
+ * (which is the one that says *why* the loop aborted). It is logged and
+ * swallowed instead. The worst case then is the status quo ante — orphaned
+ * `queued` rows — with a loud error line naming them, rather than a silent
+ * hole.
+ *
+ * Chunked at `INSERT_CHUNK_SIZE` like every other multi-row statement in the
+ * repo, so one squad cannot build an unbounded `IN (...)` list.
+ */
+async function markOrphanedRowsFailed(
+  db: Db,
+  orphaned: PendingReminder[],
+  message: string,
+): Promise<void> {
+  if (orphaned.length === 0) return;
+  try {
+    for (const batch of chunk(orphaned, INSERT_CHUNK_SIZE)) {
+      await db
+        .update(notificationLog)
+        .set({ status: "failed", error: message })
+        .where(inArray(notificationLog.id, batch.map((entry) => entry.logId)));
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.error(
+      `could not mark ${orphaned.length} orphaned queued notification_log row(s) as failed (${orphaned.map((entry) => entry.logId).join(", ")}): ${reason}`,
+    );
+  }
 }
 
 /**

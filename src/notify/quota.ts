@@ -21,6 +21,24 @@ export const DAILY_CEILING_REASON = "daily-ceiling-reached";
 export const NO_RECIPIENT_REASON = "no-recipient";
 
 /**
+ * The distinct, greppable reason recorded when a `Notifier` breaks the
+ * one-result-per-input-in-order contract (`notifier.ts`) and returns a short
+ * result array, leaving a message with no outcome of its own.
+ *
+ * Shared by every producer of the string (this class and the sweep) so the
+ * two can never drift apart, exactly as its two siblings above already are.
+ *
+ * This means *no result was reported*, which — for every implementation in
+ * the repo, all of which build their result array by mapping over their own
+ * input — can only happen if nothing was attempted for that slot. It is
+ * therefore treated as retryable by the sweep, unlike a genuine provider
+ * error (which is ambiguous and must not be retried). It is still a bug in
+ * the notifier, so it is also surfaced as a failure rather than filed
+ * alongside the expected, benign daily-ceiling deferral.
+ */
+export const NOTIFIER_CONTRACT_VIOLATION_REASON = "notifier-contract-violation";
+
+/**
  * Wraps a `Notifier` with the project's single most important cost control
  * (TR-31, TR-32/BR-32).
  *
@@ -109,7 +127,7 @@ export class QuotaNotifier implements Notifier {
         // silently tolerated.
         const result = sendResults[i];
         results[entry.index] =
-          result ?? { ok: false, error: "notifier-contract-violation" };
+          result ?? { ok: false, error: NOTIFIER_CONTRACT_VIOLATION_REASON };
       });
     }
 

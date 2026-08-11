@@ -18,7 +18,7 @@ export interface OpenFixtureResult {
  * who joins the squad afterwards is not retroactively invited (BR-2) and
  * someone who left is not asked.
  *
- * Idempotent by two mechanisms, because the hourly sweep may retry or overlap:
+ * Idempotent by two mechanisms, because the sweep may retry or overlap:
  * the lifecycle guard short-circuits a second call, and the
  * (fixture_id, player_id) unique index makes the insert safe even if two runs
  * pass the guard simultaneously. That second mechanism matters because the

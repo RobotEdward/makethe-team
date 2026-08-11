@@ -41,6 +41,13 @@ npm run db:migrate:local
 npm run seed:local
 ```
 
+`scripts/seed.sql` deletes every row in four tables, so always go through
+`npm run seed:local` — never `wrangler d1 execute --file=scripts/seed.sql`
+by hand. The npm script creates a local-only `seed_guard` table that the
+file's first statement writes to and its last statement drops; run the file
+anywhere that table does not exist (production, or a stray `--remote`) and it
+aborts on statement one, before any `DELETE`.
+
 ## Tests
 
 ```bash
