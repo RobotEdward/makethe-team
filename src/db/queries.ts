@@ -153,6 +153,54 @@ export async function listSquad(
     .orderBy(sql`CASE WHEN ${memberships.role} = 'owner' THEN 0 ELSE 1 END`, players.name);
 }
 
+/**
+ * An active game by its invite token, or `null`.
+ *
+ * Deliberately says nothing about *why* it was null. An unknown token, a token
+ * that was rotated away, and a game that has been deactivated are one answer,
+ * because the caller answers 404 for all three: a page saying "this link has
+ * been replaced" would confirm to whoever is holding it that the token was
+ * once real, and this is the one route in the app any stranger can reach.
+ */
+export async function findGameByInviteToken(
+  db: Db,
+  token: string,
+): Promise<typeof games.$inferSelect | null> {
+  const [game] = await db
+    .select()
+    .from(games)
+    .where(and(eq(games.inviteToken, token), eq(games.active, true)))
+    .limit(1);
+  return game ?? null;
+}
+
+/**
+ * The next `scheduled` fixture — the first one a joiner will actually be
+ * invited to (BR-2).
+ *
+ * Deliberately excludes `open` fixtures: a player added after a fixture opens
+ * is not in it, because `pending` response rows were written for the eligible
+ * set at the moment it opened (BR-1) and nothing back-fills them. Naming an
+ * `open` fixture on the "you're in" page would promise someone a game they
+ * have no place in. The same rule, for the same reason, is applied by
+ * `src/notify/send-welcome.ts` for the N-6 email.
+ */
+export async function findFirstScheduledFixture(
+  db: Db,
+  gameId: string,
+  now: Date,
+): Promise<{ kicksOffAt: Date } | null> {
+  const [fixture] = await db
+    .select({ kicksOffAt: fixtures.kicksOffAt })
+    .from(fixtures)
+    .where(
+      and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "scheduled"), gte(fixtures.kicksOffAt, now)),
+    )
+    .orderBy(asc(fixtures.kicksOffAt))
+    .limit(1);
+  return fixture ?? null;
+}
+
 /** Non-terminal fixtures from `now` onward, soonest first. */
 export async function listUpcomingFixtures(
   db: Db,

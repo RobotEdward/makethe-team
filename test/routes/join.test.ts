@@ -1,0 +1,313 @@
+import { SELF } from "cloudflare:test";
+import { eq } from "drizzle-orm";
+import { beforeEach, describe, expect, it } from "vitest";
+import { fixtures, games, memberships, notificationLog, players } from "../../src/db/schema.js";
+import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
+import { ORIGIN } from "../support/sign-in.js";
+
+async function seedGame(overrides = {}) {
+  const db = testDb();
+  const gameId = await insertGame(db, overrides);
+  const [game] = await db.select().from(games).where(eq(games.id, gameId));
+  return { db, game: game! };
+}
+
+function joinPost(token: string, fields: Record<string, string>, origin: string | null = ORIGIN) {
+  return SELF.fetch(`${ORIGIN}/j/${token}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/x-www-form-urlencoded",
+      ...(origin === null ? {} : { origin }),
+    },
+    body: new URLSearchParams(fields),
+    redirect: "manual",
+  });
+}
+
+/**
+ * The N-6 welcome is handed to `ctx.waitUntil`, so it is still in flight when
+ * the response arrives — every assertion about it has to wait for the
+ * background task rather than read straight after the fetch. Same shape, and
+ * the same reasoning, as `waitForNotificationRows` in
+ * `test/routes/respond-post.test.ts`: poll on the durable side effect until
+ * it reaches a terminal status, never on a clock. Waiting for the status
+ * specifically matters, because insert-before-send means the row exists as
+ * `queued` for the whole duration of the send.
+ *
+ * Every test that triggers a send calls this before it finishes, even when it
+ * asserts nothing about the email: a row that lands *after* the next test's
+ * `resetDatabase` makes that reset's `DELETE FROM players` fail on
+ * `notification_log`'s foreign key, and the failure surfaces in whichever
+ * unrelated test happened to run next.
+ */
+async function waitForNotificationRows(atLeast: number, timeoutMs = 3000) {
+  const db = testDb();
+  const deadline = Date.now() + timeoutMs;
+  const settled = (rows: Array<{ status: string }>) =>
+    rows.length >= atLeast && rows.every((row) => row.status !== "queued");
+
+  let rows = await db.select().from(notificationLog);
+  while (!settled(rows) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    rows = await db.select().from(notificationLog);
+  }
+  return rows;
+}
+
+/**
+ * Give any background send a generous chance to write, then report what is
+ * there. Used where the *absence* of a row is the point — reading immediately
+ * would pass even if a send had been started.
+ */
+async function notificationRowsAfterSettling() {
+  const db = testDb();
+  const deadline = Date.now() + 500;
+  while (Date.now() < deadline) {
+    const rows = await db.select().from(notificationLog);
+    if (rows.length > 0) return rows;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return db.select().from(notificationLog);
+}
+
+describe("GET /j/:token", () => {
+  beforeEach(resetDatabase);
+
+  it("shows the game to an anonymous visitor with no session", async () => {
+    const { game } = await seedGame();
+    const response = await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`);
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("Thursday 7-a-side");
+    expect(html).toContain("Oxford Sports Park");
+  });
+
+  it("redacts squad members to a first name and initial (BR-26)", async () => {
+    const { db, game } = await seedGame();
+    const playerId = await insertPlayer(db, { name: "Edward Charles", email: "edward@example.com" });
+    await insertMembership(db, game.id, playerId);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    expect(html).toContain("Edward C.");
+    expect(html).not.toContain("Charles");
+    // Never an address, on a page anyone holding the link can open.
+    expect(html).not.toContain("edward@example.com");
+  });
+
+  it("404s an unknown token", async () => {
+    await seedGame();
+    expect((await SELF.fetch(`${ORIGIN}/j/${crypto.randomUUID()}`)).status).toBe(404);
+  });
+
+  it("404s a rotated token without hinting that it was ever real", async () => {
+    const { db, game } = await seedGame();
+    const old = game.inviteToken;
+    await db.update(games).set({ inviteToken: crypto.randomUUID() }).where(eq(games.id, game.id));
+
+    const response = await SELF.fetch(`${ORIGIN}/j/${old}`);
+    expect(response.status).toBe(404);
+    expect(await response.text()).not.toContain("Thursday 7-a-side");
+  });
+
+  it("404s an inactive game", async () => {
+    const { db, game } = await seedGame();
+    await db.update(games).set({ active: false }).where(eq(games.id, game.id));
+    expect((await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).status).toBe(404);
+  });
+
+  it("posts to the path the handler reads, with the field names it parses", async () => {
+    // The assertion the connect-src post-mortem asks for: a form with the
+    // wrong action, method or field names fails *identically* to a correct one
+    // under server-side testing, because the handler is simply never called.
+    //
+    // So nothing here is restated from a constant — the request below is built
+    // entirely out of the rendered markup (the form's own `action`, `method`
+    // and input `name`s, parsed out of it) and then driven through the real
+    // app. A form that posted to `/join/…`, or named its field `player-name`,
+    // would still render, still 200, and still pass every other test in this
+    // file; it fails here.
+    const { db, game } = await seedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    const form = /<form([^>]*)>([\s\S]*?)<\/form>/.exec(html);
+    expect(form, "the page must carry a form to join with").not.toBeNull();
+    const attributes = form![1]!;
+    const body = form![2]!;
+
+    const method = /method="([^"]+)"/.exec(attributes)?.[1];
+    const action = /action="([^"]+)"/.exec(attributes)?.[1];
+    expect(method, "a write must not be a GET").toBe("post");
+    expect(action).toBeDefined();
+
+    const names = [...body.matchAll(/<input[^>]*\bname="([^"]+)"/g)].map((match) => match[1]!);
+    expect(names, "two fields, and only two, to type into").toHaveLength(2);
+    expect(body, "both fields must be required — this form has no JavaScript behind it").toMatch(
+      /required/,
+    );
+    expect(body).toMatch(/<button[^>]*type="submit"/);
+
+    // Drive exactly what the browser would send, at exactly the URL the markup
+    // names, and prove the handler read both fields.
+    const fields = Object.fromEntries(names.map((name) => [name, ""]));
+    fields[names[0]!] = "Alex Smith";
+    fields[names[1]!] = "alex@example.com";
+    const response = await SELF.fetch(new URL(action!, ORIGIN).toString(), {
+      method: method!,
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+      body: new URLSearchParams(fields),
+      redirect: "manual",
+    });
+
+    expect(response.status, "the form must post somewhere the app actually handles").toBe(200);
+    expect(await response.text()).toContain("You're in");
+    const [player] = await db.select().from(players).where(eq(players.email, "alex@example.com"));
+    expect(player?.name, "the handler must read the field the form names").toBe("Alex Smith");
+    expect(await db.select().from(memberships).where(eq(memberships.gameId, game.id))).toHaveLength(1);
+    await waitForNotificationRows(1);
+  });
+});
+
+describe("POST /j/:token", () => {
+  beforeEach(resetDatabase);
+
+  it("creates the player and the membership and welcomes them", async () => {
+    const { db, game } = await seedGame();
+
+    const response = await joinPost(game.inviteToken, { name: "Alex Smith", email: "alex@example.com" });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("You're in");
+
+    const [player] = await db.select().from(players).where(eq(players.email, "alex@example.com"));
+    expect(player?.name).toBe("Alex Smith");
+    const [membership] = await db.select().from(memberships).where(eq(memberships.gameId, game.id));
+    expect(membership?.active).toBe(true);
+
+    const rows = await waitForNotificationRows(1);
+    const log = rows.find((row) => row.notificationType === "n6");
+    expect(log?.playerId).toBe(player!.id);
+    // N-6 is about a membership, not a fixture — the only row in the
+    // catalogue with a null fixture id.
+    expect(log?.fixtureId).toBeNull();
+  });
+
+  it("is idempotent for someone already in the squad", async () => {
+    const { db, game } = await seedGame();
+    const playerId = await insertPlayer(db, { email: "alex@example.com" });
+    await insertMembership(db, game.id, playerId);
+
+    const response = await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("already in");
+    expect(await db.select().from(memberships).where(eq(memberships.gameId, game.id))).toHaveLength(1);
+    // No second welcome for someone who was already here.
+    expect(await notificationRowsAfterSettling()).toHaveLength(0);
+  });
+
+  it("redisplays the form when the email is not plausible", async () => {
+    const { db, game } = await seedGame();
+
+    const response = await joinPost(game.inviteToken, { name: "Alex", email: "not-an-address" });
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+    expect(html).toContain('value="Alex"');
+    expect(await db.select().from(players)).toHaveLength(0);
+  });
+
+  it("requires a name", async () => {
+    const { db, game } = await seedGame();
+    const response = await joinPost(game.inviteToken, { name: "  ", email: "alex@example.com" });
+
+    expect(response.status).toBe(422);
+    expect(await db.select().from(players)).toHaveLength(0);
+  });
+
+  it("refuses a cross-site post", async () => {
+    const { db, game } = await seedGame();
+    const response = await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" }, "https://evil.example");
+
+    expect(response.status).toBe(403);
+    expect(await db.select().from(players)).toHaveLength(0);
+  });
+
+  it("allows a post with no Origin header at all", async () => {
+    // A non-browser client acting on its own behalf, same rule as the
+    // dashboard and sign-out forms.
+    const { game } = await seedGame();
+    const response = await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" }, null);
+    expect(response.status).toBe(200);
+    await waitForNotificationRows(1);
+  });
+
+  it("404s an unknown token before doing any work", async () => {
+    const db = testDb();
+    const response = await joinPost(crypto.randomUUID(), { name: "Alex", email: "alex@example.com" });
+
+    expect(response.status).toBe(404);
+    expect(await db.select().from(players)).toHaveLength(0);
+  });
+
+  it("welcomes someone back after they had left", async () => {
+    const { db, game } = await seedGame();
+    const playerId = await insertPlayer(db, { email: "alex@example.com" });
+    await insertMembership(db, game.id, playerId, { active: false, leftAt: new Date(Date.UTC(2026, 5, 1)) });
+
+    const response = await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Welcome back");
+    const [membership] = await db.select().from(memberships).where(eq(memberships.playerId, playerId));
+    expect(membership?.active).toBe(true);
+    expect(membership?.leftAt).toBeNull();
+    // A rejoin is welcomed again — `joinSquad` resets `joined_at` so the N-6
+    // dedupe key differs from the first join's (§4.4).
+    expect(await waitForNotificationRows(1)).toHaveLength(1);
+  });
+
+  /**
+   * BR-2, on the page rather than only in the email. A fixture that is already
+   * `open` was populated with `pending` rows for the eligible set at the
+   * moment it opened and nothing back-fills them, so a joiner is not in it —
+   * the page must name the next `scheduled` one as their first game.
+   */
+  it("names the next scheduled fixture, never one already open (BR-2)", async () => {
+    const { db, game } = await seedGame({ timezone: "Europe/London" });
+    const common = {
+      gameId: game.id,
+      minPlayers: 10,
+      maxPlayers: 14,
+      durationMinutes: 60,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+    };
+    await db.insert(fixtures).values([
+      {
+        id: crypto.randomUUID(),
+        ...common,
+        kicksOffAt: new Date("2030-06-06T18:00:00Z"),
+        lifecycle: "open",
+      },
+      {
+        id: crypto.randomUUID(),
+        ...common,
+        kicksOffAt: new Date("2030-06-13T18:00:00Z"),
+        lifecycle: "scheduled",
+      },
+    ]);
+
+    const html = await (
+      await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" })
+    ).text();
+
+    expect(html).toContain("You're in");
+    // 13 June, the scheduled one — not 6 June, which is already being
+    // organised without them.
+    expect(html).toContain("13 June");
+    expect(html).not.toContain("6 June");
+    await waitForNotificationRows(1);
+  });
+});

@@ -16,6 +16,7 @@ import {
 import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
+  games,
   memberships,
   passkey,
   players,
@@ -751,6 +752,33 @@ describe("no password field anywhere (TR-16)", () => {
         /Edit Thursday 7-a-side/,
         new Request(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } }),
       );
+
+      // The public invite page and the page a join lands on (Task 11, J1).
+      // Fetched with no cookie, deliberately: these are the two pages a
+      // stranger holding a link can reach, and a session must not be needed
+      // for either.
+      const [invited] = await db.select().from(games).where(eq(games.id, gameId));
+      await capture("invite", /Join the squad/, new Request(`${ORIGIN}/j/${invited!.inviteToken}`));
+
+      // `POST /j/:token` on its `already-member` branch — the signed-in
+      // player above is already in this squad, so this renders
+      // `renderJoinOutcomePage` (the template this route has of its own, and
+      // the thing being covered) without starting the N-6 background send.
+      // The `joined` branch would hand a send to `waitUntil`, whose
+      // `notification_log` row can land after the next `resetDatabase()` in
+      // this test and break that reset's `DELETE FROM players` on a foreign
+      // key — a failure that would surface in some unrelated capture below.
+      // `test/routes/join.test.ts` covers the `joined` branch of the same
+      // renderer, waiting for the send properly.
+      await capture(
+        "join outcome",
+        /already in this squad/,
+        new Request(`${ORIGIN}/j/${invited!.inviteToken}`, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+          body: new URLSearchParams({ name: "Ada", email: ALLOWED }),
+        }),
+      );
     }
 
     // The four `renderLinkRefusalPage` outcomes, each reached through the real
@@ -842,6 +870,8 @@ describe("no password field anywhere (TR-16)", () => {
         "game form",
         "game overview",
         "game edit",
+        "invite",
+        "join outcome",
       ].sort(),
     );
 
@@ -980,6 +1010,8 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",
+    "GET /j/:token": "invite",
+    "POST /j/:token": "join outcome",
   };
 
   const registered = new Set(
