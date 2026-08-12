@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { Db } from "./client.js";
 import { fixtures, games, memberships, players, responses } from "./schema.js";
@@ -122,6 +122,36 @@ export async function findGameForOwner(
     )
     .limit(1);
   return row?.game ?? null;
+}
+
+/**
+ * Every active Game this player owns, most recently created first — the
+ * dashboard's "your games" list.
+ *
+ * Same entitlement shape as `findGameForOwner` (active game, active owner
+ * membership) but unfiltered by game id: this is "which games", that one is
+ * "is this game". Kept as a second query rather than `findGameForOwner`
+ * called in a loop, because there is no id to loop over yet — this *is* how
+ * the dashboard learns which ids exist.
+ */
+export async function listOwnedGames(
+  db: Db,
+  playerId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  const rows = await db
+    .select({ id: games.id, name: games.name, createdAt: games.createdAt })
+    .from(games)
+    .innerJoin(memberships, eq(memberships.gameId, games.id))
+    .where(
+      and(
+        eq(games.active, true),
+        eq(memberships.playerId, playerId),
+        eq(memberships.role, "owner"),
+        eq(memberships.active, true),
+      ),
+    )
+    .orderBy(desc(games.createdAt));
+  return rows.map(({ id, name }) => ({ id, name }));
 }
 
 /**

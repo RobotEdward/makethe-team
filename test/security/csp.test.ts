@@ -1,10 +1,12 @@
 import { SELF, env } from "cloudflare:test";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { fixtures, memberships, players } from "../../src/db/schema.js";
+import { fixtures, games, memberships, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, insertMembership, resetDatabase } from "../support/factories.js";
+import { ALLOWED, signIn } from "../support/sign-in.js";
 import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 
 /**
@@ -67,6 +69,27 @@ async function seedOpenFixture(): Promise<Seeded> {
   await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId, active: true, role: "owner" });
   await openFixture(db, fixtureId, NOW);
   return { gameId, fixtureId, playerId };
+}
+
+interface SeededGame {
+  gameId: string;
+  cookie: string;
+  inviteToken: string;
+}
+
+/**
+ * A game owned by the signed-in player, for the four `/g/*` and `/j/*` pages
+ * M6a adds. Membership is inserted directly rather than driven through
+ * `POST /g/new` — this suite is about the CSP header, not game creation,
+ * which `test/routes/games.test.ts` already covers.
+ */
+async function seedOwnedGame(): Promise<SeededGame> {
+  const { cookie } = await signIn();
+  const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+  const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+  await insertMembership(db, gameId, viewer!.id, { role: "owner", active: true });
+  const [game] = await db.select().from(games).where(eq(games.id, gameId));
+  return { gameId, cookie, inviteToken: game!.inviteToken };
 }
 
 beforeEach(async () => {
@@ -249,6 +272,52 @@ describe("Content-Security-Policy", () => {
     // been widened to `'unsafe-inline'` and nothing here would notice.
     expect(inlineScriptBlocks(html).length).toBeGreaterThan(0);
     await expectScriptsAllowed(csp as string, html);
+  });
+
+  it("game creation form (GET /g/new): fixed directives present and inline styles covered", async () => {
+    const { cookie } = await signIn();
+    const response = await SELF.fetch("https://makethe.team/g/new", { headers: { cookie } });
+    const csp = response.headers.get("content-security-policy");
+    expectFixedDirectives(csp);
+    await expectStylesAllowed(csp as string, await response.text());
+  });
+
+  /**
+   * The QR code is the one thing here that would have failed CSP under an
+   * `<img>`-based implementation — a `data:` or remote image source needs its
+   * own `img-src` allowance, which this policy does not grant. `uqr` renders
+   * an inline `<svg>` instead, so nothing beyond `style-src` and
+   * `script-src` (for the copy-invite button) is needed, and this test
+   * verifies both.
+   */
+  it("game overview (GET /g/:id): fixed directives present, styles covered, QR is inline SVG, and the copy-invite script is allowed by hash", async () => {
+    const { gameId, cookie } = await seedOwnedGame();
+    const response = await SELF.fetch(`https://makethe.team/g/${gameId}`, { headers: { cookie } });
+    const csp = response.headers.get("content-security-policy");
+    expectFixedDirectives(csp);
+    const html = await response.text();
+    await expectStylesAllowed(csp as string, html);
+    expect(html, "the QR code must be inline SVG, not an <img> a CSP img-src would have to allow").toContain(
+      "<svg",
+    );
+    expect(inlineScriptBlocks(html).length, "the copy-invite button ships a script").toBeGreaterThan(0);
+    await expectScriptsAllowed(csp as string, html);
+  });
+
+  it("game edit form (GET /g/:id/edit): fixed directives present and inline styles covered", async () => {
+    const { gameId, cookie } = await seedOwnedGame();
+    const response = await SELF.fetch(`https://makethe.team/g/${gameId}/edit`, { headers: { cookie } });
+    const csp = response.headers.get("content-security-policy");
+    expectFixedDirectives(csp);
+    await expectStylesAllowed(csp as string, await response.text());
+  });
+
+  it("public invite page (GET /j/:token): fixed directives present and inline styles covered", async () => {
+    const { inviteToken } = await seedOwnedGame();
+    const response = await SELF.fetch(`https://makethe.team/j/${inviteToken}`);
+    const csp = response.headers.get("content-security-policy");
+    expectFixedDirectives(csp);
+    await expectStylesAllowed(csp as string, await response.text());
   });
 
   it("robots.txt: fixed directives present (no inline styles to check)", async () => {

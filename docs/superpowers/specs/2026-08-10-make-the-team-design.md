@@ -514,7 +514,16 @@ Notes:
   | N-3 cancellation | `n3:<fixture_id>:<player_id>` | Once per player per fixture |
   | N-4 attention | `n4:<fixture_id>:<player_id>` | Once per owner per fixture, ever (BR-31) |
   | N-5 magic link | not logged | Better Auth owns issuance and rate limiting |
-  | N-6 welcome | `n6:<membership_id>` | Once per membership; rejoining sends again |
+  | N-6 welcome | `n6:<membership_id>:<joined_at>` | Once per membership; rejoining sends again |
+
+  **Amended, M6a.** The table above originally gave N-6's key as
+  `n6:<membership_id>` alone, which contradicts its own "rejoining sends
+  again": `UNIQUE (game_id, player_id)` on `memberships` means a rejoin
+  reuses the existing row rather than inserting a second one, so the
+  membership id alone is the same string on both the original join and the
+  rejoin, and the `dedupe_key` unique constraint would silently drop the
+  second welcome. `joined_at` (reset on every reactivation) is what
+  distinguishes them; see `welcomeKey` in `src/notify/dedupe-key.ts`.
 
 ## 2.9 CI/CD
 
@@ -627,7 +636,15 @@ Each milestone is independently deployable and demonstrable.
 
 M1–M4 are the product. M5–M7 make it shareable. Team picking, score recording, and the funding page come after, as separate specs.
 
-**Status:** M0 and M1 delivered by `docs/superpowers/plans/2026-08-10-m0-m1-foundation.md`. M2 and M3 delivered by `docs/superpowers/plans/2026-08-10-m2-m3-responses-and-email.md`.
+**Status:** M0 and M1 delivered by `docs/superpowers/plans/2026-08-10-m0-m1-foundation.md`. M2 and M3 delivered by `docs/superpowers/plans/2026-08-10-m2-m3-responses-and-email.md`. M4 delivered by `docs/superpowers/plans/2026-08-11-m4-waitlist-cancellation-attention.md`. M5 delivered by `docs/superpowers/plans/2026-08-11-m5-auth-and-dashboard.md`.
+
+**M6 is half done.** It splits into two independent sub-projects (see
+`docs/superpowers/specs/2026-08-12-m6a-game-setup-and-invites-design.md` §1):
+**M6a (J1 — game setup and invites)** is delivered by
+`docs/superpowers/plans/2026-08-12-m6a-game-setup-and-invites.md`. **J6 (owner
+overrides, guests, squad removal / BR-3) is a separate sub-project, not yet
+started.** M6 as a whole is not complete until J6 ships — do not read M6a's
+delivery as M6's.
 
 ---
 

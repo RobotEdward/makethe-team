@@ -6,6 +6,7 @@ import type { ResponseIntent } from "../capacity/types.js";
 import { getDb } from "../db/client.js";
 import { findActionableFixture, listDashboardFixtures } from "../db/dashboard-queries.js";
 import type { DashboardFixture } from "../db/dashboard-queries.js";
+import { listOwnedGames } from "../db/queries.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
@@ -31,10 +32,20 @@ dashboard.get(DASHBOARD_PATH, requirePlayer, async (c) => {
   // argument (see the lint rule banning bare `new Date()` downstream).
   const now = new Date(Date.now());
   const player = c.get("player")!;
+  const db = getDb(c.env.DB);
 
-  const rows = await listDashboardFixtures(getDb(c.env.DB), player.id);
+  const [rows, ownedGames] = await Promise.all([
+    listDashboardFixtures(db, player.id),
+    listOwnedGames(db, player.id),
+  ]);
 
-  return c.html(renderDashboardPage({ playerName: player.name, rows: rows.map((row) => toRow(row, now)) }));
+  return c.html(
+    renderDashboardPage({
+      playerName: player.name,
+      rows: rows.map((row) => toRow(row, now)),
+      ownedGames,
+    }),
+  );
 });
 
 /** A queried fixture as the page shows it. No other player's data is involved. */

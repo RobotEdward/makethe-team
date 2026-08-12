@@ -1,4 +1,4 @@
-import { DASHBOARD_PATH, PASSKEYS_PATH } from "../auth/paths.js";
+import { DASHBOARD_PATH, NEW_GAME_PATH, PASSKEYS_PATH, gamePath } from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import { renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
@@ -27,9 +27,17 @@ export interface DashboardRow {
   myStatus: ResponseStatus;
 }
 
+/** One game the viewer owns, as the "your games" list needs it — nothing else. */
+export interface OwnedGame {
+  id: string;
+  name: string;
+}
+
 export interface DashboardPageOptions {
   playerName: string;
   rows: readonly DashboardRow[];
+  /** Games this player is an active Owner of — `listOwnedGames` (J1/M6a). */
+  ownedGames: readonly OwnedGame[];
 }
 
 /**
@@ -68,6 +76,28 @@ function renderRow(row: DashboardRow): string {
 }
 
 /**
+ * "Set up a game" plus any games the viewer owns, with links to `/g/:id`.
+ *
+ * Without this the whole of J1 is unreachable except by typing `/g/new`
+ * directly — there is no other link into it anywhere in the app. Deliberately
+ * no "Games you own" header at all when the list is empty: a heading over
+ * nothing reads as a broken page, not an honest empty state, and the "Set up
+ * a game" link already says everything a first-time owner needs.
+ */
+function renderOwnedGamesSection(games: readonly OwnedGame[]): string {
+  const link = `<p><a href="${NEW_GAME_PATH}">Set up a game</a></p>`;
+  if (games.length === 0) return link;
+
+  const items = games
+    .map((game) => `<li><a href="${gamePath(game.id)}">${escapeHtml(game.name)}</a></li>`)
+    .join("");
+  return `
+    ${link}
+    <h2>Games you own</h2>
+    <ul class="owned-games">${items}</ul>`;
+}
+
+/**
  * The player dashboard (J7, BR-25): every upcoming fixture across every game
  * the viewer is an active member of, with the response they can change.
  *
@@ -83,7 +113,7 @@ function renderRow(row: DashboardRow): string {
  * scriptless, and the enhancement is quarantined on the page that cannot
  * exist without it.
  */
-export function renderDashboardPage({ playerName, rows }: DashboardPageOptions): string {
+export function renderDashboardPage({ playerName, rows, ownedGames }: DashboardPageOptions): string {
   const body = `
     <h1>Your games</h1>
     <p>Signed in as ${escapeHtml(playerName)}.</p>
@@ -92,6 +122,7 @@ export function renderDashboardPage({ playerName, rows }: DashboardPageOptions):
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
+    ${renderOwnedGamesSection(ownedGames)}
     <p><a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
     ${signOutForm("Sign out")}
   `;

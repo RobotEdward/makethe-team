@@ -299,6 +299,61 @@ describe("GET /app", () => {
     expect(await response.text()).toMatch(/nothing coming up/i);
   });
 
+  /**
+   * The whole of J1 is reachable from nowhere else in the app — no other page
+   * links to `/g/new`. Without this, a signed-in player who has never owned a
+   * game has no way to discover the feature except by typing the URL.
+   */
+  it("links to setting up a new game", async () => {
+    const { cookie } = await signIn();
+    await viewerId();
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain('href="/g/new"');
+  });
+
+  it("lists a game the viewer owns, linking to its overview", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const gameId = await insertGame(db, { name: "Sunday Kickabout" });
+    await db
+      .insert(memberships)
+      .values({ id: crypto.randomUUID(), gameId, playerId, active: true, role: "owner" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Sunday Kickabout");
+    expect(body).toContain(`href="/g/${gameId}"`);
+  });
+
+  /**
+   * A player who owns no game must not see an empty "Games you own" section —
+   * a heading over nothing reads as a broken page, not an honest empty state.
+   * The "Set up a game" link on its own already says what to do next.
+   */
+  it("shows no owned-games header when the viewer owns nothing", async () => {
+    const { cookie } = await signIn();
+    await viewerId();
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("Games you own");
+  });
+
+  it("does not list a game the viewer belongs to but does not own", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const gameId = await insertGame(db, { name: "Someone Else's Game" });
+    await db
+      .insert(memberships)
+      .values({ id: crypto.randomUUID(), gameId, playerId, active: true, role: "player" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("Games you own");
+  });
+
   it("redirects an anonymous visitor to sign-in", async () => {
     const response = await get();
 
