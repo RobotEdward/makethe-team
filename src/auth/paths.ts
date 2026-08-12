@@ -80,3 +80,23 @@ export const PASSKEYS_PATH = `${DASHBOARD_PATH}/passkeys`;
  * internal requests against it.
  */
 export const AUTH_API_PREFIX = "/api/auth";
+
+/** Owner-facing game management. Mounted behind the session middleware. */
+export const GAMES_PREFIX = "/g/*";
+export const NEW_GAME_PATH = "/g/new";
+
+export function gamePath(gameId: string): string {
+  return `/g/${gameId}`;
+}
+
+export function gameEditPath(gameId: string): string {
+  return `/g/${gameId}/edit`;
+}
+
+/**
+ * The public invite link. Outside every authenticated prefix — a visitor
+ * holding one has no session and must not need one (BR-26, §1.6 "Visitor").
+ */
+export function joinPath(token: string): string {
+  return `/j/${token}`;
+}

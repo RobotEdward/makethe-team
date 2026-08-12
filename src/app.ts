@@ -1,8 +1,10 @@
 import { Hono } from "hono";
+import { GAMES_PREFIX } from "./auth/paths.js";
 import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { cancel } from "./routes/cancel.js";
 import { dashboard } from "./routes/dashboard.js";
+import { gamesRoutes } from "./routes/games.js";
 import { home } from "./routes/home.js";
 import { passkeys } from "./routes/passkeys.js";
 import { respond } from "./routes/respond.js";
@@ -43,6 +45,16 @@ export function createApp(): Hono<AppEnv> {
   // keeping `/` and `/r/:token` off the session path is unchanged.
   app.use(SIGN_IN_PREFIX, sessionMiddleware);
 
+  // Owner game management. A third session mount, for the same reason
+  // `/sign-in` is the second: `/g/*` needs a session and sits outside
+  // `AUTHENTICATED_PREFIX`. The `no-store` header applies for the same reason
+  // it does there — these pages show a squad's data.
+  app.use(GAMES_PREFIX, sessionMiddleware);
+  app.use(GAMES_PREFIX, async (c, next) => {
+    await next();
+    c.header("Cache-Control", "private, no-store");
+  });
+
   app.route("/", robots);
   app.route("/", home);
   app.route("/", respond);
@@ -53,6 +65,8 @@ export function createApp(): Hono<AppEnv> {
   app.route("/", dashboard);
   // `/app/passkeys`, behind the same prefix and the same `requirePlayer`.
   app.route("/", passkeys);
+  // `/g/*`, behind the game-management session mount above.
+  app.route("/", gamesRoutes);
 
   app.notFound((c) => c.text("Not found", 404));
 

@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
-import { games } from "../../src/db/schema.js";
+import { games, memberships, players } from "../../src/db/schema.js";
 
 /**
  * Shared builders for database fixtures used by the tests.
@@ -65,4 +65,34 @@ export async function resetDatabase(): Promise<void> {
 /** The Drizzle handle bound to the test D1 database. */
 export function testDb(): Db {
   return getDb(env.DB);
+}
+
+export type PlayerInsert = typeof players.$inferInsert;
+
+/** A plausible player row. Pass `email: null, isGuest: true` for a guest. */
+export function playerRow(overrides: Partial<PlayerInsert> = {}): PlayerInsert {
+  return {
+    id: crypto.randomUUID(),
+    name: "Edward Charles",
+    email: `player-${crypto.randomUUID()}@example.com`,
+    ...overrides,
+  };
+}
+
+export async function insertPlayer(db: Db, overrides: Partial<PlayerInsert> = {}): Promise<string> {
+  const row = playerRow(overrides);
+  await db.insert(players).values(row);
+  return row.id;
+}
+
+/** Put a player in a squad. Defaults to an active ordinary member. */
+export async function insertMembership(
+  db: Db,
+  gameId: string,
+  playerId: string,
+  overrides: Partial<typeof memberships.$inferInsert> = {},
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await db.insert(memberships).values({ id, gameId, playerId, ...overrides });
+  return id;
 }

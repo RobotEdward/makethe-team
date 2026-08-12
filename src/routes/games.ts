@@ -1,0 +1,82 @@
+import { Hono } from "hono";
+import { NEW_GAME_PATH, gamePath } from "../auth/paths.js";
+import { requirePlayer } from "../auth/session.js";
+import { getDb } from "../db/client.js";
+import { createGame } from "../domain/create-game.js";
+import { parseGameForm } from "../domain/game-form.js";
+import type { AppEnv, Bindings } from "../env.js";
+import { renderGameFormPage } from "../views/game-form.js";
+
+export const gamesRoutes = new Hono<AppEnv>();
+
+/** This deployment's own origin, as the state-changing handlers compare it. */
+function originOf(env: Bindings): string {
+  return new URL(env.BETTER_AUTH_URL).origin;
+}
+
+/**
+ * Rejects a cross-site form post. Mirrors `POST /dashboard` and `POST
+ * /sign-out`: a browser always sends `Origin` on a cross-site form
+ * submission, and a missing header is a non-browser client acting on its own
+ * behalf, which is allowed.
+ */
+function wrongOrigin(c: { req: { header: (name: string) => string | undefined }; env: Bindings }): boolean {
+  const origin = c.req.header("origin");
+  return origin !== undefined && origin !== originOf(c.env);
+}
+
+/** Every string field of the submitted body, for redisplaying a rejected form. */
+function submittedValues(form: Record<string, unknown>): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const [key, value] of Object.entries(form)) {
+    if (typeof value === "string") values[key] = value;
+  }
+  return values;
+}
+
+gamesRoutes.get(NEW_GAME_PATH, requirePlayer, (c) =>
+  c.html(
+    renderGameFormPage({
+      action: NEW_GAME_PATH,
+      heading: "Set up a game",
+      submitLabel: "Create the game",
+      // Sensible starting values, not an empty form — the point is to get an
+      // organiser to a shareable link in as few decisions as possible.
+      values: { kickoffTime: "19:00", durationMinutes: "60", minPlayers: "10", maxPlayers: "14", weekday: "TH", interval: "1" },
+      errors: [],
+      warnings: [],
+      showAdvanced: false,
+    }),
+  ),
+);
+
+gamesRoutes.post(NEW_GAME_PATH, requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const now = new Date(Date.now());
+  const player = c.get("player")!;
+  const form = await c.req.parseBody();
+  const parsed = parseGameForm(form);
+
+  if (!parsed.ok) {
+    // 422, and the page comes back with everything still typed in it. A bare
+    // 400 would throw away a form somebody just filled in on a phone.
+    return c.html(
+      renderGameFormPage({
+        action: NEW_GAME_PATH,
+        heading: "Set up a game",
+        submitLabel: "Create the game",
+        values: submittedValues(form),
+        errors: parsed.errors,
+        warnings: [],
+        showAdvanced: false,
+      }),
+      422,
+    );
+  }
+
+  const created = await createGame({ db: getDb(c.env.DB), values: parsed.values, ownerPlayerId: player.id, now });
+
+  // 303 so a refresh does not re-post and create a second game.
+  return c.redirect(gamePath(created.gameId), 303);
+});

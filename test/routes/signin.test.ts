@@ -727,6 +727,13 @@ describe("no password field anywhere (TR-16)", () => {
           body: "reason=",
         }),
       );
+
+      // The game-creation form (Task 6, J1).
+      await capture(
+        "game form",
+        /Set up a game/,
+        new Request(`${ORIGIN}/g/new`, { headers: { cookie } }),
+      );
     }
 
     // The four `renderLinkRefusalPage` outcomes, each reached through the real
@@ -815,6 +822,7 @@ describe("no password field anywhere (TR-16)", () => {
         "create-raced (503)",
         "cancel confirm",
         "cancel done",
+        "game form",
       ].sort(),
     );
 
@@ -918,6 +926,12 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "POST /app":
       "never returns HTML on any branch — every outcome is a redirect or a " +
       "plain-text 400/403/404 (src/routes/dashboard.ts).",
+    "POST /g/new":
+      "renders through the same renderGameFormPage as GET /g/new on its only " +
+      "HTML-returning branch (a rejected submission) — no template of its " +
+      "own that could carry an un-enumerated script — and its other branches " +
+      "are a plain-text 403 or a redirect (src/routes/games.ts); its own " +
+      "script/password assertion lives in test/routes/games.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
@@ -932,6 +946,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /sign-in/complete": "link conflict (409)",
     "GET /app": "dashboard",
     "GET /app/passkeys": "passkeys",
+    "GET /g/new": "game form",
   };
 
   const registered = new Set(
