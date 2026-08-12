@@ -389,6 +389,85 @@ describe("the fixtures list on /g/:id", () => {
   });
 });
 
+describe("editing a game", () => {
+  beforeEach(resetDatabase);
+
+  /** Creates a game owned by the signed-in player, returning its id and cookie. */
+  async function ownedGame() {
+    const { cookie } = await signIn();
+    const response = await post("/g/new", cookie, VALID);
+    const gameId = response.headers.get("location")!.replace("/g/", "");
+    return { cookie, gameId };
+  }
+
+  it("prefills the form from the stored game", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+
+    expect(html).toContain('value="Thursday 7-a-side"');
+    expect(html).toContain('value="19:00"');
+    // The Advanced block is on edit only (spec §3.1).
+    expect(html).toContain("<summary>Advanced</summary>");
+  });
+
+  it("states how many fixtures the change will affect", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+    expect(html).toMatch(/This will update \d+ scheduled fixtures?\./);
+  });
+
+  it("saves and redirects", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const response = await post(`/g/${gameId}/edit`, cookie, { ...VALID, name: "Friday 7-a-side", kickoffTime: "20:00" });
+
+    expect(response.status).toBe(303);
+    const [game] = await testDb().select().from(games).where(eq(games.id, gameId));
+    expect(game?.name).toBe("Friday 7-a-side");
+  });
+
+  it("404s for a non-owner", async () => {
+    const { cookie, gameId } = await ownedGame();
+    await testDb().update(memberships).set({ role: "player" }).where(eq(memberships.gameId, gameId));
+
+    expect((await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie }, redirect: "manual" })).status).toBe(404);
+    expect((await post(`/g/${gameId}/edit`, cookie, VALID)).status).toBe(404);
+  });
+
+  /**
+   * Backs the `POST /g/:id/edit` exclusion in `test/routes/signin.test.ts`'s
+   * `pinRoutesToPages`: that exclusion claims this route's only
+   * HTML-returning branch shares `renderGameFormPage` with `GET /g/new` and
+   * carries no template of its own, and that its script/password coverage
+   * lives here. Mirrors the equivalent `POST /g/new` test above so that claim
+   * is actually true rather than merely asserted.
+   */
+  it("escapes markup and quote-breakout attempts in a rejected edit submission", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const response = await post(`/g/${gameId}/edit`, cookie, {
+      ...VALID,
+      // Bad enough to be rejected (min > max), so the 422 branch renders.
+      minPlayers: "20",
+      name: `"><script>alert(1)</script>`,
+    });
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+
+    expect(html, "must not contain a password field").not.toMatch(/type=.?password/i);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).not.toContain(`"><script>`);
+    expect(html).toContain("&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;");
+
+    for (const [, attributes, js] of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)) {
+      expect(attributes, "any script tag on this page must carry no attributes").toBe("");
+      expect(
+        SCRIPT_BLOCKS as readonly string[],
+        "any script tag on this page must be a member of SCRIPT_BLOCKS",
+      ).toContain(js);
+    }
+  });
+});
+
 describe("the copy-invite script's DOM ids stay in sync with the page", () => {
   beforeEach(resetDatabase);
 

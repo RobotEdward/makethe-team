@@ -743,6 +743,14 @@ describe("no password field anywhere (TR-16)", () => {
         /Invite people/,
         new Request(`${ORIGIN}/g/${gameId}`, { headers: { cookie } }),
       );
+
+      // The game-edit form (Task 8). Same owner membership as the overview
+      // capture above, so this reaches the 200 branch rather than the 404.
+      await capture(
+        "game edit",
+        /Edit Thursday 7-a-side/,
+        new Request(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } }),
+      );
     }
 
     // The four `renderLinkRefusalPage` outcomes, each reached through the real
@@ -833,6 +841,7 @@ describe("no password field anywhere (TR-16)", () => {
         "cancel done",
         "game form",
         "game overview",
+        "game edit",
       ].sort(),
     );
 
@@ -947,6 +956,13 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "plain-text 404 (entitlement failure) or a 303 redirect only " +
       "(src/routes/games.ts); its own status-code coverage lives in " +
       "test/routes/games.test.ts.",
+    "POST /g/:id/edit":
+      "renders through the same renderGameFormPage as GET /g/:id/edit on its " +
+      "only HTML-returning branch (a rejected submission) — no template of " +
+      "its own that could carry an un-enumerated script — and its other " +
+      "branches are a plain-text 403 (wrong origin), a plain-text 404 " +
+      "(entitlement failure) or a 303 redirect (src/routes/games.ts); its own " +
+      "script/password assertion lives in test/routes/games.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
@@ -963,6 +979,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /app/passkeys": "passkeys",
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
+    "GET /g/:id/edit": "game edit",
   };
 
   const registered = new Set(

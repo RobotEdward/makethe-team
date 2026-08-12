@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { NEW_GAME_PATH, gamePath } from "../auth/paths.js";
+import { NEW_GAME_PATH, gameEditPath, gamePath } from "../auth/paths.js";
 import { requirePlayer } from "../auth/session.js";
 import { buildAuditInsert } from "../db/audit.js";
 import { getDb } from "../db/client.js";
@@ -8,6 +8,8 @@ import { findGameForOwner, listSquad, listUpcomingFixtures } from "../db/queries
 import { games } from "../db/schema.js";
 import { createGame } from "../domain/create-game.js";
 import { parseGameForm } from "../domain/game-form.js";
+import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
+import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
@@ -155,6 +157,84 @@ gamesRoutes.post("/g/:id/invite/rotate", requirePlayer, async (c) => {
       now,
     }),
   ]);
+
+  return c.redirect(gamePath(game.id), 303);
+});
+
+gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
+  if (game === null) return c.text("Not found", 404);
+
+  const counts = await countFixturesByPropagation(db, game.id, now);
+  const rule = parseRecurrenceRule(game.recurrenceRule);
+
+  return c.html(
+    renderGameFormPage({
+      action: gameEditPath(game.id),
+      heading: `Edit ${game.name}`,
+      submitLabel: "Save changes",
+      values: {
+        name: game.name,
+        venueName: game.venueName,
+        venueAddress: game.venueAddress ?? "",
+        venueUrl: game.venueUrl ?? "",
+        timezone: game.timezone,
+        weekday: rule.byday,
+        interval: String(rule.interval),
+        kickoffTime: game.kickoffTime,
+        durationMinutes: String(game.durationMinutes),
+        minPlayers: String(game.minPlayers),
+        maxPlayers: String(game.maxPlayers),
+        prefersEvenNumbers: game.prefersEvenNumbers ? "on" : "",
+        reminderDaysBefore: String(game.reminderDaysBefore),
+        reminderLocalTime: game.reminderLocalTime,
+        shortWarningOffsetHours: String(game.shortWarningOffsetHours),
+      },
+      errors: [],
+      warnings: [],
+      showAdvanced: true,
+      affectedNotice: propagationNotice(counts),
+    }),
+  );
+});
+
+/** "This will update 4 scheduled fixtures. 1 open fixture is unchanged." */
+function propagationNotice(counts: { scheduled: number; untouched: number }): string | undefined {
+  if (counts.scheduled === 0 && counts.untouched === 0) return undefined;
+  const scheduled = `This will update ${counts.scheduled} scheduled ${counts.scheduled === 1 ? "fixture" : "fixtures"}.`;
+  if (counts.untouched === 0) return scheduled;
+  return `${scheduled} ${counts.untouched} ${counts.untouched === 1 ? "fixture people have already been emailed about stays" : "fixtures people have already been emailed about stay"} unchanged.`;
+}
+
+gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
+  if (game === null) return c.text("Not found", 404);
+
+  const form = await c.req.parseBody();
+  const parsed = parseGameForm(form);
+
+  if (!parsed.ok) {
+    return c.html(
+      renderGameFormPage({
+        action: gameEditPath(game.id),
+        heading: `Edit ${game.name}`,
+        submitLabel: "Save changes",
+        values: submittedValues(form),
+        errors: parsed.errors,
+        warnings: [],
+        showAdvanced: true,
+      }),
+      422,
+    );
+  }
+
+  await updateGame({ db, game, values: parsed.values, actorPlayerId: c.get("player")!.id, now });
 
   return c.redirect(gamePath(game.id), 303);
 });
