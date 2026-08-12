@@ -1,7 +1,7 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { Db } from "./client.js";
-import { fixtures, games, players, responses } from "./schema.js";
+import { fixtures, games, memberships, players, responses } from "./schema.js";
 
 export interface SquadMember {
   playerId: string;
@@ -89,4 +89,171 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
   });
 
   return { fixture: row.fixture, game: row.game, squad };
+}
+
+/**
+ * The game, if and only if this player is an active Owner of it (TR-18).
+ *
+ * Returns `null` for "no such game", "not a member", "a member but not an
+ * owner" and "an owner whose membership was deactivated" alike — the caller
+ * answers 404 for all four, so a game id cannot be probed for existence and a
+ * demoted owner learns nothing from the difference.
+ *
+ * This is the entitlement check for every `/g/:id` route. Middleware cannot do
+ * it: which row to check depends on which row the handler is about.
+ */
+export async function findGameForOwner(
+  db: Db,
+  gameId: string,
+  playerId: string,
+): Promise<typeof games.$inferSelect | null> {
+  const [row] = await db
+    .select({ game: games })
+    .from(games)
+    .innerJoin(memberships, eq(memberships.gameId, games.id))
+    .where(
+      and(
+        eq(games.id, gameId),
+        eq(games.active, true),
+        eq(memberships.playerId, playerId),
+        eq(memberships.role, "owner"),
+        eq(memberships.active, true),
+      ),
+    )
+    .limit(1);
+  return row?.game ?? null;
+}
+
+/**
+ * Every active Game this player owns, most recently created first — the
+ * dashboard's "your games" list.
+ *
+ * Same entitlement shape as `findGameForOwner` (active game, active owner
+ * membership) but unfiltered by game id: this is "which games", that one is
+ * "is this game". Kept as a second query rather than `findGameForOwner`
+ * called in a loop, because there is no id to loop over yet — this *is* how
+ * the dashboard learns which ids exist.
+ */
+export async function listOwnedGames(
+  db: Db,
+  playerId: string,
+): Promise<Array<{ id: string; name: string }>> {
+  const rows = await db
+    .select({ id: games.id, name: games.name, createdAt: games.createdAt })
+    .from(games)
+    .innerJoin(memberships, eq(memberships.gameId, games.id))
+    .where(
+      and(
+        eq(games.active, true),
+        eq(memberships.playerId, playerId),
+        eq(memberships.role, "owner"),
+        eq(memberships.active, true),
+      ),
+    )
+    .orderBy(desc(games.createdAt));
+  return rows.map(({ id, name }) => ({ id, name }));
+}
+
+/**
+ * Active squad members, owners first then alphabetical.
+ *
+ * `role` is `text({ enum: ["player", "owner"] })`, so a plain `desc()`/`asc()`
+ * over it sorts lexicographically — `desc()` would put `"player"` before
+ * `"owner"` (`p` > `o`), the opposite of "owners first", and an `asc()` would
+ * only happen to look right today because `"owner"` sorts before `"player"`
+ * alphabetically, a coincidence of these two particular words that a third
+ * role would break silently. The explicit `CASE` says the actual intent —
+ * owner is rank 0, everything else is rank 1 — so the order does not depend
+ * on how the role strings happen to compare.
+ */
+export async function listSquad(
+  db: Db,
+  gameId: string,
+): Promise<Array<{ playerId: string; name: string; role: "player" | "owner"; isGuest: boolean }>> {
+  return db
+    .select({
+      playerId: players.id,
+      name: players.name,
+      role: memberships.role,
+      isGuest: players.isGuest,
+    })
+    .from(memberships)
+    .innerJoin(players, eq(players.id, memberships.playerId))
+    .where(and(eq(memberships.gameId, gameId), eq(memberships.active, true)))
+    .orderBy(sql`CASE WHEN ${memberships.role} = 'owner' THEN 0 ELSE 1 END`, players.name);
+}
+
+/**
+ * An active game by its invite token, or `null`.
+ *
+ * Deliberately says nothing about *why* it was null. An unknown token, a token
+ * that was rotated away, and a game that has been deactivated are one answer,
+ * because the caller answers 404 for all three: a page saying "this link has
+ * been replaced" would confirm to whoever is holding it that the token was
+ * once real, and this is the one route in the app any stranger can reach.
+ */
+export async function findGameByInviteToken(
+  db: Db,
+  token: string,
+): Promise<typeof games.$inferSelect | null> {
+  const [game] = await db
+    .select()
+    .from(games)
+    .where(and(eq(games.inviteToken, token), eq(games.active, true)))
+    .limit(1);
+  return game ?? null;
+}
+
+/**
+ * The next `scheduled` fixture — the first one a joiner will actually be
+ * invited to (BR-2).
+ *
+ * Deliberately excludes `open` fixtures: a player added after a fixture opens
+ * is not in it, because `pending` response rows were written for the eligible
+ * set at the moment it opened (BR-1) and nothing back-fills them. Naming an
+ * `open` fixture on the "you're in" page would promise someone a game they
+ * have no place in. The same rule, for the same reason, is applied by
+ * `src/notify/send-welcome.ts` for the N-6 email.
+ */
+export async function findFirstScheduledFixture(
+  db: Db,
+  gameId: string,
+  now: Date,
+): Promise<{ kicksOffAt: Date } | null> {
+  const [fixture] = await db
+    .select({ kicksOffAt: fixtures.kicksOffAt })
+    .from(fixtures)
+    .where(
+      and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "scheduled"), gte(fixtures.kicksOffAt, now)),
+    )
+    .orderBy(asc(fixtures.kicksOffAt))
+    .limit(1);
+  return fixture ?? null;
+}
+
+/**
+ * Every fixture from `now` onward, soonest first — *all* lifecycles, including
+ * the terminal `played` and `cancelled`.
+ *
+ * Deliberately unfiltered: the owner page this feeds renders each row's
+ * lifecycle, so a cancelled fixture reads as cancelled rather than vanishing,
+ * and an owner asking "what happened to Thursday?" is better served by seeing
+ * it than by an unexplained gap. Named `listUpcoming…` for the `kicks_off_at`
+ * bound, which is the only filter it applies.
+ */
+export async function listUpcomingFixtures(
+  db: Db,
+  gameId: string,
+  now: Date,
+): Promise<Array<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>> {
+  return db
+    .select({
+      id: fixtures.id,
+      kicksOffAt: fixtures.kicksOffAt,
+      lifecycle: fixtures.lifecycle,
+      inCount: fixtures.inCount,
+    })
+    .from(fixtures)
+    .where(and(eq(fixtures.gameId, gameId), gte(fixtures.kicksOffAt, now)))
+    .orderBy(fixtures.kicksOffAt);
 }

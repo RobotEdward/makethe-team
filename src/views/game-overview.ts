@@ -1,0 +1,94 @@
+import { gameEditPath, joinPath } from "../auth/paths.js";
+import { oddMaxWarning } from "../domain/game-form.js";
+import { formatLocalDateTime } from "../domain/time/zone.js";
+import { SITE_ORIGIN } from "../notify/delivery.js";
+import { escapeHtml, layout } from "./layout.js";
+import { qrSvg } from "./qr.js";
+import { COPY_INVITE_JS } from "./scripts.js";
+import { FORM_CSS } from "./styles.js";
+
+export interface GameOverviewParams {
+  gameId: string;
+  gameName: string;
+  venueName: string;
+  /** Optional on the game row, so optional here — omitted rather than blank. */
+  venueAddress: string | null;
+  timezone: string;
+  maxPlayers: number;
+  prefersEvenNumbers: boolean;
+  inviteToken: string;
+  squad: ReadonlyArray<{ name: string; role: "player" | "owner"; isGuest: boolean }>;
+  upcoming: ReadonlyArray<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>;
+}
+
+/**
+ * The owner's home for one game: how to share it, who is in the squad, and
+ * what is coming up.
+ *
+ * The squad list shows full names — this page is behind an owner entitlement
+ * check, and an owner already knows who is in their own squad. BR-26's
+ * redaction applies to the *public* invite page (`src/views/join.ts`), which
+ * strangers can reach.
+ */
+export function renderGameOverviewPage(params: GameOverviewParams): string {
+  const { gameId, gameName, venueName, venueAddress, timezone, inviteToken, squad, upcoming } = params;
+  const inviteUrl = `${SITE_ORIGIN}${joinPath(inviteToken)}`;
+
+  // BR-29's nudge, re-derived from the *saved* row rather than threaded through
+  // the 303 from create/edit. It is advisory and it stays true until the
+  // configuration changes, so it is shown for as long as it is true rather than
+  // once, as a toast, at the moment of saving. `oddMaxWarning` is shared with
+  // `parseGameForm` so this page and the form cannot word it differently.
+  const oddMax =
+    params.prefersEvenNumbers && params.maxPlayers % 2 === 1
+      ? `<p class="nudge">${escapeHtml(oddMaxWarning(params.maxPlayers))}</p>`
+      : "";
+
+  const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
+
+  const squadItems = squad
+    .map((member) =>
+      `<li>${escapeHtml(member.name)}${member.role === "owner" ? " — organiser" : ""}${
+        member.isGuest ? " (guest)" : ""
+      }</li>`,
+    )
+    .join("");
+
+  const fixtureItems = upcoming
+    .map((fixture) =>
+      `<li>${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))} — ${escapeHtml(fixture.lifecycle)}, ${fixture.inCount} in</li>`,
+    )
+    .join("");
+
+  const body = `
+    <h1>${escapeHtml(gameName)}</h1>
+    <p>${escapeHtml(venueName)}</p>
+    ${addressLine}
+    ${oddMax}
+    <p><a href="${escapeHtml(gameEditPath(gameId))}">Edit this game</a></p>
+
+    <h2>Invite people</h2>
+    <p>Share this link in your group chat, or let people scan the code.</p>
+    <div class="invite-link">
+      <input id="invite-url" type="text" readonly value="${escapeHtml(inviteUrl)}">
+      <button class="button" type="button" id="invite-copy" hidden>Copy</button>
+    </div>
+    <div class="qr">${qrSvg(inviteUrl)}</div>
+    <form method="post" action="${escapeHtml(`/g/${gameId}/invite/rotate`)}">
+      <button class="button" type="submit">Replace this link</button>
+    </form>
+
+    <h2>Squad (${squad.length})</h2>
+    <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>
+
+    <h2>Coming up</h2>
+    <ul class="squad">${fixtureItems || "<li>No fixtures scheduled.</li>"}</ul>
+  `;
+
+  return layout({
+    title: `${gameName} — Make The Team`,
+    body,
+    pageStyles: [FORM_CSS],
+    pageScripts: [COPY_INVITE_JS],
+  });
+}

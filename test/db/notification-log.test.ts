@@ -56,7 +56,7 @@ describe("notification_log", () => {
     const membershipId = crypto.randomUUID();
     await db.insert(notificationLog).values({
       id: crypto.randomUUID(),
-      dedupeKey: welcomeKey(membershipId),
+      dedupeKey: welcomeKey(membershipId, "2026-08-12T10:00:00.000Z"),
       notificationType: "n6",
       fixtureId: null,
       playerId,

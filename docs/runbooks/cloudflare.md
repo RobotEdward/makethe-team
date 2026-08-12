@@ -70,6 +70,37 @@ A 10-second mitigation window is short, but it is enough to blunt a hammering
 loop, and the response endpoints are idempotent so a blocked retry costs the
 player nothing.
 
+### `join-throttle` (M6a, TR-37) — not yet applied
+
+`POST /j/:token` (§4.5 of the M6a design) is the second unauthenticated
+endpoint that both writes a row and sends an email, the same class as `/r/`. A
+WAF rate-limit rule is a supplement here too, not the control — the quota
+wrapper around the notifier (`MAX_EMAILS_PER_DAY`) is what actually bounds the
+cost, and everything in `src/routes/join.ts` must hold with this rule switched
+off, exactly as `respond-throttle` must.
+
+Same shape as `respond-throttle`, matching on path:
+
+- **Name:** `join-throttle`
+- **Match:** `http.request.uri.path contains "/j/"`
+- **Rate:** 20 requests per 10 seconds, per IP
+- **Action:** Block, 10-second timeout (the Free maximum)
+
+**Not yet applied.** Must be created by hand in the dashboard, same as
+`respond-throttle` and the two WAF custom rules below — the deploy token
+deliberately lacks **Zone → Firewall Services → Edit**, so nothing in CI or
+`wrangler.jsonc` can create it.
+
+**Check the Free plan's rate-limiting rule count before creating this one.**
+The section above calls `respond-throttle` "the single Free-plan rule", which
+was written when it was the only one needed and may mean the plan permits
+exactly one rate-limiting rule rather than several — that has not been
+verified against current Cloudflare documentation for a *second* rule. If the
+Free plan will not allow both simultaneously, `join-throttle` is not a
+control this project can rely on and `docs/known-issues.md` should say so;
+`/j/:token`'s actual protection would then still be the quota wrapper, the
+origin check and the token's unguessability from §4.5, same as it is today.
+
 ## WAF custom rules (TR-37)
 
 Security → WAF → Custom rules. The free plan allows five. A blocklist is always

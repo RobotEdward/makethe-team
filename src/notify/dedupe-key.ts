@@ -65,7 +65,19 @@ export function attentionKey(fixtureId: string, playerId: string): string {
   return `n4:${fixtureId}:${playerId}`;
 }
 
-/** N-6 welcome: once per membership; rejoining (a new membership row) sends again. */
-export function welcomeKey(membershipId: string): string {
-  return `n6:${membershipId}`;
+/**
+ * N-6 welcome: once per membership, and again on each rejoin.
+ *
+ * §2.8's table gives this key as `n6:<membership_id>` and its prose says
+ * "rejoining sends again". Those contradict each other, because
+ * `UNIQUE (game_id, player_id)` on `memberships` forces a rejoin to reactivate
+ * the existing row rather than insert a second one — so the membership id
+ * alone is the same string both times and the unique index on `dedupe_key`
+ * would silently drop the second welcome.
+ *
+ * `joinedAt` (reset on every reactivation, see `src/domain/join-squad.ts`)
+ * is what distinguishes them. Passed as an ISO string by every caller.
+ */
+export function welcomeKey(membershipId: string, joinedAt: string): string {
+  return `n6:${membershipId}:${joinedAt}`;
 }

@@ -1877,14 +1877,17 @@ describe("GET /g/:id — entitlement (TR-18)", () => {
   });
 
   it("404s for a signed-in player who is not a member", async () => {
-    const { gameId } = await ownedGame();
-    // A second identity, with no membership anywhere.
+    // The viewer signs in and owns their own game; this asks for somebody
+    // else's, which they hold no membership row for at all. Testing it this
+    // way round needs no second sign-in identity — `SELF.fetch` uses the
+    // deployed bindings verbatim and cannot take a per-request allowlist.
+    const { cookie } = await ownedGame();
     const db = testDb();
-    const otherPlayerId = await insertPlayer(db, { name: "Stranger" });
-    await db.update(players).set({ authUserId: null }).where(eq(players.id, otherPlayerId));
+    const strangerId = await insertPlayer(db, { name: "Stranger" });
+    const otherGameId = await insertGame(db);
+    await insertMembership(db, otherGameId, strangerId, { role: "owner" });
 
-    const { cookie: otherCookie } = await signInAsSecondIdentity();
-    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie: otherCookie }, redirect: "manual" });
+    const response = await SELF.fetch(`${ORIGIN}/g/${otherGameId}`, { headers: { cookie }, redirect: "manual" });
 
     // 404, never 403 — a 403 would confirm the id names a real game.
     expect(response.status).toBe(404);
@@ -1916,43 +1919,14 @@ describe("GET /g/:id — entitlement (TR-18)", () => {
 });
 ```
 
-**Note on `signInAsSecondIdentity`:** `test/support/sign-in.ts` signs in as the
-single allowlisted address. For the "not a member" case, add this helper to
-`test/support/sign-in.ts`:
-
-```typescript
-/**
- * A second signed-in identity, for entitlement tests that need someone who is
- * not the owner. `SIGNIN_ALLOWLIST` is overridden per call — `bindings()`
- * already threads overrides through, and `app.fetch` (not `SELF.fetch`) is
- * what allows it, since `SELF` uses the deployed bindings verbatim.
- */
-export async function signInAs(email: string) {
-  const app = buildApp();
-  const overrides = { SIGNIN_ALLOWLIST: `${ALLOWED},${email}` };
-  const sent: Message[] = [];
-  const spy = vi.spyOn(ConsoleNotifier.prototype, "send").mockImplementation((messages: readonly Message[]) => {
-    sent.push(...messages);
-    return Promise.resolve(messages.map(() => ({ ok: true, providerMessageId: null })));
-  });
-  try {
-    await app.fetch(requestLink(email), bindings(overrides));
-  } finally {
-    spy.mockRestore();
-  }
-  const verified = await app.fetch(followLink(linkIn(sent)), bindings(overrides));
-  const cookie = cookieFrom(verified);
-  await app.fetch(
-    new Request(new URL(verified.headers.get("location")!, ORIGIN), { headers: { cookie } }),
-    bindings(overrides),
-  );
-  return { cookie, app, overrides };
-}
-```
-
-Tests using it must drive the app via `app.fetch(request, bindings(overrides))`
-rather than `SELF.fetch`, because `SELF` cannot take per-request bindings.
-Adjust the "not a member" test accordingly.
+**No second sign-in identity is needed.** `test/support/sign-in.ts` signs in as
+the single allowlisted address, and `SELF.fetch` uses the deployed bindings
+verbatim so a per-request `SIGNIN_ALLOWLIST` override is not available to it.
+Every case above is instead expressed as *the same viewer, differently
+entitled* — a game they hold no membership for, a membership demoted to
+`player`, a membership deactivated. That covers all four `findGameForOwner`
+null branches without a second identity, and keeps these tests on `SELF.fetch`
+like every other route test in the repo (TR-29).
 
 - [ ] **Step 2: Run to verify failure**
 

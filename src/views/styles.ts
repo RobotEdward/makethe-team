@@ -215,6 +215,42 @@ export const CANCEL_STYLES_CSS = `
   .cancel-heading { text-align: center; margin-top: 0; color: var(--warn); }
 `;
 
+/**
+ * Forms and owner pages: left-aligned, wider than the shared 30rem column,
+ * with real labels above real inputs.
+ *
+ * The shared `STYLES` block centres `main` and sets `text-align: center`,
+ * which is right for the single-purpose pages it was written for and wrong
+ * for anything with more than three fields. This overrides both rather than
+ * loosening the shared block, so no existing page moves.
+ */
+export const FORM_CSS = `
+  main { max-width: 40rem; text-align: left; }
+  h1 { text-align: left; }
+  .field { margin: 1.1rem 0; }
+  .field label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+  .field input, .field select {
+    width: 100%; padding: 0.6rem 0.7rem; font: inherit;
+    color: var(--fg); background: var(--bg);
+    border: 2px solid var(--line); border-radius: 0.5rem;
+  }
+  .field input:focus-visible, .field select:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 1px;
+  }
+  .field .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: 0.9rem; }
+  .field-invalid input, .field-invalid select { border-color: var(--warn); }
+  .row { display: flex; gap: 1rem; }
+  .row .field { flex: 1; }
+  details { margin: 1.5rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
+  summary { cursor: pointer; font-weight: 600; }
+  .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
+  .qr { margin: 1rem 0; max-width: 240px; }
+  .invite-link { display: flex; gap: 0.5rem; align-items: center; }
+  .invite-link input { flex: 1; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .squad { list-style: none; padding: 0; }
+  .squad li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   SQUAD_STYLES_CSS,
@@ -222,6 +258,7 @@ export const PAGE_STYLE_BLOCKS = [
   SIGNIN_STYLES_CSS,
   PASSKEY_STYLES_CSS,
   CANCEL_STYLES_CSS,
+  FORM_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

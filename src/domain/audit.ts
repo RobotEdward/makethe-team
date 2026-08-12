@@ -18,8 +18,12 @@
  * Every action below is `fixture.`-namespaced because every one of them is
  * recorded against a fixture — including the notification deferrals, whose
  * `entity_id` is the fixture the undelivered message was about.
+ *
+ * Extended by M6a, which is the first milestone to audit something that is not
+ * a fixture. `entity_type` is a TypeScript-only narrowing — Drizzle's
+ * `text({ enum })` emits no SQL CHECK on SQLite — so this needs no migration.
  */
-export const AUDIT_ENTITY_TYPES = ["fixture"] as const;
+export const AUDIT_ENTITY_TYPES = ["fixture", "game", "membership"] as const;
 
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
@@ -72,6 +76,15 @@ export const AUDIT_ACTIONS = [
   "fixture.promotion_email_deferred",
   "fixture.cancellation_email_deferred",
   "fixture.attention_email_deferred",
+  // M6a. `game.updated` carries before/after of the changed columns only,
+  // not the whole row — an owner reading this wants to see what moved.
+  "game.created",
+  "game.updated",
+  "game.invite_rotated",
+  // A join through the public invite link. `actor_player_id` is the joining
+  // player themselves: nobody else acted.
+  "membership.joined",
+  "membership.rejoined",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
