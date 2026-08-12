@@ -235,3 +235,9 @@ Add `@better-auth/passkey`. This introduces the **first JavaScript in the codeba
 ## What M6 inherits
 
 Owner tools arrive into a working session layer with `requireSession` and `requirePlayer` helpers, a `Variables` slot on the context, and — from M4 — `audit_log` and a `cancelFixture` domain function that only needs a session-authorised caller. TR-18 remains the thing M6 must not forget: middleware says who, the handler must still check entitled, on every request.
+
+**Added 12 August 2026, after M5 met production.** Three things this plan could not have known:
+
+1. **The CSP had no `connect-src`, so both passkey buttons were broken in every browser** from the moment M4's header met these scripts — they could execute and could not `fetch`. Fixed in `eaa84b8`. M6 adds more client-side surface than any milestone so far, and the post-mortem in `docs/known-issues.md` is written for M6's benefit specifically: *a passing server-side suite is consistent with a completely broken browser feature*, because a request the browser refuses never reaches a test.
+2. **Two M6-scoped items are now recorded** in `docs/known-issues.md`: the passkey scripts' error-swallowing `.catch()` on `/app/passkeys` (behind `requirePlayer`, so the "don't leak credential ids" argument that justifies it on the public sign-in page does not apply), and `verify-registration` returning 500 where the authentication path correctly returns 400.
+3. **Sign-in linking works exactly as designed, and the seeded data did not match it.** Signing in with an address no Player held took the `created` branch and produced an empty dashboard — correct behaviour, not a bug. Worth M6 keeping in view: the dashboard join starts from the viewer's own `responses` rows, so a player added to a squad *after* a fixture has opened can never see that fixture. Owner tools that add squad members will meet this directly, and the fix is a product decision (BR-1/BR-2 eligibility) rather than a query change.

@@ -15,11 +15,54 @@ Anything that *was* fixed lives in the git history, not here.
 | A game configured with an odd `max_players` while preferring even numbers, once full, is permanently both `full` and `uneven` with no possible remediation. Faithful to the advisory-only parity rule, but the configuration should be discouraged at creation time. See spec Part 3, open item 6. | `src/domain/fixture-view.ts` | M6, as a soft warning on the game form |
 | **Required reviewers are not enabled** on the `production` environment, so a compromised token or account can auto-deploy. Deliberately deferred: the database currently holds six plus-addressed test players, and an approval click per deploy is real friction during active development. **The trigger to enable it is the first real squad member's address going in**, not a date. Everything else on this environment is now locked down — see the note below. | GitHub → Settings → Environments → production | Before real players are added |
 | ~~`respond-throttle` rate limiting for `/r/*`~~ | **Applied and verified 11 August 2026.** Measured against production: exactly 20 requests pass then 429, recovery after the mitigation window, and `/`, `/robots.txt` and `/leave/*` are unaffected. |
-| ~~No CSP or `frame-ancestors` headers.~~ | **Applied, M4 task 9.** `src/security/csp.ts` adds a `Content-Security-Policy` header alongside the three the middleware already set: `default-src 'none'`, `script-src 'none'` (the site has no client JavaScript at all), `form-action 'self'` (covers both `POST /r/:token` and `POST /cancel/:token`), `frame-ancestors 'none'`, `base-uri 'none'`, and a `style-src` allowing exactly the two inline `<style>` blocks the site actually renders (`STYLES` in `src/views/layout.ts`, present on every page, and `CANCEL_STYLES_CSS` in `src/views/cancel.ts`, present only on the cancellation-confirm page) by **hash, computed from those exported constants rather than pasted**, so it cannot silently go stale. Scoped to `src/app.ts`'s response middleware only — email HTML in `src/notify/templates/*` is unaffected, and its inline styles were confirmed unchanged. Verified against every page the app renders, including the one page with two inline style blocks. |
+| ~~No CSP or `frame-ancestors` headers.~~ | **Applied, M4 task 9; amended twice since — the description below is current as of 12 August 2026.** `src/security/csp.ts` adds a `Content-Security-Policy` header alongside the three the middleware already set: `default-src 'none'`, `form-action 'self'`, `frame-ancestors 'none'`, `base-uri 'none'`, plus `style-src` and `script-src` as **hashes computed from `STYLE_BLOCKS` and `SCRIPT_BLOCKS` rather than pasted**, so they cannot silently go stale, and `connect-src 'self'`. M4's original `script-src 'none'` ("the site has no client JavaScript at all") stopped being true when M5 added the two passkey scripts; the merge tripwire in `src/views/scripts.ts` forced that correction. Scoped to `src/app.ts`'s response middleware only — email HTML in `src/notify/templates/*` is unaffected. Verified against every page the app renders. **See the `connect-src` post-mortem section below for the bug the second amendment fixed** — it is the one lesson from this header worth carrying forward. |
 | **`cancelFixture`'s entitlement check depends on `memberships.active` being cleared when an owner is removed from a squad, but no code in `src/` writes `memberships.active` or `left_at` at all** — squad-member removal (BR-3) does not exist yet. The check itself is correct and load-bearing today (a membership row seeded `active: false` is correctly refused), but the "an owner removed after the cancellation email was sent cannot still cancel" guarantee is currently a convention with no writer to enforce it. **The trigger is whichever milestone implements BR-3 removal**: its writer must clear `memberships.active` (or `cancelFixture` must be updated to read whatever it clears instead) — an `left_at`-only writer that never touches `active` would silently reopen this hole. | `src/domain/cancel-fixture.ts:92` | Whichever milestone implements BR-3 (squad-member removal) |
 | ~~TR-31's "owner-visible warning" on reaching the daily send ceiling~~ | **Closed by M4 task 8, in two halves rather than one.** The owner-visible half is a line in the N-4 attention email, shown when the ceiling is biting (`handleScheduled` decides that from this run's deferred reminders **or** a `MAX_EMAILS_PER_DAY` that failed closed to zero, which is the config-typo case this row named). That half is best-effort by construction — a warning delivered by email is refused by the very condition it warns about — so the half an operator is expected to act on is durable: every ceiling refusal that costs a real message now writes an `audit_log` row (`fixture.promotion_email_deferred`, `fixture.cancellation_email_deferred`, `fixture.attention_email_deferred`) naming the fixture and every player who was not told, alongside a `console.error`. See `src/notify/ceiling-audit.ts`. |
+| **The passkey scripts' `.catch()` blocks discard the error entirely** — no `console.error`, no distinction between "options request failed", "the authenticator refused" and "verification failed". On the public `/sign-in` page that is deliberate and should stay (a WebAuthn error can name a credential id, and the page is reachable by anyone). On `/app/passkeys`, which is already behind `requirePlayer`, the reasoning is much weaker, and the cost is real: diagnosing the `connect-src` bug below needed a `wrangler tail` against production to establish something a one-line message would have named immediately. | `src/views/scripts.ts` (`PASSKEY_REGISTER_JS`) | M6 |
+| **A failed passkey *registration* returns 500, not 400.** Observed while mutation-testing the new end-to-end registration test: a bad `clientDataJSON.origin` produces a server error, where the *authentication* path correctly returns 400 for the same class of fault. The verification is working — it is the status mapping that is wrong — so this is a diagnosability and correctness-of-contract issue, not a hole. | `src/auth/factory.ts` / `@better-auth/passkey` `verify-registration` | M6 |
 | **BR-22 is not yet satisfied.** Every reminder carries a `GET /leave/:token` link so no message 404s, but the route only renders a page explaining that leaving is not self-service yet — it performs no write and is not a leave mechanism. | `src/routes/respond.ts` (`renderLeavePage`) | M7 ("unsubscribe and leave-game flows" in the spec's build order) |
 | **`GET /api/auth/passkey/generate-authenticate-options` is anonymous by design** (no user identifier — that is what makes it byte-identical whether or not an account exists, M5 Task 8 review) **and writes a `verification` row plus sets a signed cookie on every call**, so an unauthenticated caller can grow that table without a session or a Player, same class as the magic-link storage-amplification footnote already recorded above `sendSignInLink` in `src/auth/factory.ts:63-71`. **What actually protects it today, quantified:** Better Auth's own rate limiter (`node_modules/better-auth/dist/context/create-context.mjs:169-174`) defaults to `enabled: isProduction, window: 10s, max: 100`, backed by **in-memory storage** (no `secondaryStorage` is configured in `src/auth/factory.ts`) — so the 100-per-10s ceiling is per Worker isolate, not per deployment: a caller spread across enough edge PoPs, or simply pacing under ~10 requests/second to any one isolate, sees no rate limiting at all. The one WAF-level control this project actually relies on for a similar unauthenticated write-generating endpoint is the `respond-throttle` custom rule (see `docs/runbooks/cloudflare.md`), applied and verified against production on 11 August 2026. | `src/auth/factory.ts` (`passkey({...})`), `node_modules/@better-auth/passkey` `/passkey/generate-authenticate-options` | Extend a WAF rate-limiting rule to this path (or add `secondaryStorage`) if `verification` growth or `passkey`-prompt spam is ever observed in practice — no observed abuse yet, and the endpoint's response is small and fixed-shape |
+
+## Post-mortem: the missing `connect-src` (12 August 2026)
+
+Not an open item — fixed in `eaa84b8` — but recorded because of *how long it survived* and
+what that says about where this project's tests are blind. M6 adds more client-side
+surface than any milestone so far, so this is the failure mode most likely to recur.
+
+**The bug.** The CSP named `script-src` but never `connect-src`. An absent directive falls
+back to `default-src`, which here is `'none'`, so every `fetch()` the two passkey scripts
+make was refused by the browser before it left the device. Both passkey buttons — register
+*and* sign-in — were completely broken in every browser from the moment M4's CSP met M5's
+scripts.
+
+**Why nothing caught it.**
+
+- Every server-side test passed, and could only ever have passed: **no request reached the
+  server to fail.** The end-to-end registration test written the same day
+  (`test/auth/passkey.test.ts`) passes both before and after the fix.
+- The merge tripwire worked exactly as designed and still let this through. It forced
+  `script-src 'none'` into hashes, so the scripts *ran* and the buttons *appeared* — which
+  is precisely what disguised the problem. **Making a script run is not the same as
+  letting it work**, and only the first half had a mechanism.
+- The CSP tests asserted the directives that were present. Nothing asserted the absence of
+  a directive that needed to be there, which is the harder property and the one that
+  mattered.
+
+**How it was found.** `wrangler tail` against production recorded the page load and then no
+API request at all. That gap — handler demonstrably running, server seeing nothing — is what
+localised it to browser policy rather than to any code either side.
+
+**What now guards it.** `expectFetchTargetsAllowed` in `test/security/csp.test.ts` reads the
+`fetch()` targets out of `SCRIPT_BLOCKS` rather than restating them, asserts each is a
+same-origin absolute path, and pins `connect-src` to exactly `'self'`. It runs on all nine
+pages via `expectFixedDirectives` and fails on all nine without the fix.
+
+**The generalisation for M6.** Tests in this project stop at the Worker boundary. Any
+requirement that lives in the browser — a CSP directive, a form's `enctype`, a cookie
+attribute, a redirect a browser follows differently from `app.fetch` — has no mechanism
+behind it and will be found by a person on a phone, if at all. When M6 adds client-side
+behaviour, ask what a passing test suite would look like if the feature were entirely
+broken, and if the answer is "exactly like this", add the assertion that would differ.
 
 ## Accepted breaking changes
 

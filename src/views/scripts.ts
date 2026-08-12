@@ -19,32 +19,40 @@ import { AUTH_API_PREFIX, PASSKEYS_PATH, SIGN_IN_COMPLETE_PATH } from "../auth/p
  * # Why they are enumerated rather than written at the call site
  *
  * Exactly the argument `src/views/styles.ts` makes for `<style>` blocks, and
- * with sharper teeth. The sibling **M4** branch (unmerged as of this file)
- * ships a Content-Security-Policy containing **`script-src 'none'`**, set
- * deliberately on the stated grounds that this site had no client JavaScript
- * at all. That is no longer true. Once the branches merge,
- * **`src/security/csp.ts` must do two things**:
+ * with sharper teeth. M4 shipped a Content-Security-Policy containing
+ * **`script-src 'none'`**, set deliberately on the stated grounds that this
+ * site had no client JavaScript at all. Adding these blocks made that false,
+ * and `src/security/csp.ts` now emits `script-src` as the SHA-256 hash of
+ * every entry in `SCRIPT_BLOCKS` below, computed at runtime from these
+ * exported constants — never pasted, so the header cannot go stale. Not
+ * `'unsafe-inline'` and not `'unsafe-hashes'`: these are plain inline
+ * `<script>` elements, which a bare hash covers. `test/views/scripts.test.ts`
+ * fails the moment `src/security/csp.ts` stops naming `SCRIPT_BLOCKS`.
  *
- * 1. Emit `script-src` as the SHA-256 hashes of every entry in
- *    `SCRIPT_BLOCKS` below (`'sha256-…' 'sha256-…'`), computed at runtime from
- *    these exported constants exactly as it already computes `style-src`
- *    hashes — never pasted, so the header cannot go stale. Not
- *    `'unsafe-inline'`, and not `'unsafe-hashes'`: these are plain inline
- *    `<script>` elements, which a bare hash covers.
- * 2. Switch its two hardcoded style imports to mapping `STYLE_BLOCKS` from
- *    `src/views/styles.ts` — the instruction Task 7 already left there, now
- *    with a second reason to act on it.
+ * # A hash lets a script run. It does not let it do anything.
  *
- * Until that happens, `script-src 'none'` will drop these scripts outright
- * and the passkey buttons will silently never appear. `test/views/scripts.test.ts`
- * turns that from a comment someone might not read into a **failing test the
- * moment `src/security/csp.ts` exists without naming `SCRIPT_BLOCKS`** — a
- * comment on this branch cannot fire, and this project has already had to
- * upgrade one merge marker to a tripwire for precisely that reason.
+ * **Read this before adding a block that talks to the network.** `script-src`
+ * governs execution and nothing else. Every *other* thing a script might do
+ * is a separate directive, and any directive the header does not name falls
+ * back to `default-src` — which is `'none'`. That is not a theoretical
+ * hazard: these two blocks shipped to production able to run and unable to
+ * `fetch` anything, because the header named no `connect-src`. Both passkey
+ * buttons revealed themselves and then failed on every browser, and no
+ * request ever reached the Worker, so nothing server-side could have caught
+ * it (post-mortem in `docs/known-issues.md`).
  *
- * Inline and same-origin only. M4's `default-src 'none'` forbids external
- * hosts and there is no CDN in this project, so nothing here may grow a
- * `src=` attribute or fetch anything off-origin.
+ * `connect-src 'self'` now covers the `fetch` calls, and
+ * `test/security/csp.test.ts` reads the `fetch("…")` targets straight out of
+ * `SCRIPT_BLOCKS` and asserts each one is a same-origin absolute path the
+ * directive permits. A new block that fetches a *new* same-origin path is
+ * therefore already covered. A block that needs anything else — an image, a
+ * web font, a worker, a WebSocket to another host — needs its own directive
+ * added to `src/security/csp.ts` and its own assertion, and will otherwise
+ * fail exactly as silently as this one did.
+ *
+ * Inline and same-origin only. `default-src 'none'` forbids external hosts
+ * and there is no CDN in this project, so nothing here may grow a `src=`
+ * attribute or fetch anything off-origin.
  *
  * A block that exists but was never added to `PAGE_SCRIPT_BLOCKS` fails to
  * *compile* at the `layout()` call site (`pageScripts` is typed
