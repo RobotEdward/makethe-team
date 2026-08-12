@@ -1,10 +1,11 @@
 import { env, SELF } from "cloudflare:test";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { games } from "../../src/db/schema.js";
+import { auditLog, games, memberships } from "../../src/db/schema.js";
 import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 import { interferingBinding } from "../support/interference.js";
-import { resetDatabase, testDb } from "../support/factories.js";
+import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { bindings, ORIGIN, signIn } from "../support/sign-in.js";
 
 async function post(path: string, cookie: string, fields: Record<string, string>) {
@@ -193,5 +194,121 @@ describe("POST /g/new", () => {
     });
     expect(response.status).toBe(302);
     expect(await testDb().select().from(games)).toHaveLength(0);
+  });
+});
+
+describe("GET /g/:id — entitlement (TR-18)", () => {
+  beforeEach(resetDatabase);
+
+  it("redirects an anonymous visitor to sign in", async () => {
+    const response = await SELF.fetch(`${ORIGIN}/g/${crypto.randomUUID()}`, { redirect: "manual" });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/sign-in");
+  });
+
+  /** Creates a game owned by the signed-in player, returning its id and cookie. */
+  async function ownedGame() {
+    const { cookie } = await signIn();
+    const response = await post("/g/new", cookie, VALID);
+    const gameId = response.headers.get("location")!.replace("/g/", "");
+    return { cookie, gameId };
+  }
+
+  it("shows the owner their game", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("Thursday 7-a-side");
+  });
+
+  it("404s for a signed-in player who is not a member", async () => {
+    // The viewer signs in and owns their own game; this asks for somebody
+    // else's, which they hold no membership row for at all. Testing it this
+    // way round needs no second sign-in identity — `SELF.fetch` uses the
+    // deployed bindings verbatim and cannot take a per-request allowlist.
+    const { cookie } = await ownedGame();
+    const db = testDb();
+    const strangerId = await insertPlayer(db, { name: "Stranger" });
+    const otherGameId = await insertGame(db);
+    await insertMembership(db, otherGameId, strangerId, { role: "owner" });
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${otherGameId}`, { headers: { cookie }, redirect: "manual" });
+
+    // 404, never 403 — a 403 would confirm the id names a real game.
+    expect(response.status).toBe(404);
+  });
+
+  it("404s for a member who is not an owner", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const db = testDb();
+    // Demote the only owner: the same person, no longer entitled.
+    await db.update(memberships).set({ role: "player" }).where(eq(memberships.gameId, gameId));
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie }, redirect: "manual" });
+    expect(response.status).toBe(404);
+  });
+
+  it("404s for an owner whose membership has been deactivated", async () => {
+    const { cookie, gameId } = await ownedGame();
+    await testDb().update(memberships).set({ active: false }).where(eq(memberships.gameId, gameId));
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie }, redirect: "manual" });
+    expect(response.status).toBe(404);
+  });
+
+  it("404s for a game id that does not exist", async () => {
+    const { cookie } = await ownedGame();
+    const response = await SELF.fetch(`${ORIGIN}/g/${crypto.randomUUID()}`, { headers: { cookie }, redirect: "manual" });
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("the invite link on /g/:id", () => {
+  beforeEach(resetDatabase);
+
+  /** Creates a game owned by the signed-in player, returning its id and cookie. */
+  async function ownedGame() {
+    const { cookie } = await signIn();
+    const response = await post("/g/new", cookie, VALID);
+    const gameId = response.headers.get("location")!.replace("/g/", "");
+    return { cookie, gameId };
+  }
+
+  it("shows the absolute invite URL and an inline QR code", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const [game] = await testDb().select().from(games).where(eq(games.id, gameId));
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
+
+    expect(html).toContain(`https://makethe.team/j/${game!.inviteToken}`);
+    expect(html).toContain("<svg");
+    // Inline, never fetched — the CSP has no img-src (spec §4.2).
+    expect(html).not.toContain("<img");
+  });
+
+  it("replaces the token on rotation and dead-links the old one", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const db = testDb();
+    const before = (await db.select().from(games).where(eq(games.id, gameId)))[0]!.inviteToken;
+
+    const response = await post(`/g/${gameId}/invite/rotate`, cookie, {});
+    expect(response.status).toBe(303);
+
+    const after = (await db.select().from(games).where(eq(games.id, gameId)))[0]!.inviteToken;
+    expect(after).not.toBe(before);
+
+    const [audit] = await db.select().from(auditLog).where(eq(auditLog.action, "game.invite_rotated"));
+    expect(audit?.actorPlayerId).not.toBeNull();
+    // The old token must not be recoverable from the audit trail.
+    expect(JSON.stringify(audit)).not.toContain(before);
+  });
+
+  it("404s a rotation attempt by a non-owner", async () => {
+    const { gameId } = await ownedGame();
+    await testDb().update(memberships).set({ role: "player" }).where(eq(memberships.gameId, gameId));
+    const { cookie } = await signIn();
+
+    const response = await post(`/g/${gameId}/invite/rotate`, cookie, {});
+    expect(response.status).toBe(404);
   });
 });

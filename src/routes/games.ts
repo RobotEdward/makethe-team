@@ -1,11 +1,16 @@
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { NEW_GAME_PATH, gamePath } from "../auth/paths.js";
 import { requirePlayer } from "../auth/session.js";
+import { buildAuditInsert } from "../db/audit.js";
 import { getDb } from "../db/client.js";
+import { findGameForOwner, listSquad, listUpcomingFixtures } from "../db/queries.js";
+import { games } from "../db/schema.js";
 import { createGame } from "../domain/create-game.js";
 import { parseGameForm } from "../domain/game-form.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { renderGameFormPage } from "../views/game-form.js";
+import { renderGameOverviewPage } from "../views/game-overview.js";
 
 /**
  * Owner-facing game management, mounted at `/g/*` (see `GAMES_PREFIX` in
@@ -92,4 +97,64 @@ gamesRoutes.post(NEW_GAME_PATH, requirePlayer, async (c) => {
 
   // 303 so a refresh does not re-post and create a second game.
   return c.redirect(gamePath(created.gameId), 303);
+});
+
+// `/g/:id` and friends are registered here, after `NEW_GAME_PATH` above — see
+// this file's module comment for why the order is load-bearing.
+
+gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const player = c.get("player")!;
+
+  // The entitlement re-check (TR-18). `requirePlayer` established who; this
+  // establishes whether. 404 rather than 403 for every failure mode, so a
+  // game id cannot be probed.
+  const game = await findGameForOwner(db, c.req.param("id"), player.id);
+  if (game === null) return c.text("Not found", 404);
+
+  const [squad, upcoming] = await Promise.all([
+    listSquad(db, game.id),
+    listUpcomingFixtures(db, game.id, now),
+  ]);
+
+  return c.html(
+    renderGameOverviewPage({
+      gameId: game.id,
+      gameName: game.name,
+      venueName: game.venueName,
+      timezone: game.timezone,
+      inviteToken: game.inviteToken,
+      squad,
+      upcoming,
+    }),
+  );
+});
+
+gamesRoutes.post("/g/:id/invite/rotate", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const player = c.get("player")!;
+
+  const game = await findGameForOwner(db, c.req.param("id"), player.id);
+  if (game === null) return c.text("Not found", 404);
+
+  const inviteToken = crypto.randomUUID();
+  await db.batch([
+    db.update(games).set({ inviteToken }).where(eq(games.id, game.id)),
+    buildAuditInsert(db, {
+      actorPlayerId: player.id,
+      entityType: "game",
+      entityId: game.id,
+      action: "game.invite_rotated",
+      // Never the old token itself: audit_log is read by people and a live
+      // credential should not sit in it. The fact of the change is the point.
+      before: { rotated: true },
+      now,
+    }),
+  ]);
+
+  return c.redirect(gamePath(game.id), 303);
 });

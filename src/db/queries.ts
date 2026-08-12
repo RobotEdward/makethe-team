@@ -1,7 +1,7 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ne } from "drizzle-orm";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { Db } from "./client.js";
-import { fixtures, games, players, responses } from "./schema.js";
+import { fixtures, games, memberships, players, responses } from "./schema.js";
 
 export interface SquadMember {
   playerId: string;
@@ -89,4 +89,73 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
   });
 
   return { fixture: row.fixture, game: row.game, squad };
+}
+
+/**
+ * The game, if and only if this player is an active Owner of it (TR-18).
+ *
+ * Returns `null` for "no such game", "not a member", "a member but not an
+ * owner" and "an owner whose membership was deactivated" alike — the caller
+ * answers 404 for all four, so a game id cannot be probed for existence and a
+ * demoted owner learns nothing from the difference.
+ *
+ * This is the entitlement check for every `/g/:id` route. Middleware cannot do
+ * it: which row to check depends on which row the handler is about.
+ */
+export async function findGameForOwner(
+  db: Db,
+  gameId: string,
+  playerId: string,
+): Promise<typeof games.$inferSelect | null> {
+  const [row] = await db
+    .select({ game: games })
+    .from(games)
+    .innerJoin(memberships, eq(memberships.gameId, games.id))
+    .where(
+      and(
+        eq(games.id, gameId),
+        eq(games.active, true),
+        eq(memberships.playerId, playerId),
+        eq(memberships.role, "owner"),
+        eq(memberships.active, true),
+      ),
+    )
+    .limit(1);
+  return row?.game ?? null;
+}
+
+/** Active squad members, owners first then alphabetical. */
+export async function listSquad(
+  db: Db,
+  gameId: string,
+): Promise<Array<{ playerId: string; name: string; role: "player" | "owner"; isGuest: boolean }>> {
+  return db
+    .select({
+      playerId: players.id,
+      name: players.name,
+      role: memberships.role,
+      isGuest: players.isGuest,
+    })
+    .from(memberships)
+    .innerJoin(players, eq(players.id, memberships.playerId))
+    .where(and(eq(memberships.gameId, gameId), eq(memberships.active, true)))
+    .orderBy(desc(memberships.role), players.name);
+}
+
+/** Non-terminal fixtures from `now` onward, soonest first. */
+export async function listUpcomingFixtures(
+  db: Db,
+  gameId: string,
+  now: Date,
+): Promise<Array<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>> {
+  return db
+    .select({
+      id: fixtures.id,
+      kicksOffAt: fixtures.kicksOffAt,
+      lifecycle: fixtures.lifecycle,
+      inCount: fixtures.inCount,
+    })
+    .from(fixtures)
+    .where(and(eq(fixtures.gameId, gameId), gte(fixtures.kicksOffAt, now)))
+    .orderBy(fixtures.kicksOffAt);
 }

@@ -734,6 +734,15 @@ describe("no password field anywhere (TR-16)", () => {
         /Set up a game/,
         new Request(`${ORIGIN}/g/new`, { headers: { cookie } }),
       );
+
+      // The owner's game overview (Task 7, TR-18). The membership was already
+      // promoted to `owner` above for the cancellation captures, so the same
+      // player is entitled to this game too.
+      await capture(
+        "game overview",
+        /Invite people/,
+        new Request(`${ORIGIN}/g/${gameId}`, { headers: { cookie } }),
+      );
     }
 
     // The four `renderLinkRefusalPage` outcomes, each reached through the real
@@ -823,6 +832,7 @@ describe("no password field anywhere (TR-16)", () => {
         "cancel confirm",
         "cancel done",
         "game form",
+        "game overview",
       ].sort(),
     );
 
@@ -855,7 +865,7 @@ describe("no password field anywhere (TR-16)", () => {
      * anywhere attaches behaviour through an inline handler attribute or a
      * `javascript:` URL, so removing the script blocks removes *all* of it.
      */
-    const mayCarryScript = new Set(["sign-in", "sign-in error", "passkeys"]);
+    const mayCarryScript = new Set(["sign-in", "sign-in error", "passkeys", "game overview"]);
 
     for (const { name, body, distinctive } of pages) {
       expect(body, `${name} must actually be that page`).toMatch(distinctive);
@@ -932,6 +942,11 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "own that could carry an un-enumerated script — and its other branches " +
       "are a plain-text 403 or a redirect (src/routes/games.ts); its own " +
       "script/password assertion lives in test/routes/games.test.ts.",
+    "POST /g/:id/invite/rotate":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
+      "plain-text 404 (entitlement failure) or a 303 redirect only " +
+      "(src/routes/games.ts); its own status-code coverage lives in " +
+      "test/routes/games.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
@@ -947,6 +962,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /app": "dashboard",
     "GET /app/passkeys": "passkeys",
     "GET /g/new": "game form",
+    "GET /g/:id": "game overview",
   };
 
   const registered = new Set(

@@ -197,10 +197,48 @@ export const PASSKEY_REGISTER_JS = `
 `;
 
 /**
+ * Copy the invite link to the clipboard, from `/g/:id`.
+ *
+ * The first script in this project that is pure convenience rather than a
+ * browser-only capability, and it earns its place on the terms the module
+ * comment sets: the page is complete without it. The link renders in a
+ * `readonly` input that can be selected and copied by hand, and this only
+ * adds a button beside it. Scripting off, or an old browser without
+ * `navigator.clipboard`, is the same page minus one button.
+ *
+ * No `fetch`, so it adds nothing to `connect-src`. If a future version of this
+ * block ever does talk to the network, re-read the "a hash lets a script run"
+ * section above first.
+ */
+export const COPY_INVITE_JS = `
+(function () {
+  var input = document.getElementById("invite-url");
+  var button = document.getElementById("invite-copy");
+  if (!input || !button) return;
+  if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") return;
+
+  button.hidden = false;
+
+  button.addEventListener("click", function () {
+    navigator.clipboard.writeText(input.value).then(function () {
+      var original = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(function () { button.textContent = original; }, 2000);
+    }).catch(function () {
+      // The input is still there and still selectable — say so rather than
+      // failing silently, which is the diagnosability lesson from the passkey
+      // scripts' bare .catch() (docs/known-issues.md).
+      button.textContent = "Press and hold to copy";
+    });
+  });
+})();
+`;
+
+/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
  */
-export const PAGE_SCRIPT_BLOCKS = [PASSKEY_SIGN_IN_JS, PASSKEY_REGISTER_JS] as const;
+export const PAGE_SCRIPT_BLOCKS = [PASSKEY_SIGN_IN_JS, PASSKEY_REGISTER_JS, COPY_INVITE_JS] as const;
 
 export type PageScriptBlock = (typeof PAGE_SCRIPT_BLOCKS)[number];
 

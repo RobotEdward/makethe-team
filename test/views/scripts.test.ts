@@ -47,9 +47,13 @@ describe("the script enumeration", () => {
       expect(block, "no innerHTML").not.toContain("innerHTML");
       // A `</script>` in the text would end the tag early.
       expect(block, "cannot break out of its own tag").not.toContain("</script");
-      // Feature-detected before it touches the page: "scripting on but no
-      // WebAuthn" must look exactly like "scripting off".
-      expect(block, "must feature-detect").toContain("PublicKeyCredential");
+      // Feature-detected before it touches the page: "scripting on but the
+      // capability is missing" must look exactly like "scripting off". The
+      // two WebAuthn scripts detect `PublicKeyCredential`; `COPY_INVITE_JS`
+      // (M6a Task 7) is not a WebAuthn affordance at all and instead detects
+      // `navigator.clipboard`, so this checks for either rather than only the
+      // one every block used to share.
+      expect(block, "must feature-detect").toMatch(/PublicKeyCredential|navigator\.clipboard/);
     }
   });
 

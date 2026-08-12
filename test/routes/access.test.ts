@@ -43,14 +43,14 @@ describe("robots.txt", () => {
 });
 
 describe("unmatched routes", () => {
-  const probes = [
-    "/wp-admin",
-    "/.env",
-    "/.git/config",
-    "/admin",
-    "/api/v1/games",
-    "/g/some-game",
-  ];
+  // "/g/some-game" used to live in this list as a probe of a game-id-shaped
+  // path with no route behind it. Task 7 (M6a) registered `GET /g/:id`, so
+  // that path is matched now — an anonymous request to it redirects to
+  // `/sign-in` (SELF.fetch follows that redirect by default, landing on the
+  // sign-in page's 200, which is what turned this probe red) rather than
+  // 404ing. Its own coverage — the anonymous redirect — lives in
+  // test/routes/games.test.ts alongside `GET /g/new`'s identical case.
+  const probes = ["/wp-admin", "/.env", "/.git/config", "/admin", "/api/v1/games"];
 
   it.each(probes)("returns a bare 404 for %s", async (path) => {
     const response = await SELF.fetch(`https://makethe.team${path}`);
