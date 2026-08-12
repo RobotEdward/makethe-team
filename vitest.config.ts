@@ -58,6 +58,13 @@ export default defineConfig(async () => {
             // anything they were written to check. Tests that want another
             // notifier construct it themselves.
             NOTIFIER: "console",
+            // The cancel-token key is a *different* secret from the response
+            // one in every environment (see `CANCEL_TOKEN_SECRET` in
+            // src/env.ts for why), so it must differ here too — a test suite
+            // that shared one value could not tell the two apart, and the
+            // "a cancel token signed with the response secret is rejected"
+            // test would pass for the wrong reason.
+            CANCEL_TOKEN_SECRET: "test-only-cancel-secret-not-used-in-any-real-environment",
           },
         },
       }),

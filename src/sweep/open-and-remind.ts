@@ -1,26 +1,21 @@
-import { and, eq, inArray, ne } from "drizzle-orm";
-import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
+import { and, eq, ne } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog, players, responses } from "../db/schema.js";
 import { openFixture } from "../domain/open-fixture.js";
 import { reminderInstant } from "../domain/reminder-time.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { responseTokenExpiry, signResponseToken } from "../domain/token.js";
-import type { Message, Notifier, SendResult } from "../notify/notifier.js";
+import type { Notifier } from "../notify/notifier.js";
 import { reminderKey } from "../notify/dedupe-key.js";
-import { DAILY_CEILING_REASON, NOTIFIER_CONTRACT_VIOLATION_REASON } from "../notify/quota.js";
+import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
+import {
+  applySendResult,
+  insertQueuedLogRows,
+  markOrphanedRowsFailed,
+  SITE_ORIGIN,
+  type PendingNotification,
+} from "../notify/delivery.js";
 import { renderReminderEmail } from "../notify/templates/reminder.js";
-
-/**
- * The site's own origin, used to build the absolute links every reminder
- * email carries. There is no `BASE_URL` binding (see `src/env.ts`) — the
- * Worker is only ever deployed at this custom domain (`wrangler.jsonc`), and
- * every test in the repo that needs an absolute URL already hardcodes this
- * same string (e.g. `test/routes/respond-get.test.ts`). If a second
- * environment with a different origin ever exists, this is the one place
- * that needs to change.
- */
-const SITE_ORIGIN = "https://makethe.team";
 
 /** One fixture (or game) the sweep could not fully process, and why. */
 export interface SweepFailure {
@@ -40,7 +35,7 @@ export interface SweepResult {
    * next sweep run retries them automatically. This is an expected, benign
    * outcome under a low ceiling — never a failure, and deliberately never
    * mixed with any other reason, so `handleScheduled`'s ceiling warning names
-   * the condition it is actually reporting. See `applyReminderResult`.
+   * the condition it is actually reporting. See `applySendResult` (`src/notify/delivery.ts`).
    */
   remindersDeferred: number;
   guestsSkipped: number;
@@ -215,13 +210,6 @@ interface ReminderCandidate {
   isGuest: boolean;
 }
 
-interface PendingReminder {
-  logId: string;
-  dedupeKey: string;
-  playerId: string;
-  message: Message;
-}
-
 interface RemindResult {
   remindersSent: number;
   remindersFailed: number;
@@ -289,7 +277,7 @@ async function sendDueReminders(
         responseTokenSecret,
       });
 
-      const inserted = await insertQueuedLogRows(db, fixture.id, pending);
+      const inserted = await insertQueuedLogRows(db, { fixtureId: fixture.id, notificationType: "n1" }, pending);
       if (inserted.length === 0) continue;
 
       let results;
@@ -300,7 +288,7 @@ async function sendDueReminders(
         // hitting a D1 error mid-batch. Whether any message in this batch
         // actually reached a provider before the rejection is unknowable
         // from here, so every row this batch inserted is marked `failed`
-        // (ambiguous, not retried automatically — see `applyReminderResult`)
+        // (ambiguous, not retried automatically — see `applySendResult` in `src/notify/delivery.ts`)
         // and the fixture is recorded as a failure. Critically this is
         // caught *here*, per fixture, rather than letting it propagate out
         // of `sendDueReminders` — a rejection from one fixture's send must
@@ -341,6 +329,7 @@ async function sendDueReminders(
       // miss. A reaper would work too, but this needs no new scheduled job,
       // no new query, and no new state — the recovery sits at the only place
       // that knows which rows were left behind.
+      const deferredPlayerIds: string[] = [];
       const sendFailureReasons: string[] = [];
       let applied = 0;
       try {
@@ -348,10 +337,12 @@ async function sendDueReminders(
           const entry = inserted[applied];
           const result = results[applied];
           if (!entry) continue;
-          const outcome = await applyReminderResult(db, entry, result, now);
+          const outcome = await applySendResult(db, entry, result, now);
           if (outcome.kind === "sent") remindersSent++;
-          else if (outcome.kind === "deferred") remindersDeferred++;
-          else {
+          else if (outcome.kind === "deferred") {
+            remindersDeferred++;
+            deferredPlayerIds.push(entry.playerId);
+          } else {
             remindersFailed++;
             sendFailureReasons.push(outcome.reason);
           }
@@ -368,6 +359,22 @@ async function sendDueReminders(
           message: `${message} (${orphaned.length} row(s) left unapplied and marked failed)`,
         });
         continue;
+      }
+
+      if (deferredPlayerIds.length > 0) {
+        // TR-31's durable signal for N-1 — the highest-volume notification in
+        // the system, and the exact case TR-31 was filed about (a
+        // `MAX_EMAILS_PER_DAY` typo failing closed to zero silently stopping
+        // every reminder). Retried every sweep tick like N-4, so the same
+        // collapse window applies — see `src/notify/ceiling-audit.ts`.
+        await recordCeilingDeferral(db, {
+          action: "fixture.reminder_email_deferred",
+          notificationType: "n1",
+          fixtureId: fixture.id,
+          playerIds: deferredPlayerIds,
+          now,
+          collapseWindowMs: CEILING_DEFERRAL_COLLAPSE_WINDOW_MS,
+        });
       }
 
       if (sendFailureReasons.length > 0) {
@@ -397,124 +404,6 @@ async function sendDueReminders(
   return { remindersSent, remindersFailed, remindersDeferred, guestsSkipped, failures };
 }
 
-/**
- * What applying one `SendResult` did. `deferred` is reserved for the daily
- * ceiling alone; every other non-success is a `failed`, carrying the reason
- * so the caller can report it, and saying whether the row was cleaned up for
- * a later retry or left `failed` forever.
- */
-type ApplyOutcome = { kind: "sent" } | { kind: "deferred" } | { kind: "failed"; reason: string };
-
-/**
- * Apply one `SendResult` to its `notification_log` row, and report what
- * happened.
- *
- * The asymmetry here is the point: a `SendResult` reports genuinely
- * different situations, and treating them the same either loses a real
- * reminder or sends one twice.
- *
- * - **Sent.** Recorded `sent` with the provider id.
- * - **Refused by the daily ceiling** (`DAILY_CEILING_REASON`) — the message
- *   never left `QuotaNotifier`, so nothing can have reached a real inbox. It
- *   is therefore safe to retry, and retried automatically: the `queued` row
- *   is *removed* rather than marked `failed`, so the next sweep run's
- *   "already logged" check does not see this player and tries again.
- *   Deleting after the attempt, rather than never inserting the row at all,
- *   is what insert-before-send protects — the row existed for the whole
- *   duration of the attempt, so a crash between the two writes below still
- *   leaves a `queued` row a future run will not double-send against, just an
- *   unreachable one it can safely clean up and retry rather than one that
- *   blocks it. This is the *only* outcome reported as `deferred`, because
- *   `deferred` is what `handleScheduled` turns into its ceiling warning.
- * - **Contract violation** (`NOTIFIER_CONTRACT_VIOLATION_REASON`) — the
- *   notifier returned no result at all for this slot. Every implementation
- *   in the repo builds its results by mapping over its own input, so a
- *   missing slot means nothing was attempted: the row is removed and retried
- *   like the ceiling case. Unlike the ceiling case it is still counted and
- *   reported as a *failure*, because it is a bug in a notifier, not the
- *   expected behaviour of a cost control.
- * - **No usable recipient** (`NO_RECIPIENT_REASON` in `notify/quota.ts`) —
- *   deliberately *not* special-cased here any more, so it falls to the
- *   ambiguous branch below and is left `failed` forever. It is a permanent
- *   condition, not a transient one, and it is now unreachable from this
- *   caller at all: `sendDueReminders` trims and skips such a recipient before
- *   a message is built. Treating it as retryable is what turned a
- *   `players.email` of `" "` into an every-five-minutes loop of token
- *   signing and row churn, under a false daily-ceiling alarm.
- * - **Ambiguous** (any other `ok: false`, e.g. a real provider error) — the
- *   message *may* have reached the provider before the failure was
- *   reported. Recorded `failed` and left alone: retrying an ambiguous
- *   failure risks sending the same reminder twice, which BR-19 treats as
- *   strictly worse than the player missing one.
- */
-async function applyReminderResult(
-  db: Db,
-  entry: PendingReminder,
-  result: SendResult | undefined,
-  now: Date,
-): Promise<ApplyOutcome> {
-  if (result?.ok) {
-    await db
-      .update(notificationLog)
-      .set({ status: "sent", providerMessageId: result.providerMessageId, sentAt: now })
-      .where(eq(notificationLog.id, entry.logId));
-    return { kind: "sent" };
-  }
-
-  const reason = result?.error ?? NOTIFIER_CONTRACT_VIOLATION_REASON;
-
-  if (reason === DAILY_CEILING_REASON) {
-    await db.delete(notificationLog).where(eq(notificationLog.id, entry.logId));
-    return { kind: "deferred" };
-  }
-
-  if (reason === NOTIFIER_CONTRACT_VIOLATION_REASON) {
-    await db.delete(notificationLog).where(eq(notificationLog.id, entry.logId));
-    return { kind: "failed", reason };
-  }
-
-  await db
-    .update(notificationLog)
-    .set({ status: "failed", error: reason })
-    .where(eq(notificationLog.id, entry.logId));
-  return { kind: "failed", reason };
-}
-
-/**
- * Mark every `notification_log` row the result-application loop never
- * reached as `failed`, so an aborted loop cannot leave `queued` rows that
- * `existingReminderLog` will mistake for work already done.
- *
- * Best-effort by design: this runs inside a `catch` that is already
- * reporting a failure, so a second failure here must not replace the first
- * (which is the one that says *why* the loop aborted). It is logged and
- * swallowed instead. The worst case then is the status quo ante — orphaned
- * `queued` rows — with a loud error line naming them, rather than a silent
- * hole.
- *
- * Chunked at `INSERT_CHUNK_SIZE` like every other multi-row statement in the
- * repo, so one squad cannot build an unbounded `IN (...)` list.
- */
-async function markOrphanedRowsFailed(
-  db: Db,
-  orphaned: PendingReminder[],
-  message: string,
-): Promise<void> {
-  if (orphaned.length === 0) return;
-  try {
-    for (const batch of chunk(orphaned, INSERT_CHUNK_SIZE)) {
-      await db
-        .update(notificationLog)
-        .set({ status: "failed", error: message })
-        .where(inArray(notificationLog.id, batch.map((entry) => entry.logId)));
-    }
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    console.error(
-      `could not mark ${orphaned.length} orphaned queued notification_log row(s) as failed (${orphaned.map((entry) => entry.logId).join(", ")}): ${reason}`,
-    );
-  }
-}
 
 /**
  * "All eligible players" for N-1 (§2.8's dedupe-key table): every current
@@ -551,7 +440,7 @@ async function buildReminderMessages(params: {
   game: typeof games.$inferSelect;
   candidates: ReminderCandidate[];
   responseTokenSecret: string;
-}): Promise<PendingReminder[]> {
+}): Promise<PendingNotification[]> {
   const { fixture, game, candidates, responseTokenSecret } = params;
 
   const kicksOffAtLocal = formatLocalDateTime(fixture.kicksOffAt, game.timezone);
@@ -559,7 +448,7 @@ async function buildReminderMessages(params: {
   const spotsLeft = Math.max(0, fixture.maxPlayers - fixture.inCount);
   const expiresAt = responseTokenExpiry(fixture.kicksOffAt).getTime();
 
-  const pending: PendingReminder[] = [];
+  const pending: PendingNotification[] = [];
   for (const candidate of candidates) {
     // Filtered by the caller, but narrowed again here so the compiler — not
     // just the runtime check — refuses to let a null email reach `Message.to`.
@@ -606,39 +495,3 @@ async function buildReminderMessages(params: {
   return pending;
 }
 
-/**
- * Insert-before-send (BR-19): every row lands as `queued` before this
- * function returns, and only rows that actually landed (an `onConflictDoNothing`
- * against the unique `dedupe_key` index handles a concurrent sweep run
- * choosing the same player) are sent. A crash between this insert and the
- * send below leaves a `queued` row that the next sweep run will not retry —
- * lost, not duplicated, which is the safe direction (§2.4).
- */
-async function insertQueuedLogRows(
-  db: Db,
-  fixtureId: string,
-  pending: PendingReminder[],
-): Promise<PendingReminder[]> {
-  const insertedIds = new Set<string>();
-
-  for (const batch of chunk(pending, INSERT_CHUNK_SIZE)) {
-    const inserted = await db
-      .insert(notificationLog)
-      .values(
-        batch.map((entry) => ({
-          id: entry.logId,
-          dedupeKey: entry.dedupeKey,
-          notificationType: "n1" as const,
-          fixtureId,
-          playerId: entry.playerId,
-          channel: "email" as const,
-          status: "queued" as const,
-        })),
-      )
-      .onConflictDoNothing()
-      .returning({ id: notificationLog.id });
-    inserted.forEach((row) => insertedIds.add(row.id));
-  }
-
-  return pending.filter((entry) => insertedIds.has(entry.logId));
-}

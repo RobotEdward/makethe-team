@@ -4,8 +4,11 @@ import { getDb, type Db } from "../db/client.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { verifyResponseToken } from "../domain/token.js";
-import type { ResponseIntent } from "../capacity/types.js";
+import type { ResponseIntent, WaitlistPromotion } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
+import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
+import { createNotifier } from "../notify/factory.js";
+import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { escapeHtml, layout } from "../views/layout.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
@@ -209,6 +212,12 @@ respond.post("/r/:token", async (c) => {
   }
 
   const db = getDb(c.env.DB);
+
+  if (outcome.kind === "recorded" && outcome.promoted) {
+    // Handed to `waitUntil`, deliberately — see `notifyPromotedPlayer`.
+    c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, outcome.promoted, now));
+  }
+
   const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent });
   if (html === null) {
     console.error(`fixture disappeared between recording a response and re-rendering it: ${fixtureId}`);
@@ -217,6 +226,107 @@ respond.post("/r/:token", async (c) => {
 
   return c.html(html, 200);
 });
+
+/**
+ * Send the N-2 email to the one player this response promoted off the
+ * waitlist (BR-7, J4), in the background.
+ *
+ * **Why `waitUntil` and not `await`.** This runs on the *dropping* player's
+ * request. Everything they need has already been decided — their response is
+ * committed inside the Durable Object and the promotion happened atomically
+ * with it — and what is left is an HTTP call to a mail provider on someone
+ * else's behalf. Awaiting it would put a third party's provider latency, and
+ * a provider timeout, directly in front of a page whose only job is to say
+ * "recorded". Nothing on that page depends on the email, and no correctness
+ * property does either: the promotion is already durable in D1 whether or not
+ * this send ever happens.
+ *
+ * **Why that is safe here, given `waitUntil` failures are invisible.** Two
+ * independent surfaces, neither of which is "hope someone notices":
+ *
+ *  1. Every outcome is *durable*. `sendPromotionEmail` writes its
+ *     `notification_log` row before the message is handed to the notifier and
+ *     records the result on it afterwards, so a provider failure is a `failed`
+ *     row with the reason in it — queryable long after the log line has aged
+ *     out, and the thing a "why didn't I get told?" question is answered from.
+ *  2. Every non-success is *logged*, below, on one greppable line per case,
+ *     including the case this file has been bitten by before: a rejected
+ *     promise inside a `waitUntil` that resolves into nothing. The `catch` is
+ *     not decoration — without it a thrown D1 error here would vanish
+ *     entirely. `observability` is enabled in `wrangler.jsonc`, so these reach
+ *     Workers Logs.
+ *
+ * The notifier is built here rather than passed in because it must be the
+ * quota-wrapped one from `createNotifier` (TR-31): the daily ceiling is the
+ * project's only cost control, and a per-request send path is exactly where a
+ * runaway would show up.
+ */
+async function notifyPromotedPlayer(
+  env: AppEnv["Bindings"],
+  fixtureId: string,
+  promoted: WaitlistPromotion,
+  now: Date,
+): Promise<void> {
+  const who = `fixture ${fixtureId}, player ${promoted.playerId}`;
+  const db = getDb(env.DB);
+  try {
+    const outcome = await sendPromotionEmail({
+      db,
+      notifier: createNotifier(env, now),
+      fixtureId,
+      promoted,
+      now,
+      responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
+    });
+
+    switch (outcome.kind) {
+      case "sent":
+        return;
+      case "skipped-no-recipient":
+        // Expected and permanent (BR-32), not a fault: a guest has no address.
+        console.log(`promotion email (N-2) skipped, no usable address: ${who}`);
+        return;
+      case "deferred":
+        // Task 4's review ruled on this branch and deferred the fix to the
+        // task that built TR-31's warning, because both need the same durable
+        // signal. The ruling stands as written: the ceiling refusal *deletes*
+        // the `notification_log` row — correct, because the message never
+        // reached a provider — but that deletion also erases the only record
+        // that a promoted player was never told, and no retry is even
+        // possible, because `promotedAt` (which `promotionKey` needs) is
+        // persisted nowhere. So: keep the delete, add the audit row. Written
+        // before the log line so a D1 failure here cannot be mistaken for the
+        // row having been written.
+        await recordCeilingDeferral(db, {
+          action: "fixture.promotion_email_deferred",
+          notificationType: "n2",
+          fixtureId,
+          playerIds: [promoted.playerId],
+          now,
+        });
+        console.error(
+          `promotion email (N-2) refused by the daily send ceiling and NOTHING WILL RETRY IT (audit_log row written): ${who}`,
+        );
+        return;
+      case "already-logged":
+        console.warn(`promotion email (N-2) already logged for this exact promotion, not resent: ${who}`);
+        return;
+      case "failed":
+        console.error(`promotion email (N-2) failed to send: ${who}: ${outcome.reason}`);
+        return;
+      default:
+        // `fixture-not-found` / `player-not-found`: the row vanished between
+        // the Durable Object promoting them and this read.
+        console.error(`promotion email (N-2) not sent (${outcome.kind}): ${who}`);
+        return;
+    }
+  } catch (error) {
+    // The one line standing between a background failure and total silence.
+    console.error(
+      `promotion email (N-2) threw and was never sent: ${who}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    );
+  }
+}
 
 /**
  * `GET /leave/:token` — see `renderLeavePage` for why this exists and why it

@@ -26,3 +26,18 @@ export type ResponseSource = (typeof RESPONSE_SOURCES)[number];
 export function occupiesSlot(status: ResponseStatus): boolean {
   return status === "in";
 }
+
+/**
+ * BR-20: who gets told a fixture was cancelled. Exactly the Players who held
+ * or wanted a slot — `in` or `waitlisted` — and never a guest, who has no
+ * address to mail (BR-32). `pending`, `out`, and `withdrawn` never receive
+ * this message: `pending` and `out` never committed to the slot, and
+ * `withdrawn` explicitly gave it back.
+ *
+ * A pure predicate rather than a query, so the recipient rule can be pinned
+ * here, independently of however the wiring task ends up selecting rows.
+ */
+export function isCancellationRecipient(status: ResponseStatus, isGuest: boolean): boolean {
+  if (isGuest) return false;
+  return status === "in" || status === "waitlisted";
+}

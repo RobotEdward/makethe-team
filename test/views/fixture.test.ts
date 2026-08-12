@@ -118,7 +118,7 @@ describe("fixture page", () => {
       ...BASE,
       viewer: { playerId: "p1", status: "in" },
     });
-    expect(html).toMatch(/you're in/i);
+    expect(html).toMatch(/you(&#39;|')re in/i);
   });
 
   describe("readOnlyReason: not-eligible — a valid token for a player no longer on the squad", () => {
@@ -158,7 +158,12 @@ describe("fixture page", () => {
       expect(html).not.toContain('name="intent"');
       expect(html).not.toContain('class="viewer-headline"');
       expect(html).not.toMatch(/can you make it\?/i);
-      expect(html).toMatch(/aren.t open yet|not open yet/i);
+      // Pins the escaped apostrophe exactly (escapeHtml widened to escape
+      // `'` as `&#39;`) rather than accepting either form — a regex
+      // matching both a literal `'` and `&#39;` passes identically whether
+      // or not escapeHtml escapes the apostrophe, so it gives zero
+      // regression coverage for that widening.
+      expect(html).toContain("Responses for this fixture aren&#39;t open yet.");
     });
   });
 

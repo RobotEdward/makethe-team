@@ -10,6 +10,37 @@ GitHub Actions is the only thing that deploys this Worker (§2.9). If the repo i
 ever connected to Cloudflare Workers Builds, **disable automatic deployments
 there**. Two systems deploying one Worker is a failure mode.
 
+## Worker secrets
+
+Three, all set with `wrangler secret put` and never present in
+`wrangler.jsonc` (which is committed):
+
+| Secret | What it signs or opens | Rotation blast radius |
+| --- | --- | --- |
+| `RESPONSE_TOKEN_SECRET` | `/r/:token` and `/leave/:token` links (TR-13) | Every outstanding response link in every inbox stops working |
+| `CANCEL_TOKEN_SECRET` | `/cancel/:token` owner cancellation links | Outstanding cancel links only — few, and they expire at kickoff |
+| `RESEND_API_KEY` | The Resend API (see `email.md`) | No links affected |
+
+The first two are deliberately **separate keys**, not one shared key with a
+purpose marker: see `CANCEL_TOKEN_SECRET`'s doc comment in `src/env.ts` for
+the reasoning. Never reuse one value for both — the point is that a leak of
+the widely-minted response key cannot forge a cancellation, and that the
+higher-value key can be rotated without breaking every player's link.
+
+> **`CANCEL_TOKEN_SECRET` is not yet set in production.** Nothing mints a
+> cancel token in production until the owner-attention email (N-4) ships, so
+> until then an unset secret is inert — `/cancel/:token` simply renders the
+> ordinary "this link isn't working" page for everything, and signing throws
+> by name. It must be set **before** N-4 goes out, or every attention email
+> will fail to send.
+
+Setting it, without ever printing the value:
+
+```bash
+head -c 32 /dev/urandom | base64 | npx wrangler secret put CANCEL_TOKEN_SECRET
+npx wrangler secret list   # names only; never echoes a value
+```
+
 ## Rate limiting (TR-37) — deferred to M2
 
 **Not configured yet, deliberately.** An earlier version of this runbook specified

@@ -11,9 +11,63 @@ export interface ResponseTokenPayload {
   expiresAt: number;
 }
 
-export type TokenVerification =
-  | { ok: true; payload: ResponseTokenPayload }
+/**
+ * A cancellation token is scoped to one owner, one fixture, and the single
+ * act of cancelling (a deliberate, recorded amendment to TR-17 — see the
+ * milestone plan). It carries no session; the signature and the discriminator
+ * baked into it are the entire trust boundary.
+ */
+export interface CancelTokenPayload {
+  ownerPlayerId: string;
+  fixtureId: string;
+  /** Epoch milliseconds. */
+  expiresAt: number;
+}
+
+export type TokenVerification<Payload> =
+  | { ok: true; payload: Payload }
   | { ok: false; reason: "malformed" | "bad-signature" | "expired" };
+
+/**
+ * The value embedded inside every signed payload that ties a token to the
+ * single purpose it was minted for. It is part of the signed bytes, not a
+ * field checked only after the signature passes — a token minted as one kind
+ * fails to verify as the other at the discriminator check, immediately after
+ * the signature and before any type-specific shape is even considered. A
+ * response token replayed at a cancel-token verifier therefore cannot reach
+ * "successfully parsed as a cancel token" by any path: either the shared
+ * secrets differ (bad-signature) or, even where the same secret is reused for
+ * both purposes, the embedded `kind` does not match (malformed).
+ */
+type TokenKind = "response" | "cancel";
+
+/**
+ * The env binding each token kind's secret is expected to live under, used
+ * only to make the "secret unset" error actionable — not a claim about how
+ * the binding is actually wired (that is Task 7's decision for `cancel`).
+ */
+const SECRET_BINDING_NAME: Record<TokenKind, string> = {
+  response: "RESPONSE_TOKEN_SECRET",
+  cancel: "CANCEL_TOKEN_SECRET",
+};
+
+/**
+ * Whether `secret` is actually usable to sign or verify with.
+ *
+ * `secret` is declared `string` throughout this module (per `Bindings` in
+ * `src/env.ts`), but an unset Worker secret binding arrives at runtime as
+ * `undefined` regardless of that declared type — TypeScript's type is a
+ * compile-time promise the platform does not keep. A bare
+ * `secret.length === 0` check dereferences `.length` on that `undefined`
+ * before ever comparing it, throwing a bare `TypeError` from inside
+ * `verifyToken` (which must never throw — see below) and, in `signToken`,
+ * replacing the by-name error operators depend on with an unattributable one.
+ * Checking the runtime type first, and only then the length, makes absent,
+ * wrong-type and empty secrets all take the identical fail-closed path.
+ */
+function isUsableSecret(secret: unknown): secret is string {
+  return typeof secret === "string" && secret.length > 0;
+}
 
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
@@ -38,10 +92,10 @@ function base64UrlEncode(bytes: Uint8Array): string {
  * one valid encoding. Applied uniformly to both the payload and the
  * signature, since both share the property.
  *
- * This check happens here, inside decode — before `verifyResponseToken`
- * ever computes or compares a signature — so a non-canonical input is
- * rejected on its own shape and never becomes a second timing oracle
- * layered on top of the signature comparison.
+ * This check happens here, inside decode — before either verifier ever
+ * computes or compares a signature — so a non-canonical input is rejected on
+ * its own shape and never becomes a second timing oracle layered on top of
+ * the signature comparison.
  */
 function base64UrlDecode(value: string): Uint8Array | null {
   if (value.length === 0 || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
@@ -68,50 +122,74 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
 }
 
 /**
- * A response token is `<base64url(payload)>.<base64url(hmac)>`, scoped to
- * exactly one player and one fixture (BR-24). It is opaque to the recipient
- * but not encrypted — it carries no secret, only two identifiers and an expiry,
- * and the signature is what makes it unforgeable.
+ * Signs `<base64url(payload)>.<base64url(hmac)>` for a payload carrying its
+ * `kind` discriminator. Shared by every token type in this module (response
+ * and cancel tokens today) so there is exactly one signing routine to keep
+ * correct, rather than one hand-maintained copy per token type quietly
+ * drifting apart.
+ *
+ * `kind` is spread in *after* `payload`, not before: if the caller's payload
+ * object happened to carry its own `kind` property (a widened type, a DB
+ * row, a spread of a larger record), the discriminator baked into the signed
+ * bytes must still be the one this function was told to sign for — never
+ * whatever the caller's object happened to contain. The discriminator is the
+ * only thing standing between the two token types; it must not be
+ * overridable by construction.
  */
-export async function signResponseToken(payload: ResponseTokenPayload, secret: string): Promise<string> {
-  // Signing with no secret is a programming error (misconfigured binding),
-  // never a runtime/user condition — throw loudly rather than silently
-  // producing an unverifiable token.
-  if (secret.length === 0) {
-    throw new Error("signResponseToken: secret must not be empty (RESPONSE_TOKEN_SECRET unset?)");
+async function signToken<Payload extends object>(kind: TokenKind, payload: Payload, secret: string): Promise<string> {
+  // Signing with no usable secret is a programming error (misconfigured
+  // binding), never a runtime/user condition — throw loudly rather than
+  // silently producing an unverifiable token. `secret` is typed `string`
+  // (see `Bindings` in src/env.ts), but an *unset* binding arrives at
+  // runtime as `undefined` regardless of that declared type — the same gap
+  // `src/env.ts`'s own `RESEND_API_KEY` comment documents — so this checks
+  // the actual runtime value rather than trusting the type. Absent, wrong
+  // type and empty are all the same failure and must all throw the same
+  // named error.
+  if (!isUsableSecret(secret)) {
+    throw new Error(`${SECRET_BINDING_NAME[kind]} must not be empty (secret unset?)`);
   }
-  const body = base64UrlEncode(ENCODER.encode(JSON.stringify(payload)));
+  const body = base64UrlEncode(ENCODER.encode(JSON.stringify({ ...payload, kind })));
   const signature = await crypto.subtle.sign("HMAC", await hmacKey(secret), ENCODER.encode(body));
   return `${body}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
 
 /**
- * Verify and decode a response token (TR-14).
- *
- * Order matters: the signature is checked before the payload is parsed, so no
- * attacker-controlled bytes are ever interpreted as structure. Comparison uses
- * `crypto.subtle.timingSafeEqual`, a workerd built-in, rather than `===` — a
- * short-circuiting comparison leaks how many leading bytes were correct, which
- * is enough to forge a signature one byte at a time.
+ * Verifies `<base64url(payload)>.<base64url(hmac)>` against the expected
+ * `kind` and an `isPayload` type guard for the rest of the shape, then
+ * enforces expiry. Order matters throughout: the signature is checked before
+ * the payload is parsed, so no attacker-controlled bytes are ever interpreted
+ * as structure; the discriminator is checked before the shape guard, so a
+ * token minted for a different purpose is rejected on the property that
+ * makes it a different purpose, not merely on which fields happen to be
+ * present. Comparison uses `crypto.subtle.timingSafeEqual`, a workerd
+ * built-in, rather than `===` — a short-circuiting comparison leaks how many
+ * leading bytes were correct, which is enough to forge a signature one byte
+ * at a time.
  */
-export async function verifyResponseToken(
+async function verifyToken<Payload extends { expiresAt: number }>(
+  kind: TokenKind,
   token: string,
   secret: string,
   now: Date,
-): Promise<TokenVerification> {
+  isPayload: (value: unknown) => value is Payload,
+): Promise<TokenVerification<Payload>> {
   // A non-string token can arrive from an untyped boundary (e.g. a Hono path
   // param under a runtime shape that disagrees with its declared type).
   // Fail closed with the same "malformed" a caller already handles, rather
   // than letting `.split` throw a raw TypeError into the route.
   if (typeof token !== "string") return { ok: false, reason: "malformed" };
 
-  // An empty secret means the binding is unset (new env, rotation typo,
-  // forgotten `wrangler secret put`). Unlike signing, this must not throw:
-  // it reaches this function on the hot path for every incoming response
-  // link, and the route's job is to render the normal "this link isn't
-  // working" page, not 500. Every token is unverifiable either way, so
-  // "malformed" is honest — there is nothing more specific to say about it.
-  if (secret.length === 0) return { ok: false, reason: "malformed" };
+  // An unusable secret means the binding is unset (new env, rotation typo,
+  // forgotten `wrangler secret put`) — which, like `signToken` above, arrives
+  // at runtime as `undefined` rather than the empty string the declared
+  // `string` type promises, so this checks the runtime value, not the type.
+  // Unlike signing, this must not throw: it reaches this function on the hot
+  // path for every incoming link, and the route's job is to render the
+  // normal "this link isn't working" page, not 500. Every token is
+  // unverifiable either way, so "malformed" is honest — there is nothing
+  // more specific to say about it.
+  if (!isUsableSecret(secret)) return { ok: false, reason: "malformed" };
 
   const parts = token.split(".");
   if (parts.length !== 2) return { ok: false, reason: "malformed" };
@@ -138,18 +216,54 @@ export async function verifyResponseToken(
     return { ok: false, reason: "malformed" };
   }
 
-  if (!isPayload(parsed)) return { ok: false, reason: "malformed" };
+  if (typeof parsed !== "object" || parsed === null) return { ok: false, reason: "malformed" };
+  const candidate = parsed as Record<string, unknown>;
+
+  // The discriminator lives inside the signed bytes, so a token minted for
+  // the other purpose cannot reach this point by presenting a different
+  // shape at the door — it is rejected here, on the one property that
+  // encodes what the token was signed *for*, before any purpose-specific
+  // field is even inspected.
+  if (candidate["kind"] !== kind) return { ok: false, reason: "malformed" };
+
+  if (!isPayload(candidate)) return { ok: false, reason: "malformed" };
+
   // Inverted so an invalid `now` (e.g. `new Date(NaN)`) fails closed: any
   // comparison against NaN is false, so writing this as `now > expiresAt`
   // would fall through to acceptance for a caller mistake. `!(now <= expiresAt)`
   // rejects unless the token is affirmatively still valid.
-  if (!(now.getTime() <= parsed.expiresAt)) return { ok: false, reason: "expired" };
+  if (!(now.getTime() <= candidate.expiresAt)) return { ok: false, reason: "expired" };
 
-  return { ok: true, payload: parsed };
+  // Strip the discriminator before handing the payload back: it is part of
+  // the signed bytes, not part of the public shape callers were promised.
+  // Cast back to an unnarrowed record for the deletion — `isPayload` above
+  // narrowed `candidate` to `Payload`, whose type has no `kind` property to
+  // index once narrowed.
+  const rest = { ...candidate } as Record<string, unknown>;
+  delete rest["kind"];
+  return { ok: true, payload: rest as Payload };
 }
 
-function isPayload(value: unknown): value is ResponseTokenPayload {
-  if (typeof value !== "object" || value === null) return false;
+/**
+ * A response token is `<base64url(payload)>.<base64url(hmac)>`, scoped to
+ * exactly one player and one fixture (BR-24). It is opaque to the recipient
+ * but not encrypted — it carries no secret, only two identifiers and an expiry,
+ * and the signature is what makes it unforgeable.
+ */
+export async function signResponseToken(payload: ResponseTokenPayload, secret: string): Promise<string> {
+  return signToken("response", payload, secret);
+}
+
+/** Verify and decode a response token (TR-14). See {@link verifyToken}. */
+export async function verifyResponseToken(
+  token: string,
+  secret: string,
+  now: Date,
+): Promise<TokenVerification<ResponseTokenPayload>> {
+  return verifyToken("response", token, secret, now, isResponsePayload);
+}
+
+function isResponsePayload(value: unknown): value is ResponseTokenPayload {
   const candidate = value as Record<string, unknown>;
   return (
     typeof candidate["playerId"] === "string" &&
@@ -162,4 +276,44 @@ function isPayload(value: unknown): value is ResponseTokenPayload {
 /** A token stops working 24 hours after its fixture kicks off (BR-24). */
 export function responseTokenExpiry(kicksOffAt: Date): Date {
   return new Date(kicksOffAt.getTime() + TOKEN_LIFETIME_AFTER_KICKOFF_MS);
+}
+
+/**
+ * A cancel token, scoped to exactly one owner and one fixture and to the
+ * single act of cancelling. It is a deliberate, narrower amendment to TR-17
+ * (see the milestone plan): sessions remain required for every other owner
+ * action, but there is no session mechanism yet, and J5 promises the owner
+ * attention email a one-tap cancel link.
+ */
+export async function signCancelToken(payload: CancelTokenPayload, secret: string): Promise<string> {
+  return signToken("cancel", payload, secret);
+}
+
+/** Verify and decode a cancel token. See {@link verifyToken}. */
+export async function verifyCancelToken(
+  token: string,
+  secret: string,
+  now: Date,
+): Promise<TokenVerification<CancelTokenPayload>> {
+  return verifyToken("cancel", token, secret, now, isCancelPayload);
+}
+
+function isCancelPayload(value: unknown): value is CancelTokenPayload {
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate["ownerPlayerId"] === "string" &&
+    typeof candidate["fixtureId"] === "string" &&
+    typeof candidate["expiresAt"] === "number" &&
+    Number.isFinite(candidate["expiresAt"])
+  );
+}
+
+/**
+ * A cancel token expires at kickoff, not 24 hours after it like a response
+ * token: cancelling a game that has already started is meaningless, and a
+ * shorter life is a strictly smaller forgery window for a token that
+ * destroys a game.
+ */
+export function cancelTokenExpiry(kicksOffAt: Date): Date {
+  return new Date(kicksOffAt.getTime());
 }

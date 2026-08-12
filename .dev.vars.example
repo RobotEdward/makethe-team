@@ -1,3 +1,7 @@
 # Copy to .dev.vars (gitignored) for local development.
 # Any string works locally; production uses a Worker secret.
 RESPONSE_TOKEN_SECRET=local-development-secret-do-not-use-in-production
+# A *different* value from the one above, on purpose: the two token kinds are
+# kept apart by separate keys as well as by the discriminator inside the
+# signed payload. See CANCEL_TOKEN_SECRET in src/env.ts.
+CANCEL_TOKEN_SECRET=local-development-cancel-secret-do-not-use-in-production
