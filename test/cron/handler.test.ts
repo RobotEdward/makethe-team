@@ -186,13 +186,14 @@ describe("handleScheduled: the sweep", () => {
     expect(logRows[0]?.status).toBe("sent");
   });
 
-  it("stays idempotent at the 5-minute cadence: several sweeps over the same due fixture send one notification per player", async () => {
-    // The new `*/5 * * * *` cadence means the sweep can now genuinely run
-    // several times before anything about the fixture changes — a much
-    // tighter version of the old re-run case. `notification_log`'s
-    // unique `dedupe_key` is what makes that safe: this pins that the
-    // guarantee still holds when the sweep is invoked back-to-back rather
-    // than an hour apart.
+  it("stays idempotent across repeated sweeps: several runs over the same due fixture send one notification per player", async () => {
+    // A fixture stays due across more than one sweep, so the sweep genuinely
+    // runs several times before anything about it changes. `notification_log`'s
+    // unique `dedupe_key` is what makes that safe, and this pins it by invoking
+    // the sweep back-to-back — deliberately tighter than the hourly cadence, so
+    // the guarantee is tested against the worst case rather than the scheduled
+    // one. It was written during the temporary 5-minute testing cadence and is
+    // kept at that tightness on purpose.
     const kicksOffAt = new Date("2026-08-13T18:00:00Z");
     const remindNow = new Date("2026-08-12T09:00:00Z");
     const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });

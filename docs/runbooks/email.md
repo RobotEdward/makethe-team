@@ -127,17 +127,25 @@ wiring) is already in place. What remains, in order:
 No other code changes are required — `ConsoleNotifier`, `QuotaNotifier`,
 the dedupe keys, and the sweep itself are provider-agnostic already.
 
-## Testing cadence: sweep every 5 minutes (temporary)
+## Sweep cadence: hourly
 
-While the owner is exercising the reminder pipeline against real
-production data, the sweep runs every **5 minutes** (`*/5 * * * *`)
-instead of the intended hourly cadence, so a change doesn't take up to
-an hour to observe. This is set in two places that must stay in sync —
-`wrangler.jsonc`'s `triggers.crons` entry and the `CRON_SWEEP` constant
-in `src/cron/handler.ts` — both commented as temporary at the point of
-change. `handleScheduled` throws on any cron string it doesn't
-recognise, so editing one without the other breaks every invocation
-rather than silently reverting the cadence.
+The sweep runs **hourly** (`0 * * * *`), the intended production cadence.
+It ran every 5 minutes through the M4/M5 testing phase so the owner could
+exercise the reminder pipeline against real data without waiting up to an
+hour per cycle; that was reverted on 12 August 2026.
+
+The cadence is set in two places that must stay in sync —
+`wrangler.jsonc`'s `triggers.crons` entry and the `CRON_SWEEP` constant in
+`src/cron/handler.ts`. `handleScheduled` throws on any cron string it does
+not recognise, so editing one without the other breaks every invocation
+rather than silently reverting the cadence. Every test refers to the
+constant rather than the literal, so changing both is sufficient.
+
+One consequence worth remembering if the cadence is ever shortened again:
+a ceiling-deferred notification writes an `audit_log` row on every retry,
+collapsed to one row per hour per fixture (`src/notify/ceiling-audit.ts`).
+That window was chosen against the 5-minute cadence, where it was the
+difference between ~288 rows a day and 24.
 
 **To revert to hourly:** change both back to `"0 * * * *"`, run the
 full verification suite, deploy, and confirm via the Cloudflare API

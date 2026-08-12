@@ -12,11 +12,9 @@ import { retirePastFixtures } from "../sweep/retire.js";
 // waiting up to an hour per cycle. The intended production value is hourly
 // ("0 * * * *"). This must stay in sync with wrangler.jsonc's `triggers`
 // entry — handleScheduled throws on any cron string it doesn't recognise, so
-// changing one without the other breaks every invocation. When the testing
-// phase ends, revert both this literal and the wrangler.jsonc trigger to
-// "0 * * * *" (the constant name can stay `CRON_SWEEP`, or be renamed back —
-// either way, update every reference in test/).
-export const CRON_SWEEP = "*/5 * * * *";
+// changing one without the other breaks every invocation. Ran at
+// "*/5 * * * *" through the M4/M5 testing phase; reverted 12 August 2026.
+export const CRON_SWEEP = "0 * * * *";
 export const CRON_DAILY_MATERIALISE = "15 3 * * *";
 
 /**
