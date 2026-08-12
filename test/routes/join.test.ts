@@ -96,6 +96,24 @@ describe("GET /j/:token", () => {
     expect(html).not.toContain("edward@example.com");
   });
 
+  /**
+   * Rotating the token and deactivating the game are an owner's only ways to
+   * kill a leaked link. A shared cache holding a 200 for the old URL would
+   * silently defeat both for the length of its TTL, so this page must never be
+   * stored — and the 422 branch additionally echoes the submitter's own
+   * address back into the form.
+   */
+  it("is never stored by a cache", async () => {
+    const { game } = await seedGame();
+
+    const get = await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`);
+    expect(get.headers.get("cache-control")).toBe("private, no-store");
+
+    const rejected = await joinPost(game.inviteToken, { name: "Alex", email: "not-an-address" });
+    expect(rejected.status).toBe(422);
+    expect(rejected.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("404s an unknown token", async () => {
     await seedGame();
     expect((await SELF.fetch(`${ORIGIN}/j/${crypto.randomUUID()}`)).status).toBe(404);
@@ -141,18 +159,30 @@ describe("GET /j/:token", () => {
     expect(method, "a write must not be a GET").toBe("post");
     expect(action).toBeDefined();
 
-    const names = [...body.matchAll(/<input[^>]*\bname="([^"]+)"/g)].map((match) => match[1]!);
-    expect(names, "two fields, and only two, to type into").toHaveLength(2);
-    expect(body, "both fields must be required — this form has no JavaScript behind it").toMatch(
-      /required/,
-    );
+    // Each input is identified by what it *is* — the one with `type="email"`
+    // takes the address, the other takes the name — rather than by the order
+    // the two happen to appear in. Reordering them is a presentational change
+    // and must not fail this test with a confusing 422.
+    const inputs = [...body.matchAll(/<input[^>]*>/g)].map((match) => match[0]!);
+    expect(inputs, "two fields, and only two, to type into").toHaveLength(2);
+    const nameOf = (input: string) => /\bname="([^"]+)"/.exec(input)?.[1];
+    const emailInput = inputs.find((input) => /\btype="email"/.test(input));
+    const otherInput = inputs.find((input) => input !== emailInput);
+    expect(emailInput, "one field must be type=email — a phone keyboard and a free format check").toBeDefined();
+    for (const input of inputs) {
+      expect(nameOf(input), "every field must be named, or the handler cannot read it").toBeDefined();
+      expect(input, "both fields must be required — this form has no JavaScript behind it").toMatch(
+        /\brequired\b/,
+      );
+    }
     expect(body).toMatch(/<button[^>]*type="submit"/);
 
     // Drive exactly what the browser would send, at exactly the URL the markup
     // names, and prove the handler read both fields.
-    const fields = Object.fromEntries(names.map((name) => [name, ""]));
-    fields[names[0]!] = "Alex Smith";
-    fields[names[1]!] = "alex@example.com";
+    const fields = {
+      [nameOf(otherInput!)!]: "Alex Smith",
+      [nameOf(emailInput!)!]: "alex@example.com",
+    };
     const response = await SELF.fetch(new URL(action!, ORIGIN).toString(), {
       method: method!,
       headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
@@ -165,7 +195,7 @@ describe("GET /j/:token", () => {
     const [player] = await db.select().from(players).where(eq(players.email, "alex@example.com"));
     expect(player?.name, "the handler must read the field the form names").toBe("Alex Smith");
     expect(await db.select().from(memberships).where(eq(memberships.gameId, game.id))).toHaveLength(1);
-    await waitForNotificationRows(1);
+    expect(await waitForNotificationRows(1)).toHaveLength(1);
   });
 });
 
@@ -178,7 +208,11 @@ describe("POST /j/:token", () => {
     const response = await joinPost(game.inviteToken, { name: "Alex Smith", email: "alex@example.com" });
 
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain("You're in");
+    const html = await response.text();
+    expect(html).toContain("You're in");
+    // BR-2 on the branch with nothing scheduled — the person most likely to
+    // see a game happening this week and assume it is theirs.
+    expect(html).toContain("you're not in that one");
 
     const [player] = await db.select().from(players).where(eq(players.email, "alex@example.com"));
     expect(player?.name).toBe("Alex Smith");
@@ -209,13 +243,25 @@ describe("POST /j/:token", () => {
 
   it("redisplays the form when the email is not plausible", async () => {
     const { db, game } = await seedGame();
+    // A squad member with an address of their own, so the assertion below is
+    // about the page's real invariant rather than about an empty squad.
+    const memberId = await insertPlayer(db, { name: "Edward Charles", email: "edward@example.com" });
+    await insertMembership(db, game.id, memberId);
 
     const response = await joinPost(game.inviteToken, { name: "Alex", email: "not-an-address" });
 
     expect(response.status).toBe(422);
     const html = await response.text();
+    // Both fields come back, or somebody retypes the whole form on a phone.
     expect(html).toContain('value="Alex"');
-    expect(await db.select().from(players)).toHaveLength(0);
+    expect(html).toContain('value="not-an-address"');
+    // The invariant that echo does *not* break: the only address on this page
+    // is the one the person sending this request has just typed. Never a squad
+    // member's.
+    expect(html).not.toContain("edward@example.com");
+    // Nothing was written: only the seeded squad member exists.
+    expect(await db.select().from(players)).toHaveLength(1);
+    expect(await db.select().from(memberships).where(eq(memberships.gameId, game.id))).toHaveLength(1);
   });
 
   it("requires a name", async () => {
@@ -240,7 +286,7 @@ describe("POST /j/:token", () => {
     const { game } = await seedGame();
     const response = await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" }, null);
     expect(response.status).toBe(200);
-    await waitForNotificationRows(1);
+    expect(await waitForNotificationRows(1)).toHaveLength(1);
   });
 
   it("404s an unknown token before doing any work", async () => {
@@ -308,6 +354,6 @@ describe("POST /j/:token", () => {
     // organised without them.
     expect(html).toContain("13 June");
     expect(html).not.toContain("6 June");
-    await waitForNotificationRows(1);
+    expect(await waitForNotificationRows(1)).toHaveLength(1);
   });
 });

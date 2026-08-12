@@ -15,9 +15,15 @@ import { FORM_CSS } from "./styles.js";
  *   surname. `src/views/game-overview.ts` deliberately shows full names for
  *   the same squad, because that page is behind an owner entitlement check.
  *   The contrast is the point; do not copy that behaviour here.
- * - **No email address ever appears.** Not the joiner's, not a squad member's,
- *   not an organiser's. There is no parameter on either function that could
- *   carry one, which is the cheapest way to keep it true.
+ * - **The only address that can ever appear is the one the submitter has just
+ *   typed**, echoed back to that same submitter in the form on a 422 so a
+ *   fixable typo is visible. Never a squad member's, never an organiser's, and
+ *   never on the outcome page at all — nothing here reads `players.email` and
+ *   no parameter can carry another person's address. That echo is not a BR-26
+ *   concern (it goes back to whoever sent it, in the response to their own
+ *   request) but it does mean a 422 response body is *not* free of personal
+ *   data: it must not be cached by a shared cache, logged, or treated as
+ *   safe to forward. `/j/*` is served `private, no-store` in `src/app.ts`.
  *
  * Neither page takes a script. Joining is one form and one button, and a
  * stranger's first contact with this product must not depend on JavaScript
@@ -148,13 +154,19 @@ export function renderJoinOutcomePage(params: JoinOutcomePageParams): string {
   const next =
     firstFixtureLocal === null
       ? `<p>There's no fixture scheduled yet. You'll get an email when the next one opens — nothing to do until then.</p>`
-      : `<p>Your first game is ${escapeHtml(firstFixtureLocal)}. You'll get an email a few days before, with a way to say whether you're in.</p>
-         <p>If a game is already being organised for this week, you're not in that one — you joined after the invitations went out.</p>`;
+      : `<p>Your first game is ${escapeHtml(firstFixtureLocal)}. You'll get an email a few days before, with a way to say whether you're in.</p>`;
+
+  // The caveat goes on *both* branches. A squad whose only fixture is already
+  // `open` renders the "nothing scheduled yet" line above, and that is exactly
+  // the person most likely to see a game happening this week and assume they
+  // are in it — which is the confusion BR-2 exists to prevent.
+  const caveat = `<p>If a game is already being organised for this week, you're not in that one — you joined after the invitations went out.</p>`;
 
   const body = `
     <h1>${heading}</h1>
     ${opener}
     ${next}
+    ${caveat}
   `;
 
   return layout({ title: `${gameName} — Make The Team`, body, pageStyles: [FORM_CSS] });

@@ -8,7 +8,8 @@ import { memberships, players } from "../db/schema.js";
  *
  * Shared rather than inlined in the route, because J6's "add a squad member
  * directly" is the same operation with a different caller — and because the
- * four outcomes below are the interesting part, not the HTTP around them.
+ * three outcomes below (`joined`, `rejoined`, `already-member`) are the
+ * interesting part, not the HTTP around them.
  *
  * **One address is one person.** An email that already exists reuses the
  * `players` row and the *stored* name wins; the name typed on the form is

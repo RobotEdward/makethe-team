@@ -56,6 +56,18 @@ export function createApp(): Hono<AppEnv> {
     c.header("Cache-Control", "private, no-store");
   });
 
+  // The public invite page. No session, so this is not the "a signed-in
+  // player's own data" argument that scopes the two mounts above — it is
+  // *revocation*. Rotating the invite token and deactivating the game are an
+  // owner's only ways to kill a leaked link, and a shared cache holding a 200
+  // for the old URL silently defeats both for the length of its TTL. The 422
+  // branch also echoes the submitter's own address back into the form, which
+  // no shared cache should ever hold.
+  app.use("/j/*", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "private, no-store");
+  });
+
   app.route("/", robots);
   app.route("/", home);
   app.route("/", respond);
