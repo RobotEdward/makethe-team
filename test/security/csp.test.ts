@@ -5,6 +5,7 @@ import { fixtures, memberships, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
+import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 
 /**
  * Task 9's CSP header, asserted two ways on every page the app renders:
@@ -80,6 +81,45 @@ function expectFixedDirectives(csp: string | null) {
   expect(csp).toContain("frame-ancestors 'none'");
   expect(csp).toContain("base-uri 'none'");
   expectScriptSrcStrict(csp!);
+  expectFetchTargetsAllowed(csp!);
+}
+
+/**
+ * Every URL the enumerated scripts `fetch()`, taken from the scripts
+ * themselves rather than restated here — the same discipline `script-src`'s
+ * hashes already follow, so a script that grows a new endpoint is covered
+ * without anyone remembering to update a list.
+ */
+function scriptFetchTargets(): string[] {
+  return SCRIPT_BLOCKS.flatMap((block) =>
+    [...block.matchAll(/fetch\("([^"]+)"/g)].map((match) => match[1]!),
+  );
+}
+
+/**
+ * **`connect-src` does not fall back to `script-src` — it falls back to
+ * `default-src`, which is `'none'`.** A hash in `script-src` lets a block
+ * *execute*; it says nothing about what that block may then talk to. Both
+ * passkey scripts do nothing but `fetch()` Better Auth's endpoints, so with
+ * no `connect-src` the browser refused every one of those calls before it
+ * left the device, both buttons failed with their generic catch, and the
+ * server never saw a request — which is exactly how this was found in
+ * production, from a `wrangler tail` that recorded the page load and no
+ * subsequent API call at all.
+ *
+ * `'self'` and not a wildcard: every target below is a same-origin absolute
+ * path, which is asserted here too, so this directive never needs to name a
+ * foreign host and must not be widened to one.
+ */
+function expectFetchTargetsAllowed(csp: string) {
+  const targets = scriptFetchTargets();
+  // Guards the assertion below against passing vacuously if the scripts are
+  // ever rewritten to build their URLs some other way.
+  expect(targets.length).toBeGreaterThan(0);
+  for (const target of targets) expect(target.startsWith("/")).toBe(true);
+
+  const connectSrc = csp.match(/connect-src ([^;]+)/)?.[1] ?? "";
+  expect(connectSrc).toBe("'self'");
 }
 
 /**

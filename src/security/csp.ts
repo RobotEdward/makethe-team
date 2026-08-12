@@ -17,9 +17,22 @@ import { STYLE_BLOCKS } from "../views/styles.js";
  * - `default-src 'none'` — the strictest possible baseline. Nothing is
  *   fetched, embedded, connected to, or executed unless a more specific
  *   directive below allows it.
- * - `script-src 'none'` — the whole site is server-rendered with no client
- *   JavaScript (a hard rule for this project, not an oversight), so this is
- *   free to be maximally strict rather than merely `'self'`.
+ * - `script-src` — hashes, one per entry in `SCRIPT_BLOCKS`. This was
+ *   `'none'` until M5 added passkeys, on the grounds that the whole site is
+ *   server-rendered; WebAuthn is a browser API with no server-side
+ *   substitute, so it is the one feature that earns client JavaScript.
+ * - `connect-src 'self'` — what the passkey scripts do *after* they are
+ *   allowed to run. A `script-src` hash permits execution and nothing more;
+ *   `connect-src` governs `fetch`/XHR/WebSocket separately and, like every
+ *   directive that is simply absent, falls back to `default-src` — which
+ *   here is `'none'`. Leaving it out is why both passkey buttons failed in
+ *   production while every server-side test passed: the browser refused the
+ *   `fetch` to Better Auth's endpoints before it left the device, so the
+ *   scripts hit their generic catch and the Worker logged no request at all.
+ *   `'self'` is exactly right and must not be widened — every URL these
+ *   scripts call is a same-origin absolute path, which
+ *   `test/security/csp.test.ts` asserts by reading the calls out of
+ *   `SCRIPT_BLOCKS` rather than trusting this comment.
  * - `style-src` — the one directive a naive `default-src 'self'` breaks:
  *   every page inlines a `<style>` block (`STYLES` in
  *   `src/views/layout.ts`), and the cancellation-confirm page inlines a
@@ -88,6 +101,9 @@ async function buildCspHeader(): Promise<string> {
     // the one feature that cannot work server-side (WebAuthn is a browser
     // API), so their two scripts are allowed by hash and nothing else is.
     `script-src ${sources(scriptHashes)}`,
+    // The scripts' whole purpose. Without this they execute and then cannot
+    // reach a single endpoint — see the header comment.
+    "connect-src 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",
