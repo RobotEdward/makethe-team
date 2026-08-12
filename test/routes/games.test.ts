@@ -2,8 +2,9 @@ import { env, SELF } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { auditLog, games, memberships } from "../../src/db/schema.js";
-import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
+import { auditLog, fixtures, games, memberships, players } from "../../src/db/schema.js";
+import { formatLocalDateTime } from "../../src/domain/time/zone.js";
+import { COPY_INVITE_JS, SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 import { interferingBinding } from "../support/interference.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { bindings, ORIGIN, signIn } from "../support/sign-in.js";
@@ -310,5 +311,107 @@ describe("the invite link on /g/:id", () => {
 
     const response = await post(`/g/${gameId}/invite/rotate`, cookie, {});
     expect(response.status).toBe(404);
+  });
+});
+
+describe("the squad list on /g/:id", () => {
+  beforeEach(resetDatabase);
+
+  /**
+   * Pins `listSquad`'s ordering at the route level — this is exactly the gap
+   * that let the "owners first" doc comment in `src/db/queries.ts` describe
+   * the opposite of what `desc(memberships.role)` actually did (`"player" >
+   * "owner"` lexicographically, so plain `desc()` put players first). A game
+   * built via `insertGame`/`insertMembership` directly rather than through
+   * `POST /g/new`, so the squad is exactly the three rows below and nothing
+   * materialisation added on the side.
+   */
+  it("shows the owner before an ordinary member, and marks organiser and guest", async () => {
+    const { cookie } = await signIn();
+    const db = testDb();
+    const [owner] = await db.select().from(players);
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, owner!.id, { role: "owner" });
+
+    const memberId = await insertPlayer(db, { name: "Zoe Ordinary Member" });
+    await insertMembership(db, gameId, memberId, { role: "player" });
+
+    const guestId = await insertPlayer(db, { name: "Gary Guest", email: null, isGuest: true });
+    await insertMembership(db, gameId, guestId, { role: "player" });
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
+
+    expect(html).toContain(owner!.name);
+    expect(html).toContain("Zoe Ordinary Member");
+    expect(html).toContain("Gary Guest");
+    expect(html, "the owner's row carries the organiser marker").toContain("— organiser");
+    expect(html, "the guest's row carries the guest marker").toContain("(guest)");
+
+    // The property Important 1 was about: the owner's line renders BEFORE the
+    // ordinary member's line, never the reverse.
+    const ownerIndex = html.indexOf(owner!.name);
+    const memberIndex = html.indexOf("Zoe Ordinary Member");
+    expect(ownerIndex).toBeGreaterThan(-1);
+    expect(memberIndex).toBeGreaterThan(-1);
+    expect(ownerIndex).toBeLessThan(memberIndex);
+  });
+});
+
+describe("the fixtures list on /g/:id", () => {
+  beforeEach(resetDatabase);
+
+  it("shows an upcoming fixture's local date, lifecycle and in-count", async () => {
+    const { cookie } = await signIn();
+    const db = testDb();
+    const [owner] = await db.select().from(players);
+    const gameId = await insertGame(db, { timezone: "Europe/London" });
+    await insertMembership(db, gameId, owner!.id, { role: "owner" });
+
+    const kickoff = new Date("2030-06-13T18:00:00Z");
+    await db.insert(fixtures).values({
+      id: crypto.randomUUID(),
+      gameId,
+      kicksOffAt: kickoff,
+      lifecycle: "open",
+      minPlayers: 10,
+      maxPlayers: 14,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      durationMinutes: 60,
+      inCount: 5,
+    });
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
+
+    expect(html).toContain(formatLocalDateTime(kickoff, "Europe/London"));
+    expect(html).toContain("open");
+    expect(html).toContain("5 in");
+  });
+});
+
+describe("the copy-invite script's DOM ids stay in sync with the page", () => {
+  beforeEach(resetDatabase);
+
+  /**
+   * `COPY_INVITE_JS` no-ops silently (`if (!input || !button) return;`) if
+   * either id it looks up is missing, so a rename on either side breaks the
+   * button with nothing failing loudly. Derives the expected ids from the
+   * script's own source — the same technique `test/security/csp.test.ts`
+   * uses to read `fetch` targets out of `SCRIPT_BLOCKS` — rather than
+   * restating them, so this fails the moment the script and the page
+   * actually disagree.
+   */
+  it("renders every id COPY_INVITE_JS looks up", async () => {
+    const { cookie } = await signIn();
+    const response = await post("/g/new", cookie, VALID);
+    const gameId = response.headers.get("location")!.replace("/g/", "");
+
+    const referencedIds = [...COPY_INVITE_JS.matchAll(/getElementById\("([^"]+)"\)/g)].map((m) => m[1]!);
+    expect(referencedIds.length).toBeGreaterThan(0);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
+    for (const id of referencedIds) {
+      expect(html, `page must render an element with id="${id}"`).toContain(`id="${id}"`);
+    }
   });
 });

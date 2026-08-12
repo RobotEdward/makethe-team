@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ne } from "drizzle-orm";
+import { and, asc, eq, gte, ne, sql } from "drizzle-orm";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { Db } from "./client.js";
 import { fixtures, games, memberships, players, responses } from "./schema.js";
@@ -124,7 +124,18 @@ export async function findGameForOwner(
   return row?.game ?? null;
 }
 
-/** Active squad members, owners first then alphabetical. */
+/**
+ * Active squad members, owners first then alphabetical.
+ *
+ * `role` is `text({ enum: ["player", "owner"] })`, so a plain `desc()`/`asc()`
+ * over it sorts lexicographically — `desc()` would put `"player"` before
+ * `"owner"` (`p` > `o`), the opposite of "owners first", and an `asc()` would
+ * only happen to look right today because `"owner"` sorts before `"player"`
+ * alphabetically, a coincidence of these two particular words that a third
+ * role would break silently. The explicit `CASE` says the actual intent —
+ * owner is rank 0, everything else is rank 1 — so the order does not depend
+ * on how the role strings happen to compare.
+ */
 export async function listSquad(
   db: Db,
   gameId: string,
@@ -139,7 +150,7 @@ export async function listSquad(
     .from(memberships)
     .innerJoin(players, eq(players.id, memberships.playerId))
     .where(and(eq(memberships.gameId, gameId), eq(memberships.active, true)))
-    .orderBy(desc(memberships.role), players.name);
+    .orderBy(sql`CASE WHEN ${memberships.role} = 'owner' THEN 0 ELSE 1 END`, players.name);
 }
 
 /** Non-terminal fixtures from `now` onward, soonest first. */

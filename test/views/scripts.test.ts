@@ -53,7 +53,17 @@ describe("the script enumeration", () => {
       // (M6a Task 7) is not a WebAuthn affordance at all and instead detects
       // `navigator.clipboard`, so this checks for either rather than only the
       // one every block used to share.
-      expect(block, "must feature-detect").toMatch(/PublicKeyCredential|navigator\.clipboard/);
+      //
+      // Deliberately not a bare substring match on the guard token: a script
+      // that called `navigator.clipboard.writeText(...)` with no guard at all
+      // would still contain the literal string "navigator.clipboard" — in the
+      // very call that would break the page for a browser without it — and a
+      // substring check would wave it through. This instead requires the
+      // token to sit inside an `if (...) return;` guard clause, which is what
+      // every block below actually does before it touches the API.
+      expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;/,
+      );
     }
   });
 
