@@ -6,7 +6,12 @@ import { getDb } from "../../src/db/client.js";
 import { passkey as passkeyTable, session as sessionTable, user as userTable } from "../../src/db/schema.js";
 import { resetDatabase } from "../support/factories.js";
 import { ORIGIN, bindings, signIn } from "../support/sign-in.js";
-import { challengeCookieFrom, generateCredential, signAssertion } from "../support/webauthn.js";
+import {
+  buildRegistration,
+  challengeCookieFrom,
+  generateCredential,
+  signAssertion,
+} from "../support/webauthn.js";
 
 /**
  * The passkey plugin, at the paths it actually publishes.
@@ -103,6 +108,61 @@ describe("the passkey plugin", () => {
     ).all();
 
     expect(result.results).toHaveLength(1);
+  });
+
+  /**
+   * The step between the two tests above, which nothing executed until a live
+   * iOS registration failed and the suite could neither convict the server nor
+   * clear it. `generate-register-options` was covered, the 401 on an anonymous
+   * `verify-registration` was covered, and the write in between — the one that
+   * actually persists a passkey — was not.
+   *
+   * Driven through `createApp()` and the real plugin, with a real P-256
+   * attestation (`fmt: "none"`, the format every platform authenticator
+   * actually sends), so a Better Auth upgrade that changes the accepted body
+   * shape breaks here rather than in somebody's browser.
+   */
+  it("completes a registration and persists the passkey", async () => {
+    await resetDatabase();
+    const app = createApp();
+    const { cookie } = await signIn();
+
+    const optionsResponse = await app.fetch(
+      new Request(`${ORIGIN}${PASSKEY_PREFIX}/generate-register-options`, {
+        headers: { cookie },
+      }),
+      bindings(),
+    );
+    expect(optionsResponse.status).toBe(200);
+    const options = (await optionsResponse.json()) as { challenge: string; rp: { id: string } };
+
+    // The browser carries both: the session that authorises adding a passkey
+    // at all (`registration.requireSession`), and the signed challenge cookie
+    // the options call just set.
+    const registration = await buildRegistration({
+      rpId: options.rp.id,
+      challenge: options.challenge,
+      clientDataOrigin: ORIGIN,
+    });
+
+    const response = await app.fetch(
+      new Request(`${ORIGIN}${PASSKEY_PREFIX}/verify-registration`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: ORIGIN,
+          cookie: `${cookie}; ${challengeCookieFrom(optionsResponse)}`,
+        },
+        body: JSON.stringify({ response: registration.response }),
+      }),
+      bindings(),
+    );
+
+    expect(response.status).toBe(200);
+
+    const stored = await getDb(env.DB).select().from(passkeyTable);
+    expect(stored).toHaveLength(1);
+    expect(stored[0]!.credentialID).toBe(registration.credentialId);
   });
 });
 

@@ -130,6 +130,152 @@ export async function generateCredential(): Promise<WebauthnCredential> {
 }
 
 /**
+ * A CBOR byte string header for `length` bytes. Only the three shortest forms
+ * exist because the one caller (`buildAttestationObject`) encodes an
+ * `authData` that is always 148 bytes for this project's fixed shape — but
+ * the 16-bit form is written out anyway so a future extension or a longer
+ * credential id does not silently produce a malformed header.
+ */
+function cborByteStringHeader(length: number): Uint8Array {
+  if (length < 24) return new Uint8Array([0x40 | length]);
+  if (length < 0x100) return new Uint8Array([0x58, length]);
+  return new Uint8Array([0x59, (length >> 8) & 0xff, length & 0xff]);
+}
+
+/** A CBOR definite-length text string. Every key below is pure ASCII. */
+function cborText(value: string): Uint8Array {
+  const bytes = new TextEncoder().encode(value);
+  // All four keys used here ("fmt", "none", "attStmt", "authData") are under
+  // 24 bytes, which is the only form this needs.
+  return concat(new Uint8Array([0x60 | bytes.length]), bytes);
+}
+
+/**
+ * The `attestationObject` a browser hands back from `navigator.credentials.create()`:
+ * CBOR `{"fmt": "none", "attStmt": {}, "authData": <bytes>}`.
+ *
+ * **`fmt: "none"` is the realistic choice, not a shortcut.** It is what every
+ * platform authenticator this project will ever meet actually sends — Touch
+ * ID, Windows Hello and iCloud Keychain all produce `none`, because
+ * `@better-auth/passkey` requests no attestation (`attestationType` is left
+ * at SimpleWebAuthn's `"none"` default) and an authenticator must not
+ * volunteer more than was asked for. So the empty `attStmt` here is the
+ * production path, and `verifyRegistrationResponse` runs its full
+ * `none`-format verifier over it rather than a bypass.
+ */
+function buildAttestationObject(authData: Uint8Array): Uint8Array {
+  return concat(
+    new Uint8Array([0xa3]), // map(3)
+    cborText("fmt"),
+    cborText("none"),
+    cborText("attStmt"),
+    new Uint8Array([0xa0]), // map(0) — `none` carries no statement.
+    cborText("authData"),
+    cborByteStringHeader(authData.length),
+    authData,
+  );
+}
+
+export interface RegistrationCeremony {
+  /** The credential JSON, exactly as `credential.toJSON()` would serialise it. */
+  response: {
+    id: string;
+    rawId: string;
+    type: "public-key";
+    response: { clientDataJSON: string; attestationObject: string; transports: string[] };
+    clientExtensionResults: Record<string, never>;
+    authenticatorAttachment: string;
+  };
+  /** Base64url credential id, which is how the `passkey` table stores it. */
+  credentialId: string;
+  privateKey: CryptoKey;
+}
+
+/**
+ * Builds one genuine WebAuthn *registration* response — the ceremony
+ * `signAssertion` is the other half of.
+ *
+ * This exists because `verify-registration` had no end-to-end test at all:
+ * the suite proved the endpoint refuses an anonymous caller (401) and that
+ * `generate-register-options` issues options, and then stopped, so the step
+ * in between — the one that actually writes the `passkey` row — was never
+ * executed by anything. A live iOS registration failure could not be blamed
+ * on, or cleared of, the server without this.
+ *
+ * The `authData` layout here is the *attested* form, which is longer than the
+ * one `signAssertion` builds: `rpIdHash(32) ‖ flags(1) ‖ counter(4) ‖
+ * aaguid(16) ‖ credentialIdLength(2, big-endian) ‖ credentialId ‖
+ * cosePublicKey`. The `AT` flag (`0x40`) is what tells the verifier that the
+ * attested-credential-data tail is present; omitting it makes the verifier
+ * ignore everything after the counter and fail with no credential.
+ *
+ * The AAGUID is all zeroes, which is what a platform authenticator that
+ * declines to identify its make and model sends — again the ordinary case
+ * for passkeys, not a degenerate one.
+ */
+export async function buildRegistration(options: {
+  rpId: string;
+  challenge: string;
+  clientDataOrigin: string;
+}): Promise<RegistrationCeremony> {
+  const { publicKey, privateKey } = (await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  )) as CryptoKeyPair;
+  const raw = new Uint8Array((await crypto.subtle.exportKey("raw", publicKey)) as ArrayBuffer);
+  const cosePublicKey = coseP256PublicKey(raw.slice(1, 33), raw.slice(33, 65));
+
+  const credentialIdBytes = crypto.getRandomValues(new Uint8Array(16));
+  const credentialId = toBase64Url(credentialIdBytes);
+
+  const clientDataJSON = new TextEncoder().encode(
+    JSON.stringify({
+      type: "webauthn.create",
+      challenge: options.challenge,
+      origin: options.clientDataOrigin,
+      crossOrigin: false,
+    }),
+  );
+
+  const rpIdHash = await sha256(new TextEncoder().encode(options.rpId));
+  // UP (0x01) | UV (0x04) | AT (0x40). User-verification is not *required* by
+  // either endpoint this project configures, but a real platform
+  // authenticator sets it, so the bytes under test are the realistic ones.
+  const flags = new Uint8Array([0x45]);
+  const counterBytes = new Uint8Array(4);
+  const credentialIdLength = new Uint8Array(2);
+  new DataView(credentialIdLength.buffer).setUint16(0, credentialIdBytes.length, false);
+
+  const authData = concat(
+    rpIdHash,
+    flags,
+    counterBytes,
+    new Uint8Array(16), // AAGUID: all zeroes.
+    credentialIdLength,
+    credentialIdBytes,
+    cosePublicKey,
+  );
+
+  return {
+    credentialId,
+    privateKey,
+    response: {
+      id: credentialId,
+      rawId: credentialId,
+      type: "public-key",
+      response: {
+        clientDataJSON: toBase64Url(clientDataJSON),
+        attestationObject: toBase64Url(buildAttestationObject(authData)),
+        transports: ["internal"],
+      },
+      clientExtensionResults: {},
+      authenticatorAttachment: "platform",
+    },
+  };
+}
+
+/**
  * Builds one signed WebAuthn authentication assertion body, exactly the
  * shape `verifyAuthenticationResponse` (`@simplewebauthn/server`) requires:
  * `id === rawId`, `type: "public-key"`, and a `response` carrying
