@@ -68,15 +68,21 @@ export async function updateGame(params: UpdateGameParams): Promise<UpdateGameRe
   const horizon = new Date(now.getTime() + MATERIALISATION_HORIZON_DAYS * DAY_MS);
   const rows = fixtureRowsFor(updated, now, horizon);
 
+  // Filtered by `now` to match `countFixturesByPropagation`'s basis (the
+  // preview the owner saw on the edit form) rather than counting every row
+  // ever written for this game — the two are expected to agree exactly
+  // because a `scheduled` fixture is only ever created in the future
+  // (`fixtureRowsFor` never looks behind `now`) and this function does not
+  // rely on that invariant holding to stay consistent with itself.
   const scheduledBefore = await db
     .select({ value: count() })
     .from(fixtures)
-    .where(and(eq(fixtures.gameId, game.id), eq(fixtures.lifecycle, "scheduled")));
+    .where(and(eq(fixtures.gameId, game.id), eq(fixtures.lifecycle, "scheduled"), gte(fixtures.kicksOffAt, now)));
 
   const untouched = await db
     .select({ value: count() })
     .from(fixtures)
-    .where(and(eq(fixtures.gameId, game.id), ne(fixtures.lifecycle, "scheduled")));
+    .where(and(eq(fixtures.gameId, game.id), ne(fixtures.lifecycle, "scheduled"), gte(fixtures.kicksOffAt, now)));
 
   const statements = [
     db.update(games).set({ ...values, recurrenceStartDate }).where(eq(games.id, game.id)),
@@ -107,7 +113,17 @@ export async function updateGame(params: UpdateGameParams): Promise<UpdateGameRe
   };
 }
 
-/** The fields worth showing an owner in an audit trail — not the whole row. */
+/**
+ * The fields worth showing an owner in an audit trail — not the whole row.
+ *
+ * Mirrors exactly the five columns `fixtureRowsFor` copies onto each fixture
+ * (`minPlayers`, `maxPlayers`, `prefersEvenNumbers`, `shortWarningOffsetHours`,
+ * `durationMinutes`) plus the identifying/scheduling fields. Every one of
+ * those five must be here: an edit that changes only `durationMinutes` or
+ * only `shortWarningOffsetHours` still needs `beforeJson`/`afterJson` to
+ * differ, or the audit trail silently fails to record the one thing that
+ * changed even though the fixtures it propagated to did change.
+ */
 function auditShape(game: {
   name: string;
   venueName: string;
@@ -116,6 +132,8 @@ function auditShape(game: {
   minPlayers: number;
   maxPlayers: number;
   prefersEvenNumbers: boolean;
+  durationMinutes: number;
+  shortWarningOffsetHours: number;
   timezone: string;
 }) {
   return {
@@ -126,6 +144,8 @@ function auditShape(game: {
     minPlayers: game.minPlayers,
     maxPlayers: game.maxPlayers,
     prefersEvenNumbers: game.prefersEvenNumbers,
+    durationMinutes: game.durationMinutes,
+    shortWarningOffsetHours: game.shortWarningOffsetHours,
     timezone: game.timezone,
   };
 }

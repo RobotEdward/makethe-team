@@ -1,5 +1,5 @@
 import { env, SELF } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
 import { auditLog, fixtures, games, memberships, players } from "../../src/db/schema.js";
@@ -431,6 +431,30 @@ describe("editing a game", () => {
 
     expect((await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie }, redirect: "manual" })).status).toBe(404);
     expect((await post(`/g/${gameId}/edit`, cookie, VALID)).status).toBe(404);
+  });
+
+  /**
+   * The existing "states how many fixtures the change will affect" test only
+   * matches `/This will update \d+ scheduled fixtures?\./`, which is true for
+   * both the singular and plural wording — it would not fail if
+   * `propagationNotice`'s singular/plural ternaries were reversed. This drives
+   * the counts to exactly one scheduled and one untouched fixture and pins
+   * the exact singular strings, including the "fixture people have already
+   * been emailed about stays unchanged" wording on the untouched half.
+   */
+  it("uses singular wording when exactly one fixture is affected either way", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const db = testDb();
+    const rows = await db.select().from(fixtures).where(eq(fixtures.gameId, gameId));
+    expect(rows.length).toBeGreaterThan(1);
+
+    const [, keepOpen, ...rest] = rows;
+    await db.delete(fixtures).where(inArray(fixtures.id, rest.map((row) => row.id)));
+    await db.update(fixtures).set({ lifecycle: "open" }).where(eq(fixtures.id, keepOpen!.id));
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+    expect(html).toContain("This will update 1 scheduled fixture.");
+    expect(html).toContain("1 fixture people have already been emailed about stays unchanged.");
   });
 
   /**

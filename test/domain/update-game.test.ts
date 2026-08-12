@@ -160,4 +160,54 @@ describe("updateGame", () => {
     const [updated] = await db.select().from(games).where(eq(games.id, game.id));
     expect(updated?.recurrenceStartDate).toBe("2026-08-13");
   });
+
+  /**
+   * The single most destructive regression this function could have: the
+   * delete's `where` dropping its `gameId` half and wiping every other
+   * squad's `scheduled` fixtures along with the game actually being edited.
+   * Every other test in this file seeds exactly one game, so none of them
+   * would notice that — a second game's fixtures are the only thing that
+   * can. Confirmed by deliberately breaking the scope (see task-8-report.md,
+   * "Fix round 1") and watching this fail before restoring it.
+   */
+  it("never touches another game's scheduled fixtures", async () => {
+    const { db, game, actorPlayerId } = await seed();
+
+    const otherGameId = await insertGame(db, { recurrenceStartDate: "2026-08-13", name: "Sunday 5-a-side" });
+    const [otherGame] = await db.select().from(games).where(eq(games.id, otherGameId));
+    await materialiseGame(db, otherGame!, NOW);
+    const otherFixturesBefore = await db.select().from(fixtures).where(eq(fixtures.gameId, otherGameId));
+    expect(otherFixturesBefore.length).toBeGreaterThan(0);
+
+    await updateGame({
+      db, game, values: values({ kickoffTime: "20:30", weekday: "FR" }), actorPlayerId, now: NOW,
+    });
+
+    const otherFixturesAfter = await db.select().from(fixtures).where(eq(fixtures.gameId, otherGameId));
+    expect(otherFixturesAfter.length).toBe(otherFixturesBefore.length);
+    expect(new Set(otherFixturesAfter.map((f) => f.id))).toEqual(new Set(otherFixturesBefore.map((f) => f.id)));
+    // Not just the same count and ids — the same kickoff instants too, so a
+    // delete-and-recreate of the wrong rows (same count, different ids or
+    // times) is caught as well as an outright loss.
+    expect(new Set(otherFixturesAfter.map((f) => f.kicksOffAt.getTime()))).toEqual(
+      new Set(otherFixturesBefore.map((f) => f.kicksOffAt.getTime())),
+    );
+  });
+
+  /**
+   * `fixtureRowsFor` copies five columns onto each fixture; `auditShape` must
+   * capture all five or an edit that changes only one of the two easy to
+   * forget — `durationMinutes` or `shortWarningOffsetHours` — produces a
+   * before/after pair that is byte-identical, silently failing to record the
+   * one thing that actually changed.
+   */
+  it("records a duration-only change in the audit trail", async () => {
+    const { db, game, actorPlayerId } = await seed();
+    await updateGame({ db, game, values: values({ durationMinutes: "90" }), actorPlayerId, now: NOW });
+
+    const [row] = await db.select().from(auditLog).where(eq(auditLog.action, "game.updated"));
+    expect(row?.beforeJson).not.toBe(row?.afterJson);
+    expect(row?.beforeJson).toContain('"durationMinutes":60');
+    expect(row?.afterJson).toContain('"durationMinutes":90');
+  });
 });
