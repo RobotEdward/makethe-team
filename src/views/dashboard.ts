@@ -89,7 +89,11 @@ function renderOwnedGamesSection(games: readonly OwnedGame[]): string {
   if (games.length === 0) return link;
 
   const items = games
-    .map((game) => `<li><a href="${gamePath(game.id)}">${escapeHtml(game.name)}</a></li>`)
+    // `escapeHtml` on the href as well as the name. The id is a UUID, so this
+    // is not exploitable — it is here so the pattern that gets copied out of
+    // this file is the safe one, and so it matches `src/views/game-overview.ts`
+    // which escapes the identical construction.
+    .map((game) => `<li><a href="${escapeHtml(gamePath(game.id))}">${escapeHtml(game.name)}</a></li>`)
     .join("");
   return `
     ${link}

@@ -60,7 +60,62 @@ export function isPlausibleEmail(value: string): boolean {
   return domain.length > 0 && domain.includes(".") && !domain.startsWith(".") && !domain.endsWith(".");
 }
 
+/**
+ * Is this the database refusing a duplicate, as opposed to any other failure?
+ *
+ * Matched on SQLite's message because D1 gives no error code through Drizzle.
+ * Walks the `cause` chain: Drizzle wraps the D1 error, which wraps SQLite's.
+ * Deliberately narrow — every other error still propagates and still becomes a
+ * 500, because "we could not tell what went wrong" must not be answered with
+ * "you're already in the squad".
+ */
+function isUniqueViolation(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current instanceof Error && depth < 5; depth++) {
+    if (current.message.includes("UNIQUE constraint failed")) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+/**
+ * One attempt per constraint a concurrent identical join can beat us to: the
+ * `players.email` index and the `(game_id, player_id)` membership index.
+ */
+const MAX_JOIN_ATTEMPTS = 3;
+
+/**
+ * Join, re-running the lookups when a concurrent identical join beat us to a
+ * row rather than turning the collision into a 500.
+ *
+ * The read-then-write below is not atomic and cannot be made so: D1 has no
+ * interactive transactions, so `attemptJoin` looks for a player, finds none,
+ * and inserts — and a double-tapped "Join the squad" button runs that twice at
+ * once. The loser hits `UNIQUE (email)` (or `UNIQUE (game_id, player_id)`) and,
+ * before this, handed the person a 500 for an operation that had *succeeded*,
+ * leaving them with no way to tell whether they had joined.
+ *
+ * **Why more than one retry.** Losing the player-insert race and losing the
+ * membership-insert race are two different collisions, and one request can lose
+ * both in turn: it retries past the player row the winner created, reaches the
+ * membership insert, and finds the winner has just got there too. Each
+ * violation is raised only *after* the row that caused it is committed, so
+ * every retry starts from strictly more state than the last and the loop
+ * cannot spin — with two constraints in play, a third attempt always finds
+ * both rows and inserts nothing. The bound is a backstop, not the mechanism;
+ * exhausting it rethrows, because a violation nobody can make progress against
+ * is a real fault and must not be reported as a successful join.
+ */
 export async function joinSquad(params: JoinSquadParams): Promise<JoinOutcome> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await attemptJoin(params);
+    } catch (error) {
+      if (!isUniqueViolation(error) || attempt >= MAX_JOIN_ATTEMPTS) throw error;
+    }
+  }
+}
+
+async function attemptJoin(params: JoinSquadParams): Promise<JoinOutcome> {
   const { db, gameId, name, now } = params;
   const email = normaliseEmail(params.email);
 

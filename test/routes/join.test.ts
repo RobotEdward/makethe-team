@@ -83,6 +83,42 @@ describe("GET /j/:token", () => {
     expect(html).toContain("Oxford Sports Park");
   });
 
+  /**
+   * Spec §4.3's full list. Someone deciding whether to join needs the address,
+   * the day, the time, how long it runs and how many people are wanted — a
+   * page that only names the game asks them to commit to a time and a place
+   * they cannot see. The venue link is also the only place `parseGameForm`'s
+   * `javascript:`-scheme rejection guards anything: it exists because this
+   * value ends up in an `href` on the one page a stranger can reach.
+   */
+  it("shows the address, the schedule and the squad size (spec §4.3)", async () => {
+    const { game } = await seedGame({
+      venueAddress: "12 Iffley Road, Oxford",
+      venueUrl: "https://example.com/pitch",
+      recurrenceRule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=TH",
+      kickoffTime: "19:00",
+      durationMinutes: 90,
+      timezone: "Europe/London",
+      minPlayers: 10,
+      maxPlayers: 14,
+    });
+
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    expect(html).toContain("12 Iffley Road, Oxford");
+    expect(html).toContain('href="https://example.com/pitch"');
+    expect(html).toContain("Every other Thursday at 19:00 (Europe/London), for 90 minutes.");
+    expect(html).toContain("10 to 14 players.");
+  });
+
+  it("omits the optional venue fields rather than rendering blanks", async () => {
+    const { game } = await seedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    expect(html).not.toContain("More about the venue");
+    expect(html).toContain("Every Thursday at 19:00");
+  });
+
   it("redacts squad members to a first name and initial (BR-26)", async () => {
     const { db, game } = await seedGame();
     const playerId = await insertPlayer(db, { name: "Edward Charles", email: "edward@example.com" });
@@ -225,6 +261,30 @@ describe("POST /j/:token", () => {
     // N-6 is about a membership, not a fixture — the only row in the
     // catalogue with a null fixture id.
     expect(log?.fixtureId).toBeNull();
+  });
+
+  /**
+   * The same double-tap as `test/domain/join-squad.test.ts`, driven through
+   * the route, because the failure mode this closes is an HTTP one: the loser
+   * of the race used to get a 500 "something went wrong" for an operation that
+   * had succeeded, leaving them unable to tell whether they were in the squad.
+   */
+  it("answers both halves of a double-tapped join without a 500", async () => {
+    const { db, game } = await seedGame();
+
+    const responses = await Promise.all([
+      joinPost(game.inviteToken, { name: "Alex Smith", email: "alex@example.com" }),
+      joinPost(game.inviteToken, { name: "Alex Smith", email: "alex@example.com" }),
+    ]);
+
+    for (const response of responses) {
+      expect(response.status).toBe(200);
+    }
+    expect(await db.select().from(players).where(eq(players.email, "alex@example.com"))).toHaveLength(1);
+    expect(await db.select().from(memberships).where(eq(memberships.gameId, game.id))).toHaveLength(1);
+
+    // Let any welcome land before the next test's reset — see the note above.
+    await waitForNotificationRows(1);
   });
 
   it("is idempotent for someone already in the squad", async () => {

@@ -28,6 +28,12 @@ const VALID = {
   minPlayers: "10",
   maxPlayers: "14",
   prefersEvenNumbers: "on",
+  // The hidden companion a browser always submits alongside the checkbox, so
+  // these hand-built bodies are faithful to what the form actually posts. See
+  // `PREFERS_EVEN_SUBMITTED` in `src/views/game-form.ts` for why it exists —
+  // and the "unchecking survives a validation round-trip" test below, which is
+  // the behaviour it buys.
+  prefersEvenNumbersSubmitted: "1",
 };
 
 describe("GET /g/new", () => {
@@ -389,6 +395,46 @@ describe("the fixtures list on /g/:id", () => {
   });
 });
 
+/**
+ * BR-29's advisory nudge, on the page both create and edit land on.
+ *
+ * The warning is re-derived from the saved row rather than carried through the
+ * 303, so these drive it by seeding a game rather than by submitting a form —
+ * which is also what pins the "it keeps showing" half of the behaviour.
+ */
+describe("the odd-max nudge on /g/:id", () => {
+  beforeEach(resetDatabase);
+
+  async function overviewFor(overrides: Record<string, unknown>) {
+    const { cookie } = await signIn();
+    const db = testDb();
+    const [owner] = await db.select().from(players);
+    const gameId = await insertGame(db, overrides);
+    await insertMembership(db, gameId, owner!.id, { role: "owner" });
+    return (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
+  }
+
+  it("warns when an odd maximum is paired with a preference for even numbers", async () => {
+    const html = await overviewFor({ maxPlayers: 13, prefersEvenNumbers: true });
+    expect(html).toContain("A squad of 13 can never split evenly");
+  });
+
+  it("says nothing when the maximum is even", async () => {
+    const html = await overviewFor({ maxPlayers: 14, prefersEvenNumbers: true });
+    expect(html).not.toContain("can never split evenly");
+  });
+
+  it("says nothing when even numbers are not preferred", async () => {
+    const html = await overviewFor({ maxPlayers: 13, prefersEvenNumbers: false });
+    expect(html).not.toContain("can never split evenly");
+  });
+
+  it("shows the venue address the owner saved", async () => {
+    const html = await overviewFor({ venueAddress: "12 Iffley Road, Oxford" });
+    expect(html).toContain("12 Iffley Road, Oxford");
+  });
+});
+
 describe("editing a game", () => {
   beforeEach(resetDatabase);
 
@@ -455,6 +501,59 @@ describe("editing a game", () => {
     const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
     expect(html).toContain("This will update 1 scheduled fixture.");
     expect(html).toContain("1 fixture people have already been emailed about stays unchanged.");
+  });
+
+  /**
+   * An unchecked checkbox is absent from the POST, so without the hidden
+   * companion the redisplay cannot tell "unchecked" from "never submitted" and
+   * silently re-checks the box — an owner who unchecks it, mistypes something
+   * and corrects it ends up saving `prefers_even_numbers = true` against their
+   * intent. The first assertion pins the hidden input's presence, because
+   * these tests build the body by hand and would otherwise pass while a real
+   * browser sent something different.
+   */
+  it("keeps 'prefer even numbers' unchecked through a validation round-trip", async () => {
+    const { cookie, gameId } = await ownedGame();
+
+    const form = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+    expect(form).toContain('<input type="hidden" name="prefersEvenNumbersSubmitted" value="1">');
+
+    // A browser sends nothing at all for an unchecked box, so the key is
+    // deleted rather than emptied — an empty string is not how "unchecked"
+    // appears on the wire.
+    const unchecked: Record<string, string> = { ...VALID, minPlayers: "99" };
+    delete unchecked["prefersEvenNumbers"];
+    const response = await post(`/g/${gameId}/edit`, cookie, unchecked);
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+    expect(html).toContain('name="prefersEvenNumbers" type="checkbox">');
+    expect(html).not.toContain('type="checkbox" checked');
+  });
+
+  /**
+   * The notice warns about the *destructive* half of the edit, so the one
+   * render where the owner is still deciding whether to resubmit is exactly
+   * the render it must not disappear from.
+   */
+  it("still states how many fixtures the change will affect on a rejected edit", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const response = await post(`/g/${gameId}/edit`, cookie, { ...VALID, kickoffTime: "not a time" });
+
+    expect(response.status).toBe(422);
+    expect(await response.text()).toMatch(/This will update \d+ scheduled fixtures?\./);
+  });
+
+  it("carries the odd-max nudge back with a rejected edit", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const response = await post(`/g/${gameId}/edit`, cookie, {
+      ...VALID,
+      maxPlayers: "13",
+      kickoffTime: "not a time",
+    });
+
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("A squad of 13 can never split evenly");
   });
 
   /**

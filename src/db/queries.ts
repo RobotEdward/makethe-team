@@ -231,7 +231,16 @@ export async function findFirstScheduledFixture(
   return fixture ?? null;
 }
 
-/** Non-terminal fixtures from `now` onward, soonest first. */
+/**
+ * Every fixture from `now` onward, soonest first — *all* lifecycles, including
+ * the terminal `played` and `cancelled`.
+ *
+ * Deliberately unfiltered: the owner page this feeds renders each row's
+ * lifecycle, so a cancelled fixture reads as cancelled rather than vanishing,
+ * and an owner asking "what happened to Thursday?" is better served by seeing
+ * it than by an unexplained gap. Named `listUpcoming…` for the `kicks_off_at`
+ * bound, which is the only filter it applies.
+ */
 export async function listUpcomingFixtures(
   db: Db,
   gameId: string,

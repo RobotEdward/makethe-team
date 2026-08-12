@@ -76,3 +76,24 @@ export function parseRecurrenceRule(input: string): WeeklyRule {
 export function formatRecurrenceRule(rule: WeeklyRule): string {
   return `FREQ=WEEKLY;INTERVAL=${rule.interval};BYDAY=${rule.byday}`;
 }
+
+const WEEKDAY_NAMES: Record<Weekday, string> = {
+  SU: "Sunday", MO: "Monday", TU: "Tuesday", WE: "Wednesday",
+  TH: "Thursday", FR: "Friday", SA: "Saturday",
+};
+
+/**
+ * The rule in the words a stranger reads on the public invite page — "Every
+ * Thursday", "Every other Thursday".
+ *
+ * Lives beside the parser rather than in a view because it is the inverse of
+ * `formatRecurrenceRule`: both turn a `WeeklyRule` into a string, and keeping
+ * them adjacent is what stops a third weekday-name table appearing in a view
+ * and drifting from `WEEKDAYS`.
+ */
+export function describeRecurrenceRule(rule: WeeklyRule): string {
+  const day = WEEKDAY_NAMES[rule.byday];
+  if (rule.interval === 1) return `Every ${day}`;
+  if (rule.interval === 2) return `Every other ${day}`;
+  return `Every ${rule.interval} weeks on ${day}`;
+}

@@ -88,7 +88,7 @@ gamesRoutes.post(NEW_GAME_PATH, requirePlayer, async (c) => {
         submitLabel: "Create the game",
         values: submittedValues(form),
         errors: parsed.errors,
-        warnings: [],
+        warnings: parsed.warnings,
         showAdvanced: false,
       }),
       422,
@@ -125,7 +125,10 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       gameId: game.id,
       gameName: game.name,
       venueName: game.venueName,
+      venueAddress: game.venueAddress,
       timezone: game.timezone,
+      maxPlayers: game.maxPlayers,
+      prefersEvenNumbers: game.prefersEvenNumbers,
       inviteToken: game.inviteToken,
       squad,
       upcoming,
@@ -220,6 +223,13 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
   const parsed = parseGameForm(form);
 
   if (!parsed.ok) {
+    // The propagation notice is recomputed rather than omitted: it warns about
+    // the destructive half of this operation ("this will update 4 scheduled
+    // fixtures"), and a redisplay is exactly when the owner is re-reading the
+    // form and deciding whether to submit it again. Dropping it here would
+    // make the warning appear only on the attempts that did not need it.
+    const counts = await countFixturesByPropagation(db, game.id, now);
+
     return c.html(
       renderGameFormPage({
         action: gameEditPath(game.id),
@@ -227,8 +237,9 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
         submitLabel: "Save changes",
         values: submittedValues(form),
         errors: parsed.errors,
-        warnings: [],
+        warnings: parsed.warnings,
         showAdvanced: true,
+        affectedNotice: propagationNotice(counts),
       }),
       422,
     );

@@ -9,6 +9,33 @@ const WEEKDAY_LABELS: Record<string, string> = {
   FR: "Friday", SA: "Saturday", SU: "Sunday",
 };
 
+/**
+ * The hidden companion to the "Prefer even numbers" checkbox.
+ *
+ * An unchecked checkbox is simply absent from the POST body, so "the owner
+ * unchecked it" and "this form was never submitted" arrive as the same
+ * `undefined`. The create form wants a checked default; a 422 redisplay must
+ * show back what was actually submitted. Without a marker, an owner who
+ * unchecks the box, mistypes the kickoff and corrects it silently saves
+ * `prefers_even_numbers = true` against their intent — the redisplay re-checks
+ * the box and they have no reason to look at it again.
+ *
+ * A hidden input is always submitted, so its presence distinguishes the two
+ * cases. `parseGameForm` never reads this field: it is a rendering concern
+ * only, and the checkbox itself remains the only thing that decides the value.
+ */
+const PREFERS_EVEN_SUBMITTED = "prefersEvenNumbersSubmitted";
+
+function prefersEvenChecked(values: Partial<Record<string, string>>): boolean {
+  if (values[PREFERS_EVEN_SUBMITTED] !== undefined) {
+    // This came back from a real submission: absent means unchecked, full stop.
+    return values["prefersEvenNumbers"] === "on";
+  }
+  // A fresh render. Absent means "the caller said nothing", and the default for
+  // a new game is on; the edit route says `""` explicitly for a saved false.
+  return values["prefersEvenNumbers"] === undefined || values["prefersEvenNumbers"] === "on";
+}
+
 export interface GameFormPageParams {
   /** Where the form posts. Always a same-origin relative path (`form-action 'self'`). */
   action: string;
@@ -106,9 +133,10 @@ export function renderGameFormPage(params: GameFormPageParams): string {
         ${field("maxPlayers", "Maximum players", textInput("maxPlayers", "number"))}
       </div>
       <div class="field">
+        <input type="hidden" name="${PREFERS_EVEN_SUBMITTED}" value="1">
         <label for="prefersEvenNumbers">
           <input id="prefersEvenNumbers" name="prefersEvenNumbers" type="checkbox"${
-            values["prefersEvenNumbers"] === undefined || values["prefersEvenNumbers"] === "on" ? " checked" : ""
+            prefersEvenChecked(values) ? " checked" : ""
           }>
           Prefer even numbers
         </label>

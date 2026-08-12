@@ -102,6 +102,37 @@ describe("updateGame", () => {
     expect(result.untouched).toBe(3);
   });
 
+  /**
+   * A `scheduled` fixture can legitimately sit in the past: `src/sweep/retire.ts`
+   * only retires one an hour after kickoff. Nothing regenerates it —
+   * `fixtureRowsFor` never looks behind `now` — so a delete unbounded by
+   * `kicks_off_at` destroys it permanently, and `scheduledRewritten` (which is
+   * bounded by `now`) reports that it never happened.
+   */
+  it("leaves a past-dated scheduled fixture alone", async () => {
+    const { db, game, actorPlayerId } = await seed();
+    const past = new Date(NOW.getTime() - 30 * 60_000);
+    const id = crypto.randomUUID();
+    await db.insert(fixtures).values({
+      id,
+      gameId: game.id,
+      kicksOffAt: past,
+      lifecycle: "scheduled",
+      minPlayers: 10,
+      maxPlayers: 14,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      durationMinutes: 60,
+    });
+
+    const result = await updateGame({ db, game, values: values({ kickoffTime: "20:30" }), actorPlayerId, now: NOW });
+
+    const [survivor] = await db.select().from(fixtures).where(eq(fixtures.id, id));
+    expect(survivor?.kicksOffAt.getTime()).toBe(past.getTime());
+    // And the return value is telling the truth about what was rewritten.
+    expect(result.scheduledRewritten).toBeGreaterThan(0);
+  });
+
   it("does not violate the (game_id, kicks_off_at) unique index when times shift onto each other", async () => {
     // Shifting every fixture by exactly one week moves each onto the slot the
     // next one occupied. An in-place update would collide; delete-then-insert

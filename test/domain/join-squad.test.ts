@@ -74,6 +74,30 @@ describe("joinSquad", () => {
     expect(membership?.joinedAt.getTime()).toBe(NOW.getTime());
   });
 
+  /**
+   * The double-tap. D1 has no interactive transactions, so both calls see no
+   * player, both insert, and one loses on `UNIQUE (email)`. Before the retry
+   * that loser threw, the route turned it into a 500, and the person had no
+   * way to tell whether they had joined — for an operation that had in fact
+   * succeeded. Both calls must now report a coherent outcome over exactly one
+   * player row and one membership row.
+   */
+  it("survives two concurrent joins with the same new address", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+
+    const outcomes = await Promise.all([
+      joinSquad({ db, gameId, name: "Alex Smith", email: "alex@example.com", now: NOW }),
+      joinSquad({ db, gameId, name: "Alex Smith", email: "alex@example.com", now: NOW }),
+    ]);
+
+    for (const outcome of outcomes) {
+      expect(["joined", "already-member"]).toContain(outcome.kind);
+    }
+    expect(await db.select().from(players).where(eq(players.email, "alex@example.com"))).toHaveLength(1);
+    expect(await db.select().from(memberships).where(eq(memberships.gameId, gameId))).toHaveLength(1);
+  });
+
   it("does not disturb a membership in another game", async () => {
     const db = testDb();
     const first = await insertGame(db);

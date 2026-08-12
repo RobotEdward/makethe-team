@@ -86,8 +86,18 @@ export async function updateGame(params: UpdateGameParams): Promise<UpdateGameRe
 
   const statements = [
     db.update(games).set({ ...values, recurrenceStartDate }).where(eq(games.id, game.id)),
-    // Scoped to this game *and* to `scheduled`. Both halves are load-bearing.
-    db.delete(fixtures).where(and(eq(fixtures.gameId, game.id), eq(fixtures.lifecycle, "scheduled"))),
+    // Scoped to this game, to `scheduled`, *and* to `kicks_off_at >= now`. All
+    // three are load-bearing, and the third is the one that is easy to omit:
+    // `fixtureRowsFor` only generates from `now` forward, so anything deleted
+    // behind `now` is deleted and never rebuilt. A `scheduled` fixture can sit
+    // in the past for up to an hour before `src/sweep/retire.ts` retires it, so
+    // without this bound an edit inside that window silently destroys a real
+    // row — one the counts above and the return value both deny touching,
+    // because they are already filtered by `now`. The delete, the counts and
+    // the re-materialisation now share a single basis.
+    db.delete(fixtures).where(
+      and(eq(fixtures.gameId, game.id), eq(fixtures.lifecycle, "scheduled"), gte(fixtures.kicksOffAt, now)),
+    ),
     ...chunk(rows, INSERT_CHUNK_SIZE).map((batch) =>
       // `onConflictDoNothing` because a re-derived instant can collide with a
       // surviving `open` fixture at the same moment — the open one wins, since

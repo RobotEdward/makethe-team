@@ -1,4 +1,5 @@
 import { joinPath } from "../auth/paths.js";
+import { describeRecurrenceRule, parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { redactName } from "../domain/redact-name.js";
 import { escapeHtml, layout } from "./layout.js";
 import { FORM_CSS } from "./styles.js";
@@ -33,6 +34,23 @@ import { FORM_CSS } from "./styles.js";
 export interface InvitePageParams {
   gameName: string;
   venueName: string;
+  /** Optional columns on the game row; omitted from the page when null. */
+  venueAddress: string | null;
+  /**
+   * Rendered as a link, which is what `parseGameForm`'s scheme check exists
+   * for: a `javascript:` URL is refused there precisely because it would land
+   * in an `href` here, on the one page a stranger can reach.
+   */
+  venueUrl: string | null;
+  /** The stored RRULE — described in words here (spec §4.3's "day"). */
+  recurrenceRule: string;
+  /** Wall-clock "HH:MM" *in `timezone`*, exactly as stored. */
+  kickoffTime: string;
+  durationMinutes: number;
+  /** Named on the page, so "19:00" is unambiguous to someone reading elsewhere. */
+  timezone: string;
+  minPlayers: number;
+  maxPlayers: number;
   /** Echoed into the form action so the POST lands on the same game. */
   inviteToken: string;
   /**
@@ -60,7 +78,32 @@ export interface InvitePageParams {
  * post-mortem in `docs/known-issues.md`.
  */
 export function renderInvitePage(params: InvitePageParams): string {
-  const { gameName, venueName, inviteToken, squad, firstFixtureLocal, values, error } = params;
+  const {
+    gameName, venueName, venueAddress, venueUrl, recurrenceRule, kickoffTime,
+    durationMinutes, timezone, minPlayers, maxPlayers,
+    inviteToken, squad, firstFixtureLocal, values, error,
+  } = params;
+
+  const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
+
+  // The scheme is already restricted to http/https at the form boundary
+  // (`parseGameForm`), which is what makes an `href` safe here at all;
+  // `escapeHtml` handles the attribute quoting on top of that.
+  const venueLink =
+    venueUrl === null
+      ? ""
+      : `<p><a href="${escapeHtml(venueUrl)}" rel="noopener noreferrer">More about the venue</a></p>`;
+
+  // No `Intl` and no conversion: `kickoffTime` is already a wall-clock reading
+  // *in* `timezone` (that is how the column is defined), so the honest thing to
+  // do is print it and name the zone. Anything that genuinely needs converting
+  // — `firstFixtureLocal` — was formatted by `src/domain/time/zone.ts` in the
+  // route before it got here.
+  const scheduleLine =
+    `<p>${escapeHtml(describeRecurrenceRule(parseRecurrenceRule(recurrenceRule)))} at ` +
+    `${escapeHtml(kickoffTime)} (${escapeHtml(timezone)}), for ${durationMinutes} minutes.</p>`;
+
+  const sizeLine = `<p>${minPlayers} to ${maxPlayers} players.</p>`;
 
   const squadItems = squad
     // BR-26. The one place a squad member's name is interpolated on a public
@@ -82,6 +125,10 @@ export function renderInvitePage(params: InvitePageParams): string {
   const body = `
     <h1>Join ${escapeHtml(gameName)}</h1>
     <p>${escapeHtml(venueName)}</p>
+    ${addressLine}
+    ${venueLink}
+    ${scheduleLine}
+    ${sizeLine}
     ${whenLine}
 
     <h2>Who's playing (${squad.length})</h2>

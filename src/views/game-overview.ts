@@ -1,4 +1,5 @@
 import { gameEditPath, joinPath } from "../auth/paths.js";
+import { oddMaxWarning } from "../domain/game-form.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
 import { escapeHtml, layout } from "./layout.js";
@@ -10,7 +11,11 @@ export interface GameOverviewParams {
   gameId: string;
   gameName: string;
   venueName: string;
+  /** Optional on the game row, so optional here — omitted rather than blank. */
+  venueAddress: string | null;
   timezone: string;
+  maxPlayers: number;
+  prefersEvenNumbers: boolean;
   inviteToken: string;
   squad: ReadonlyArray<{ name: string; role: "player" | "owner"; isGuest: boolean }>;
   upcoming: ReadonlyArray<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>;
@@ -26,8 +31,20 @@ export interface GameOverviewParams {
  * strangers can reach.
  */
 export function renderGameOverviewPage(params: GameOverviewParams): string {
-  const { gameId, gameName, venueName, timezone, inviteToken, squad, upcoming } = params;
+  const { gameId, gameName, venueName, venueAddress, timezone, inviteToken, squad, upcoming } = params;
   const inviteUrl = `${SITE_ORIGIN}${joinPath(inviteToken)}`;
+
+  // BR-29's nudge, re-derived from the *saved* row rather than threaded through
+  // the 303 from create/edit. It is advisory and it stays true until the
+  // configuration changes, so it is shown for as long as it is true rather than
+  // once, as a toast, at the moment of saving. `oddMaxWarning` is shared with
+  // `parseGameForm` so this page and the form cannot word it differently.
+  const oddMax =
+    params.prefersEvenNumbers && params.maxPlayers % 2 === 1
+      ? `<p class="nudge">${escapeHtml(oddMaxWarning(params.maxPlayers))}</p>`
+      : "";
+
+  const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
 
   const squadItems = squad
     .map((member) =>
@@ -46,6 +63,8 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     <p>${escapeHtml(venueName)}</p>
+    ${addressLine}
+    ${oddMax}
     <p><a href="${escapeHtml(gameEditPath(gameId))}">Edit this game</a></p>
 
     <h2>Invite people</h2>

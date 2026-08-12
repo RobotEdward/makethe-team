@@ -60,9 +60,16 @@ export interface FieldError {
   message: string;
 }
 
+/**
+ * Warnings ride on *both* variants. A submission can be advisory-odd and
+ * invalid at the same time (an odd max plus a mistyped kickoff), and the 422
+ * redisplay is precisely where the nudge is most actionable — the owner is
+ * still in the form. Dropping it on the failure path would mean the nudge
+ * appeared only for submissions that happened to be otherwise perfect.
+ */
 export type GameFormResult =
   | { ok: true; values: GameFormValues; warnings: string[] }
-  | { ok: false; errors: FieldError[] };
+  | { ok: false; errors: FieldError[]; warnings: string[] };
 
 /**
  * The zones the picker offers and the validator accepts — one list, so the
@@ -88,6 +95,21 @@ function text(value: unknown): string {
 function optionalText(value: unknown): string | null {
   const trimmed = text(value);
   return trimmed === "" ? null : trimmed;
+}
+
+/**
+ * The one wording for the odd-`max_players` nudge (BR-29, spec Part 3 item 6).
+ *
+ * Exported because two surfaces say it: `parseGameForm` below, so a rejected
+ * submission carries it back with the form the owner is still editing, and
+ * `src/views/game-overview.ts`, which re-derives the condition from the *saved*
+ * game row so it keeps showing for as long as the configuration is actually
+ * odd. An advisory condition that is still true deserves to still be on screen,
+ * and both create and edit 303 to `/g/:id`, so the owner meets it immediately
+ * after saving either way. One function so the two cannot word it differently.
+ */
+export function oddMaxWarning(maxPlayers: number): string {
+  return `A squad of ${maxPlayers} can never split evenly, so every full fixture will show as uneven. That's only a nudge — nothing is blocked.`;
 }
 
 const WHOLE_NUMBER = /^-?[0-9]+$/;
@@ -184,9 +206,7 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
   // can never satisfy parity, so it carries the `uneven` flag permanently.
   // Worth saying out loud; not worth refusing.
   if (prefersEvenNumbers && maxPlayers !== null && maxPlayers % 2 === 1) {
-    warnings.push(
-      `A squad of ${maxPlayers} can never split evenly, so every full fixture will show as uneven. That's only a nudge — nothing is blocked.`,
-    );
+    warnings.push(oddMaxWarning(maxPlayers));
   }
 
   const reminderDaysBefore = body["reminderDaysBefore"] === undefined
@@ -221,7 +241,7 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
     fail("shortWarningOffsetHours", `Warn between 1 and ${MAX_WARNING_OFFSET_HOURS} hours before.`);
   }
 
-  if (errors.length > 0) return { ok: false, errors };
+  if (errors.length > 0) return { ok: false, errors, warnings };
 
   return {
     ok: true,

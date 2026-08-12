@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { getDb, type Db } from "../db/client.js";
 import { findFirstScheduledFixture, findGameByInviteToken, listSquad } from "../db/queries.js";
+import type { games } from "../db/schema.js";
 import { isPlausibleEmail, joinSquad, normaliseEmail, type JoinOutcome } from "../domain/join-squad.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
@@ -61,7 +62,7 @@ function field(form: Record<string, unknown>, name: string): string {
 /** Everything both handlers need to render the invite page for one game. */
 async function invitePageFor(params: {
   db: Db;
-  game: { id: string; name: string; venueName: string; timezone: string; inviteToken: string };
+  game: typeof games.$inferSelect;
   now: Date;
   values?: { name?: string; email?: string };
   error?: string;
@@ -75,6 +76,17 @@ async function invitePageFor(params: {
   return renderInvitePage({
     gameName: game.name,
     venueName: game.venueName,
+    // Spec §4.3: address, when, how long and the squad size all belong on the
+    // page somebody decides from — a link that only names the game asks them
+    // to commit to a time and a place they cannot see.
+    venueAddress: game.venueAddress,
+    venueUrl: game.venueUrl,
+    recurrenceRule: game.recurrenceRule,
+    kickoffTime: game.kickoffTime,
+    durationMinutes: game.durationMinutes,
+    timezone: game.timezone,
+    minPlayers: game.minPlayers,
+    maxPlayers: game.maxPlayers,
     inviteToken: game.inviteToken,
     // Full names in, redacted inside the view (BR-26) — one place, so no
     // caller can forget.
