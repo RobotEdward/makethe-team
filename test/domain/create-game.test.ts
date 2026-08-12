@@ -78,4 +78,33 @@ describe("createGame", () => {
     expect(row?.action).toBe("game.created");
     expect(row?.actorPlayerId).toBe(ownerPlayerId);
   });
+
+  it("still creates the game when fixture materialisation fails, rather than losing the write", async () => {
+    const db = testDb();
+    const ownerPlayerId = await insertPlayer(db);
+
+    // Bypasses `parseGameForm` — which can never produce an invalid
+    // recurrence rule — to force `materialiseGame`'s call to
+    // `parseRecurrenceRule` to throw, exactly as a corrupted or
+    // future-format row would in production.
+    const created = await createGame({
+      db,
+      values: { ...values(), recurrenceRule: "FREQ=DAILY" },
+      ownerPlayerId,
+      now,
+    });
+
+    // The batch (game + owner membership + audit row) already committed
+    // before materialisation ran, and that commit is not undone by the
+    // later failure.
+    const [game] = await db.select().from(games).where(eq(games.id, created.gameId));
+    expect(game?.id).toBe(created.gameId);
+
+    const [membership] = await db.select().from(memberships).where(eq(memberships.gameId, created.gameId));
+    expect(membership?.role).toBe("owner");
+
+    const rows = await db.select().from(fixtures).where(eq(fixtures.gameId, created.gameId));
+    expect(rows).toHaveLength(0);
+    expect(created.fixturesCreated).toBe(0);
+  });
 });

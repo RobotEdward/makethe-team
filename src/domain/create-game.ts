@@ -40,6 +40,18 @@ export interface CreatedGame {
  * way of the `(game_id, kicks_off_at)` unique index: if it fails, the game
  * exists with no fixtures and the next daily sweep fills them in, which is a
  * recoverable state. The reverse order would not be.
+ *
+ * **A materialisation failure is caught here, not left to propagate.** The
+ * batch above has already committed by the time `materialiseGame` runs, so a
+ * throw at that point does not mean the create failed — it means the create
+ * succeeded and the *convenience* of having fixtures ready immediately did
+ * not. Letting it propagate would turn a recoverable, already-committed state
+ * into a 500 for the owner: they would never see the redirect, would have no
+ * way to tell the game was created, and a natural retry would create a
+ * *second* game with identical values. So this returns normally with
+ * `fixturesCreated: 0`, and the caller still redirects to the new game exactly
+ * as it would have on success. The daily sweep (`materialiseFixtures`) picks
+ * up the gap by the same idempotent path.
  */
 export async function createGame(params: CreateGameParams): Promise<CreatedGame> {
   const { db, values, ownerPlayerId, now } = params;
@@ -74,8 +86,20 @@ export async function createGame(params: CreateGameParams): Promise<CreatedGame>
     }),
   ]);
 
-  const [game] = await db.select().from(games).where(eq(games.id, gameId));
-  const fixturesCreated = game ? await materialiseGame(db, game, now) : 0;
+  let fixturesCreated = 0;
+  try {
+    const [game] = await db.select().from(games).where(eq(games.id, gameId));
+    if (game) fixturesCreated = await materialiseGame(db, game, now);
+  } catch (error) {
+    // See the doc comment above: the game and its owner membership are
+    // already committed, so this is logged for the daily sweep to be
+    // diagnosable, not rethrown.
+    console.error(
+      `materialising fixtures for newly created game ${gameId} failed, leaving it to the daily sweep: ${
+        error instanceof Error ? (error.stack ?? error.message) : String(error)
+      }`,
+    );
+  }
 
   return { gameId, inviteToken, fixturesCreated };
 }

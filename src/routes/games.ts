@@ -7,6 +7,19 @@ import { parseGameForm } from "../domain/game-form.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { renderGameFormPage } from "../views/game-form.js";
 
+/**
+ * Owner-facing game management, mounted at `/g/*` (see `GAMES_PREFIX` in
+ * `src/auth/paths.ts`).
+ *
+ * **Registration order matters.** `NEW_GAME_PATH` (`/g/new`) is registered
+ * here, on its own, with nothing else under `/g/*` yet. The next task in this
+ * milestone adds a `/g/:id` route (and friends) for reading/editing a
+ * specific game — that route MUST be registered *after* `NEW_GAME_PATH`.
+ * Hono matches routes in registration order, and `:id` matches the literal
+ * string `"new"` just as readily as a real id, so a `/g/:id` registered
+ * first would swallow `GET /g/new` and treat "new" as a game id — a 404 (or
+ * worse, some other game's page) where a form should be.
+ */
 export const gamesRoutes = new Hono<AppEnv>();
 
 /** This deployment's own origin, as the state-changing handlers compare it. */
