@@ -31,10 +31,6 @@ describe("dedupe-key builders", () => {
     expect(attentionKey("fix-1", "ply-1")).toBe("n4:fix-1:ply-1");
   });
 
-  it("n6 welcome: n6:<membership_id>", () => {
-    expect(welcomeKey("mem-1")).toBe("n6:mem-1");
-  });
-
   it("n2/n4 asymmetry: two promotions at different timestamps are distinct keys", () => {
     const first = promotionKey("fix-1", "ply-1", "2026-08-12T09:00:00.000Z");
     const second = promotionKey("fix-1", "ply-1", "2026-08-13T09:00:00.000Z");
@@ -45,5 +41,18 @@ describe("dedupe-key builders", () => {
     const first = attentionKey("fix-1", "ply-1");
     const second = attentionKey("fix-1", "ply-1");
     expect(first).toBe(second);
+  });
+});
+
+describe("welcomeKey", () => {
+  it("includes joinedAt so a rejoin is told again", () => {
+    // §2.8 says "rejoining sends again", but UNIQUE (game_id, player_id)
+    // forces a rejoin to reuse the membership row — so the membership id
+    // alone cannot distinguish the two sends. See spec §4.4.
+    const first = welcomeKey("m1", "2026-08-12T10:00:00.000Z");
+    const second = welcomeKey("m1", "2026-09-01T10:00:00.000Z");
+
+    expect(first).toBe("n6:m1:2026-08-12T10:00:00.000Z");
+    expect(second).not.toBe(first);
   });
 });

@@ -58,7 +58,13 @@ export type ApplyOutcome = { kind: "sent" } | { kind: "deferred" } | { kind: "fa
  */
 export async function insertQueuedLogRows(
   db: Db,
-  params: { fixtureId: string; notificationType: NotificationType },
+  /**
+   * `fixtureId` is nullable because N-6 (welcome) is not fixture-scoped — the
+   * column has always been nullable in §2.8 for exactly this notification, and
+   * M6a is the first caller to use it. Every fixture-scoped caller still
+   * passes a real id and is unaffected.
+   */
+  params: { fixtureId: string | null; notificationType: NotificationType },
   pending: PendingNotification[],
 ): Promise<PendingNotification[]> {
   const insertedIds = new Set<string>();

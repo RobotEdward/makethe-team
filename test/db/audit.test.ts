@@ -1,4 +1,5 @@
 import { env } from "cloudflare:test";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { recordAudit } from "../../src/db/audit.js";
 import { getDb } from "../../src/db/client.js";
@@ -122,5 +123,22 @@ describe("recordAudit", () => {
     await resetDatabase();
 
     expect(await db.select().from(auditLog)).toHaveLength(0);
+  });
+
+  it("records a game action against a game entity", async () => {
+    const gameId = await insertGame(db);
+
+    await recordAudit(db, {
+      actorPlayerId: null,
+      entityType: "game",
+      entityId: gameId,
+      action: "game.created",
+      after: { name: "Thursday 7-a-side" },
+      now: new Date(1_760_000_000_000),
+    });
+
+    const [row] = await db.select().from(auditLog).where(eq(auditLog.entityId, gameId));
+    expect(row?.action).toBe("game.created");
+    expect(row?.entityType).toBe("game");
   });
 });
