@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { fixtures } from "../../src/db/schema.js";
-import { materialiseFixtures } from "../../src/domain/materialise.js";
+import { fixtures, games } from "../../src/db/schema.js";
+import { fixtureRowsFor, materialiseFixtures, materialiseGame } from "../../src/domain/materialise.js";
 import {
   insertGame as insertGameRow,
   resetDatabase,
@@ -203,5 +203,48 @@ describe("materialiseFixtures", () => {
     }
     expect(first.fixturesCreated + second.fixturesCreated + third.fixturesCreated).toBe(5);
     expect(await fixtureInstants(gameId)).toHaveLength(5);
+  });
+});
+
+describe("materialiseGame", () => {
+  it("materialises one game and returns the count created", async () => {
+    const gameId = await insertGame();
+    const [game] = await db.select().from(games).where(eq(games.id, gameId));
+    const now = new Date(Date.UTC(2026, 7, 12, 9, 0));
+
+    const created = await materialiseGame(db, game!, now);
+
+    const rows = await db.select().from(fixtures).where(eq(fixtures.gameId, gameId));
+    expect(created).toBe(rows.length);
+    expect(created).toBeGreaterThan(0);
+  });
+
+  it("is idempotent — a second call creates nothing", async () => {
+    const gameId = await insertGame();
+    const [game] = await db.select().from(games).where(eq(games.id, gameId));
+    const now = new Date(Date.UTC(2026, 7, 12, 9, 0));
+
+    await materialiseGame(db, game!, now);
+    expect(await materialiseGame(db, game!, now)).toBe(0);
+  });
+});
+
+describe("fixtureRowsFor", () => {
+  it("builds rows without touching the database", async () => {
+    const gameId = await insertGame();
+    const [game] = await db.select().from(games).where(eq(games.id, gameId));
+    const now = new Date(Date.UTC(2026, 7, 12, 9, 0));
+
+    const rows = fixtureRowsFor(game!, now, new Date(now.getTime() + 35 * 86_400_000));
+
+    expect(rows.length).toBeGreaterThan(0);
+    // The five columns §2.8 copies at materialisation.
+    expect(rows[0]!.minPlayers).toBe(game!.minPlayers);
+    expect(rows[0]!.maxPlayers).toBe(game!.maxPlayers);
+    expect(rows[0]!.prefersEvenNumbers).toBe(game!.prefersEvenNumbers);
+    expect(rows[0]!.shortWarningOffsetHours).toBe(game!.shortWarningOffsetHours);
+    expect(rows[0]!.durationMinutes).toBe(game!.durationMinutes);
+    // Nothing was written.
+    expect(await db.select().from(fixtures)).toHaveLength(0);
   });
 });
