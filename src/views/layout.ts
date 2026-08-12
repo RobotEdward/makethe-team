@@ -1,13 +1,50 @@
+import type { PageScriptBlock } from "./scripts.js";
+import type { PageStyleBlock } from "./styles.js";
+
 export interface LayoutOptions {
   title: string;
   body: string;
+  /**
+   * CSS beyond the shared primitives below, specific to this page alone.
+   * Zero, one, or more blocks — the dashboard, for instance, passes both the
+   * fixture-display block it reuses and its own on top (`src/views/styles.ts`).
+   * Each renders as its own `<style>` tag.
+   *
+   * Typed against `PageStyleBlock` — the union of blocks listed in
+   * `PAGE_STYLE_BLOCKS` in `src/views/styles.ts` — so passing anything not
+   * enumerated there fails to compile. See that file's module comment for
+   * why: the sibling M4 branch hashes exactly that enumeration for its CSP,
+   * and an un-enumerated block ships CSS the browser will silently drop
+   * under it.
+   */
+  pageStyles?: readonly PageStyleBlock[];
+  /**
+   * Client-side JavaScript for this page alone — in practice, only the two
+   * passkey enhancements. **Almost every page should leave this unset**, and
+   * a page that sets it must still be completely usable when the script never
+   * runs (see `src/views/scripts.ts` for the whole argument).
+   *
+   * Typed against `PageScriptBlock` — the union of blocks listed in
+   * `PAGE_SCRIPT_BLOCKS` — for the same reason `pageStyles` is: M4's
+   * Content-Security-Policy will allow inline script by SHA-256 hash of that
+   * enumeration, so an un-enumerated block is script the browser silently
+   * drops. Passing anything not enumerated fails to compile.
+   */
+  pageScripts?: readonly PageScriptBlock[];
 }
 
 /**
- * The single stylesheet inlined into every page's `<head>`. Exported so
- * `src/security/csp.ts` can hash its exact content rather than a pasted
- * value — the hash is computed from this constant, so it can never drift
- * from what actually ships.
+ * Shared primitives only: tokens, reset, body/typography, and the handful of
+ * controls (buttons, the sign-out form, the generic notice box) reused
+ * across otherwise-unrelated pages. Everything specific to one page or one
+ * family of pages lives in `src/views/styles.ts` instead and is passed in
+ * via `pageStyles` — see `LayoutOptions.pageStyles` above for why that split
+ * is enforced, not just conventional.
+ *
+ * Exported because `src/security/csp.ts` hashes its exact content for
+ * `style-src` rather than carrying a pasted value, so the hash can never
+ * drift from what actually ships. It is one member of `STYLE_BLOCKS` in
+ * `src/views/styles.ts`; the CSP must hash every member, not just this one.
  */
 export const STYLES = `
   :root {
@@ -24,6 +61,11 @@ export const STYLES = `
     }
   }
   * { box-sizing: border-box; }
+  /* The passkey affordances ship hidden and are revealed by script.
+     display:none is only the UA default, so a later display:flex on the same
+     element would silently un-hide it and show a button to someone whose
+     browser cannot use it. This makes the attribute mean what it says. */
+  [hidden] { display: none !important; }
   body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
     padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
@@ -35,46 +77,11 @@ export const STYLES = `
   p { color: var(--mut); margin: 0; }
   a { color: var(--accent); }
 
-  .venue, .kickoff { font-size: 0.95rem; }
-  .kickoff { margin-bottom: 0.75rem; }
-
-  .status-badge {
-    display: inline-block; margin-top: 0.5rem;
-    padding: 0.3rem 0.85rem; border-radius: 999px; border: 1px solid var(--line);
-    font-weight: 600; font-size: 0.9rem; color: var(--fg);
-  }
-  .status-badge.status-confirmed { border-color: var(--accent); color: var(--accent); }
-  .status-badge.status-short, .status-badge.status-cancelled { border-color: var(--warn); color: var(--warn); }
-  .spots { margin-top: 0.4rem; font-size: 0.9rem; }
-
   .nudge {
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
     background: var(--warn-bg); color: var(--warn); font-size: 0.92rem; text-align: left;
   }
 
-  .viewer-headline {
-    margin-top: 1.5rem; font-size: 1.4rem; font-weight: 700; color: var(--fg); line-height: 1.3;
-  }
-  /* A waitlisted viewer must never read as confirmed (BR-5): same warn
-     colour the roster already uses for a waitlisted row, so it is visually
-     distinct from the accent-coloured "confirmed" badge that can appear
-     right below it. */
-  .viewer-headline.warn { color: var(--warn); }
-
-  .read-only {
-    margin-top: 1.25rem; padding: 0.85rem 1rem; border-radius: 0.6rem;
-    border: 1px dashed var(--line); color: var(--mut); font-size: 0.95rem; text-align: left;
-  }
-
-  /* Two big, unmistakable tap targets: stacked on a phone, side by side once
-     there is room for both without cramping. */
-  .responses {
-    display: flex; flex-direction: column; gap: 0.75rem;
-    margin: 1.5rem 0 0.5rem;
-  }
-  @media (min-width: 30rem) {
-    .responses { flex-direction: row; }
-  }
   .button {
     flex: 1; display: flex; align-items: center; justify-content: center;
     min-height: 52px; padding: 0.85rem 1.25rem;
@@ -91,18 +98,9 @@ export const STYLES = `
     background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
   }
 
-  .roster {
-    list-style: none; margin: 0; padding: 0; text-align: left;
-    border-top: 1px solid var(--line);
-  }
-  .roster li {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
-    padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line);
-  }
-  .roster .name { color: var(--fg); }
-  .roster .status { font-size: 0.85rem; color: var(--mut); white-space: nowrap; }
-  .roster .status-in { color: var(--accent); font-weight: 600; }
-  .roster .status-waitlisted { color: var(--warn); font-weight: 600; }
+  /* Sign-out is a real action but never the point of the page it sits on, so
+     it gets the outlined button rather than the filled one. */
+  .signout { margin: 1.25rem 0; }
 `;
 
 /**
@@ -128,7 +126,12 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function layout({ title, body }: LayoutOptions): string {
+export function layout({ title, body, pageStyles, pageScripts }: LayoutOptions): string {
+  const styleTags = [STYLES, ...(pageStyles ?? [])].map((css) => `<style>${css}</style>`).join("\n");
+  // No attributes on the tag — not `src`, not `type`, not `nonce`. A bare
+  // inline `<script>` is what a CSP SHA-256 hash of the block's exact text
+  // covers, and it is what `test/routes/signin.test.ts` insists on finding.
+  const scriptTags = (pageScripts ?? []).map((js) => `<script>${js}</script>`).join("\n");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -136,9 +139,9 @@ export function layout({ title, body }: LayoutOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>${escapeHtml(title)}</title>
-<style>${STYLES}</style>
+${styleTags}
 </head>
-<body><main>${body}</main></body>
+<body><main>${body}</main>${scriptTags}</body>
 </html>
 `;
 }

@@ -1,3 +1,4 @@
+import type { AppVariables } from "./auth/session.js";
 import type { FixtureCapacity } from "./capacity/fixture-capacity.js";
 
 export interface Bindings {
@@ -49,6 +50,45 @@ export interface Bindings {
    * `vars`. Same requirement and same by-name failure as `RESEND_API_KEY`.
    */
   EMAIL_FROM: string;
+  /**
+   * Signing key for Better Auth's own sessions/tokens. Set with
+   * `wrangler secret put`, same as `RESPONSE_TOKEN_SECRET` — never committed,
+   * never printed while setting it.
+   */
+  BETTER_AUTH_SECRET: string;
+  /**
+   * The public base URL Better Auth issues links against (e.g. magic-link
+   * URLs). Not secret; set in `wrangler.jsonc`'s `vars`.
+   */
+  BETTER_AUTH_URL: string;
+  /**
+   * Trial-only sign-in allowlist (TR-35): a comma-separated list of addresses
+   * allowed to be sent a magic link. A secret, not a var — the list is a set
+   * of real people's addresses, and this repo is public.
+   *
+   * Set with `wrangler secret put SIGNIN_ALLOWLIST`. Unset or empty means
+   * *nobody* gets a link (`src/auth/factory.ts` fails closed, same convention
+   * as `MAX_EMAILS_PER_DAY`), so it must be set before the trial can begin.
+   * Deleted outright when the product opens to the public.
+   *
+   * Typed honestly as optional, unlike `RESEND_API_KEY`/`EMAIL_FROM` above:
+   * this binding's whole *purpose* is to be read while unset (that is the
+   * fail-closed default state before the trial begins), so
+   * `isSignInAllowlisted(raw: string | undefined, …)` must be able to accept
+   * `undefined` without a cast standing between the type and the runtime
+   * value it actually receives.
+   */
+  SIGNIN_ALLOWLIST: string | undefined;
 }
 
-export type AppEnv = { Bindings: Bindings };
+/**
+ * Hono's per-request generics for this app.
+ *
+ * `Variables` is what `sessionMiddleware` fills in; its shape and its
+ * null-versus-undefined contract are documented on `AppVariables` in
+ * `src/auth/session.ts`. The type-only import above is a deliberate cycle
+ * between these two modules (`session.ts` imports `AppEnv` back) — it is
+ * erased at compile time, so there is no runtime cycle, and it keeps the
+ * session's type defined next to the middleware that produces it.
+ */
+export type AppEnv = { Bindings: Bindings; Variables: AppVariables };

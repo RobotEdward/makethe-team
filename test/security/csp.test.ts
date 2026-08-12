@@ -38,6 +38,10 @@ function inlineStyleBlocks(html: string): string[] {
   return [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map((match) => match[1] ?? "");
 }
 
+function inlineScriptBlocks(html: string): string[] {
+  return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? "");
+}
+
 interface Seeded {
   gameId: string;
   fixtureId: string;
@@ -72,10 +76,38 @@ beforeEach(async () => {
 function expectFixedDirectives(csp: string | null) {
   expect(csp).not.toBeNull();
   expect(csp).toContain("default-src 'none'");
-  expect(csp).toContain("script-src 'none'");
   expect(csp).toContain("form-action 'self'");
   expect(csp).toContain("frame-ancestors 'none'");
   expect(csp).toContain("base-uri 'none'");
+  expectScriptSrcStrict(csp!);
+}
+
+/**
+ * `script-src` was `'none'` until M5 added passkeys — WebAuthn is a browser
+ * API and cannot be done server-side, so it is the one feature that earns
+ * client JavaScript. The directive must still never fall back to a blanket
+ * allowance: every script on the page is allowed by hash, and `'unsafe-inline'`
+ * or `'unsafe-eval'` appearing here would defeat the whole directive.
+ */
+function expectScriptSrcStrict(csp: string) {
+  const scriptSrc = csp.match(/script-src ([^;]+)/)?.[1] ?? "";
+  expect(scriptSrc).not.toBe("");
+  expect(scriptSrc).not.toContain("unsafe-inline");
+  expect(scriptSrc).not.toContain("unsafe-eval");
+  expect(scriptSrc).not.toContain("unsafe-hashes");
+  expect(scriptSrc).not.toContain("*");
+}
+
+/** Assert every inline `<script>` block the page actually sent is covered by `script-src`'s hash list. */
+async function expectScriptsAllowed(csp: string, html: string) {
+  const allowed = (csp.match(/script-src ([^;]+)/)?.[1] ?? "")
+    .split(" ")
+    .filter((token) => token.startsWith("'sha256-"))
+    .map((token) => token.slice("'sha256-".length, -1));
+
+  for (const block of inlineScriptBlocks(html)) {
+    expect(allowed).toContain(await sha256Base64(block));
+  }
 }
 
 /** Assert every inline `<style>` block the page actually sent is covered by `style-src`'s hash list. */
@@ -162,6 +194,21 @@ describe("Content-Security-Policy", () => {
     // be covered, proving the CSP was not tuned against just the common case.
     expect(inlineStyleBlocks(html).length).toBe(2);
     await expectStylesAllowed(csp as string, html);
+  });
+
+  it("sign-in page: the passkey script is allowed by hash, not by a blanket source", async () => {
+    const response = await SELF.fetch("https://makethe.team/sign-in");
+    const csp = response.headers.get("content-security-policy");
+    expectFixedDirectives(csp);
+    const html = await response.text();
+    // The only page family that ships JavaScript at all (M5 task 8: WebAuthn
+    // is a browser API, so passkeys are the one feature that cannot be done
+    // server-side). Asserting the block is present *and* hashed is the pair
+    // that matters: without the first this would pass vacuously on a page
+    // that lost its script, and without the second `script-src` could have
+    // been widened to `'unsafe-inline'` and nothing here would notice.
+    expect(inlineScriptBlocks(html).length).toBeGreaterThan(0);
+    await expectScriptsAllowed(csp as string, html);
   });
 
   it("robots.txt: fixed directives present (no inline styles to check)", async () => {

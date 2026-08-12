@@ -1,4 +1,4 @@
-import { getDb } from "../db/client.js";
+import type { Db } from "../db/client.js";
 import type { Bindings } from "../env.js";
 import { ConsoleNotifier } from "./console-notifier.js";
 import { NullNotifier } from "./null-notifier.js";
@@ -25,11 +25,18 @@ import { ResendNotifier } from "./resend-notifier.js";
  *
  * `now` is a parameter, not `new Date()`, so callers (and their tests) can
  * place the quota day anywhere in the calendar without touching the clock.
+ *
+ * `db` is taken as a parameter rather than built here with `getDb(env.DB)`:
+ * `getDb` is not memoised, so constructing one internally would build a
+ * *second* Drizzle wrapper around the same D1 binding inside every caller
+ * that already holds one from its own request/invocation — exactly the
+ * configuration `src/auth/factory.ts` documents as a Miniflare WAL-deadlock
+ * hazard. Callers must pass the `db` they already have.
  */
-export function createNotifier(env: Bindings, now: Date): Notifier {
+export function createNotifier(env: Bindings, db: Db, now: Date): Notifier {
   const inner = selectNotifier(env);
   const maxPerDay = parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY);
-  return new QuotaNotifier(inner, getDb(env.DB), maxPerDay, now);
+  return new QuotaNotifier(inner, db, maxPerDay, now);
 }
 
 function selectNotifier(env: Bindings): Notifier {

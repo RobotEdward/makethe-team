@@ -1,10 +1,14 @@
 import { Hono } from "hono";
+import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { cancel } from "./routes/cancel.js";
+import { dashboard } from "./routes/dashboard.js";
 import { home } from "./routes/home.js";
+import { passkeys } from "./routes/passkeys.js";
 import { respond } from "./routes/respond.js";
 import { robots } from "./routes/robots.js";
 import { cspHeader } from "./security/csp.js";
+import { signIn } from "./routes/signin.js";
 import { renderLinkProblemPage } from "./views/link-problem.js";
 
 export function createApp(): Hono<AppEnv> {
@@ -18,10 +22,37 @@ export function createApp(): Hono<AppEnv> {
     c.header("Content-Security-Policy", await cspHeader());
   });
 
+  // A signed-in player's own data must never be written to a shared or disk
+  // cache. Scoped to `AUTHENTICATED_PREFIX` for the same blast-radius reason
+  // `sessionMiddleware` is (see its own doc comment): the public holding page
+  // and `/r/:token`/`/leave/:token` are reached by everyone including
+  // logged-out strangers and must keep whatever caching behaviour they already
+  // have, so this must not become a global mount.
+  app.use(AUTHENTICATED_PREFIX, async (c, next) => {
+    await next();
+    c.header("Cache-Control", "private, no-store");
+  });
+
+  // Session resolution, deliberately scoped to the authenticated prefix rather
+  // than `*` — the reasoning is on `sessionMiddleware`. Public paths (`/`,
+  // `/r/:token`, `/leave/:token`, robots) pay nothing for it.
+  app.use(AUTHENTICATED_PREFIX, sessionMiddleware);
+  // The second mount `sessionMiddleware` anticipates: `/sign-in` bounces an
+  // already-signed-in visitor, and `/sign-in/complete` runs behind
+  // `requireSession`. Named prefixes, not `*` — the blast-radius argument for
+  // keeping `/` and `/r/:token` off the session path is unchanged.
+  app.use(SIGN_IN_PREFIX, sessionMiddleware);
+
   app.route("/", robots);
   app.route("/", home);
   app.route("/", respond);
   app.route("/", cancel);
+  app.route("/", signIn);
+  // Behind `AUTHENTICATED_PREFIX`'s session mount above, and behind
+  // `requirePlayer` on each of its own handlers.
+  app.route("/", dashboard);
+  // `/app/passkeys`, behind the same prefix and the same `requirePlayer`.
+  app.route("/", passkeys);
 
   app.notFound((c) => c.text("Not found", 404));
 

@@ -1,4 +1,5 @@
 import { escapeHtml, layout } from "./layout.js";
+import { CANCEL_STYLES_CSS } from "./styles.js";
 
 /**
  * The pages behind `/cancel/:token` (BR-14, J5).
@@ -61,26 +62,6 @@ export interface CancelConfirmPageOptions extends CancelPreview {
  * `src/views/layout.ts` for the same reasoning) — the wrapping tags are
  * added once, at the single call site below.
  */
-export const CANCEL_STYLES_CSS = `
-  .cancel-form { margin-top: 1.5rem; text-align: left; }
-  .cancel-form label { display: block; margin-bottom: 0.4rem; color: var(--fg); font-weight: 600; }
-  .cancel-form textarea {
-    width: 100%; min-height: 6rem; padding: 0.7rem 0.85rem;
-    border-radius: 0.6rem; border: 1px solid var(--line);
-    background: var(--bg); color: var(--fg); font: inherit; font-size: 1rem;
-  }
-  .cancel-form textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-  .cancel-form .hint { margin-top: 0.4rem; font-size: 0.85rem; }
-  .cancel-form .button.danger {
-    margin-top: 1.25rem; width: 100%;
-    background: var(--warn-bg); border-color: var(--warn); color: var(--warn);
-  }
-  .form-error {
-    margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
-    background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left;
-  }
-  .cancel-heading { text-align: center; margin-top: 0; color: var(--warn); }
-`;
 
 /** `CANCEL_STYLES_CSS`, wrapped exactly as it is inlined into the page body. */
 const CANCEL_STYLES_TAG = `\n<style>${CANCEL_STYLES_CSS}</style>\n`;

@@ -329,7 +329,7 @@ async function sendCancellation(
   try {
     const summary = await sendCancellationEmails({
       db,
-      notifier: createNotifier(env, now),
+      notifier: createNotifier(env, db, now),
       fixture: context.fixture,
       game: context.game,
       recipients,

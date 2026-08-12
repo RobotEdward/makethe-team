@@ -65,6 +65,17 @@ export default defineConfig(async () => {
             // "a cancel token signed with the response secret is rejected"
             // test would pass for the wrong reason.
             CANCEL_TOKEN_SECRET: "test-only-cancel-secret-not-used-in-any-real-environment",
+            // Same reasoning as RESPONSE_TOKEN_SECRET above: Better Auth's
+            // secret is a Worker secret (`wrangler secret put`), never a
+            // `wrangler.jsonc` var, so it does not exist in CI/local test
+            // runs unless provided here. This value is obviously fake.
+            BETTER_AUTH_SECRET: "test-only-secret-not-used-in-any-real-environment",
+            // Same again for the trial sign-in allowlist (TR-35), also a
+            // Worker secret. Every test that cares supplies its own list
+            // explicitly; this exists so a test reading the binding on CI
+            // gets a string rather than undefined. Obviously fake, and
+            // deliberately an address nobody can receive mail at.
+            SIGNIN_ALLOWLIST: "test-only-not-a-real-address@example.com",
           },
         },
       }),

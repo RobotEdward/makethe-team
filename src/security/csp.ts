@@ -1,5 +1,5 @@
-import { CANCEL_STYLES_CSS } from "../views/cancel.js";
-import { STYLES } from "../views/layout.js";
+import { SCRIPT_BLOCKS } from "../views/scripts.js";
+import { STYLE_BLOCKS } from "../views/styles.js";
 
 /**
  * `Content-Security-Policy` for every page this Worker serves (BR-14 /
@@ -66,12 +66,28 @@ export function cspHeader(): Promise<string> {
 }
 
 async function buildCspHeader(): Promise<string> {
-  const [layoutHash, cancelHash] = await Promise.all([sha256Base64(STYLES), sha256Base64(CANCEL_STYLES_CSS)]);
+  // Mapped over the two enumerations rather than naming blocks individually.
+  // M5 split the single stylesheet into six blocks and added the first two
+  // client scripts; a hardcoded pair of style hashes would have silently
+  // dropped most of the site's CSS, and `script-src 'none'` would have blocked
+  // passkeys outright. `STYLE_BLOCKS` and `SCRIPT_BLOCKS` are the complete
+  // sets, and their element types are literal unions, so a block that is not
+  // enumerated cannot reach `layout()` in the first place — which is what
+  // keeps this hashing exhaustive without anyone having to remember it.
+  const [styleHashes, scriptHashes] = await Promise.all([
+    Promise.all(STYLE_BLOCKS.map(sha256Base64)),
+    Promise.all(SCRIPT_BLOCKS.map(sha256Base64)),
+  ]);
+
+  const sources = (hashes: string[]) => hashes.map((hash) => `'sha256-${hash}'`).join(" ");
 
   return [
     "default-src 'none'",
-    `style-src 'sha256-${layoutHash}' 'sha256-${cancelHash}'`,
-    "script-src 'none'",
+    `style-src ${sources(styleHashes)}`,
+    // Not 'none' any more, and deliberately not 'unsafe-inline': passkeys are
+    // the one feature that cannot work server-side (WebAuthn is a browser
+    // API), so their two scripts are allowed by hash and nothing else is.
+    `script-src ${sources(scriptHashes)}`,
     "form-action 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",

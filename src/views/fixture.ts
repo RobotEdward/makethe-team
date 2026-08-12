@@ -3,6 +3,7 @@ import type { SquadMember } from "../db/queries.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
+import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 /**
  * Why this page is read-only, if it is.
@@ -81,8 +82,23 @@ function viewerHeadline(
   return readOnlyReason ? viewerHeadlineClosed(viewer, readOnlyReason) : viewerHeadlineOpen(viewer);
 }
 
-/** The headline while the fixture can still be responded to. */
-function viewerHeadlineOpen(viewer: FixturePageOptions["viewer"]): string {
+/**
+ * The headline while the fixture can still be responded to.
+ *
+ * Exported because the dashboard says the same sentences about the same
+ * statuses (J7, BR-25) and a second set of wordings would be two places for
+ * "You're in." and "You're on the waitlist." to drift apart — and BR-5's whole
+ * point is that a waitlisted player must never read as confirmed. A caller
+ * with no waitlist rank to hand (the dashboard: see `DashboardFixture` for why
+ * it deliberately has none) passes `waitlistRank: null` and gets the
+ * unnumbered wording.
+ *
+ * Takes only the two fields it reads, not the whole `FixturePageOptions`
+ * `viewer` shape — so a caller with no `playerId` to hand (the dashboard,
+ * which never has another player's id and has no reason to echo the
+ * viewer's own) has nothing to fabricate a dummy value for.
+ */
+export function viewerHeadlineOpen(viewer: Pick<FixturePageOptions["viewer"], "status" | "waitlistRank">): string {
   switch (viewer.status) {
     case "in":
       return "You're in.";
@@ -157,7 +173,7 @@ function renderSquadList(squad: readonly SquadMember[]): string {
     )
     .join("");
 
-  return `<ul class="roster">${items}</ul>`;
+  return `<ul class="squad">${items}</ul>`;
 }
 
 function renderNudge(view: FixtureView): string {
@@ -165,7 +181,14 @@ function renderNudge(view: FixtureView): string {
   return `<p class="nudge">The squad has an odd number of players in — one more would even it up.</p>`;
 }
 
-function renderStatusLine(view: FixtureView): string {
+/**
+ * The status badge and the spots-left line, from `fixtureView` alone.
+ *
+ * Exported for the dashboard, which shows the same derived status for each of
+ * the viewer's fixtures — one renderer, so `short`/`confirmed`/`full` can only
+ * ever be worded and coloured one way across the product (BR-12).
+ */
+export function renderStatusLine(view: FixtureView): string {
   const label = STATUS_LABEL[view.status];
   const spots =
     view.status === "cancelled" || view.status === "played"
@@ -236,5 +259,9 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${renderSquadList(squad)}
   `;
 
-  return layout({ title: `${gameName} — Make The Team`, body });
+  return layout({
+    title: `${gameName} — Make The Team`,
+    body,
+    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS],
+  });
 }

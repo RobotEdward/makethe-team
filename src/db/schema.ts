@@ -25,7 +25,16 @@ export const players = sqliteTable(
     emailVerifiedAt: integer("email_verified_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
-  (t) => [uniqueIndex("players_email_unique").on(t.email).where(sql`${t.email} is not null`)],
+  (t) => [
+    uniqueIndex("players_email_unique").on(t.email).where(sql`${t.email} is not null`),
+    // Partial, like the one above: most players never sign in and this column
+    // stays null. It is what stops two concurrent first sign-ins by one
+    // identity minting two Players — nothing else can, since D1 has no
+    // interactive transactions (migration 0005, TR-30).
+    uniqueIndex("players_auth_user_id_unique")
+      .on(t.authUserId)
+      .where(sql`${t.authUserId} is not null`),
+  ],
 );
 
 export const games = sqliteTable("games", {
@@ -166,5 +175,142 @@ export const auditLog = sqliteTable(
   (t) => [
     index("audit_log_entity_idx").on(t.entityType, t.entityId),
     index("audit_log_created_at_idx").on(t.createdAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Better Auth tables (M5). Third-party-defined: table and column names below
+// are copied verbatim from `getAuthTables({})` in `@better-auth/core/db`
+// (better-auth@1.6.26), not invented, because the library's Drizzle adapter
+// resolves both by exact string — the JS property key it looks up is the
+// camelCase `fieldName` from that schema, and `drizzleAdapter()` reads the
+// table object off `db._.fullSchema[modelName]`, i.e. by the export's name.
+// Do NOT rename these to match the project's own vocabulary, and do not
+// rename "user" here to "player" — that's Better Auth's own model name and
+// is exempt from the project's vocabulary rule (see plan). Nothing in
+// hand-written project code should say "user"; `players.auth_user_id` (above)
+// is the only link between the two (TR-30, Task 2).
+//
+// One deliberate omission: the upstream `account` model also defines an
+// optional `password` field (used only by its email/password credential
+// provider). This project forbids a password field anywhere in the
+// codebase (TR-16) and never configures that provider — only magic link and
+// passkey, neither of which touches `account.password`. Leaving the column
+// out is safe *and* self-checking: if any future plugin config ever tried to
+// read or write it, the adapter throws `BetterAuthError` immediately
+// ("field does not exist") rather than silently reintroducing a password
+// column.
+//
+// `verification.createdAt`/`updatedAt` are declared NOT NULL here, matching
+// `getAuthTables({}).verification` upstream (`required: true` for both).
+// An earlier pass of this schema left them nullable by mistake; there was no
+// deliberate reason to diverge, so they were corrected to match upstream
+// rather than documented as an intentional exception.
+// ---------------------------------------------------------------------------
+
+export const user = sqliteTable("user", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  emailVerified: integer("emailVerified", { mode: "boolean" }).notNull(),
+  image: text("image"),
+  createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const session = sqliteTable(
+  "session",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: integer("expiresAt", { mode: "timestamp_ms" }).notNull(),
+    token: text("token").notNull().unique(),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+    ipAddress: text("ipAddress"),
+    userAgent: text("userAgent"),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (t) => [index("session_userId_idx").on(t.userId)],
+);
+
+export const account = sqliteTable(
+  "account",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("accountId").notNull(),
+    providerId: text("providerId").notNull(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    accessToken: text("accessToken"),
+    refreshToken: text("refreshToken"),
+    idToken: text("idToken"),
+    accessTokenExpiresAt: integer("accessTokenExpiresAt", { mode: "timestamp_ms" }),
+    refreshTokenExpiresAt: integer("refreshTokenExpiresAt", { mode: "timestamp_ms" }),
+    scope: text("scope"),
+    // No `password` column — see block comment above (TR-16).
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("account_userId_idx").on(t.userId)],
+);
+
+export const verification = sqliteTable(
+  "verification",
+  {
+    id: text("id").primaryKey(),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: integer("expiresAt", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("verification_identifier_idx").on(t.identifier)],
+);
+
+/**
+ * `@better-auth/passkey`'s own table (M5 Task 8).
+ *
+ * Third-party-defined in exactly the sense the block comment above describes:
+ * every column name and nullability below is copied from the plugin's
+ * `schema` object in `@better-auth/passkey@1.6.26`
+ * (`node_modules/@better-auth/passkey/dist/index.mjs`, `//#region src/schema.ts`),
+ * whose model name is the singular `passkey` — so this export must keep that
+ * exact name, because `drizzleAdapter()` resolves the table off
+ * `db._.fullSchema["passkey"]`. The two `index: true` fields upstream
+ * (`userId`, `credentialID`) become the two indexes below.
+ *
+ * `credentialID` is **not** unique here, matching upstream: the plugin looks a
+ * credential up with a plain `findOne` and de-duplication is WebAuthn's job
+ * (the browser refuses to register a credential already in
+ * `excludeCredentials`). Adding a uniqueness constraint the library does not
+ * expect would turn a benign duplicate into a 500.
+ *
+ * No password column, and nothing here is a shared secret: `publicKey` is a
+ * public key. The private half never leaves the authenticator, which is the
+ * whole reason this is a safe thing to store (TR-16).
+ */
+export const passkey = sqliteTable(
+  "passkey",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    publicKey: text("publicKey").notNull(),
+    userId: text("userId")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credentialID: text("credentialID").notNull(),
+    counter: integer("counter").notNull(),
+    deviceType: text("deviceType").notNull(),
+    backedUp: integer("backedUp", { mode: "boolean" }).notNull(),
+    transports: text("transports"),
+    createdAt: integer("createdAt", { mode: "timestamp_ms" }),
+    aaguid: text("aaguid"),
+  },
+  (t) => [
+    index("passkey_userId_idx").on(t.userId),
+    index("passkey_credentialID_idx").on(t.credentialID),
   ],
 );

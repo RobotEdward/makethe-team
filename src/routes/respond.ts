@@ -261,7 +261,7 @@ respond.post("/r/:token", async (c) => {
  * project's only cost control, and a per-request send path is exactly where a
  * runaway would show up.
  */
-async function notifyPromotedPlayer(
+export async function notifyPromotedPlayer(
   env: AppEnv["Bindings"],
   fixtureId: string,
   promoted: WaitlistPromotion,
@@ -272,7 +272,7 @@ async function notifyPromotedPlayer(
   try {
     const outcome = await sendPromotionEmail({
       db,
-      notifier: createNotifier(env, now),
+      notifier: createNotifier(env, db, now),
       fixtureId,
       promoted,
       now,

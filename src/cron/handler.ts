@@ -49,7 +49,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
 
     case CRON_SWEEP: {
       const db = getDb(env.DB);
-      const notifier = createNotifier(env, now);
+      const notifier = createNotifier(env, db, now);
 
       const remindResult = await openAndRemind(db, notifier, now, env.RESPONSE_TOKEN_SECRET);
       console.log("open-and-remind", JSON.stringify(remindResult));
