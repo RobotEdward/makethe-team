@@ -200,7 +200,10 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
     fail("reminderDaysBefore", `Remind between 0 and ${MAX_REMINDER_DAYS_BEFORE} days before.`);
   }
 
-  const reminderLocalTime = text(body["reminderLocalTime"]) === ""
+  // Absent-defaults, not blank-defaults, matching `timezone`: an
+  // <input type="time"> can be cleared and submitted blank, and a blank
+  // submission must be rejected rather than silently coerced to the default.
+  const reminderLocalTime = body["reminderLocalTime"] === undefined
     ? DEFAULT_REMINDER_LOCAL_TIME
     : text(body["reminderLocalTime"]);
   if (!isValidLocalTime(reminderLocalTime)) {

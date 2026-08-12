@@ -142,6 +142,14 @@ describe("parseGameForm", () => {
     expect(errorsFor({ shortWarningOffsetHours: "169" })).toContain("shortWarningOffsetHours");
   });
 
+  it("rejects an explicitly blank reminder time rather than defaulting it", () => {
+    // Unlike a <select>, an <input type="time"> can be cleared and submitted
+    // blank on the edit form's Advanced block. That must be rejected, not
+    // silently coerced to the default — the same rule already applied to
+    // timezone.
+    expect(errorsFor({ reminderLocalTime: "" })).toContain("reminderLocalTime");
+  });
+
   it("reports every bad field at once, not just the first", () => {
     // The form redisplays all errors together; stopping at the first would
     // make a wrong submission take four round trips to fix.
