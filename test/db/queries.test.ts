@@ -2,9 +2,9 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
-import { getFixtureWithSquad } from "../../src/db/queries.js";
+import { getFixtureWithSquad, findMembershipInGame, countActiveOwners, listOpenFixtureIds, countCommitments } from "../../src/db/queries.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, resetDatabase, testDb, insertPlayer as insertPlayerFactory, insertMembership, insertFixture, insertResponse } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const NOW = new Date("2026-08-13T18:00:00Z");
@@ -161,5 +161,90 @@ describe("getFixtureWithSquad against openFixture output", () => {
     expect(result?.squad).toEqual([
       { playerId, name: "Eligible Player", status: "pending", waitlistRank: null },
     ]);
+  });
+});
+
+describe("findMembershipInGame", () => {
+  beforeEach(resetDatabase);
+
+  it("finds an active member of that game", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const playerId = await insertPlayerFactory(db, { name: "Sam Okafor" });
+    const membershipId = await insertMembership(db, gameId, playerId, { role: "owner" });
+
+    const found = await findMembershipInGame(db, gameId, playerId);
+    expect(found).toMatchObject({ membershipId, playerId, name: "Sam Okafor", role: "owner", active: true });
+  });
+
+  it("returns null for a membership in a different game", async () => {
+    const db = testDb();
+    const [mine, theirs] = [await insertGame(db), await insertGame(db)];
+    const playerId = await insertPlayerFactory(db);
+    await insertMembership(db, theirs, playerId);
+
+    // The scoping that stops `:playerId` reading as a global identifier.
+    expect(await findMembershipInGame(db, mine, playerId)).toBeNull();
+  });
+
+  it("returns an inactive membership rather than hiding it", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const playerId = await insertPlayerFactory(db);
+    await insertMembership(db, gameId, playerId, { active: false });
+
+    // Callers decide what an inactive membership means; this query reports it.
+    expect(await findMembershipInGame(db, gameId, playerId)).toMatchObject({ active: false });
+  });
+});
+
+describe("countActiveOwners", () => {
+  beforeEach(resetDatabase);
+
+  it("counts only active owners of that game", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const other = await insertGame(db);
+    await insertMembership(db, gameId, await insertPlayerFactory(db), { role: "owner" });
+    await insertMembership(db, gameId, await insertPlayerFactory(db), { role: "owner", active: false });
+    await insertMembership(db, gameId, await insertPlayerFactory(db), { role: "player" });
+    await insertMembership(db, other, await insertPlayerFactory(db), { role: "owner" });
+
+    expect(await countActiveOwners(db, gameId)).toBe(1);
+  });
+});
+
+describe("listOpenFixtureIds", () => {
+  beforeEach(resetDatabase);
+
+  it("returns only this game's open fixtures", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const other = await insertGame(db);
+    const open = await insertFixture(db, gameId, { lifecycle: "open" });
+    await insertFixture(db, gameId, { lifecycle: "scheduled", kicksOffAt: new Date("2026-08-21T18:00:00Z") });
+    await insertFixture(db, gameId, { lifecycle: "cancelled", kicksOffAt: new Date("2026-08-22T18:00:00Z") });
+    await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt: new Date("2026-08-23T18:00:00Z") });
+    await insertFixture(db, other, { lifecycle: "open" });
+
+    expect(await listOpenFixtureIds(db, gameId)).toEqual([open]);
+  });
+});
+
+describe("countCommitments", () => {
+  beforeEach(resetDatabase);
+
+  it("counts a player's in and waitlisted rows on this game's open fixtures", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const playerId = await insertPlayerFactory(db);
+    const a = await insertFixture(db, gameId, { lifecycle: "open" });
+    const b = await insertFixture(db, gameId, { lifecycle: "open", kicksOffAt: new Date("2026-08-21T18:00:00Z") });
+    const c = await insertFixture(db, gameId, { lifecycle: "open", kicksOffAt: new Date("2026-08-22T18:00:00Z") });
+    await insertResponse(db, a, playerId, { status: "in" });
+    await insertResponse(db, b, playerId, { status: "waitlisted", waitlistPosition: 1 });
+    await insertResponse(db, c, playerId, { status: "pending" });
+
+    expect(await countCommitments(db, gameId, playerId)).toEqual({ in: 1, waitlisted: 1 });
   });
 });
