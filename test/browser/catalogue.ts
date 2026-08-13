@@ -111,6 +111,20 @@ export const CATALOGUE: CataloguePage[] = [
     note: "Where a reminder email lands. Token-authenticated, no session.",
   },
   {
+    id: "leave",
+    title: "Leave a game",
+    path: (w) => `/leave/${w.responseToken}`,
+    persona: "anonymous",
+    note: "Reached from the footer of every email (BR-22). Verifies the same response token as /r/.",
+  },
+  {
+    id: "cancel",
+    title: "Call a fixture off",
+    path: (w) => `/cancel/${w.cancelToken}`,
+    persona: "anonymous",
+    note: "An owner's one-tap link out of the fixture-needs-attention email.",
+  },
+  {
     id: "not-found",
     title: "Not found",
     path: () => "/definitely-not-a-page",
@@ -128,12 +142,4 @@ export const CATALOGUE: CataloguePage[] = [
 export const NOT_CATALOGUED = new Map<string, string>([
   ["/robots.txt", "plain text, no document, no CSP surface"],
   ["/sign-in/complete", "a redirect-through, not a page anyone dwells on"],
-  [
-    "/cancel/:token",
-    "needs an owner cancel token minted per fixture; the cancel journey covers it",
-  ],
-  [
-    "/leave/:token",
-    "needs a leave token carried only by an email footer; the notify suite covers it",
-  ],
 ]);

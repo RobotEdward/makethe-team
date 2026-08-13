@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
-import { signResponseToken } from "../../src/domain/token.js";
+import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
 
@@ -15,6 +15,9 @@ const run = promisify(execFile);
  */
 const RESPONSE_SECRET = "local-browser-tests-only-not-a-real-secret";
 
+/** Matches `test/browser/browser.env`. Separate from the response secret. */
+const CANCEL_SECRET = "local-browser-tests-only-not-a-real-secret";
+
 /** The joined member's display name, asserted on by the journeys. */
 export const JOINER_NAME = "Alex Morgan";
 
@@ -25,6 +28,8 @@ export interface World {
   /** The joined member — the one the squad-management pages act on. */
   memberPlayerId: string;
   responseToken: string;
+  ownerPlayerId: string;
+  cancelToken: string;
 }
 
 /** Read-only D1 access, via the supported path. See `sign-in.ts` for why. */
@@ -128,6 +133,11 @@ export async function seedWorld(
   );
   if (!member) throw new Error(`the joined player ${TEST_PLAYER} has no row`);
 
+  const [owner] = await query<{ id: string }>(
+    `SELECT id FROM players WHERE email = '${TEST_OWNER}' LIMIT 1`,
+  );
+  if (!owner) throw new Error(`the owner ${TEST_OWNER} has no player row`);
+
   const responseToken = await signResponseToken(
     {
       playerId: member.id,
@@ -137,11 +147,26 @@ export async function seedWorld(
     RESPONSE_SECRET,
   );
 
+  // `/cancel/:token` is an owner's one-tap link out of the "this fixture needs
+  // attention" email. It is signed with a *different* secret from the response
+  // token on purpose (see CANCEL_TOKEN_SECRET in src/env.ts): the two are kept
+  // apart so a leaked response key cannot forge a cancellation.
+  const cancelToken = await signCancelToken(
+    {
+      ownerPlayerId: owner.id,
+      fixtureId: fixture.id,
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    },
+    CANCEL_SECRET,
+  );
+
   return {
     gameId,
     fixtureId: fixture.id,
     inviteToken,
     memberPlayerId: member.id,
     responseToken,
+    ownerPlayerId: owner.id,
+    cancelToken,
   };
 }
