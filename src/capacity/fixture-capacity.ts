@@ -4,7 +4,13 @@ import { getDb } from "../db/client.js";
 import { fixtures, responses } from "../db/schema.js";
 import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
-import type { SetResponseInput, SetResponseOutcome, WaitlistPromotion } from "./types.js";
+import type {
+  SetResponseInput,
+  SetResponseOutcome,
+  WaitlistPromotion,
+  WithdrawMemberInput,
+  WithdrawMemberOutcome,
+} from "./types.js";
 
 /**
  * Serialises every write that can affect a fixture's capacity (TR-10).
@@ -226,6 +232,141 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       // `blockConcurrencyWhile` would put every other tap on this fixture
       // behind a mail provider's latency. See `WaitlistPromotion`.
       ...(promoted ? { promoted } : {}),
+    };
+  }
+
+  /**
+   * Remove a squad member's stake in this fixture (BR-3, J6a §3.2).
+   *
+   * A separate method rather than a `setResponse` variant: `setResponse` takes
+   * an `in`/`out` intent and rejects any player without an existing row, which
+   * is close to the opposite of what removal needs. It is in the Durable
+   * Object at all because it both frees a slot and fills one, and TR-12 admits
+   * no capacity write outside here.
+   *
+   * `blockConcurrencyWhile` is load-bearing for the same reason it is on
+   * `setResponse` — read that method's comment. The critical section awaits
+   * D1, which is an external call and is not covered by input gating, so
+   * without the block a concurrent self-response could read a slot this
+   * removal is about to free and both writers could claim it.
+   */
+  async withdrawMember(input: WithdrawMemberInput): Promise<WithdrawMemberOutcome> {
+    return this.ctx.blockConcurrencyWhile(async () => this.#withdrawMemberLocked(input));
+  }
+
+  async #withdrawMemberLocked(input: WithdrawMemberInput): Promise<WithdrawMemberOutcome> {
+    // From the object's own identity, never from an argument — see
+    // `#setResponseLocked` for the full reasoning. The lock is keyed by this
+    // name, so a mutation keyed on anything else is not covered by it.
+    const fixtureId = this.ctx.id.name;
+    if (fixtureId === undefined) {
+      throw new Error(
+        "FixtureCapacity was addressed by unique id, not by fixture id — every caller must use getByName(fixtureId)",
+      );
+    }
+
+    const db = getDb(this.env.DB);
+    const now = new Date(input.now);
+
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    if (!fixture) return { kind: "no-op", reason: "fixture-not-found" };
+    // `scheduled` holds no response rows; `cancelled` and `played` are
+    // terminal and rewriting them would be rewriting history.
+    if (fixture.lifecycle !== "open") return { kind: "no-op", reason: "fixture-not-open" };
+
+    const all = await db
+      .select({
+        id: responses.id,
+        playerId: responses.playerId,
+        status: responses.status,
+        waitlistPosition: responses.waitlistPosition,
+      })
+      .from(responses)
+      .where(eq(responses.fixtureId, fixtureId));
+
+    const existing = all.find((row) => row.playerId === input.playerId);
+    // No row, or a row already `withdrawn`: nothing left to act on. This is
+    // what makes a second call safe, which is what makes a partly-failed
+    // removal safe to retry (§3.3).
+    if (!existing || existing.status === "withdrawn") return { kind: "no-op", reason: "no-response-row" };
+    const previousStatus = existing.status;
+
+    const others = all.filter((row) => row.id !== existing.id);
+    const inCountWithoutThisPlayer = others.filter((row) => row.status === "in").length;
+    const waitlistedWithoutThisPlayer = others.filter((row) => row.status === "waitlisted");
+
+    // Only an `in` row held a slot, so only an `in` row can free one (BR-7).
+    // `occupiesSlot` rather than a literal `=== "in"`, to stay in step with
+    // the one definition of what holds a slot.
+    const freesASlot = occupiesSlot(previousStatus);
+    const liveWaitlistCandidates = waitlistedWithoutThisPlayer.filter(
+      (row): row is (typeof waitlistedWithoutThisPlayer)[number] & { waitlistPosition: number } =>
+        row.waitlistPosition !== null,
+    );
+    // Longest waiting is the **lowest live position**. Positions are permanent
+    // and gappy — the next joiner takes the highest live position plus one —
+    // so the lowest live number is always the earliest arrival (BR-6).
+    const promotedRow = freesASlot
+      ? liveWaitlistCandidates.reduce<(typeof liveWaitlistCandidates)[number] | null>(
+          (best, row) => (best === null || row.waitlistPosition < best.waitlistPosition ? row : best),
+          null,
+        )
+      : null;
+
+    const inCount = inCountWithoutThisPlayer + (promotedRow ? 1 : 0);
+    const waitlistCount = waitlistedWithoutThisPlayer.length - (promotedRow ? 1 : 0);
+
+    // One batch: D1 has no interactive transactions, so this is the only way
+    // to make the withdrawal and the promotion succeed or fail together. Split
+    // in two, a failure between them would free a slot nobody took or fill one
+    // that was never freed, and the cached counts would disagree either way.
+    await db.batch([
+      previousStatus === "in"
+        ? db
+            .update(responses)
+            .set({
+              status: "withdrawn",
+              waitlistPosition: null,
+              respondedAt: now,
+              setByPlayerId: input.actorPlayerId,
+              source: "owner",
+            })
+            .where(eq(responses.id, existing.id))
+        : // `pending`, `out` and `waitlisted` rows are deleted outright (§3.1).
+          // None of them holds a slot, so none needs the `withdrawn` marker —
+          // and deleting the `out` row is what stops an ex-member showing as
+          // having declined.
+          db.delete(responses).where(eq(responses.id, existing.id)),
+      // The promoted player's `responded_at` is left alone deliberately: it
+      // records when *they* said yes, and this is not a new answer from them.
+      // `source` is "system" because nobody asked for this write.
+      ...(promotedRow
+        ? [
+            db
+              .update(responses)
+              .set({ status: "in", waitlistPosition: null, source: "system" })
+              .where(eq(responses.id, promotedRow.id)),
+          ]
+        : []),
+      db.update(fixtures).set({ inCount, waitlistCount }).where(eq(fixtures.id, fixtureId)),
+    ]);
+
+    return {
+      kind: "removed",
+      previousStatus,
+      inCount,
+      // Carried out, never acted on in here: an HTTP call to a mail provider
+      // inside `blockConcurrencyWhile` would put every other tap on this
+      // fixture behind the provider's latency.
+      ...(promotedRow
+        ? {
+            promoted: {
+              playerId: promotedRow.playerId,
+              previousWaitlistPosition: promotedRow.waitlistPosition,
+              promotedAt: input.now,
+            },
+          }
+        : {}),
     };
   }
 }
