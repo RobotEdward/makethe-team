@@ -62,7 +62,7 @@ export const SHOTS: Shot[] = [
     chapter: "01-setting-up-a-game",
     title: "Your game",
     route: "/g/:id",
-    shows: "A game with thirteen members, the invite link and QR code, and the fixtures ahead.",
+    shows: "A game with fourteen members, the invite link and QR code, and the fixtures ahead.",
     path: (w) => `/g/${w.gameId}`,
     persona: "organiser",
   },
@@ -96,11 +96,24 @@ export const SHOTS: Shot[] = [
     persona: "anonymous",
   },
   {
+    id: "respond-pending",
+    chapter: "03-answering-a-reminder",
+    title: "Arriving from the email",
+    route: "/r/:token",
+    shows:
+      "The page a player lands on from the email before they have answered: " +
+      "the game, the time, and two untapped buttons.",
+    path: (w) => `/r/${w.pendingToken}`,
+    persona: "anonymous",
+  },
+  {
     id: "respond-in",
     chapter: "03-answering-a-reminder",
-    title: "Answering the reminder",
+    title: "After you answer",
     route: "/r/:token",
-    shows: "A player who is in, with their answer emphasised and the squad listed below.",
+    shows:
+      "The same page once the player has tapped a button on it: \"You're in.\" " +
+      "above the squad, with both buttons still there to change the answer.",
     path: (w) => `/r/${w.inToken}`,
     persona: "anonymous",
   },

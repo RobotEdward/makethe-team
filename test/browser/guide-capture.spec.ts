@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
-import { buildGuideWorld, GUIDE_ORGANISER, type GuideWorld } from "./guide-world.js";
+import {
+  buildGuideWorld,
+  GUIDE_GAME_NAME,
+  GUIDE_ORGANISER,
+  type GuideWorld,
+} from "./guide-world.js";
 import { SHOTS } from "./guide-shots.js";
 import { signIn } from "./sign-in.js";
 
@@ -64,6 +69,17 @@ test("@guide capture every screen the guide shows", async ({ page, browser }) =>
     // whole viewport. Clipping to the element's own box slices controls that
     // sit flush against its right edge — the Remove link in every squad row
     // came out cut in half — and a guide must never show a truncated control.
+    // `/app` lists every fixture this organiser has, across every game they
+    // have ever run, nearest first — and `buildGuideWorld` mints a new game on
+    // each capture without retiring the last. `nth=0` therefore picks the
+    // world just built only when the database was wiped first; otherwise the
+    // dashboard ships a card from some earlier game while every other shot
+    // shows this one. Assert the card is this game's before photographing it,
+    // so that mismatch fails the run instead of shipping.
+    if (shot.id === "dashboard") {
+      await expect(page.locator(shot.element!)).toContainText(GUIDE_GAME_NAME);
+    }
+
     let shotBuffer: Buffer;
     if (shot.element) {
       const box = await page.locator(shot.element).boundingBox();

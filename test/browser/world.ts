@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
+import { toLocalParts } from "../../src/domain/time/zone.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
 
@@ -27,6 +28,28 @@ const CANCEL_SECRET = "local-browser-tests-only-not-a-real-cancel-secret";
 const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
 /**
+ * The zone every game in this suite is in. `/g/new` has no timezone field and
+ * `src/domain/game-form.ts` defaults to Europe/London, so a weekday or an hour
+ * read from the machine's clock is the wrong weekday or hour for a contributor
+ * outside that zone: at 14:00 in New York the form would be told 16:00, which
+ * London has already passed, and no fixture would ever open.
+ */
+const GAME_ZONE = "Europe/London";
+
+/**
+ * The weekday code for the day `days` after the London date `now` falls on.
+ *
+ * The calendar day is incremented rather than 24 hours added: across a
+ * spring-forward, `now + 24h` is the day after tomorrow's local reading in the
+ * hour that goes missing.
+ */
+function londonWeekdayCode(now: Date, days: number): string {
+  const parts = toLocalParts(now, GAME_ZONE);
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+  return WEEKDAY_CODES[shifted.getUTCDay()]!;
+}
+
+/**
  * A weekday and kickoff time chosen so the first materialised fixture is
  * always open by the time the sweep runs, whatever the hour.
  *
@@ -37,21 +60,23 @@ const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
  * week away and stays `scheduled` forever, and every test that needs an open
  * fixture fails. The suite passed for days on the luck of when it was run.
  *
- * Before 21:00 local, kick off two hours from now on today's weekday: the
- * reminder instant was 09:00 yesterday, and the fixture has not ended. After
- * 21:00, two hours from now would cross midnight and land in the past, so use
- * tomorrow at noon, whose reminder instant was 09:00 today.
+ * Before 21:00 in the game's zone, kick off two hours from now on that zone's
+ * weekday: the reminder instant was 09:00 yesterday, and the fixture has not
+ * ended. After 21:00, two hours from now would cross midnight and land in the
+ * past, so use tomorrow at noon, whose reminder instant was 09:00 today.
+ *
+ * Every reading is taken in `GAME_ZONE`, never in machine local time — see the
+ * note there.
  */
 export function imminentSlot(now: Date): { weekday: string; kickoffTime: string } {
-  const hour = now.getHours();
+  const hour = toLocalParts(now, GAME_ZONE).hour;
   if (hour < 21) {
     return {
-      weekday: WEEKDAY_CODES[now.getDay()]!,
+      weekday: londonWeekdayCode(now, 0),
       kickoffTime: `${String(hour + 2).padStart(2, "0")}:00`,
     };
   }
-  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  return { weekday: WEEKDAY_CODES[tomorrow.getDay()]!, kickoffTime: "12:00" };
+  return { weekday: londonWeekdayCode(now, 1), kickoffTime: "12:00" };
 }
 
 /** The joined member's display name, asserted on by the journeys. */
@@ -104,7 +129,10 @@ export async function seedWorld(
   await page.goto("/g/new");
   await page.fill('input[name="name"]', "Thursday 7-a-side");
   await page.fill('input[name="venueName"]', "Peckham Rye Astro");
-  const slot = imminentSlot(new Date());
+  // The one wall-clock read in this harness, spelled the way the repository
+  // spells a deliberate clock read at an edge (see `src/routes/dashboard.ts`):
+  // `imminentSlot` itself takes `now` as a parameter.
+  const slot = imminentSlot(new Date(Date.now()));
   await page.selectOption('select[name="weekday"]', slot.weekday);
   await page.fill('input[name="kickoffTime"]', slot.kickoffTime);
   await page.click('button[type="submit"]');

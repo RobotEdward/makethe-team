@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
+import { toLocalParts } from "../../src/domain/time/zone.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn } from "./sign-in.js";
 
@@ -14,6 +15,12 @@ const RESPONSE_SECRET = "local-browser-tests-only-not-a-real-secret";
 const CANCEL_SECRET = "local-browser-tests-only-not-a-real-cancel-secret";
 
 /**
+ * The zone the guide's game is in: `/g/new` has no timezone field and
+ * `src/domain/game-form.ts` defaults to Europe/London.
+ */
+const GAME_ZONE = "Europe/London";
+
+/**
  * The organiser. Every address here is `@example.test` and every name is
  * invented: these screenshots are committed to a public repository and are
  * permanent, so nothing may resemble a real person.
@@ -21,10 +28,23 @@ const CANCEL_SECRET = "local-browser-tests-only-not-a-real-cancel-secret";
 export const GUIDE_ORGANISER = "jamie@example.test";
 
 /**
- * The twelve who join, in the order they answer. The first nine take the
+ * The game's name. Asserted on at capture time (see `guide-capture.spec.ts`)
+ * as well as typed into the form, so a shot that is not scoped to this world
+ * cannot be photographed silently.
+ */
+export const GUIDE_GAME_NAME = "Meadow Park Kickabout";
+
+/**
+ * The thirteen who join, in the order they answer. The first nine take the
  * remaining places (the organiser has the tenth), the next two are
- * waitlisted, and the last one cannot make it — which is how one world comes
+ * waitlisted, and the twelfth cannot make it — which is how one world comes
  * to show a full fixture, a waitlist and a dropout at once.
+ *
+ * The thirteenth, Ade Sowande, never answers at all. Every other member has a
+ * response POSTed for them before capture, so without this one there is no
+ * player left in the state a reader is actually in when the reminder arrives:
+ * no headline, both buttons untapped. Chapter 03 opens on that screen, so the
+ * world has to contain it.
  */
 const SQUAD = [
   { name: "Priya Raman", email: "priya@example.test" },
@@ -39,6 +59,7 @@ const SQUAD = [
   { name: "Mika Toivonen", email: "mika@example.test" },
   { name: "Grace Abara", email: "grace@example.test" },
   { name: "Sam Whitlock", email: "sam@example.test" },
+  { name: "Ade Sowande", email: "ade@example.test" },
 ] as const;
 
 /**
@@ -50,11 +71,23 @@ const SQUAD = [
  * passed, and closes when it ends. Before 10:00, today's 19:00 satisfies both
  * (its reminder was 09:00 yesterday, and it has not kicked off). From 10:00
  * on, today's reminder instant has passed, so tomorrow's 19:00 is open too.
+ *
+ * Both readings — the hour that decides today-or-tomorrow, and the weekday
+ * itself — are taken in `GAME_ZONE`. `/g/new` has no timezone field and
+ * `src/domain/game-form.ts` defaults every game to Europe/London, so a
+ * weekday read from the machine's clock names the wrong day for any
+ * contributor whose own date has already turned over (or has not yet).
  */
 function guideSlot(now: Date): { weekday: string; kickoffTime: string } {
   const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
-  const day = now.getHours() < 10 ? now : new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  return { weekday: WEEKDAY_CODES[day.getDay()]!, kickoffTime: "19:00" };
+  const parts = toLocalParts(now, GAME_ZONE);
+  // The calendar day is incremented rather than 24 hours added: across a
+  // spring-forward, `now + 24h` reads as the day after tomorrow in the hour
+  // that goes missing.
+  const shifted = new Date(
+    Date.UTC(parts.year, parts.month - 1, parts.day + (parts.hour < 10 ? 0 : 1)),
+  );
+  return { weekday: WEEKDAY_CODES[shifted.getUTCDay()]!, kickoffTime: "19:00" };
 }
 
 /** Read-only D1 access, via the supported path. See `sign-in.ts` for why. */
@@ -81,6 +114,11 @@ export interface GuideWorld {
   /** A response token for the player who answered "can't make it". */
   outToken: string;
   /**
+   * A response token for the one member who has not answered at all — the
+   * state a player is actually in when they open the reminder.
+   */
+  pendingToken: string;
+  /**
    * The member the removal confirmation page is shown for. Deliberately the
    * player who already answered "can't make it", so the page is not about
    * someone holding a place — removing them would trigger a promotion and
@@ -100,7 +138,7 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   // baked into every screenshot, since the name heads most of these pages and
   // the fixture dates sit directly beneath it. Naming the game after the venue
   // it already plays at cannot disagree with the day it lands on.
-  await page.fill('input[name="name"]', "Meadow Park Kickabout");
+  await page.fill('input[name="name"]', GUIDE_GAME_NAME);
   await page.fill('input[name="venueName"]', "Meadow Park 3G");
   await page.fill('input[name="venueAddress"]', "14 Meadow Lane");
 
@@ -113,12 +151,15 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   // kickoff two hours from now, which is correct for a test and produces a
   // 22:00 kickoff in every screenshot when the capture runs in the evening.
   // The guide needs a time a reader recognises as five-a-side.
-  const slot = guideSlot(new Date());
+  // The one wall-clock read in this harness, spelled the way the repository
+  // spells a deliberate clock read at an edge (see `src/routes/dashboard.ts`):
+  // `guideSlot` itself takes `now` as a parameter.
+  const slot = guideSlot(new Date(Date.now()));
   await page.selectOption('select[name="weekday"]', slot.weekday);
   await page.fill('input[name="kickoffTime"]', slot.kickoffTime);
 
   await page.fill('input[name="minPlayers"]', "8");
-  // Max 10 rather than the default 14: with thirteen members answering, a
+  // Max 10 rather than the default 14: with a squad of fourteen answering, a
   // waitlist is only reachable if the cap is below the squad size, and a
   // waitlist is one of the three things this single world has to illustrate.
   await page.fill('input[name="maxPlayers"]', "10");
@@ -145,8 +186,9 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   const squadSize = await page.locator("ul.squad li:has(.member)").count();
   if (squadSize !== SQUAD.length + 1) {
     throw new Error(
-      `buildGuideWorld: expected ${SQUAD.length + 1} members, found ${squadSize}. ` +
-        `Every screenshot depends on this world being what it claims.`,
+      `buildGuideWorld: expected a squad of ${SQUAD.length + 1} — the organiser ` +
+        `plus ${SQUAD.length} joiners — and found ${squadSize}. The chapters ` +
+        `state that number and every screenshot shows it.`,
     );
   }
 
@@ -194,6 +236,10 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     headers: { origin: BASE_URL },
   });
 
+  // The last member is deliberately left alone: no POST, no response. That is
+  // what chapter 03's opening screenshot needs.
+  const pendingEmail = SQUAD[12]!.email;
+
   const counts = await query<{ status: string; n: number }>(
     `SELECT status, COUNT(*) AS n FROM responses
        WHERE fixture_id = '${fixture.id}' GROUP BY status`,
@@ -215,6 +261,7 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     inToken: await tokenFor(GUIDE_ORGANISER),
     waitlistedToken: await tokenFor(SQUAD[10]!.email),
     outToken,
+    pendingToken: await tokenFor(pendingEmail),
     removablePlayerId: idFor(outEmail),
     cancelToken: await signCancelToken(
       {
