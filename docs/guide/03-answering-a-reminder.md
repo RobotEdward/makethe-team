@@ -19,7 +19,7 @@ to go ahead. Beside it, **0 spots left** is how many places are still free.
 
 ![A player told they are second on the waitlist](images/respond-waitlisted.png)
 
-Thursday Night Football has room for ten. If you answer after the tenth person,
+The Meadow Park Kickabout has room for ten. If you answer after the tenth person,
 you go on the waitlist and the page tells you your position — here, second.
 
 You do not need to do anything else. If someone drops out, the person at the

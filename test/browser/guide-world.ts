@@ -94,7 +94,13 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   await signIn(page, GUIDE_ORGANISER);
 
   await page.goto("/g/new");
-  await page.fill('input[name="name"]', "Thursday Night Football");
+  // Deliberately no weekday in the name. `guideSlot` picks the day from the
+  // clock, so a game called "Thursday Night Football" ends up playing every
+  // Friday whenever the capture runs late on a Thursday — a contradiction
+  // baked into every screenshot, since the name heads most of these pages and
+  // the fixture dates sit directly beneath it. Naming the game after the venue
+  // it already plays at cannot disagree with the day it lands on.
+  await page.fill('input[name="name"]', "Meadow Park Kickabout");
   await page.fill('input[name="venueName"]', "Meadow Park 3G");
   await page.fill('input[name="venueAddress"]', "14 Meadow Lane");
 

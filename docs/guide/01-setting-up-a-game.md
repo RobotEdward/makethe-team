@@ -21,8 +21,8 @@ covers adding one.
 
 Everything the game needs is on one screen.
 
-- **Game name** is what people will see in the emails — "Thursday Night
-  Football" rather than "Booking 4".
+- **Game name** is what people will see in the emails — "Meadow Park
+  Kickabout" rather than "Booking 4".
 - **Where you play** is the pitch. **Address** is optional; fill it in and
   people can tap it into a map.
 - **Day** and **How often** set the repeat. Pick Thursday and Every week and

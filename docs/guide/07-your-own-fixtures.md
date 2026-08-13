@@ -11,7 +11,7 @@ in one place.
 
 Signing in shows your fixtures as cards, nearest first.
 
-Each card carries the same facts as the email. Thursday Night Football at
+Each card carries the same facts as the email: the Meadow Park Kickabout,
 Meadow Park 3G, Friday 14 August at 19:00. **Confirmed — the game is on**
 means enough people have said yes. **0 spots left** means the places are taken.
 **You're in** is your own answer.

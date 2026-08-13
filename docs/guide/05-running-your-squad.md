@@ -25,7 +25,7 @@ anything.
 
 **Remove** on someone's row doesn't remove them straight away. It opens a page
 that names the person and spells out exactly what will happen: Sam Whitlock
-would be taken out of the squad for Thursday Night Football and told by email,
+would be taken out of the squad for the Meadow Park Kickabout and told by email,
 and because he has no upcoming fixtures, nothing else changes.
 
 **Remove Sam Whitlock** confirms it. **No, leave the squad as it is** backs out
@@ -40,7 +40,7 @@ put them back yourself.
 ![The game's settings, filled in with the details it currently uses](images/edit-game.png)
 
 **Edit this game** at the top of the game page opens the same form you filled in
-at the start, already holding what the game uses now: Thursday Night Football at
+at the start, already holding what the game uses now: Meadow Park Kickabout,
 Meadow Park 3G, 14 Meadow Lane, every Friday at 19:00 for sixty minutes, 8 to
 10 players, preferring even numbers.
 
