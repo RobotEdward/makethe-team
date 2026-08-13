@@ -9,8 +9,9 @@ messages, and here it costs nobody anything.
 ![The fixture page for a player who has said they can't make it](images/respond-out.png)
 
 Both buttons stay on the page after you've answered, so changing your mind is
-the same action as answering in the first place: open the email again — or the
-page you're already looking at — and tap **Can't make it**.
+the same action as answering in the first place: go back to the page — from the
+email again, or from the tab you still have open — and tap **Can't make it**
+there.
 
 The page then says **You said you can't make it**, and the squad below updates.
 Sam Whitlock has answered that way here, and the answer sits beside that name

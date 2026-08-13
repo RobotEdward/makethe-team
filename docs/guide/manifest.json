@@ -22,7 +22,7 @@
       "title": "Your game",
       "route": "/g/:id",
       "image": "images/game-overview.png",
-      "shows": "A game with thirteen members, the invite link and QR code, and the fixtures ahead."
+      "shows": "A game with fourteen members, the invite link and QR code, and the fixtures ahead."
     },
     {
       "id": "invite",
@@ -49,12 +49,20 @@
       "shows": "The join page a player reaches from the link: a name and an email, nothing else."
     },
     {
+      "id": "respond-pending",
+      "chapter": "03-answering-a-reminder",
+      "title": "Arriving from the email",
+      "route": "/r/:token",
+      "image": "images/respond-pending.png",
+      "shows": "The page a player lands on from the email before they have answered: the game, the time, and two untapped buttons."
+    },
+    {
       "id": "respond-in",
       "chapter": "03-answering-a-reminder",
-      "title": "Answering the reminder",
+      "title": "After you answer",
       "route": "/r/:token",
       "image": "images/respond-in.png",
-      "shows": "A player who is in, with their answer emphasised and the squad listed below."
+      "shows": "The same page once the player has tapped a button on it: \"You're in.\" above the squad, with both buttons still there to change the answer."
     },
     {
       "id": "respond-waitlisted",

@@ -38,7 +38,7 @@ Tap **Create the game** and it exists.
 
 ## Your game
 
-![The game page, showing the invite link, a QR code, a squad of thirteen and the fixtures coming up](images/game-overview.png)
+![The game page, showing the invite link, a QR code, a squad of fourteen and the fixtures coming up](images/game-overview.png)
 
 This page is the game's home, and it's where you'll come back to.
 
@@ -46,14 +46,14 @@ At the top is the name, the pitch and the address, with **Edit this game** for
 when any of that changes. Under **Invite people** is the link to share and the
 same link as a QR code — that's chapter 2.
 
-**Squad (13)** lists everyone who has joined. This game has thirteen people in
+**Squad (14)** lists everyone who has joined. This game has fourteen people in
 it, with jamie marked as the organiser — that's you, because you set it up.
 Chapter 5 covers what the buttons beside each name do.
 
 **Coming up** is the part that does the work. You created the game once, and
-the fixtures are already there: Friday 14 August, then the 21st, the 28th, and
-on into September, all at 19:00. The first one is open and has ten people in;
-the later ones show nobody yet, because their reminders haven't gone out.
-The list keeps refilling itself as weeks go by.
+the fixtures for the next few weeks are already there, one a week at 19:00.
+The first one is open and has ten people in; the later ones show nobody yet,
+because their reminders haven't gone out. The list keeps refilling itself as
+weeks go by.
 
 Next: [inviting your squad](02-inviting-your-squad.md).

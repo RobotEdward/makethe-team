@@ -5,8 +5,10 @@ Make The Team runs the weekly kickabout so you don't have to.
 You set the game up once — where you play, which evening, what time, and how
 many players you need. From then on the fixtures appear by themselves, week
 after week. The day before each one, everyone in the squad gets a single email
-asking whether they're playing. They tap **I'm in** or **Can't make it**, and
-that's it: no account, no password, no app to install.
+asking whether they're playing. Tapping **I'm in** or **Can't make it** in the
+email opens a page with the same two buttons, and the tap there is the one
+that saves the answer. Two taps, and that's it: no account, no password, no
+app to install.
 
 If more people say yes than there are places, the extras go on a waitlist in
 the order they answered. If somebody drops out, the person at the top of the
@@ -19,8 +21,9 @@ This guide walks through it in the order you'll meet it.
    weekly fixture.
 2. [Inviting your squad](02-inviting-your-squad.md) — the link, the QR code,
    and what a player sees when they follow it.
-3. [Answering a reminder](03-answering-a-reminder.md) — what happens when a
-   player taps a button in the email, including the waitlist.
+3. [Answering a reminder](03-answering-a-reminder.md) — what a player does with
+   the email, from the tap in the inbox to the answer being saved, including
+   the waitlist.
 4. [When someone drops out](04-when-someone-drops-out.md) — changing your
    answer, and how the waitlist moves.
 5. [Running your squad](05-running-your-squad.md) — organisers, removing

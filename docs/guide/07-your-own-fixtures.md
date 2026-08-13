@@ -12,13 +12,15 @@ in one place.
 Signing in shows your fixtures as cards, nearest first.
 
 Each card carries the same facts as the email: the Meadow Park Kickabout,
-Meadow Park 3G, Friday 14 August at 19:00. **Confirmed — the game is on**
-means enough people have said yes. **0 spots left** means the places are taken.
-**You're in** is your own answer.
+Meadow Park 3G, the date and 19:00. **Confirmed — the game is on** means enough
+people have said yes. **0 spots left** means the places are taken. **You're
+in** is your own answer.
 
-The two buttons work exactly as they do in the email, and you can use them
-whether or not you've answered already: **I'm in** and **Can't make it**.
-Changing your mind here is the same as changing it there.
+**I'm in** and **Can't make it** sit on the card, and you can use them whether
+or not you've answered already. There's no email in the way here, so it's one
+tap rather than two: tapping a button on the card saves your answer there and
+then. It's the same answer, recorded the same way, as tapping one on the page
+in chapter 3.
 
 ## Signing in faster
 

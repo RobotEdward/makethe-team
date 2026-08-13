@@ -11,10 +11,10 @@ you confirm.
 ![The cancellation page, with a box for the reason everyone will be told](images/cancel.png)
 
 The top of the page is a headcount before you commit: the Meadow Park
-Kickabout at Meadow Park 3G, Friday 14 August at 19:00, ten players in, and
-twelve people who will be emailed to say it's off. That second number is larger
-than the first because it includes the people on the waitlist, who were also
-expecting to hear.
+Kickabout at Meadow Park 3G, the date of the fixture you're calling off at
+19:00, ten players in, and twelve people who will be emailed to say it's off.
+That second number is larger than the first because it includes the people on
+the waitlist, who were also expecting to hear.
 
 **Why is it off?** is optional and goes straight into the email everyone gets.
 A few words save a dozen replies — "Pitch flooded" is plenty. Leave it blank if
