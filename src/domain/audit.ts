@@ -81,10 +81,22 @@ export const AUDIT_ACTIONS = [
   "game.created",
   "game.updated",
   "game.invite_rotated",
-  // A join through the public invite link. `actor_player_id` is the joining
-  // player themselves: nobody else acted.
+  // A join through the public invite link. `actor_player_id` is **null**: the
+  // actor is whoever was holding the link, and they are unidentified. It was
+  // originally the joining player, on the reasoning that "nobody else acted" —
+  // which is false for the case that matters. `joinSquad` reuses any existing
+  // `players` row matching the submitted address, so someone holding a leaked
+  // link can attach a real person's account to a squad they never asked to
+  // join, and an actor of the joining player made the trail assert that the
+  // victim added themselves. `via: "invite_link"` in `after_json`
+  // distinguishes a null actor here from a cron or system action.
   "membership.joined",
   "membership.rejoined",
+  // J6a. Owner actions on someone else's membership, so both carry a real
+  // actor. `membership.removed` carries `active`/`left_at` before and after;
+  // `membership.role_changed` carries `role`.
+  "membership.removed",
+  "membership.role_changed",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

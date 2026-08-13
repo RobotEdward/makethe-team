@@ -150,11 +150,14 @@ async function attemptJoin(params: JoinSquadParams): Promise<JoinOutcome> {
         .set({ active: true, leftAt: null, joinedAt: now })
         .where(eq(memberships.id, membership.id)),
       buildAuditInsert(db, {
-        actorPlayerId: playerId,
+        // Null, not `playerId`. See the `membership.joined` comment in
+        // `src/domain/audit.ts`: whoever holds the invite link is anonymous,
+        // and naming the joiner as actor asserts a consent that may not exist.
+        actorPlayerId: null,
         entityType: "membership",
         entityId: membership.id,
         action: "membership.rejoined",
-        after: { gameId, playerId },
+        after: { gameId, playerId, via: "invite_link" },
         now,
       }),
     ]);
@@ -172,11 +175,14 @@ async function attemptJoin(params: JoinSquadParams): Promise<JoinOutcome> {
       joinedAt: now,
     }),
     buildAuditInsert(db, {
-      actorPlayerId: playerId,
+      // Null, not `playerId`. See the `membership.joined` comment in
+      // `src/domain/audit.ts`: whoever holds the invite link is anonymous,
+      // and naming the joiner as actor asserts a consent that may not exist.
+      actorPlayerId: null,
       entityType: "membership",
       entityId: membershipId,
       action: "membership.joined",
-      after: { gameId, playerId },
+      after: { gameId, playerId, via: "invite_link" },
       now,
     }),
   ]);

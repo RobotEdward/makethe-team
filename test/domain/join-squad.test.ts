@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditLog, memberships, players } from "../../src/db/schema.js";
+import { auditLog, games, memberships, players } from "../../src/db/schema.js";
 import { isPlausibleEmail, joinSquad, normaliseEmail } from "../../src/domain/join-squad.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 
@@ -110,17 +110,43 @@ describe("joinSquad", () => {
     expect(await db.select().from(memberships).where(eq(memberships.playerId, playerId))).toHaveLength(2);
   });
 
-  it("records the join in audit_log", async () => {
+  it("records a join with no actor — the joiner is an anonymous link holder", async () => {
     const db = testDb();
     const gameId = await insertGame(db);
+    await joinSquad({ db, gameId, name: "Sam Okafor", email: "sam@example.com", now: NOW });
 
-    const outcome = await joinSquad({ db, gameId, name: "Alex", email: "alex@example.com", now: NOW });
-    if (outcome.kind === "already-member") throw new Error("expected a join");
+    const [row] = await db.select().from(auditLog).where(eq(auditLog.action, "membership.joined"));
+    // Null, not the joining player: whoever pasted the invite link is
+    // unidentified, and recording the joiner as the actor asserts they added
+    // themselves — which is exactly what the leaked-link case makes false.
+    expect(row!.actorPlayerId).toBeNull();
+    expect(JSON.parse(row!.afterJson!)).toMatchObject({ via: "invite_link" });
+  });
 
-    const [row] = await db.select().from(auditLog).where(eq(auditLog.entityId, outcome.membershipId));
-    expect(row?.action).toBe("membership.joined");
-    // The joiner acted on their own behalf; nobody else did anything.
-    expect(row?.actorPlayerId).toBe(outcome.playerId);
+  it("records a rejoin the same way", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const first = await joinSquad({ db, gameId, name: "Sam Okafor", email: "sam@example.com", now: NOW });
+    await db
+      .update(memberships)
+      .set({ active: false, leftAt: NOW })
+      .where(eq(memberships.id, "membershipId" in first ? first.membershipId : ""));
+    await joinSquad({ db, gameId, name: "Sam Okafor", email: "sam@example.com", now: NOW });
+
+    const [row] = await db.select().from(auditLog).where(eq(auditLog.action, "membership.rejoined"));
+    expect(row!.actorPlayerId).toBeNull();
+    expect(JSON.parse(row!.afterJson!)).toMatchObject({ via: "invite_link" });
+  });
+
+  it("never writes the invite token into the audit log", async () => {
+    const db = testDb();
+    const [game] = await db.select().from(games).where(eq(games.id, await insertGame(db)));
+    await joinSquad({ db, gameId: game!.id, name: "Sam Okafor", email: "sam@example.com", now: NOW });
+
+    const rows = await db.select().from(auditLog);
+    const serialised = JSON.stringify(rows);
+    // The token is a live capability; audit_log is durable and widely read.
+    expect(serialised).not.toContain(game!.inviteToken);
   });
 
   it("matches an address case-insensitively", async () => {
