@@ -273,12 +273,27 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
  * 403 confirms a resource exists, and these paths carry two ids either of
  * which could otherwise be probed.
  */
-async function loadSquadTarget(c: Context<AppEnv>, gameId: string, playerId: string) {
+async function loadSquadTarget(
+  c: Context<AppEnv>,
+  gameId: string,
+  playerId: string,
+  /**
+   * Let an *inactive* membership through. Only `POST …/remove` sets this, so
+   * that a removal which failed partway through its per-fixture loop can be
+   * finished by re-submitting the same form — see `removeMember`'s `resumed`
+   * outcome. Everything else keeps the stricter rule: there is nothing to
+   * confirm on the GET, and nothing to promote or demote on a membership that
+   * is over. The entitlement half is unchanged either way, so this widens what
+   * an owner may act on inside their own squad, never who may act.
+   */
+  options: { allowInactive?: boolean } = {},
+) {
   const db = getDb(c.env.DB);
   const game = await findGameForOwner(db, gameId, c.get("player")!.id);
   if (game === null) return null;
   const member = await findMembershipInGame(db, game.id, playerId);
-  if (member === null || !member.active) return null;
+  if (member === null) return null;
+  if (!member.active && options.allowInactive !== true) return null;
   return { db, game, member };
 }
 
@@ -302,7 +317,10 @@ gamesRoutes.get("/g/:id/squad/:playerId/remove", requirePlayer, async (c) => {
 gamesRoutes.post("/g/:id/squad/:playerId/remove", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
-  const target = await loadSquadTarget(c, c.req.param("id"), c.req.param("playerId"));
+  // `allowInactive`: re-submitting this POST is the documented recovery path
+  // for a removal that failed partway through its per-fixture loop (§3.3), and
+  // a 404 here would refuse the retry the design promises.
+  const target = await loadSquadTarget(c, c.req.param("id"), c.req.param("playerId"), { allowInactive: true });
   if (target === null) return c.text("Not found", 404);
 
   const now = new Date(Date.now());
@@ -327,6 +345,15 @@ gamesRoutes.post("/g/:id/squad/:playerId/remove", requirePlayer, async (c) => {
   if (result.kind === "not-a-member") return c.text("Not found", 404);
   if (result.kind === "refused") return renderSquadRefusal(c, target.game.id, now);
 
+  // `removed` and `resumed` are handled identically and deliberately so: a
+  // resume means the membership was already deactivated and the fixture loop
+  // has just been re-run, which is the same end state a first attempt reaches.
+  // The N-7 below is safe to re-attempt for the same reason — `resumed`
+  // carries the original `leftAt`, so the dedupe key is byte-identical and the
+  // second attempt returns `already-logged` without sending anything. The N-2s
+  // are whatever *this* pass promoted, so on a resume that finished nothing
+  // there are none.
+  //
   // Handed to `waitUntil` for the reason `POST /r/:token` and `POST /j/:token`
   // do the same: everything the owner is waiting for is already committed, and
   // what is left is HTTP calls to a mail provider on other people's behalf.
@@ -439,7 +466,10 @@ export async function notifyRemovedPlayer(
     });
     if (result.kind === "failed") console.error(`n7 removal email failed for ${who}: ${result.reason}`);
     if (result.kind === "deferred") console.error(`n7 removal email deferred by the daily ceiling for ${who}`);
-    if (result.kind === "skipped-no-recipient") console.error(`n7 removal email skipped, no address, for ${who}`);
+    // `console.log`, matching `POST /j/:token` and `POST /r/:token`: expected
+    // and permanent (BR-32), not a fault — a guest has no address, so every
+    // guest removal would otherwise file an error line for working correctly.
+    if (result.kind === "skipped-no-recipient") console.log(`n7 removal email skipped, no address, for ${who}`);
   } catch (error) {
     console.error(
       `n7 removal email threw for ${who}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,

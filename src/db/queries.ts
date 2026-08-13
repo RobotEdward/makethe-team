@@ -266,6 +266,13 @@ export interface MembershipInGame {
   isGuest: boolean;
   role: "player" | "owner";
   active: boolean;
+  /**
+   * When they left, or `null` while they are still in the squad. Read by
+   * `removeMember`'s resume path, which must reuse the *original* `left_at` so
+   * N-7's dedupe key (`n7:<membershipId>:<leftAt>`) is unchanged and a retry
+   * cannot send a second removal email.
+   */
+  leftAt: Date | null;
 }
 
 /**
@@ -293,6 +300,7 @@ export async function findMembershipInGame(
       isGuest: players.isGuest,
       role: memberships.role,
       active: memberships.active,
+      leftAt: memberships.leftAt,
     })
     .from(memberships)
     .innerJoin(players, eq(players.id, memberships.playerId))
