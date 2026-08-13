@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
-import { getDb } from "../db/client.js";
+import { getDb, type Db } from "../db/client.js";
 import { fixtures, responses } from "../db/schema.js";
 import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
@@ -150,21 +150,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // the fixture had somehow gone over capacity, a data-corruption case this
     // method does not otherwise guard against.
     const givesUpASlot = occupiesSlot(existing.status) && !occupiesSlot(status);
-    // Narrow to rows with a real position once, rather than re-deriving a
-    // fallback (`?? 0`, `?? 1`) at every use below — a filtered row that
-    // still had a null position would be a bug in the filter, not something
-    // to paper over, and a wrong fallback on `previousWaitlistPosition` in
-    // particular would report a false position to the caller.
-    const liveWaitlistCandidates = waitlistedWithoutThisPlayer.filter(
-      (r): r is (typeof waitlistedWithoutThisPlayer)[number] & { waitlistPosition: number } =>
-        r.waitlistPosition !== null,
-    );
-    const promotedRow = givesUpASlot
-      ? liveWaitlistCandidates.reduce<(typeof liveWaitlistCandidates)[number] | null>(
-          (best, r) => (best === null || r.waitlistPosition < best.waitlistPosition ? r : best),
-          null,
-        )
-      : null;
+    const promotedRow = givesUpASlot ? this.#longestWaitingCandidate(waitlistedWithoutThisPlayer) : null;
 
     // Exactly one player can be promoted here: this response releases at most
     // one slot. Anything that frees several — a cancellation, a squad change —
@@ -204,19 +190,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
           source: input.source,
         })
         .where(eq(responses.id, existing.id)),
-      // The promoted player's `responded_at` is left alone on purpose: it
-      // records when *they* said yes, which is what the squad list orders `in`
-      // players by, and the promotion is not a new answer from them. `source`
-      // becomes "system" because nobody asked for this write — the object did
-      // it on their behalf.
-      ...(promotedRow
-        ? [
-            db
-              .update(responses)
-              .set({ status: "in", waitlistPosition: null, source: "system" })
-              .where(eq(responses.id, promotedRow.id)),
-          ]
-        : []),
+      ...this.#promotionWrite(db, promotedRow),
       db.update(fixtures).set({ inCount, waitlistCount }).where(eq(fixtures.id, fixtureId)),
     ]);
 
@@ -299,19 +273,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // `occupiesSlot` rather than a literal `=== "in"`, to stay in step with
     // the one definition of what holds a slot.
     const freesASlot = occupiesSlot(previousStatus);
-    const liveWaitlistCandidates = waitlistedWithoutThisPlayer.filter(
-      (row): row is (typeof waitlistedWithoutThisPlayer)[number] & { waitlistPosition: number } =>
-        row.waitlistPosition !== null,
-    );
-    // Longest waiting is the **lowest live position**. Positions are permanent
-    // and gappy — the next joiner takes the highest live position plus one —
-    // so the lowest live number is always the earliest arrival (BR-6).
-    const promotedRow = freesASlot
-      ? liveWaitlistCandidates.reduce<(typeof liveWaitlistCandidates)[number] | null>(
-          (best, row) => (best === null || row.waitlistPosition < best.waitlistPosition ? row : best),
-          null,
-        )
-      : null;
+    const promotedRow = freesASlot ? this.#longestWaitingCandidate(waitlistedWithoutThisPlayer) : null;
 
     const inCount = inCountWithoutThisPlayer + (promotedRow ? 1 : 0);
     const waitlistCount = waitlistedWithoutThisPlayer.length - (promotedRow ? 1 : 0);
@@ -337,17 +299,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
           // and deleting the `out` row is what stops an ex-member showing as
           // having declined.
           db.delete(responses).where(eq(responses.id, existing.id)),
-      // The promoted player's `responded_at` is left alone deliberately: it
-      // records when *they* said yes, and this is not a new answer from them.
-      // `source` is "system" because nobody asked for this write.
-      ...(promotedRow
-        ? [
-            db
-              .update(responses)
-              .set({ status: "in", waitlistPosition: null, source: "system" })
-              .where(eq(responses.id, promotedRow.id)),
-          ]
-        : []),
+      ...this.#promotionWrite(db, promotedRow),
       db.update(fixtures).set({ inCount, waitlistCount }).where(eq(fixtures.id, fixtureId)),
     ]);
 
@@ -368,5 +320,61 @@ export class FixtureCapacity extends DurableObject<Bindings> {
           }
         : {}),
     };
+  }
+
+  /**
+   * Find the longest-waiting player among rows waitlisted on this fixture
+   * (BR-6, BR-7).
+   *
+   * This is the **one implementation** of BR-6's "lowest live position" rule.
+   * Positions are permanent and gappy: the next joiner takes the highest live
+   * position plus one, so a departed top position is reused and numbering
+   * restarts at 1 on an empty waitlist. What survives all of that is that the
+   * lowest position among players *currently* waitlisted is always the
+   * earliest arrival — never the first row returned or the smallest array
+   * index. Both `setResponse` (BR-7) and `withdrawMember` (BR-3) fill a freed
+   * slot through this one path so that a future change to the rule cannot be
+   * applied to one call site and missed on the other.
+   *
+   * Callers gate the call on whether a slot was actually freed; this method
+   * only picks who takes it.
+   */
+  #longestWaitingCandidate<T extends { waitlistPosition: number | null }>(
+    waitlisted: readonly T[],
+  ): (T & { waitlistPosition: number }) | null {
+    // Narrow to rows with a real position once, rather than re-deriving a
+    // fallback (`?? 0`, `?? 1`) at every use — a filtered row that still had a
+    // null position would be a bug in the filter, not something to paper
+    // over, and a wrong fallback on `previousWaitlistPosition` in particular
+    // would report a false position to the caller.
+    const liveCandidates = waitlisted.filter(
+      (row): row is T & { waitlistPosition: number } => row.waitlistPosition !== null,
+    );
+    return liveCandidates.reduce<(T & { waitlistPosition: number }) | null>(
+      (best, row) => (best === null || row.waitlistPosition < best.waitlistPosition ? row : best),
+      null,
+    );
+  }
+
+  /**
+   * The batch entry that fills a freed slot for the player
+   * `#longestWaitingCandidate` selected — an empty array when nobody was
+   * promoted, so callers can splice this straight into `db.batch()` without
+   * an `if` at the call site.
+   *
+   * The promoted player's `responded_at` is left alone deliberately: it
+   * records when *they* said yes, which is what the squad list orders `in`
+   * players by, and a promotion is not a new answer from them. `source`
+   * becomes `"system"` because nobody asked for this write — the object did
+   * it on their behalf.
+   */
+  #promotionWrite(db: Db, promotedRow: { id: string } | null) {
+    if (!promotedRow) return [];
+    return [
+      db
+        .update(responses)
+        .set({ status: "in", waitlistPosition: null, source: "system" })
+        .where(eq(responses.id, promotedRow.id)),
+    ];
   }
 }
