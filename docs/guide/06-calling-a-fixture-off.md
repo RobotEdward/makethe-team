@@ -1,0 +1,30 @@
+# Calling a fixture off
+
+Some weeks it isn't on. The pitch is under water, or four people are in and
+you need eight. Calling it off early is a kindness, and it takes one page.
+
+If a fixture is short of players, or has an awkward number for even sides,
+you'll get an email about it with a **Call this game off** button. That button
+opens this page. You can only get here on purpose, and nothing happens until
+you confirm.
+
+![The cancellation page, with a box for the reason everyone will be told](images/cancel.png)
+
+The top of the page is a headcount before you commit: Thursday Night Football
+at Meadow Park 3G, Thursday 13 August at 22:00, ten players in, and twelve
+people who will be emailed to say it's off. That second number is larger than
+the first because it includes the people on the waitlist, who were also
+expecting to hear.
+
+**Why is it off?** is optional and goes straight into the email everyone gets.
+A few words save a dozen replies — "Pitch flooded" is plenty. Leave it blank if
+you'd rather not say, and the email simply says the game is off.
+
+**Cancel this game and tell everyone** does both things its name promises. It
+can't be undone from here: once it's off, everyone who was in or on the
+waitlist gets the email, and nobody can answer that fixture any more.
+
+Only that week is affected. Next Thursday's fixture is untouched and its
+reminders will go out as usual.
+
+Next: [your own fixtures](07-your-own-fixtures.md).
