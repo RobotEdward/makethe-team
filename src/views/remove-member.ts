@@ -39,10 +39,13 @@ export function renderRemoveMemberPage(params: RemoveMemberPageParams): string {
 
   const consequences: string[] = [];
   if (commitments.in > 0) {
+    // The waiting-list half is the consequence an owner most needs to see
+    // (spec §2): freeing a place is not the end of it — somebody else is
+    // moved into that place, and emailed about it (N-2), by this click.
     consequences.push(
       `<p>${name} holds a confirmed place in ${fixtures(commitments.in)}. Removing them frees ${
         commitments.in === 1 ? "it" : "them"
-      } up.</p>`,
+      } up, and the next person on each waiting list takes the place.</p>`,
     );
   }
   if (commitments.waitlisted > 0) {
@@ -70,5 +73,7 @@ export function renderRemoveMemberPage(params: RemoveMemberPageParams): string {
     <p><a href="${escapeHtml(gamePath(gameId))}">No, leave the squad as it is</a></p>
   `;
 
-  return layout({ title: `Remove ${memberName}`, body, pageStyles: [FORM_CSS] });
+  // The `— Make The Team` suffix every other view uses; without it this is the
+  // one page whose browser tab and bookmark do not say what site it belongs to.
+  return layout({ title: `Remove ${memberName} — Make The Team`, body, pageStyles: [FORM_CSS] });
 }
