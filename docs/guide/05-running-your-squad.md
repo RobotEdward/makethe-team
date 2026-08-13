@@ -41,7 +41,7 @@ put them back yourself.
 
 **Edit this game** at the top of the game page opens the same form you filled in
 at the start, already holding what the game uses now: Thursday Night Football at
-Meadow Park 3G, 14 Meadow Lane, every Thursday at 22:00 for sixty minutes, 8 to
+Meadow Park 3G, 14 Meadow Lane, every Friday at 19:00 for sixty minutes, 8 to
 10 players, preferring even numbers.
 
 Read the note at the top before you change anything. Here it says the change

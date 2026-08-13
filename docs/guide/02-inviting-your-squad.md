@@ -30,7 +30,7 @@ This is where the link takes them. They don't have to sign up for anything to
 get here.
 
 The top of the page tells them what they're joining: Thursday Night Football at
-Meadow Park 3G, every Thursday at 22:00 for sixty minutes, 8 to 10 players, and
+Meadow Park 3G, every Friday at 19:00 for sixty minutes, 8 to 10 players, and
 when the next one is. Below that, **Who's playing (13)** shows the squad they'd
 be joining — first names and an initial, so nobody's full name is on a page
 anyone with the link can open.

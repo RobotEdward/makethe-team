@@ -59,9 +59,23 @@ test("@guide capture every screen the guide shows", async ({ page, browser }) =>
     // Element-scoped where the shot asks for it: three shots point at the same
     // page as `game-overview`, and photographing the whole page for each would
     // write byte-identical PNGs under different names.
-    const shotBuffer = shot.element
-      ? await page.locator(shot.element).screenshot()
-      : await page.screenshot({ fullPage: true });
+    //
+    // Element shots scope vertically to the element and horizontally to the
+    // whole viewport. Clipping to the element's own box slices controls that
+    // sit flush against its right edge — the Remove link in every squad row
+    // came out cut in half — and a guide must never show a truncated control.
+    let shotBuffer: Buffer;
+    if (shot.element) {
+      const box = await page.locator(shot.element).boundingBox();
+      if (!box) throw new Error(`${shot.id}: element ${shot.element} has no box`);
+      const viewport = page.viewportSize();
+      shotBuffer = await page.screenshot({
+        fullPage: true,
+        clip: { x: 0, y: box.y, width: viewport?.width ?? 390, height: box.height },
+      });
+    } else {
+      shotBuffer = await page.screenshot({ fullPage: true });
+    }
 
     const file = `${IMAGES}/${shot.id}.png`;
     const staging = `${IMAGES}/.${shot.id}.staging.png`;

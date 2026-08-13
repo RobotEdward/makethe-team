@@ -11,7 +11,7 @@ you confirm.
 ![The cancellation page, with a box for the reason everyone will be told](images/cancel.png)
 
 The top of the page is a headcount before you commit: Thursday Night Football
-at Meadow Park 3G, Thursday 13 August at 22:00, ten players in, and twelve
+at Meadow Park 3G, Friday 14 August at 19:00, ten players in, and twelve
 people who will be emailed to say it's off. That second number is larger than
 the first because it includes the people on the waitlist, who were also
 expecting to hear.
@@ -24,7 +24,7 @@ you'd rather not say, and the email simply says the game is off.
 can't be undone from here: once it's off, everyone who was in or on the
 waitlist gets the email, and nobody can answer that fixture any more.
 
-Only that week is affected. Next Thursday's fixture is untouched and its
+Only that week is affected. Next week's fixture is untouched and its
 reminders will go out as usual.
 
 Next: [your own fixtures](07-your-own-fixtures.md).

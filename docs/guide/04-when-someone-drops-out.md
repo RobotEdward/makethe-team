@@ -1,7 +1,7 @@
 # When someone drops out
 
-Work runs late, a child gets ill, a back goes. Somebody who said yes on Tuesday
-can't play on Thursday. This is the part that usually costs an organiser twenty
+Work runs late, a child gets ill, a back goes. Somebody who said yes on Monday
+can't play on the night. This is the part that usually costs an organiser twenty
 messages, and here it costs nobody anything.
 
 ## Changing your mind

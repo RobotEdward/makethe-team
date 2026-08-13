@@ -127,7 +127,9 @@ export const SHOTS: Shot[] = [
     chapter: "04-when-someone-drops-out",
     title: "Leaving a game",
     route: "/leave/:token",
-    shows: "The page reached from the footer of every email, explaining how to leave.",
+    shows:
+      "The page reached from the footer of every email: leaving isn't self-service " +
+      "yet, so it asks you to speak to whoever organises the game.",
     path: (w) => `/leave/${w.inToken}`,
     persona: "anonymous",
   },
@@ -174,7 +176,9 @@ export const SHOTS: Shot[] = [
     chapter: "07-your-own-fixtures",
     title: "Your fixtures",
     route: "/app",
-    shows: "A fixture waiting on an answer, and the buttons a player uses to give one.",
+    shows:
+      "A fixture card for a player who is already in, with the buttons they'd use " +
+      "to change their answer.",
     path: () => "/app",
     persona: "organiser",
     // Element-scoped, not full-page: `buildGuideWorld` creates a fresh game on

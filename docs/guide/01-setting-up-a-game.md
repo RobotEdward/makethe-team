@@ -51,9 +51,9 @@ it, with jamie marked as the organiser — that's you, because you set it up.
 Chapter 5 covers what the buttons beside each name do.
 
 **Coming up** is the part that does the work. You created the game once, and
-the fixtures are already there: Thursday 13 August, then the 20th, the 27th,
-and on into September, all at 22:00. The first one is open and has ten people
-in; the later ones show nobody yet, because their reminders haven't gone out.
+the fixtures are already there: Friday 14 August, then the 21st, the 28th, and
+on into September, all at 19:00. The first one is open and has ten people in;
+the later ones show nobody yet, because their reminders haven't gone out.
 The list keeps refilling itself as weeks go by.
 
 Next: [inviting your squad](02-inviting-your-squad.md).

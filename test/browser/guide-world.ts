@@ -4,7 +4,6 @@ import type { Browser, Page } from "@playwright/test";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn } from "./sign-in.js";
-import { imminentSlot } from "./world.js";
 
 const run = promisify(execFile);
 // Both must match `test/browser/browser.env` exactly, and they are
@@ -41,6 +40,22 @@ const SQUAD = [
   { name: "Grace Abara", email: "grace@example.test" },
   { name: "Sam Whitlock", email: "sam@example.test" },
 ] as const;
+
+/**
+ * A plausible evening kickoff for the guide's screenshots — always 19:00,
+ * never "two hours from now", which is right for the test suite and reads
+ * absurdly in a document (a 22:00 kickoff looks like a typo, not a squad).
+ *
+ * A fixture opens once its reminder instant — 09:00 the day before — has
+ * passed, and closes when it ends. Before 10:00, today's 19:00 satisfies both
+ * (its reminder was 09:00 yesterday, and it has not kicked off). From 10:00
+ * on, today's reminder instant has passed, so tomorrow's 19:00 is open too.
+ */
+function guideSlot(now: Date): { weekday: string; kickoffTime: string } {
+  const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
+  const day = now.getHours() < 10 ? now : new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  return { weekday: WEEKDAY_CODES[day.getDay()]!, kickoffTime: "19:00" };
+}
 
 /** Read-only D1 access, via the supported path. See `sign-in.ts` for why. */
 async function query<T>(sql: string): Promise<T[]> {
@@ -83,14 +98,16 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   await page.fill('input[name="venueName"]', "Meadow Park 3G");
   await page.fill('input[name="venueAddress"]', "14 Meadow Lane");
 
-  // The weekday and kickoff time must be chosen from the clock, not fixed.
-  // A fixture only opens once its reminder instant — 09:00 the day before
-  // kickoff — has passed and it has not yet ended, so a hardcoded weekday
-  // leaves the first fixture up to a week away and permanently `scheduled`.
-  // `imminentSlot` is exported from `./world.js`, where Task 1 added it after
-  // exactly this bug made the browser suite pass only on the luck of the hour
-  // it was run. Do not reimplement it here.
-  const slot = imminentSlot(new Date());
+  // The weekday must be chosen from the clock, not fixed. A fixture only opens
+  // once its reminder instant — 09:00 the day before kickoff — has passed and
+  // it has not yet ended, so a hardcoded weekday leaves the first fixture up to
+  // a week away and permanently `scheduled`.
+  //
+  // `guideSlot`, not `world.js`'s `imminentSlot`: the browser suite wants a
+  // kickoff two hours from now, which is correct for a test and produces a
+  // 22:00 kickoff in every screenshot when the capture runs in the evening.
+  // The guide needs a time a reader recognises as five-a-side.
+  const slot = guideSlot(new Date());
   await page.selectOption('select[name="weekday"]', slot.weekday);
   await page.fill('input[name="kickoffTime"]', slot.kickoffTime);
 
