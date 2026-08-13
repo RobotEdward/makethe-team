@@ -26,7 +26,7 @@ anything.
 **Remove** on someone's row doesn't remove them straight away. It opens a page
 that names the person and spells out exactly what will happen: Sam Whitlock
 would be taken out of the squad for the Meadow Park Kickabout and told by email,
-and because he has no upcoming fixtures, nothing else changes.
+and because they have no upcoming fixtures, nothing else changes.
 
 **Remove Sam Whitlock** confirms it. **No, leave the squad as it is** backs out
 and nothing has happened.
