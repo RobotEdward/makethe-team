@@ -145,6 +145,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       inviteToken: game.inviteToken,
       squad,
       upcoming,
+      viewerPlayerId: player.id,
     }),
   );
 });
@@ -400,6 +401,7 @@ async function renderSquadRefusal(
       inviteToken: game.inviteToken,
       squad,
       upcoming,
+      viewerPlayerId: c.get("player")!.id,
       problem: "A game needs at least one organiser. Make someone else an organiser first.",
     }),
     422,

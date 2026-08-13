@@ -193,3 +193,14 @@ describe("POST /g/:id/squad/:playerId/role", () => {
     expect((await post(`/g/${gameId}/squad/${memberId}/role`, cookie, { role: "admin" })).status).toBe(400);
   });
 });
+
+describe("the game page's squad controls", () => {
+  beforeEach(resetDatabase);
+
+  it("renders a remove link and a role form for each member", async () => {
+    const { cookie, gameId, memberId } = await ownedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
+    expect(html).toContain(`/g/${gameId}/squad/${memberId}/remove`);
+    expect(html).toContain(`/g/${gameId}/squad/${memberId}/role`);
+  });
+});

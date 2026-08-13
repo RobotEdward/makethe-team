@@ -249,6 +249,7 @@ export const FORM_CSS = `
   .invite-link input { flex: 1; font-family: ui-monospace, monospace; font-size: 0.85rem; }
   .squad { list-style: none; padding: 0; }
   .squad li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+  .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left; }
 `;
 
 export const PAGE_STYLE_BLOCKS = [
