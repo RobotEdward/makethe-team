@@ -118,7 +118,7 @@
       "title": "Your fixtures",
       "route": "/app",
       "image": "images/dashboard.png",
-      "shows": "Every game a player belongs to, and the fixtures waiting on an answer."
+      "shows": "A fixture waiting on an answer, and the buttons a player uses to give one."
     },
     {
       "id": "passkeys",

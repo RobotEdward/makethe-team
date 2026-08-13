@@ -66,9 +66,19 @@ test("@guide capture every screen the guide shows", async ({ page, browser }) =>
     const file = `${IMAGES}/${shot.id}.png`;
     const staging = `${IMAGES}/.${shot.id}.staging.png`;
     writeFileSync(staging, shotBuffer);
-    execFileSync("python3", ["scripts/optimise-png.py", staging], { stdio: "inherit" });
-    const optimised = readFileSync(staging);
-    rmSync(staging);
+    let optimised: Buffer;
+    try {
+      execFileSync("python3", ["scripts/optimise-png.py", staging], { stdio: "inherit" });
+      optimised = readFileSync(staging);
+    } finally {
+      // Whatever happens above — a missing Pillow, a corrupt image, a full
+      // disk — this staging file must not survive. `git add docs/guide/images`
+      // does not skip dotfiles, so a leftover `.staging.png` would otherwise
+      // become a raw, unoptimised screenshot silently committed to a public
+      // repository under a name nobody would notice. `force: true` so the
+      // cleanup itself cannot throw when the file was never written.
+      rmSync(staging, { force: true });
+    }
 
     const digest = (bytes: Buffer): string =>
       createHash("sha256").update(bytes).digest("hex");

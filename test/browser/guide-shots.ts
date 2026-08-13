@@ -174,9 +174,17 @@ export const SHOTS: Shot[] = [
     chapter: "07-your-own-fixtures",
     title: "Your fixtures",
     route: "/app",
-    shows: "Every game a player belongs to, and the fixtures waiting on an answer.",
+    shows: "A fixture waiting on an answer, and the buttons a player uses to give one.",
     path: () => "/app",
     persona: "organiser",
+    // Element-scoped, not full-page: `buildGuideWorld` creates a fresh game on
+    // every capture run and nothing retires the previous ones, so the full
+    // fixture list grows without bound across regenerations. The first card —
+    // what a player actually acts on — stays a fixed size run to run.
+    // `nth=0` pins it, matching `squad-controls` above, since `li.fixture-card`
+    // matches every card on the page and Playwright's strict mode would
+    // otherwise fail the run.
+    element: "li.fixture-card >> nth=0",
   },
   {
     id: "passkeys",
