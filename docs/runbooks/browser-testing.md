@@ -112,6 +112,52 @@ npx wrangler d1 migrations apply makethe-team --local
 
 This destroys local development data only. It never touches production.
 
+## The product guide
+
+`docs/guide/` is a hand-written product guide — a README and seven chapters,
+illustrated with 16 screenshots. Regenerate the screenshots with:
+
+```bash
+npm run guide:capture
+```
+
+This rebuilds the world, captures the 16 shots, optimises them and rewrites
+`docs/guide/manifest.json`. **It writes images and the manifest and never a
+`.md` file.** The chapters are hand-edited prose — that separation is the
+whole reason the writing survives regeneration. Do not expect (or write)
+tooling that generates chapter text.
+
+Like the visual capture above, this needs a clean local database to be
+reproducible:
+
+```bash
+rm -rf .wrangler/state/v3/d1
+npx wrangler d1 migrations apply makethe-team --local
+```
+
+This destroys local development data only, never production.
+
+After a run, `git status` will normally show three images as changed —
+`game-overview`, `invite` and `invite-qr` — because each shows a freshly
+generated invite token. That churn is expected on every run, by design; the
+other 13 shots should only change when the page they capture actually
+changed. If a shot outside that trio changes and you didn't expect it, that's
+worth a look before committing.
+
+Four checks in `test/browser/guide-references.spec.ts` run in the ordinary
+browser suite and in CI: every chapter named in the shot list exists, every
+image a chapter references exists on disk, every captured image is
+referenced by some chapter, and the manifest matches the shot list. They
+catch a broken image path or an orphaned picture. **They cannot catch a
+chapter whose prose has quietly stopped describing the screen beside it** —
+nothing can check that automatically.
+
+**The standing obligation: when a page's behaviour changes, its chapter
+changes in the same commit, and the capture is re-run.** Nothing enforces
+this mechanically — it is a discipline, not a gate — so treat a page change
+that touches something the guide shows as incomplete until the matching
+chapter and screenshots are updated alongside it.
+
 ## CI
 
 A separate `browser` job in `.github/workflows/pr.yml`, deliberately not extra
