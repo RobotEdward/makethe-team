@@ -112,6 +112,68 @@ npx wrangler d1 migrations apply makethe-team --local
 
 This destroys local development data only. It never touches production.
 
+## The product guide
+
+`docs/guide/` is a hand-written product guide — a README and seven chapters,
+illustrated with 17 screenshots. Regenerate the screenshots with:
+
+```bash
+npm run guide:capture
+```
+
+This rebuilds the world, captures the 17 shots, optimises them and rewrites
+`docs/guide/manifest.json`. **It writes images and the manifest and never a
+`.md` file.** The chapters are hand-edited prose — that separation is the
+whole reason the writing survives regeneration. Do not expect (or write)
+tooling that generates chapter text.
+
+Like the visual capture above, this needs a clean local database to be
+reproducible:
+
+```bash
+rm -rf .wrangler/state/v3/d1
+npx wrangler d1 migrations apply makethe-team --local
+```
+
+This destroys local development data only, never production.
+
+Two kinds of churn are expected, and they have different causes.
+
+**Every run, whatever the day**, two images change: `game-overview` and
+`invite-qr`. Both show a freshly minted invite token — the QR code encodes it,
+and the overview contains the code. `invite` does *not* change with it, despite
+showing the same link: it is element-scoped to `.invite-link`, and the input is
+visually truncated well before the token, so the rendered pixels are the same
+whatever the token is. Measured by capturing twice in a row on one day: exactly
+those two files differed.
+
+**On a run made on a different day from the last one**, nine images change
+instead of two, because they carry the fixture's date or its weekday:
+`game-overview` (which changes anyway) plus `join`, `respond-pending`,
+`respond-in`, `respond-waitlisted`, `respond-out`, `cancel`, `dashboard` and
+`edit-game` (its **Day** field). The
+weekday cannot be pinned — a fixture only opens once its reminder instant has
+passed, so `guideSlot` has to derive the day from the clock — which is why the
+chapters are written without naming a date or a weekday for the guide's own
+game. If you change that prose, keep it that way.
+
+Anything else changing is a signal: the page it captures has actually changed,
+and its chapter probably needs a read before you commit.
+
+Four checks in `test/browser/guide-references.spec.ts` run in the ordinary
+browser suite and in CI: every chapter named in the shot list exists, every
+image a chapter references exists on disk, every captured image is
+referenced by some chapter, and the manifest matches the shot list. They
+catch a broken image path or an orphaned picture. **They cannot catch a
+chapter whose prose has quietly stopped describing the screen beside it** —
+nothing can check that automatically.
+
+**The standing obligation: when a page's behaviour changes, its chapter
+changes in the same commit, and the capture is re-run.** Nothing enforces
+this mechanically — it is a discipline, not a gate — so treat a page change
+that touches something the guide shows as incomplete until the matching
+chapter and screenshots are updated alongside it.
+
 ## CI
 
 A separate `browser` job in `.github/workflows/pr.yml`, deliberately not extra

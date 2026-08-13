@@ -28,8 +28,16 @@ import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 const db = getDb(env.DB);
 const RESPONSE_SECRET = env.RESPONSE_TOKEN_SECRET;
 const CANCEL_SECRET = env.CANCEL_TOKEN_SECRET;
-const NOW = new Date("2026-08-13T09:00:00Z");
-const KICKOFF = new Date("2026-08-13T18:00:00Z");
+// Relative to the real clock, not pinned to a date. These instants are seeded
+// into rows, but `/cancel/:token` and `/r/:token` verify their tokens and
+// judge the fixture against the wall clock — so a hardcoded kickoff silently
+// stops being in the future, and from that day on the cancellation page
+// refuses every request and renders the link-problem page instead. Both CSP
+// assertions then describe the wrong page. That is exactly what happened:
+// these were pinned to 2026-08-13 and began failing on every branch once that
+// evening passed.
+const NOW = new Date(Date.now());
+const KICKOFF = new Date(NOW.getTime() + 9 * 60 * 60 * 1000);
 
 async function sha256Base64(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));

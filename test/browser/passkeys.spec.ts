@@ -39,6 +39,14 @@ test("a signed-in player can register a passkey", async ({ page }) => {
   // browser supports WebAuthn. If it stays hidden, the script did not run —
   // which is precisely how the connect-src bug presented.
   await expect(page.locator("#passkey-add")).toBeVisible();
+
+  // Count credentials before registration to avoid false positives from
+  // credentials registered in previous test runs. We assert the count
+  // increased, not just that a credential exists, because credentials
+  // accumulate across runs and "passkey" text would match stale entries.
+  const credentialListBefore = page.locator(".passkey-list li");
+  const countBefore = await credentialListBefore.count();
+
   await page.click("#passkey-add-button");
 
   // Two independent confirmations, because either alone can lie. The
@@ -54,8 +62,14 @@ test("a signed-in player can register a passkey", async ({ page }) => {
     )
     .toBeGreaterThan(0);
 
-  await page.reload();
-  await expect(page.locator("main")).toContainText(/passkey/i);
+  // Poll the page's credential list until it reflects the registration,
+  // rather than driving a navigation that races with the app's own reload.
+  await expect
+    .poll(
+      async () => await credentialListBefore.count(),
+      { message: "the page did not record the registered credential" },
+    )
+    .toBe(countBefore + 1);
 
   expect(
     await seen.violations(),
