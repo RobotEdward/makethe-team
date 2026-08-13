@@ -1,0 +1,95 @@
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { expect, test } from "@playwright/test";
+import { buildGuideWorld, GUIDE_ORGANISER, type GuideWorld } from "./guide-world.js";
+import { SHOTS } from "./guide-shots.js";
+import { signIn } from "./sign-in.js";
+
+/**
+ * Captures the guide's screenshots and writes `docs/guide/manifest.json`.
+ *
+ * It writes images and the manifest and *nothing else*. The chapters are
+ * prose, committed, and edited by hand — if this run could rewrite them, every
+ * regeneration would overwrite the writing and the guide could never get
+ * better than whatever the last run produced.
+ *
+ * Tagged `@guide`, so it is excluded from the default browser run and from CI.
+ */
+
+const IMAGES = "docs/guide/images";
+const MANIFEST = "docs/guide/manifest.json";
+
+test("@guide capture every screen the guide shows", async ({ page, browser }) => {
+  test.setTimeout(300_000);
+  mkdirSync(IMAGES, { recursive: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const world: GuideWorld = await buildGuideWorld(page, browser);
+
+  const entries: Record<string, unknown>[] = [];
+  const written: string[] = [];
+
+  // buildGuideWorld leaves the page signed in as the organiser. `GET /sign-in`
+  // bounces an already-signed-in visitor straight to the dashboard (see
+  // `src/routes/signin.ts`), so calling `signIn` again while that session is
+  // still live never reaches the email field and hangs. Only act when the
+  // shot's persona actually differs from the page's current one: sign in once
+  // when moving to an organiser shot, and drop the session cookie when moving
+  // to an anonymous one so it renders as a real visitor would see it.
+  let signedIn = true;
+
+  for (const shot of SHOTS) {
+    if (shot.persona === "organiser") {
+      if (!signedIn) {
+        await signIn(page, GUIDE_ORGANISER);
+        signedIn = true;
+      }
+    } else if (signedIn) {
+      await page.context().clearCookies();
+      signedIn = false;
+    }
+
+    const response = await page.goto(shot.path(world), { waitUntil: "networkidle" });
+    expect(response?.status(), `${shot.id} did not render`).toBe(200);
+    // A page that has changed shape must fail the run rather than quietly
+    // producing a photograph of an error page and shipping it in a public doc.
+    await expect(page.locator("h1").first()).toBeVisible();
+
+    // Element-scoped where the shot asks for it: three shots point at the same
+    // page as `game-overview`, and photographing the whole page for each would
+    // write byte-identical PNGs under different names.
+    const shotBuffer = shot.element
+      ? await page.locator(shot.element).screenshot()
+      : await page.screenshot({ fullPage: true });
+
+    const file = `${IMAGES}/${shot.id}.png`;
+    const staging = `${IMAGES}/.${shot.id}.staging.png`;
+    writeFileSync(staging, shotBuffer);
+    execFileSync("python3", ["scripts/optimise-png.py", staging], { stdio: "inherit" });
+    const optimised = readFileSync(staging);
+    rmSync(staging);
+
+    const digest = (bytes: Buffer): string =>
+      createHash("sha256").update(bytes).digest("hex");
+
+    if (!existsSync(file) || digest(readFileSync(file)) !== digest(optimised)) {
+      writeFileSync(file, optimised);
+      written.push(file);
+    }
+
+    entries.push({
+      id: shot.id,
+      chapter: shot.chapter,
+      title: shot.title,
+      route: shot.route,
+      image: `images/${shot.id}.png`,
+      shows: shot.shows,
+    });
+  }
+
+  // No timestamp in the manifest: a captured-at field would churn the file on
+  // every run for no reader's benefit.
+  writeFileSync(MANIFEST, `${JSON.stringify({ shots: entries }, null, 2)}\n`);
+  console.log(`captured ${SHOTS.length} shots, ${written.length} changed`);
+});

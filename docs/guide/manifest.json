@@ -1,0 +1,132 @@
+{
+  "shots": [
+    {
+      "id": "sign-in",
+      "chapter": "01-setting-up-a-game",
+      "title": "Signing in",
+      "route": "/sign-in",
+      "image": "images/sign-in.png",
+      "shows": "The sign-in page: one email field, and a passkey option below it."
+    },
+    {
+      "id": "new-game",
+      "chapter": "01-setting-up-a-game",
+      "title": "The new game form",
+      "route": "/g/new",
+      "image": "images/new-game.png",
+      "shows": "The form for a new game — name, venue, day, kickoff time, and squad sizes."
+    },
+    {
+      "id": "game-overview",
+      "chapter": "01-setting-up-a-game",
+      "title": "Your game",
+      "route": "/g/:id",
+      "image": "images/game-overview.png",
+      "shows": "A game with thirteen members, the invite link and QR code, and the fixtures ahead."
+    },
+    {
+      "id": "invite",
+      "chapter": "02-inviting-your-squad",
+      "title": "The invite link",
+      "route": "/g/:id",
+      "image": "images/invite.png",
+      "shows": "The shareable link and its Copy button, as an organiser sees them."
+    },
+    {
+      "id": "invite-qr",
+      "chapter": "02-inviting-your-squad",
+      "title": "The QR code",
+      "route": "/g/:id",
+      "image": "images/invite-qr.png",
+      "shows": "The QR code for the same link, for people standing next to you."
+    },
+    {
+      "id": "join",
+      "chapter": "02-inviting-your-squad",
+      "title": "What a player sees",
+      "route": "/j/:token",
+      "image": "images/join.png",
+      "shows": "The join page a player reaches from the link: a name and an email, nothing else."
+    },
+    {
+      "id": "respond-in",
+      "chapter": "03-answering-a-reminder",
+      "title": "Answering the reminder",
+      "route": "/r/:token",
+      "image": "images/respond-in.png",
+      "shows": "A player who is in, with their answer emphasised and the squad listed below."
+    },
+    {
+      "id": "respond-waitlisted",
+      "chapter": "03-answering-a-reminder",
+      "title": "The waitlist",
+      "route": "/r/:token",
+      "image": "images/respond-waitlisted.png",
+      "shows": "A player who answered after the fixture filled, told their waitlist position."
+    },
+    {
+      "id": "respond-out",
+      "chapter": "04-when-someone-drops-out",
+      "title": "Changing your mind",
+      "route": "/r/:token",
+      "image": "images/respond-out.png",
+      "shows": "A player who has said they cannot make it, and can still change back."
+    },
+    {
+      "id": "leave",
+      "chapter": "04-when-someone-drops-out",
+      "title": "Leaving a game",
+      "route": "/leave/:token",
+      "image": "images/leave.png",
+      "shows": "The page reached from the footer of every email, explaining how to leave."
+    },
+    {
+      "id": "squad-controls",
+      "chapter": "05-running-your-squad",
+      "title": "The squad",
+      "route": "/g/:id",
+      "image": "images/squad-controls.png",
+      "shows": "Each member's row, with the control to make them an organiser and to remove them."
+    },
+    {
+      "id": "remove-member",
+      "chapter": "05-running-your-squad",
+      "title": "Removing someone",
+      "route": "/g/:id/squad/:playerId/remove",
+      "image": "images/remove-member.png",
+      "shows": "The confirmation page, naming the person and what removing them does."
+    },
+    {
+      "id": "edit-game",
+      "chapter": "05-running-your-squad",
+      "title": "Changing the details",
+      "route": "/g/:id/edit",
+      "image": "images/edit-game.png",
+      "shows": "The game's settings, filled in with what it currently uses."
+    },
+    {
+      "id": "cancel",
+      "chapter": "06-calling-a-fixture-off",
+      "title": "Calling it off",
+      "route": "/cancel/:token",
+      "image": "images/cancel.png",
+      "shows": "The cancellation page, with a box for the reason everyone will be told."
+    },
+    {
+      "id": "dashboard",
+      "chapter": "07-your-own-fixtures",
+      "title": "Your fixtures",
+      "route": "/app",
+      "image": "images/dashboard.png",
+      "shows": "Every game a player belongs to, and the fixtures waiting on an answer."
+    },
+    {
+      "id": "passkeys",
+      "chapter": "07-your-own-fixtures",
+      "title": "Signing in faster",
+      "route": "/app/passkeys",
+      "image": "images/passkeys.png",
+      "shows": "Where a player adds a passkey so they do not need an emailed link."
+    }
+  ]
+}
