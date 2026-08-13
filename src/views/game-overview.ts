@@ -62,8 +62,9 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       const you = member.playerId === viewerPlayerId ? " (you)" : "";
       const guest = member.isGuest ? " (guest)" : "";
       const organiser = member.role === "owner" ? " — organiser" : "";
-      const nextRole = member.role === "owner" ? "player" : "owner";
-      const roleLabel = member.role === "owner" ? "Make an ordinary member" : "Make an organiser";
+      const isOwner = member.role === "owner";
+      const nextRole = isOwner ? "player" : "owner";
+      const roleLabel = isOwner ? "Make an ordinary member" : "Make an organiser";
       return `<li>
         <span class="member">${name}${organiser}${guest}${you}</span>
         <form method="post" action="${escapeHtml(memberRolePath(gameId, member.playerId))}">

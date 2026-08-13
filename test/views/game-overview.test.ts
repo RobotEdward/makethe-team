@@ -28,10 +28,17 @@ describe("squad controls", () => {
 
   it("offers promotion for a player and demotion for an organiser", () => {
     const html = renderGameOverviewPage({ ...BASE, viewerPlayerId: "p-owner", squad });
-    expect(html).toContain('action="/g/g-1/squad/p-sam/role"');
-    expect(html).toContain('value="owner"');
-    expect(html).toContain('action="/g/g-1/squad/p-owner/role"');
-    expect(html).toContain('value="player"');
+    // Extract each member's row and verify the role form's value is opposite to their current role.
+    // Sam Okafor (player) should have value="owner"; Edward Charles (organiser) should have value="player".
+    const samRow = html.match(/<li>[\s\S]*?Sam Okafor[\s\S]*?<\/li>/);
+    expect(samRow).toBeTruthy();
+    expect(samRow![0]).toContain('action="/g/g-1/squad/p-sam/role"');
+    expect(samRow![0]).toContain('value="owner"');
+
+    const edwardRow = html.match(/<li>[\s\S]*?Edward Charles[\s\S]*?<\/li>/);
+    expect(edwardRow).toBeTruthy();
+    expect(edwardRow![0]).toContain('action="/g/g-1/squad/p-owner/role"');
+    expect(edwardRow![0]).toContain('value="player"');
   });
 
   it("marks the viewer's own row so they know which one they are", () => {
