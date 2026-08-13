@@ -43,6 +43,51 @@ export interface RemovedEmail {
 export function renderRemovedEmail(payload: RemovedEmailPayload): RemovedEmail {
   const { playerName, gameName } = payload;
 
+  const subject = `You've been removed from ${gameName}`;
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#f2efe9; color:#1c1b19;">
+<div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">
+You've been removed from the squad for ${escapeHtml(gameName)}.
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f2efe9;">
+<tr>
+<td align="center" style="padding:24px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#ffffff; border:1px solid #e3ded4; border-radius:8px;">
+<tr>
+<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1c1b19;">
+
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#1c1b19;">Hi ${escapeHtml(playerName)},</p>
+
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#1c1b19;">You've been removed from the squad for ${escapeHtml(gameName)}.</p>
+
+<p style="margin:0 0 0; font-size:15px; line-height:1.5; color:#1c1b19;">You'll get no more email about this game. If you think it was a mistake, ask the organiser — they can send you the invite link again.</p>
+
+<hr style="margin:24px 0; border:none; border-top:1px solid #e3ded4;">
+
+<p style="margin:0; font-size:12px; line-height:1.6; color:#928d84;">
+Make The Team — organising this Game for your squad.
+</p>
+
+</td>
+</tr>
+</table>
+
+</td>
+</tr>
+</table>
+</body>
+</html>
+`;
+
   const text = [
     `Hi ${playerName},`,
     "",
@@ -50,13 +95,11 @@ export function renderRemovedEmail(payload: RemovedEmailPayload): RemovedEmail {
     "",
     "You'll get no more email about this game. If you think it was a mistake,",
     "ask the organiser — they can send you the invite link again.",
+    "",
+    "---",
+    "Make The Team — organising this Game for your squad.",
+    "",
   ].join("\n");
 
-  const html = [
-    `<p>Hi ${escapeHtml(playerName)},</p>`,
-    `<p>You've been removed from the squad for ${escapeHtml(gameName)}.</p>`,
-    "<p>You'll get no more email about this game. If you think it was a mistake, ask the organiser — they can send you the invite link again.</p>",
-  ].join("\n");
-
-  return { subject: `You've been removed from ${gameName}`, html, text };
+  return { subject, html, text };
 }
