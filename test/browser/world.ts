@@ -15,8 +15,14 @@ const run = promisify(execFile);
  */
 const RESPONSE_SECRET = "local-browser-tests-only-not-a-real-secret";
 
-/** Matches `test/browser/browser.env`. Separate from the response secret. */
-const CANCEL_SECRET = "local-browser-tests-only-not-a-real-secret";
+/**
+ * Matches `test/browser/browser.env` CANCEL_TOKEN_SECRET. Must be distinct from
+ * RESPONSE_SECRET: src/env.ts deliberately keeps the two apart as a security
+ * boundary, so a leaked response key cannot forge fixture cancellations. This
+ * suite exercises that separation only through the kind discriminator baked
+ * into signed payloads; the different secrets make it a true boundary.
+ */
+const CANCEL_SECRET = "local-browser-tests-only-not-a-real-cancel-secret";
 
 const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
@@ -36,7 +42,7 @@ const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
  * 21:00, two hours from now would cross midnight and land in the past, so use
  * tomorrow at noon, whose reminder instant was 09:00 today.
  */
-function imminentSlot(now: Date): { weekday: string; kickoffTime: string } {
+export function imminentSlot(now: Date): { weekday: string; kickoffTime: string } {
   const hour = now.getHours();
   if (hour < 21) {
     return {
