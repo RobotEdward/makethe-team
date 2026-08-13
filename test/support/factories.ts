@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
-import { games, memberships, players } from "../../src/db/schema.js";
+import { fixtures, games, memberships, players, responses } from "../../src/db/schema.js";
 
 /**
  * Shared builders for database fixtures used by the tests.
@@ -94,5 +94,36 @@ export async function insertMembership(
 ): Promise<string> {
   const id = crypto.randomUUID();
   await db.insert(memberships).values({ id, gameId, playerId, ...overrides });
+  return id;
+}
+
+export async function insertFixture(
+  db: Db,
+  gameId: string,
+  overrides: Partial<typeof fixtures.$inferInsert> = {},
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await db.insert(fixtures).values({
+    id,
+    gameId,
+    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    minPlayers: 10,
+    maxPlayers: 14,
+    prefersEvenNumbers: true,
+    shortWarningOffsetHours: 12,
+    durationMinutes: 60,
+    ...overrides,
+  });
+  return id;
+}
+
+export async function insertResponse(
+  db: Db,
+  fixtureId: string,
+  playerId: string,
+  overrides: Partial<typeof responses.$inferInsert> = {},
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await db.insert(responses).values({ id, fixtureId, playerId, source: "system", ...overrides });
   return id;
 }

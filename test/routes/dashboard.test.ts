@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
@@ -6,7 +6,7 @@ import { DASHBOARD_PATH, SIGN_IN_PATH } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, insertMembership, resetDatabase } from "../support/factories.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
@@ -339,6 +339,26 @@ describe("GET /app", () => {
     const body = await (await get(cookie)).text();
 
     expect(body).not.toContain("Games you own");
+  });
+
+  /**
+   * J6a's squad removal (`withdrawMember`) clears `memberships.active` and
+   * sets `leftAt` — the same shape a game-left test above already drives by
+   * hand. This pins the dashboard query's side of that contract rather than
+   * assuming it: "should already do this" is exactly how the `connect-src`
+   * bug shipped (see `docs/known-issues.md`), so it is asserted, not assumed.
+   * Driven through `SELF.fetch` (TR-29) rather than the in-process app the
+   * rest of this file uses, so a routing or middleware gap between the two
+   * cannot hide behind this assertion.
+   */
+  it("no longer shows a game the player has been removed from", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    await insertMembership(db, gameId, playerId, { active: false, leftAt: OPENED_AT });
+
+    const html = await (await SELF.fetch(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } })).text();
+    expect(html).not.toContain("Thursday 7-a-side");
   });
 
   it("does not list a game the viewer belongs to but does not own", async () => {

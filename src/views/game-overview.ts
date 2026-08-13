@@ -1,4 +1,4 @@
-import { gameEditPath, joinPath } from "../auth/paths.js";
+import { gameEditPath, joinPath, memberRemovePath, memberRolePath } from "../auth/paths.js";
 import { oddMaxWarning } from "../domain/game-form.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
@@ -17,8 +17,12 @@ export interface GameOverviewParams {
   maxPlayers: number;
   prefersEvenNumbers: boolean;
   inviteToken: string;
-  squad: ReadonlyArray<{ name: string; role: "player" | "owner"; isGuest: boolean }>;
+  squad: ReadonlyArray<{ playerId: string; name: string; role: "player" | "owner"; isGuest: boolean }>;
   upcoming: ReadonlyArray<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>;
+  /** The id of the player viewing this page, so their row can be marked as "(you)". */
+  viewerPlayerId: string;
+  /** A refusal to explain on this page, e.g. J6a's last-organiser guard. Escaped and shown near the top. */
+  problem?: string;
 }
 
 /**
@@ -31,7 +35,7 @@ export interface GameOverviewParams {
  * strangers can reach.
  */
 export function renderGameOverviewPage(params: GameOverviewParams): string {
-  const { gameId, gameName, venueName, venueAddress, timezone, inviteToken, squad, upcoming } = params;
+  const { gameId, gameName, venueName, venueAddress, timezone, inviteToken, squad, upcoming, viewerPlayerId } = params;
   const inviteUrl = `${SITE_ORIGIN}${joinPath(inviteToken)}`;
 
   // BR-29's nudge, re-derived from the *saved* row rather than threaded through
@@ -46,12 +50,30 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
 
   const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
 
+  const problem = params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
+
+  // One row per member, each carrying its two controls. Plain links and a
+  // plain form: the remove link goes to a confirmation page rather than
+  // posting straight away, because removal is destructive and must be
+  // confirmable with JavaScript off.
   const squadItems = squad
-    .map((member) =>
-      `<li>${escapeHtml(member.name)}${member.role === "owner" ? " — organiser" : ""}${
-        member.isGuest ? " (guest)" : ""
-      }</li>`,
-    )
+    .map((member) => {
+      const name = escapeHtml(member.name);
+      const you = member.playerId === viewerPlayerId ? " (you)" : "";
+      const guest = member.isGuest ? " (guest)" : "";
+      const organiser = member.role === "owner" ? " — organiser" : "";
+      const isOwner = member.role === "owner";
+      const nextRole = isOwner ? "player" : "owner";
+      const roleLabel = isOwner ? "Make an ordinary member" : "Make an organiser";
+      return `<li>
+        <span class="member">${name}${organiser}${guest}${you}</span>
+        <form method="post" action="${escapeHtml(memberRolePath(gameId, member.playerId))}">
+          <input type="hidden" name="role" value="${nextRole}">
+          <button class="button" type="submit">${roleLabel}</button>
+        </form>
+        <a href="${escapeHtml(memberRemovePath(gameId, member.playerId))}">Remove</a>
+      </li>`;
+    })
     .join("");
 
   const fixtureItems = upcoming
@@ -62,6 +84,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
+    ${problem}
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}
     ${oddMax}

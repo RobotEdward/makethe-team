@@ -100,3 +100,20 @@ export function gameEditPath(gameId: string): string {
 export function joinPath(token: string): string {
   return `/j/${token}`;
 }
+
+/**
+ * The two squad-management controls on a game's own page (J6a).
+ *
+ * Both take the *player* id rather than the membership id: the owner page
+ * already lists players, and a membership id is an internal identifier that
+ * would have to be plumbed through the view for no gain. Both handlers scope
+ * the lookup by game id as well, so a player id in the path can neither be
+ * probed nor used against another squad (TR-18).
+ */
+export function memberRolePath(gameId: string, playerId: string): string {
+  return `/g/${gameId}/squad/${playerId}/role`;
+}
+
+export function memberRemovePath(gameId: string, playerId: string): string {
+  return `/g/${gameId}/squad/${playerId}/remove`;
+}

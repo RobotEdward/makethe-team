@@ -5,7 +5,7 @@ import { getDb } from "../../src/db/client.js";
 import { fixtures, games, memberships, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
-import { insertGame, insertMembership, resetDatabase } from "../support/factories.js";
+import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, signIn } from "../support/sign-in.js";
 import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 
@@ -320,6 +320,24 @@ describe("Content-Security-Policy", () => {
     await expectStylesAllowed(csp as string, await response.text());
   });
 
+  it("serves the removal confirmation under the production policy", async () => {
+    const { gameId, cookie } = await seedOwnedGame();
+    const db = testDb();
+    const memberId = await insertPlayer(db, { name: "Sam Okafor" });
+    await insertMembership(db, gameId, memberId);
+
+    const response = await SELF.fetch(`https://makethe.team/g/${gameId}/squad/${memberId}/remove`, {
+      headers: { cookie },
+    });
+    expect(response.status).toBe(200);
+    const csp = response.headers.get("content-security-policy");
+    expectFixedDirectives(csp);
+    // The half this test was missing: `expectFixedDirectives` never looks at
+    // `style-src`, so without this the page's own `<style>` blocks — the one
+    // thing this file exists to check — were unasserted on the newest page.
+    await expectStylesAllowed(csp as string, await response.text());
+  });
+
   it("robots.txt: fixed directives present (no inline styles to check)", async () => {
     const response = await SELF.fetch("https://makethe.team/robots.txt");
     expectFixedDirectives(response.headers.get("content-security-policy"));
@@ -353,8 +371,8 @@ describe("no inline style attribute on any served page", () => {
     type Page = { name: string; html: string; distinctive: RegExp };
     const pages: Page[] = [];
 
-    async function capture(name: string, distinctive: RegExp, url: string) {
-      const html = await (await SELF.fetch(url)).text();
+    async function capture(name: string, distinctive: RegExp, url: string, cookie?: string) {
+      const html = await (await SELF.fetch(url, cookie ? { headers: { cookie } } : {})).text();
       pages.push({ name, html, distinctive });
     }
 
@@ -387,6 +405,24 @@ describe("no inline style attribute on any served page", () => {
     await capture("robots.txt", /User-agent/i, "https://makethe.team/robots.txt");
     await capture("404", /Not found/, "https://makethe.team/no-such-route");
 
+    const owned = await seedOwnedGame();
+    await capture("new game form", /Set up a game/, "https://makethe.team/g/new", owned.cookie);
+    await capture("game overview", /Invite people/, `https://makethe.team/g/${owned.gameId}`, owned.cookie);
+    const memberId = await insertPlayer(db, { name: "Sam Okafor" });
+    await insertMembership(db, owned.gameId, memberId);
+    await capture(
+      "remove member",
+      /Remove Sam Okafor\?/,
+      `https://makethe.team/g/${owned.gameId}/squad/${memberId}/remove`,
+      owned.cookie,
+    );
+    // Not `/Thursday 7-a-side/`: the game overview page's own <h1> is the bare
+    // game name, so that regex would also match the overview page's HTML —
+    // exactly the false-coverage failure mode this enumeration exists to
+    // catch. The invite page's <h1> is "Join {gameName}" (`src/views/join.ts`),
+    // which only that page renders.
+    await capture("invite page", /Join Thursday 7-a-side/, `https://makethe.team/j/${owned.inviteToken}`);
+
     expect(pages.map((page) => page.name).sort()).toEqual(
       [
         "holding page",
@@ -397,6 +433,10 @@ describe("no inline style attribute on any served page", () => {
         "cancel confirm",
         "robots.txt",
         "404",
+        "new game form",
+        "game overview",
+        "remove member",
+        "invite page",
       ].sort(),
     );
 

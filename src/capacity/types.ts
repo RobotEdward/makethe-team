@@ -70,3 +70,32 @@ export type SetResponseOutcome =
    */
   | { kind: "waitlisted"; waitlistPosition: number; inCount: number }
   | { kind: "rejected"; reason: "fixture-not-open" | "not-eligible" | "fixture-not-found" };
+
+/** What an owner's removal of a squad member does to one fixture (BR-3, J6a §3.2). */
+export interface WithdrawMemberInput {
+  playerId: string;
+  /** The owner performing the removal. Recorded on the withdrawn row (BR-27). */
+  actorPlayerId: string;
+  /** Passed in rather than read from the clock — domain code stays testable. */
+  now: number;
+}
+
+export type WithdrawMemberOutcome =
+  | {
+      // "removed", not "withdrawn": `withdrawn` is only one of the four things
+      // this does to the row (a `pending`, `out` or `waitlisted` row is
+      // deleted), so naming the whole outcome after it would make the deleted
+      // cases read as a different result than they are.
+      kind: "removed";
+      /** The status the row held before this call. */
+      previousStatus: "pending" | "in" | "out" | "waitlisted";
+      inCount: number;
+      /**
+       * Present only when freeing this slot promoted a waitlisted player
+       * (BR-7). Carried out of the lock for the caller to act on — the object
+       * sends nothing, for the reason `WaitlistPromotion` documents.
+       */
+      promoted?: WaitlistPromotion;
+    }
+  /** Nothing to do. Not an error: a removal walks every open fixture, and most hold no row for the player. */
+  | { kind: "no-op"; reason: "no-response-row" | "fixture-not-open" | "fixture-not-found" };

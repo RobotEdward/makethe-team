@@ -753,6 +753,18 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } }),
       );
 
+      // The squad-removal confirmation (Task 9, J6a). A second member is added
+      // to the squad so this captures a removable member's own page, rather
+      // than the game's only (organiser) member.
+      const removableId = crypto.randomUUID();
+      await db.insert(players).values({ id: removableId, name: "Sam Okafor", email: "sam@example.com" });
+      await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId: removableId, active: true });
+      await capture(
+        "squad remove confirm",
+        /Remove Sam Okafor\?/,
+        new Request(`${ORIGIN}/g/${gameId}/squad/${removableId}/remove`, { headers: { cookie } }),
+      );
+
       // The public invite page and the page a join lands on (Task 11, J1).
       // Fetched with no cookie, deliberately: these are the two pages a
       // stranger holding a link can reach, and a session must not be needed
@@ -870,6 +882,7 @@ describe("no password field anywhere (TR-16)", () => {
         "game form",
         "game overview",
         "game edit",
+        "squad remove confirm",
         "invite",
         "join outcome",
       ].sort(),
@@ -993,6 +1006,21 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "branches are a plain-text 403 (wrong origin), a plain-text 404 " +
       "(entitlement failure) or a 303 redirect (src/routes/games.ts); its own " +
       "script/password assertion lives in test/routes/games.test.ts.",
+    "POST /g/:id/squad/:playerId/remove":
+      "on its one HTML-returning branch (the last-organiser refusal) it renders " +
+      "through the same renderGameOverviewPage as GET /g/:id — no template of " +
+      "its own that could carry an un-enumerated script — and its other " +
+      "branches are a plain-text 403 (wrong origin), a plain-text 404 " +
+      "(entitlement failure) or a 303 redirect (src/routes/games.ts); its own " +
+      "status-code coverage lives in test/routes/squad.test.ts.",
+    "POST /g/:id/squad/:playerId/role":
+      "on its one HTML-returning branch (the last-organiser refusal) it renders " +
+      "through the same renderGameOverviewPage as GET /g/:id — no template of " +
+      "its own that could carry an un-enumerated script — and its other " +
+      "branches are a plain-text 400 (bad role), a plain-text 403 (wrong " +
+      "origin), a plain-text 404 (entitlement failure) or a 303 redirect " +
+      "(src/routes/games.ts); its own status-code coverage lives in " +
+      "test/routes/squad.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
@@ -1010,6 +1038,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",
+    "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
     "GET /j/:token": "invite",
     "POST /j/:token": "join outcome",
   };

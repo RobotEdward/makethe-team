@@ -249,6 +249,22 @@ export const FORM_CSS = `
   .invite-link input { flex: 1; font-family: ui-monospace, monospace; font-size: 0.85rem; }
   .squad { list-style: none; padding: 0; }
   .squad li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+  /* A squad row is a name plus two controls, one of which is a block-level
+     form element. Without this they stack into three lines per member and the
+     list reads as a mess. Flex keeps them on one line, wrapping rather than
+     overflowing on a narrow phone, with the name taking the slack so the
+     controls sit together at the end of the row. The form's own margin is
+     zeroed for the same reason: it is a block-level element and carries one.
+     (No literal tag written here — test/routes/join.test.ts parses the first
+     form element out of a rendered page, and a tag inside a style block is
+     indistinguishable from a real one to that parser.) */
+  .squad li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
+  .squad li .member { flex: 1 1 8rem; }
+  .squad li form { margin: 0; flex: 0 0 auto; }
+  /* The shared 52px tap target is kept — this only stops the button growing
+     to the row's full width the way it does inside .responses / .actions. */
+  .squad li .button { flex: 0 0 auto; font-size: 0.95rem; padding: 0.6rem 1rem; }
+  .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left; }
 `;
 
 export const PAGE_STYLE_BLOCKS = [

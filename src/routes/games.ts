@@ -1,18 +1,31 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { NEW_GAME_PATH, gameEditPath, gamePath } from "../auth/paths.js";
+import type { Context } from "hono";
+import { DASHBOARD_PATH, NEW_GAME_PATH, gameEditPath, gamePath } from "../auth/paths.js";
 import { requirePlayer } from "../auth/session.js";
 import { buildAuditInsert } from "../db/audit.js";
 import { getDb } from "../db/client.js";
-import { findGameForOwner, listSquad, listUpcomingFixtures } from "../db/queries.js";
+import {
+  countCommitments,
+  findGameForOwner,
+  findMembershipInGame,
+  listSquad,
+  listUpcomingFixtures,
+} from "../db/queries.js";
 import { games } from "../db/schema.js";
+import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
 import { parseGameForm } from "../domain/game-form.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
+import { removeMember } from "../domain/remove-member.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv, Bindings } from "../env.js";
+import { createNotifier } from "../notify/factory.js";
+import { sendRemovedEmail } from "../notify/send-removed.js";
 import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
+import { renderRemoveMemberPage } from "../views/remove-member.js";
+import { notifyPromotedPlayer } from "./respond.js";
 
 /**
  * Owner-facing game management, mounted at `/g/*` (see `GAMES_PREFIX` in
@@ -132,6 +145,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       inviteToken: game.inviteToken,
       squad,
       upcoming,
+      viewerPlayerId: player.id,
     }),
   );
 });
@@ -249,3 +263,216 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
 
   return c.redirect(gamePath(game.id), 303);
 });
+
+/**
+ * The squad-management routes (J6a).
+ *
+ * Each one answers TR-18 twice: `findGameForOwner` establishes that the signed-in
+ * player owns this game, and `findMembershipInGame` establishes that
+ * `:playerId` is in *that* game's squad. Both failures are 404, never 403 — a
+ * 403 confirms a resource exists, and these paths carry two ids either of
+ * which could otherwise be probed.
+ */
+async function loadSquadTarget(
+  c: Context<AppEnv>,
+  gameId: string,
+  playerId: string,
+  /**
+   * Let an *inactive* membership through. Only `POST …/remove` sets this, so
+   * that a removal which failed partway through its per-fixture loop can be
+   * finished by re-submitting the same form — see `removeMember`'s `resumed`
+   * outcome. Everything else keeps the stricter rule: there is nothing to
+   * confirm on the GET, and nothing to promote or demote on a membership that
+   * is over. The entitlement half is unchanged either way, so this widens what
+   * an owner may act on inside their own squad, never who may act.
+   */
+  options: { allowInactive?: boolean } = {},
+) {
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, gameId, c.get("player")!.id);
+  if (game === null) return null;
+  const member = await findMembershipInGame(db, game.id, playerId);
+  if (member === null) return null;
+  if (!member.active && options.allowInactive !== true) return null;
+  return { db, game, member };
+}
+
+gamesRoutes.get("/g/:id/squad/:playerId/remove", requirePlayer, async (c) => {
+  const target = await loadSquadTarget(c, c.req.param("id"), c.req.param("playerId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const commitments = await countCommitments(target.db, target.game.id, target.member.playerId);
+  return c.html(
+    renderRemoveMemberPage({
+      gameId: target.game.id,
+      playerId: target.member.playerId,
+      gameName: target.game.name,
+      memberName: target.member.name,
+      isOwner: target.member.role === "owner",
+      commitments,
+    }),
+  );
+});
+
+gamesRoutes.post("/g/:id/squad/:playerId/remove", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  // `allowInactive`: re-submitting this POST is the documented recovery path
+  // for a removal that failed partway through its per-fixture loop (§3.3), and
+  // a 404 here would refuse the retry the design promises.
+  const target = await loadSquadTarget(c, c.req.param("id"), c.req.param("playerId"), { allowInactive: true });
+  if (target === null) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
+  const actor = c.get("player")!;
+  const result = await removeMember({
+    db: target.db,
+    gameId: target.game.id,
+    playerId: target.member.playerId,
+    actorPlayerId: actor.id,
+    now,
+    // The binding is supplied here and nowhere deeper: `removeMember` stays a
+    // domain module with no Workers dependency (TR-12 still holds — this is
+    // the object, addressed by fixture id).
+    withdraw: (fixtureId) =>
+      c.env.FIXTURE_CAPACITY.getByName(fixtureId).withdrawMember({
+        playerId: target.member.playerId,
+        actorPlayerId: actor.id,
+        now: now.getTime(),
+      }),
+  });
+
+  if (result.kind === "not-a-member") return c.text("Not found", 404);
+  if (result.kind === "refused") return renderSquadRefusal(c, target.game.id, now);
+
+  // `removed` and `resumed` are handled identically and deliberately so: a
+  // resume means the membership was already deactivated and the fixture loop
+  // has just been re-run, which is the same end state a first attempt reaches.
+  // The N-7 below is safe to re-attempt for the same reason — `resumed`
+  // carries the original `leftAt`, so the dedupe key is byte-identical and the
+  // second attempt returns `already-logged` without sending anything. The N-2s
+  // are whatever *this* pass promoted, so on a resume that finished nothing
+  // there are none.
+  //
+  // Handed to `waitUntil` for the reason `POST /r/:token` and `POST /j/:token`
+  // do the same: everything the owner is waiting for is already committed, and
+  // what is left is HTTP calls to a mail provider on other people's behalf.
+  // Every outcome is durable in `notification_log` and every non-success is
+  // logged, so a failure here is diagnosable rather than invisible.
+  for (const { fixtureId, promoted } of result.promotions) {
+    c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, promoted, now));
+  }
+  c.executionCtx.waitUntil(
+    notifyRemovedPlayer(c.env, target.game.id, target.member.playerId, result.membershipId, result.leftAt, now),
+  );
+
+  // An owner who removed themselves can no longer pass `/g/:id`'s entitlement
+  // check, so sending them there would 404 them with their own successful
+  // action. Everyone else goes back to the squad they just changed.
+  const removedSelf = target.member.playerId === actor.id;
+  return c.redirect(removedSelf ? DASHBOARD_PATH : gamePath(target.game.id), 303);
+});
+
+gamesRoutes.post("/g/:id/squad/:playerId/role", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const target = await loadSquadTarget(c, c.req.param("id"), c.req.param("playerId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const form = await c.req.parseBody();
+  const role = parseRole(form["role"]);
+  // The value comes from a `<select>` this application rendered, so anything
+  // else is a hand-built request and gets a 400 rather than a guess.
+  if (role === null) return c.text('Bad Request: "role" must be exactly "owner" or "player"', 400);
+
+  const now = new Date(Date.now());
+  const result = await changeMemberRole({
+    db: target.db,
+    gameId: target.game.id,
+    playerId: target.member.playerId,
+    actorPlayerId: c.get("player")!.id,
+    role,
+    now,
+  });
+
+  if (result.kind === "not-a-member") return c.text("Not found", 404);
+  if (result.kind === "refused") return renderSquadRefusal(c, target.game.id, now);
+
+  return c.redirect(gamePath(target.game.id), 303);
+});
+
+/**
+ * The one refusal J6a's invariant produces, rendered as the game page again at
+ * 422 with the reason on it — never a bare error and never a dead end. The
+ * owner is one click from the fix (make someone else an organiser), and that
+ * is the page the fix lives on.
+ */
+async function renderSquadRefusal(
+  c: Context<AppEnv>,
+  gameId: string,
+  now: Date,
+) {
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, gameId, c.get("player")!.id);
+  if (game === null) return c.text("Not found", 404);
+  const [squad, upcoming] = await Promise.all([listSquad(db, game.id), listUpcomingFixtures(db, game.id, now)]);
+  return c.html(
+    renderGameOverviewPage({
+      gameId: game.id,
+      gameName: game.name,
+      venueName: game.venueName,
+      venueAddress: game.venueAddress,
+      timezone: game.timezone,
+      maxPlayers: game.maxPlayers,
+      prefersEvenNumbers: game.prefersEvenNumbers,
+      inviteToken: game.inviteToken,
+      squad,
+      upcoming,
+      viewerPlayerId: c.get("player")!.id,
+      problem: "A game needs at least one organiser. Make someone else an organiser first.",
+    }),
+    422,
+  );
+}
+
+/**
+ * Send N-7 in the background, logging every non-success on one greppable line.
+ *
+ * The `catch` is not decoration: a rejected promise inside a `waitUntil`
+ * resolves into nothing, and a thrown D1 error here would otherwise vanish
+ * entirely — this codebase has been bitten by exactly that before. The
+ * notifier is built here rather than passed in because it must be the
+ * quota-wrapped one from `createNotifier` (TR-31).
+ */
+export async function notifyRemovedPlayer(
+  env: AppEnv["Bindings"],
+  gameId: string,
+  playerId: string,
+  membershipId: string,
+  leftAt: Date,
+  now: Date,
+): Promise<void> {
+  const who = `game ${gameId}, player ${playerId}`;
+  try {
+    const db = getDb(env.DB);
+    const result = await sendRemovedEmail({
+      db,
+      notifier: createNotifier(env, db, now),
+      gameId,
+      playerId,
+      membershipId,
+      leftAt,
+      now,
+    });
+    if (result.kind === "failed") console.error(`n7 removal email failed for ${who}: ${result.reason}`);
+    if (result.kind === "deferred") console.error(`n7 removal email deferred by the daily ceiling for ${who}`);
+    // `console.log`, matching `POST /j/:token` and `POST /r/:token`: expected
+    // and permanent (BR-32), not a fault — a guest has no address, so every
+    // guest removal would otherwise file an error line for working correctly.
+    if (result.kind === "skipped-no-recipient") console.log(`n7 removal email skipped, no address, for ${who}`);
+  } catch (error) {
+    console.error(
+      `n7 removal email threw for ${who}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    );
+  }
+}

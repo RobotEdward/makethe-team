@@ -257,3 +257,109 @@ export async function listUpcomingFixtures(
     .where(and(eq(fixtures.gameId, gameId), gte(fixtures.kicksOffAt, now)))
     .orderBy(fixtures.kicksOffAt);
 }
+
+export interface MembershipInGame {
+  membershipId: string;
+  playerId: string;
+  name: string;
+  email: string | null;
+  isGuest: boolean;
+  role: "player" | "owner";
+  active: boolean;
+  /**
+   * When they left, or `null` while they are still in the squad. Read by
+   * `removeMember`'s resume path, which must reuse the *original* `left_at` so
+   * N-7's dedupe key (`n7:<membershipId>:<leftAt>`) is unchanged and a retry
+   * cannot send a second removal email.
+   */
+  leftAt: Date | null;
+}
+
+/**
+ * One player's membership of one game, active or not, or `null`.
+ *
+ * Scoped by `gameId` as well as `playerId`, which is the whole point: the
+ * squad routes take two ids in the path, and without this scoping `:playerId`
+ * would read as a global identifier and one owner could act on another
+ * squad's membership. The caller answers 404 on `null` (TR-18).
+ *
+ * Reports an inactive membership rather than hiding it, so a caller can tell
+ * "not in this squad" from "was, and left" and answer each correctly.
+ */
+export async function findMembershipInGame(
+  db: Db,
+  gameId: string,
+  playerId: string,
+): Promise<MembershipInGame | null> {
+  const [row] = await db
+    .select({
+      membershipId: memberships.id,
+      playerId: memberships.playerId,
+      name: players.name,
+      email: players.email,
+      isGuest: players.isGuest,
+      role: memberships.role,
+      active: memberships.active,
+      leftAt: memberships.leftAt,
+    })
+    .from(memberships)
+    .innerJoin(players, eq(players.id, memberships.playerId))
+    .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, playerId)))
+    .limit(1);
+  return row ?? null;
+}
+
+/** How many active owners this game has. The input to J6a's one invariant. */
+export async function countActiveOwners(db: Db, gameId: string): Promise<number> {
+  const rows = await db
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(
+      and(eq(memberships.gameId, gameId), eq(memberships.active, true), eq(memberships.role, "owner")),
+    );
+  return rows.length;
+}
+
+/**
+ * Every `open` fixture of this game — the exact set BR-3's consequence pass
+ * walks.
+ *
+ * `scheduled` fixtures are excluded because they hold no response rows at all
+ * (BR-1 writes them when a fixture opens), and `cancelled`/`played` because
+ * they are terminal and rewriting their rows would be rewriting history.
+ */
+export async function listOpenFixtureIds(db: Db, gameId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: fixtures.id })
+    .from(fixtures)
+    .where(and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "open")))
+    .orderBy(fixtures.kicksOffAt);
+  return rows.map((row) => row.id);
+}
+
+/**
+ * What a player currently holds on this game's open fixtures: confirmed places
+ * and waitlist places. Read only to make the removal confirmation page state
+ * consequences in specifics rather than in general terms.
+ */
+export async function countCommitments(
+  db: Db,
+  gameId: string,
+  playerId: string,
+): Promise<{ in: number; waitlisted: number }> {
+  const rows = await db
+    .select({ status: responses.status })
+    .from(responses)
+    .innerJoin(fixtures, eq(fixtures.id, responses.fixtureId))
+    .where(
+      and(
+        eq(fixtures.gameId, gameId),
+        eq(fixtures.lifecycle, "open"),
+        eq(responses.playerId, playerId),
+      ),
+    );
+  return {
+    in: rows.filter((row) => row.status === "in").length,
+    waitlisted: rows.filter((row) => row.status === "waitlisted").length,
+  };
+}

@@ -4,6 +4,7 @@ import {
   cancellationKey,
   promotionKey,
   reminderKey,
+  removalKey,
   welcomeKey,
 } from "../../src/notify/dedupe-key.js";
 
@@ -54,5 +55,21 @@ describe("welcomeKey", () => {
 
     expect(first).toBe("n6:m1:2026-08-12T10:00:00.000Z");
     expect(second).not.toBe(first);
+  });
+});
+
+describe("removalKey", () => {
+  it("names the removal, not merely the membership", () => {
+    expect(removalKey("m-1", "2026-08-13T12:00:00.000Z")).toBe("n7:m-1:2026-08-13T12:00:00.000Z");
+  });
+
+  it("differs across a join → remove → rejoin → remove cycle", () => {
+    // UNIQUE (game_id, player_id) forces a rejoin to reuse the membership row,
+    // so the id alone is the same string both times and the unique index on
+    // `dedupe_key` would silently drop the second removal email. This is the
+    // identical trap N-6 hit; `left_at` is the identical fix.
+    expect(removalKey("m-1", "2026-08-13T12:00:00.000Z")).not.toBe(
+      removalKey("m-1", "2026-09-01T09:00:00.000Z"),
+    );
   });
 });
