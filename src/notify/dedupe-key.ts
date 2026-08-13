@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7"] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -80,4 +80,18 @@ export function attentionKey(fixtureId: string, playerId: string): string {
  */
 export function welcomeKey(membershipId: string, joinedAt: string): string {
   return `n6:${membershipId}:${joinedAt}`;
+}
+
+/**
+ * N-7, the removal email: once per removal.
+ *
+ * `leftAt`, not the membership id alone, for exactly the reason `welcomeKey`
+ * takes `joinedAt`. `UNIQUE (game_id, player_id)` on `memberships` forces a
+ * rejoin to reactivate the existing row, so across a join → remove → rejoin →
+ * remove cycle the membership id is the same string both times, and the unique
+ * index on `dedupe_key` would silently drop the second email. Passed as an ISO
+ * string by every caller.
+ */
+export function removalKey(membershipId: string, leftAt: string): string {
+  return `n7:${membershipId}:${leftAt}`;
 }
