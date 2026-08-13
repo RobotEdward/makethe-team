@@ -174,6 +174,7 @@ import type { Browser, Page } from "@playwright/test";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn } from "./sign-in.js";
+import { imminentSlot } from "./world.js";
 
 const run = promisify(execFile);
 const RESPONSE_SECRET = "local-browser-tests-only-not-a-real-secret";
@@ -233,6 +234,18 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   await page.fill('input[name="name"]', "Thursday Night Football");
   await page.fill('input[name="venueName"]', "Meadow Park 3G");
   await page.fill('input[name="venueAddress"]', "14 Meadow Lane");
+
+  // The weekday and kickoff time must be chosen from the clock, not fixed.
+  // A fixture only opens once its reminder instant — 09:00 the day before
+  // kickoff — has passed and it has not yet ended, so a hardcoded weekday
+  // leaves the first fixture up to a week away and permanently `scheduled`.
+  // `imminentSlot` is exported from `./world.js`, where Task 1 added it after
+  // exactly this bug made the browser suite pass only on the luck of the hour
+  // it was run. Do not reimplement it here.
+  const slot = imminentSlot(new Date());
+  await page.selectOption('select[name="weekday"]', slot.weekday);
+  await page.fill('input[name="kickoffTime"]', slot.kickoffTime);
+
   await page.fill('input[name="minPlayers"]', "8");
   // Max 10 rather than the default 14: with thirteen members answering, a
   // waitlist is only reachable if the cap is below the squad size, and a

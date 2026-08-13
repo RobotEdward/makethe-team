@@ -18,6 +18,36 @@ const RESPONSE_SECRET = "local-browser-tests-only-not-a-real-secret";
 /** Matches `test/browser/browser.env`. Separate from the response secret. */
 const CANCEL_SECRET = "local-browser-tests-only-not-a-real-secret";
 
+const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
+
+/**
+ * A weekday and kickoff time chosen so the first materialised fixture is
+ * always open by the time the sweep runs, whatever the hour.
+ *
+ * A fixture opens when its reminder instant — 09:00 the day before kickoff —
+ * has passed and it has not yet ended. A fixed weekday and a fixed 19:00 (the
+ * form's default) therefore only work in the ~35 hours between Wednesday
+ * 09:00 and Thursday 20:00; outside that window the first fixture is up to a
+ * week away and stays `scheduled` forever, and every test that needs an open
+ * fixture fails. The suite passed for days on the luck of when it was run.
+ *
+ * Before 21:00 local, kick off two hours from now on today's weekday: the
+ * reminder instant was 09:00 yesterday, and the fixture has not ended. After
+ * 21:00, two hours from now would cross midnight and land in the past, so use
+ * tomorrow at noon, whose reminder instant was 09:00 today.
+ */
+function imminentSlot(now: Date): { weekday: string; kickoffTime: string } {
+  const hour = now.getHours();
+  if (hour < 21) {
+    return {
+      weekday: WEEKDAY_CODES[now.getDay()]!,
+      kickoffTime: `${String(hour + 2).padStart(2, "0")}:00`,
+    };
+  }
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  return { weekday: WEEKDAY_CODES[tomorrow.getDay()]!, kickoffTime: "12:00" };
+}
+
 /** The joined member's display name, asserted on by the journeys. */
 export const JOINER_NAME = "Alex Morgan";
 
@@ -68,7 +98,9 @@ export async function seedWorld(
   await page.goto("/g/new");
   await page.fill('input[name="name"]', "Thursday 7-a-side");
   await page.fill('input[name="venueName"]', "Peckham Rye Astro");
-  await page.selectOption('select[name="weekday"]', { index: 4 });
+  const slot = imminentSlot(new Date());
+  await page.selectOption('select[name="weekday"]', slot.weekday);
+  await page.fill('input[name="kickoffTime"]', slot.kickoffTime);
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/g\/[^/]+$/);
 
