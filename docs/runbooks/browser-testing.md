@@ -115,13 +115,13 @@ This destroys local development data only. It never touches production.
 ## The product guide
 
 `docs/guide/` is a hand-written product guide — a README and seven chapters,
-illustrated with 16 screenshots. Regenerate the screenshots with:
+illustrated with 17 screenshots. Regenerate the screenshots with:
 
 ```bash
 npm run guide:capture
 ```
 
-This rebuilds the world, captures the 16 shots, optimises them and rewrites
+This rebuilds the world, captures the 17 shots, optimises them and rewrites
 `docs/guide/manifest.json`. **It writes images and the manifest and never a
 `.md` file.** The chapters are hand-edited prose — that separation is the
 whole reason the writing survives regeneration. Do not expect (or write)
@@ -137,12 +137,28 @@ npx wrangler d1 migrations apply makethe-team --local
 
 This destroys local development data only, never production.
 
-After a run, `git status` will normally show three images as changed —
-`game-overview`, `invite` and `invite-qr` — because each shows a freshly
-generated invite token. That churn is expected on every run, by design; the
-other 13 shots should only change when the page they capture actually
-changed. If a shot outside that trio changes and you didn't expect it, that's
-worth a look before committing.
+Two kinds of churn are expected, and they have different causes.
+
+**Every run, whatever the day**, two images change: `game-overview` and
+`invite-qr`. Both show a freshly minted invite token — the QR code encodes it,
+and the overview contains the code. `invite` does *not* change with it, despite
+showing the same link: it is element-scoped to `.invite-link`, and the input is
+visually truncated well before the token, so the rendered pixels are the same
+whatever the token is. Measured by capturing twice in a row on one day: exactly
+those two files differed.
+
+**On a run made on a different day from the last one**, nine images change
+instead of two, because they carry the fixture's date or its weekday:
+`game-overview` (which changes anyway) plus `join`, `respond-pending`,
+`respond-in`, `respond-waitlisted`, `respond-out`, `cancel`, `dashboard` and
+`edit-game` (its **Day** field). The
+weekday cannot be pinned — a fixture only opens once its reminder instant has
+passed, so `guideSlot` has to derive the day from the clock — which is why the
+chapters are written without naming a date or a weekday for the guide's own
+game. If you change that prose, keep it that way.
+
+Anything else changing is a signal: the page it captures has actually changed,
+and its chapter probably needs a read before you commit.
 
 Four checks in `test/browser/guide-references.spec.ts` run in the ordinary
 browser suite and in CI: every chapter named in the shot list exists, every
