@@ -1,0 +1,101 @@
+import { expect, test, type Page } from "@playwright/test";
+import { observe } from "./observe.js";
+import { signIn, TEST_OWNER } from "./sign-in.js";
+
+/**
+ * Tier 3: the passkey ceremonies, driven through Chrome DevTools Protocol's
+ * virtual authenticator — no hardware, no operating-system prompt.
+ *
+ * This is the highest-value area in the whole harness. `docs/known-issues.md`
+ * records that both of these buttons were broken in every browser for days by
+ * a `connect-src` directive, while the entire server suite stayed green: the
+ * ceremonies are pure browser API, so nothing in workerd can execute them.
+ */
+
+async function attachAuthenticator(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  return { cdp, authenticatorId };
+}
+
+test("a signed-in player can register a passkey", async ({ page }) => {
+  const seen = observe(page);
+  await signIn(page, TEST_OWNER);
+  const { cdp, authenticatorId } = await attachAuthenticator(page);
+
+  await page.goto("/app/passkeys");
+
+  // The affordance ships `hidden` and is revealed by script only when the
+  // browser supports WebAuthn. If it stays hidden, the script did not run —
+  // which is precisely how the connect-src bug presented.
+  await expect(page.locator("#passkey-add")).toBeVisible();
+  await page.click("#passkey-add-button");
+
+  // Two independent confirmations, because either alone can lie. The
+  // authenticator proves the ceremony completed in the browser; the page
+  // proves the server recorded what the browser produced.
+  await expect
+    .poll(
+      async () => {
+        const { credentials } = await cdp.send("WebAuthn.getCredentials", { authenticatorId });
+        return credentials.length;
+      },
+      { message: "the virtual authenticator holds no credential" },
+    )
+    .toBeGreaterThan(0);
+
+  await page.reload();
+  await expect(page.locator("main")).toContainText(/passkey/i);
+
+  expect(
+    await seen.violations(),
+    "a CSP violation during registration — this is the connect-src regression",
+  ).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+});
+
+test("a registered passkey signs in on its own", async ({ page }) => {
+  // Register first, in this context, so the credential and the origin match.
+  await signIn(page, TEST_OWNER);
+  const { cdp, authenticatorId } = await attachAuthenticator(page);
+  await page.goto("/app/passkeys");
+  await expect(page.locator("#passkey-add")).toBeVisible();
+  await page.click("#passkey-add-button");
+  await expect
+    .poll(async () => (await cdp.send("WebAuthn.getCredentials", { authenticatorId })).credentials.length)
+    .toBeGreaterThan(0);
+
+  // Drop the session entirely. The credential is all that is left, which is
+  // the point: this must sign in without a magic link.
+  await page.context().clearCookies();
+
+  const seen = observe(page);
+  await page.goto("/sign-in");
+  await expect(page.locator("#passkey")).toBeVisible();
+  await page.click("#passkey-button");
+
+  // The ceremony ends by navigating away from the sign-in page. If the button
+  // is inert — which is exactly how the connect-src bug presented — this
+  // times out rather than passing quietly.
+  await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 15_000 });
+
+  // And the session it produced is real: an authenticated page, not a bounce.
+  const authenticated = await page.goto("/g/new");
+  expect(authenticated?.status(), "the passkey session does not authenticate").toBe(200);
+  expect(page.url()).toContain("/g/new");
+
+  expect(
+    await seen.violations(),
+    "a CSP violation during passkey sign-in — this is the connect-src regression",
+  ).toEqual([]);
+});
