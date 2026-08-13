@@ -437,6 +437,20 @@ export interface Shot {
   shows: string;
   path: (w: GuideWorld) => string;
   persona: "anonymous" | "organiser";
+  /**
+   * Capture just this element rather than the whole page.
+   *
+   * Three chapters need a picture of `/g/:id` for three different reasons.
+   * Photographing the full page each time would write three byte-identical
+   * PNGs under three names — duplication a reader gains nothing from, and
+   * three times the churn. Scoping each to the part its chapter is about
+   * makes every image earn its place.
+   *
+   * Note `ul.squad` matches **two** lists on that page — the squad and the
+   * fixtures below it — so a selector for the squad must pin the first, or
+   * Playwright's strict mode fails the run.
+   */
+  element?: string;
 }
 
 export const CHAPTERS = [
@@ -482,9 +496,20 @@ export const SHOTS: Shot[] = [
     chapter: "02-inviting-your-squad",
     title: "The invite link",
     route: "/g/:id",
-    shows: "The same page, showing the shareable link and the QR code together.",
+    shows: "The shareable link and its Copy button, as an organiser sees them.",
     path: (w) => `/g/${w.gameId}`,
     persona: "organiser",
+    element: ".invite-link",
+  },
+  {
+    id: "invite-qr",
+    chapter: "02-inviting-your-squad",
+    title: "The QR code",
+    route: "/g/:id",
+    shows: "The QR code for the same link, for people standing next to you.",
+    path: (w) => `/g/${w.gameId}`,
+    persona: "organiser",
+    element: ".qr",
   },
   {
     id: "join",
@@ -539,6 +564,8 @@ export const SHOTS: Shot[] = [
     shows: "Each member's row, with the control to make them an organiser and to remove them.",
     path: (w) => `/g/${w.gameId}`,
     persona: "organiser",
+    // The squad list, not the fixtures list below it — see `element` above.
+    element: "ul.squad >> nth=0",
   },
   {
     id: "remove-member",
