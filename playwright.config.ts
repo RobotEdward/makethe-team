@@ -16,32 +16,38 @@ import { defineConfig, devices } from "@playwright/test";
 export const BASE_URL = "http://localhost:8787";
 
 /**
- * The bindings `wrangler dev` needs for a browser to be able to sign in,
- * passed on the command line rather than written to `.dev.vars`.
+ * How `wrangler dev` is started for this suite, and why each flag is there.
  *
- * That is not a style preference. `.dev.vars` is also read by the Vitest
- * workers pool (`vitest.config.ts` points it at the same `wrangler.jsonc`),
- * and it *overrides* the bindings that config sets explicitly — putting
- * `SIGNIN_ALLOWLIST` and `BETTER_AUTH_URL` there turned 56 server tests red,
- * because every signed-in test suddenly had a different allowlist and a
- * different origin from the one it asserts against. Keeping these on the
- * command line means the browser suite configures only the browser suite.
+ * `--env-file` rather than `.dev.vars`: that file is read by the Vitest
+ * workers pool too, and it *overrides* the bindings `vitest.config.ts` sets
+ * explicitly. Putting `SIGNIN_ALLOWLIST` and `BETTER_AUTH_URL` there turned
+ * 56 server tests red, because every signed-in test suddenly had a different
+ * allowlist and origin from the ones it asserts against.
  *
- * Every value is a local-only dummy, which is also why CI needs no secret.
+ * `--env-file` rather than `--var`: `--var KEY:VALUE` splits on the colon, so
+ * any value containing one is mangled. `--var BETTER_AUTH_URL:http://…` gave
+ * an origin that matched nothing, and every POST came back a bare 403
+ * "Forbidden" that reads like an auth bug and is a configuration one.
+ *
+ * `--local-upstream` is the non-obvious one. `wrangler.jsonc` declares the
+ * custom domain `makethe.team`, and `wrangler dev` presents *that* host to
+ * the Worker — it rewrites the incoming `Origin` header, so a request the
+ * browser sent from `http://localhost:8787` arrives claiming
+ * `http://makethe.team`. Every state-changing handler compares `Origin`
+ * against `BETTER_AUTH_URL` (`wrongOrigin` in `src/routes/games.ts` and its
+ * siblings), so without this flag every form post in the suite is refused,
+ * whatever `BETTER_AUTH_URL` is set to. Confirmed by logging both values
+ * inside the handler. The port must be included: bare `localhost` is not
+ * enough.
  */
-const DEV_VARS = [
-  // wrangler.jsonc says "resend", which throws here with no RESEND_API_KEY —
-  // into an error signin.ts deliberately swallows, so it fails invisibly.
-  "NOTIFIER:console",
-  // Without this, magic links are minted against https://makethe.team.
-  `BETTER_AUTH_URL:${BASE_URL}`,
-  "BETTER_AUTH_SECRET:local-browser-tests-only-not-a-real-secret",
-  "CANCEL_TOKEN_SECRET:local-browser-tests-only-not-a-real-secret",
-  "RESPONSE_TOKEN_SECRET:local-browser-tests-only-not-a-real-secret",
-  // Suppresses the send for anything else. Note the harness does not depend
-  // on this — see the header of `test/browser/sign-in.ts`.
-  "SIGNIN_ALLOWLIST:owner@example.test,player@example.test",
-].flatMap((v) => ["--var", v]);
+const WRANGLER_FLAGS = [
+  "--port",
+  "8787",
+  "--env-file",
+  "test/browser/browser.env",
+  "--local-upstream",
+  "localhost:8787",
+];
 
 export default defineConfig({
   testDir: "./test/browser",
@@ -64,11 +70,18 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `npx wrangler dev --port 8787 ${DEV_VARS.join(" ")}`,
+    command: `npx wrangler dev ${WRANGLER_FLAGS.join(" ")}`,
     url: `${BASE_URL}/sign-in`,
-    // Locally, reuse a dev server that is already up. On CI there is never one
-    // to reuse and silently reusing something unexpected would be worse.
-    reuseExistingServer: !process.env.CI,
+    // Never reuse a server this config did not start.
+    //
+    // `reuseExistingServer: true` is the usual default and it cost an hour
+    // here: a `wrangler dev` left running from manual poking was adopted
+    // silently, and because it had been started *without* `DEV_VARS` its
+    // `BETTER_AUTH_URL` was still production's. Every POST then failed the
+    // origin check with a bare 403 "Forbidden", which reads like an auth bug
+    // and is really a configuration one. The bindings above are part of this
+    // suite's contract, so the suite starts the server that has them.
+    reuseExistingServer: false,
     timeout: 120_000,
     stdout: "pipe",
     stderr: "pipe",

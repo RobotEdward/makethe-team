@@ -9,7 +9,7 @@
     "test:watch": "vitest",
     "test:browser": "playwright test",
     "test:browser:ui": "playwright test --ui",
-    "dev:browser": "wrangler dev --var NOTIFIER:console --var BETTER_AUTH_URL:http://localhost:8787 --var BETTER_AUTH_SECRET:local-browser-tests-only-not-a-real-secret --var CANCEL_TOKEN_SECRET:local-browser-tests-only-not-a-real-secret --var RESPONSE_TOKEN_SECRET:local-browser-tests-only-not-a-real-secret --var SIGNIN_ALLOWLIST:owner@example.test,player@example.test",
+    "dev:browser": "wrangler dev --port 8787 --env-file test/browser/browser.env --local-upstream localhost:8787",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db:generate": "drizzle-kit generate",

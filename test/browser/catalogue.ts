@@ -17,6 +17,16 @@ export interface CataloguePage {
   persona: Persona;
   /** What this page is for — read by a human, and later by the guide. */
   note: string;
+  /**
+   * The HTTP status this page is *supposed* to answer with. Defaults to 200.
+   *
+   * Declared per page rather than assumed, because Chromium logs "Failed to
+   * load resource: the server responded with a status of 404" as a console
+   * error for the navigation itself — so the 404 page trips the console gate
+   * simply by being a 404. Naming the expected status here lets the gate
+   * discount exactly that message and nothing else.
+   */
+  expectedStatus?: number;
 }
 
 /**
@@ -106,6 +116,7 @@ export const CATALOGUE: CataloguePage[] = [
     path: () => "/definitely-not-a-page",
     persona: "anonymous",
     note: "The 404. Carries the same CSP as everything else.",
+    expectedStatus: 404,
   },
 ];
 
