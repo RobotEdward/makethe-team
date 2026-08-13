@@ -132,8 +132,13 @@ ends where the journey ends.
 ### 6.1 Catalogue additions
 
 Chapters 04 and 06 need `/leave/:token` and `/cancel/:token`, both currently in
-`NOT_CATALOGUED` because neither is reachable without a minted token. The guide
-world mints both, so they move into the catalogue.
+`NOT_CATALOGUED` because neither is reachable without a minted token.
+
+`/leave/:token` needs no new token: it verifies the **same signed response
+token** as `/r/:token` and differs only in what it renders
+(`src/routes/respond.ts`), so the world already has what it needs. Only the
+cancel token is new, and it carries `{ ownerPlayerId, fixtureId, expiresAt }`
+signed with `CANCEL_TOKEN_SECRET`.
 
 **This is a gain beyond the guide:** it puts two pages under the console and
 CSP gate for the first time. Both are reached from an email by someone with no
