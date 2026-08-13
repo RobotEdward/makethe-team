@@ -74,6 +74,10 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  // The visual capture (`@capture`) is a judgement aid that writes PNGs and
+  // asserts almost nothing, so it is excluded from the default run and from
+  // CI. Run it deliberately: `npx playwright test --grep @capture`.
+  grepInvert: process.env.CAPTURE ? undefined : /@capture/,
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: `npx wrangler dev ${WRANGLER_FLAGS.join(" ")}`,
