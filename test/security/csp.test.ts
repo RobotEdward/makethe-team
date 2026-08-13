@@ -411,7 +411,12 @@ describe("no inline style attribute on any served page", () => {
       `https://makethe.team/g/${owned.gameId}/squad/${memberId}/remove`,
       owned.cookie,
     );
-    await capture("invite page", /Thursday 7-a-side/, `https://makethe.team/j/${owned.inviteToken}`);
+    // Not `/Thursday 7-a-side/`: the game overview page's own <h1> is the bare
+    // game name, so that regex would also match the overview page's HTML —
+    // exactly the false-coverage failure mode this enumeration exists to
+    // catch. The invite page's <h1> is "Join {gameName}" (`src/views/join.ts`),
+    // which only that page renders.
+    await capture("invite page", /Join Thursday 7-a-side/, `https://makethe.team/j/${owned.inviteToken}`);
 
     expect(pages.map((page) => page.name).sort()).toEqual(
       [
