@@ -19,6 +19,8 @@ export interface GameOverviewParams {
   inviteToken: string;
   squad: ReadonlyArray<{ name: string; role: "player" | "owner"; isGuest: boolean }>;
   upcoming: ReadonlyArray<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>;
+  /** A refusal to explain on this page, e.g. J6a's last-organiser guard. Escaped and shown near the top. */
+  problem?: string;
 }
 
 /**
@@ -46,6 +48,8 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
 
   const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
 
+  const problem = params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
+
   const squadItems = squad
     .map((member) =>
       `<li>${escapeHtml(member.name)}${member.role === "owner" ? " — organiser" : ""}${
@@ -62,6 +66,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
+    ${problem}
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}
     ${oddMax}
