@@ -177,8 +177,12 @@ import { signIn } from "./sign-in.js";
 import { imminentSlot } from "./world.js";
 
 const run = promisify(execFile);
+// Both must match `test/browser/browser.env` exactly, and they are
+// deliberately different from each other: `src/env.ts` keeps the response and
+// cancel keys apart as a security boundary, and a suite that shared one value
+// could not tell the two apart.
 const RESPONSE_SECRET = "local-browser-tests-only-not-a-real-secret";
-const CANCEL_SECRET = "local-browser-tests-only-not-a-real-secret";
+const CANCEL_SECRET = "local-browser-tests-only-not-a-real-cancel-secret";
 
 /**
  * The organiser. Every address here is `@example.test` and every name is
