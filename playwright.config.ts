@@ -62,6 +62,12 @@ export default defineConfig({
   // No retries anywhere. A test that passes on the second attempt is telling
   // us something, and retries are how that signal gets thrown away.
   retries: 0,
+  // Well above Playwright's 30s default, because `seedWorld` is genuinely
+  // slow rather than hanging: it signs in, creates a game, joins as a second
+  // identity, triggers the materialisation cron, and shells out to
+  // `wrangler d1 execute` twice — each of those a fresh node process. A
+  // journey that mutates its world cannot share one, so the cost is per test.
+  timeout: 90_000,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
   use: {
     baseURL: BASE_URL,

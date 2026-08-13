@@ -15,6 +15,9 @@ const run = promisify(execFile);
  */
 const RESPONSE_SECRET = "local-browser-tests-only-not-a-real-secret";
 
+/** The joined member's display name, asserted on by the journeys. */
+export const JOINER_NAME = "Alex Morgan";
+
 export interface World {
   gameId: string;
   fixtureId: string;
@@ -46,7 +49,14 @@ async function query<T>(sql: string): Promise<T[]> {
  * materialisation is triggered directly, because it is a cron and there is no
  * user-facing way to ask for it.
  */
-export async function seedWorld(page: Page, browser: Browser): Promise<World> {
+export async function seedWorld(
+  page: Page,
+  browser: Browser,
+  // The joiner gets its own context, which does not inherit the calling
+  // test's `javaScriptEnabled`. Passing it explicitly keeps the JS-off run
+  // genuinely JS-off on both sides of the invite.
+  options: { javaScriptEnabled?: boolean } = {},
+): Promise<World> {
   await signIn(page, TEST_OWNER);
 
   // --- the game -----------------------------------------------------------
@@ -64,24 +74,54 @@ export async function seedWorld(page: Page, browser: Browser): Promise<World> {
   // --- a second identity joins --------------------------------------------
   // Its own context, so the two identities never share a cookie jar: a joiner
   // carrying the owner's session would exercise a path no real visitor takes.
-  const joiner = await browser.newContext();
+  const joiner = await browser.newContext({
+    javaScriptEnabled: options.javaScriptEnabled ?? true,
+  });
   const joinerPage = await joiner.newPage();
   await joinerPage.goto(`/j/${inviteToken}`);
-  await joinerPage.fill('input[name="name"]', "Alex Morgan");
+  await joinerPage.fill('input[name="name"]', JOINER_NAME);
   await joinerPage.fill('input[name="email"]', TEST_PLAYER);
   await joinerPage.click('button[type="submit"]');
+  await joinerPage.waitForLoadState("networkidle");
   await joiner.close();
 
-  // --- fixtures -----------------------------------------------------------
-  // Materialisation is the daily cron (`15 3 * * *` in wrangler.jsonc), and
-  // wrangler dev exposes it directly. Without this the game has no fixture and
-  // /r/:token has nothing to point at.
-  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=15+3+*+*+*`);
+  // Verify the postcondition rather than trusting the click. A silently
+  // failed join still returns a plausible-looking World — one whose response
+  // token points at a player who is not in the squad — and the failure then
+  // surfaces several assertions later, in a test that has nothing to do with
+  // joining. Fail here, where the cause is.
+  await page.goto(`/g/${gameId}`);
+  const joined = page.locator("ul.squad li").filter({ hasText: JOINER_NAME });
+  if ((await joined.count()) !== 1) {
+    throw new Error(
+      `seedWorld: ${JOINER_NAME} did not join game ${gameId}. The squad list ` +
+        `shows: ${JSON.stringify(await page.locator("ul.squad li .member").allTextContents())}`,
+    );
+  }
 
-  const [fixture] = await query<{ id: string }>(
-    `SELECT id FROM fixtures WHERE game_id = '${gameId}' ORDER BY kicks_off_at LIMIT 1`,
+  // --- fixtures -----------------------------------------------------------
+  // Two crons, and both are needed. `15 3 * * *` materialises fixtures from
+  // the game's recurrence; `0 * * * *` is the hourly sweep that *opens* the
+  // ones which have reached their open-at time. Without the second, every
+  // fixture stays `scheduled`, and `/r/:token` renders its read-only notice
+  // with no answer buttons at all — which presents as a click that hangs
+  // until the test times out, rather than as anything resembling its cause.
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=15+3+*+*+*`);
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=0+*+*+*+*`);
+
+  const [fixture] = await query<{ id: string; lifecycle: string }>(
+    `SELECT id, lifecycle FROM fixtures WHERE game_id = '${gameId}'
+       AND lifecycle = 'open' ORDER BY kicks_off_at LIMIT 1`,
   );
-  if (!fixture) throw new Error(`no fixture materialised for game ${gameId}`);
+  if (!fixture) {
+    const all = await query<{ lifecycle: string }>(
+      `SELECT lifecycle FROM fixtures WHERE game_id = '${gameId}'`,
+    );
+    throw new Error(
+      `seedWorld: game ${gameId} has no open fixture after both crons ran. ` +
+        `Lifecycles present: ${JSON.stringify(all.map((f) => f.lifecycle))}.`,
+    );
+  }
 
   const [member] = await query<{ id: string }>(
     `SELECT p.id AS id FROM players p WHERE p.email = '${TEST_PLAYER}' LIMIT 1`,
