@@ -330,7 +330,12 @@ describe("Content-Security-Policy", () => {
       headers: { cookie },
     });
     expect(response.status).toBe(200);
-    expectFixedDirectives(response.headers.get("content-security-policy"));
+    const csp = response.headers.get("content-security-policy");
+    expectFixedDirectives(csp);
+    // The half this test was missing: `expectFixedDirectives` never looks at
+    // `style-src`, so without this the page's own `<style>` blocks — the one
+    // thing this file exists to check — were unasserted on the newest page.
+    await expectStylesAllowed(csp as string, await response.text());
   });
 
   it("robots.txt: fixed directives present (no inline styles to check)", async () => {

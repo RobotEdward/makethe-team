@@ -30,7 +30,11 @@ describe("squad controls", () => {
     const html = renderGameOverviewPage({ ...BASE, viewerPlayerId: "p-owner", squad });
     // Extract each member's row and verify the role form's value is opposite to their current role.
     // Sam Okafor (player) should have value="owner"; Edward Charles (organiser) should have value="player".
-    const samRow = html.match(/<li>[\s\S]*?Sam Okafor[\s\S]*?<\/li>/);
+    // `[^<]` after `<li>` rather than `[\s\S]*?`: the lazy form starts at the
+    // *first* `<li>` in the document and runs to the first `</li>` after the
+    // name, so Sam's "row" spanned Edward's row too and the assertions below
+    // could pass on Edward's markup.
+    const samRow = html.match(/<li>(?:(?!<\/li>)[\s\S])*?Sam Okafor[\s\S]*?<\/li>/);
     expect(samRow).toBeTruthy();
     expect(samRow![0]).toContain('action="/g/g-1/squad/p-sam/role"');
     expect(samRow![0]).toContain('value="owner"');

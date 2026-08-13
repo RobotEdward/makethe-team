@@ -1,12 +1,14 @@
 import { SELF } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-// `notificationLog` is imported for exactly one purpose below: draining the
-// N-7 `waitUntil` before a test ends. This suite asserts nothing about its
-// rows — that behaviour belongs to `test/notify/send-removed.test.ts` — but a
-// row landing *after* the next test's `resetDatabase()` breaks that reset's
+// `notificationLog` serves two purposes here. The first is draining: a row
+// landing *after* the next test's `resetDatabase()` breaks that reset's
 // `DELETE FROM players` on the table's foreign key, exactly the race
-// `test/routes/join.test.ts` documents on `waitForNotificationRows`.
+// `test/routes/join.test.ts` documents on `waitForNotificationRows`, which is
+// why `settleNotifications` exists. The second is assertion — see "sends N-7
+// to the removed player and N-2 to whoever it promoted" below. `settleNotifications`
+// is a drain and returns whether or not it settled, so it can never fail a
+// test; every claim about email must be an explicit assertion after it.
 import { auditLog, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import {
   insertFixture,
@@ -163,6 +165,126 @@ describe("POST /g/:id/squad/:playerId/remove", () => {
 
     expect((await post(`/g/${gameId}/squad/${stranger}/remove`, cookie)).status).toBe(404);
   });
+
+  it("demotes an organiser on the way out, so a rejoin cannot restore ownership", async () => {
+    const { cookie, gameId, db } = await ownedGame();
+    const coOrganiser = await insertPlayer(db, { name: "Ada Byron", email: "ada@example.com" });
+    await insertMembership(db, gameId, coOrganiser, { role: "owner" });
+
+    expect((await post(`/g/${gameId}/squad/${coOrganiser}/remove`, cookie)).status).toBe(303);
+
+    const [membership] = await db.select().from(memberships).where(eq(memberships.playerId, coOrganiser));
+    expect(membership!.active).toBe(false);
+    // The half `active: false` alone did not do. A row left reading `owner`
+    // is what `/j/:token`'s reactivation path would hand straight back.
+    expect(membership!.role).toBe("player");
+    await settleNotifications(1);
+  });
+
+  /**
+   * The email leg, end to end through the route.
+   *
+   * Both sends live in `waitUntil` callbacks, so nothing about them is
+   * observable from the response — the only durable evidence is
+   * `notification_log`, and until this test existed no assertion touched it:
+   * deleting either `waitUntil` from `src/routes/games.ts` left the suite
+   * green. The waitlisted player is what makes the promotion leg run at all;
+   * with an empty waiting list `result.promotions` is `[]` and the N-2 loop
+   * is dead code.
+   */
+  it("sends N-7 to the removed player and N-2 to whoever it promoted", async () => {
+    const { cookie, gameId, memberId, db } = await ownedGame();
+    const waiter = await insertPlayer(db, { name: "Ada Byron", email: "ada@example.com" });
+    await insertMembership(db, gameId, waiter);
+    // `maxPlayers: 1` with one `in` and one `waitlisted`: removing the member
+    // frees the only place, so the waiting list is drawn on (BR-7).
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "open",
+      maxPlayers: 1,
+      inCount: 1,
+      waitlistCount: 1,
+    });
+    await insertResponse(db, fixtureId, memberId, { status: "in" });
+    await insertResponse(db, fixtureId, waiter, { status: "waitlisted", waitlistPosition: 1 });
+
+    expect((await post(`/g/${gameId}/squad/${memberId}/remove`, cookie)).status).toBe(303);
+
+    // Two rows expected, so drain until both have settled before asserting —
+    // otherwise a slow send reads as a missing one.
+    await settleNotifications(2);
+    const log = await db.select().from(notificationLog);
+
+    const n7 = log.filter((row) => row.notificationType === "n7");
+    expect(n7).toHaveLength(1);
+    expect(n7[0]!.playerId).toBe(memberId);
+    expect(n7[0]!.status).toBe("sent");
+
+    const n2 = log.filter((row) => row.notificationType === "n2");
+    expect(n2).toHaveLength(1);
+    expect(n2[0]!.playerId).toBe(waiter);
+    expect(n2[0]!.status).toBe("sent");
+  });
+
+  it("finishes a removal that failed partway through, on a re-submitted POST", async () => {
+    const { cookie, gameId, memberId, db } = await ownedGame();
+    const fixtureId = await insertFixture(db, gameId, { lifecycle: "open", inCount: 1 });
+    await insertResponse(db, fixtureId, memberId, { status: "in" });
+    // The state a removal leaves when the per-fixture loop throws after the
+    // membership batch has landed: membership out, response row untouched.
+    // Written directly because there is no way to make the Durable Object
+    // fail from here, and it is the *state* the retry has to cope with.
+    const leftAt = new Date("2026-08-13T12:00:00Z");
+    await db
+      .update(memberships)
+      .set({ active: false, leftAt, role: "player" })
+      .where(eq(memberships.playerId, memberId));
+
+    // The retry the design promises. A 404 here — which is what
+    // `loadSquadTarget` used to answer — would mean recovery needed a hand
+    // edit of D1.
+    const response = await post(`/g/${gameId}/squad/${memberId}/remove`, cookie);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(`/g/${gameId}`);
+
+    const [row] = await db.select().from(responses).where(eq(responses.playerId, memberId));
+    expect(row!.status).toBe("withdrawn");
+    // No second `membership.removed` row: the batch is skipped on a resume,
+    // and a second audit row would assert a removal that never happened.
+    expect(await db.select().from(auditLog).where(eq(auditLog.action, "membership.removed"))).toHaveLength(0);
+    await settleNotifications(1);
+  });
+
+  /**
+   * The claim the resume path rests on, checked rather than assumed: N-7's
+   * dedupe key is `n7:<membershipId>:<leftAt>`, and a resume reuses the
+   * original `leftAt` (`memberships.left_at` is `timestamp_ms`, so the
+   * round-trip is exact to the millisecond and the key is byte-identical). The
+   * second send therefore hits `notification_log`'s unique index, returns
+   * `already-logged`, and never reaches a provider. If it did not, a retry
+   * would email someone their removal twice.
+   */
+  it("does not email the removed player twice when the removal is re-submitted", async () => {
+    const { cookie, gameId, memberId, db } = await ownedGame();
+
+    expect((await post(`/g/${gameId}/squad/${memberId}/remove`, cookie)).status).toBe(303);
+    await settleNotifications(1);
+    // The browser reload of a POST that appeared to fail.
+    expect((await post(`/g/${gameId}/squad/${memberId}/remove`, cookie)).status).toBe(303);
+    await settleNotifications(1);
+
+    const n7 = (await db.select().from(notificationLog)).filter((row) => row.notificationType === "n7");
+    expect(n7).toHaveLength(1);
+  });
+
+  it("still 404s the confirmation page for an already-removed member", async () => {
+    const { cookie, gameId, memberId, db } = await ownedGame();
+    await db.update(memberships).set({ active: false }).where(eq(memberships.playerId, memberId));
+
+    // Only the POST is resumable. There is nothing useful to confirm about a
+    // membership that is already over.
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${memberId}/remove`, { headers: { cookie } });
+    expect(response.status).toBe(404);
+  });
 });
 
 describe("POST /g/:id/squad/:playerId/role", () => {
@@ -191,6 +313,42 @@ describe("POST /g/:id/squad/:playerId/role", () => {
   it("400s on a role it did not offer", async () => {
     const { cookie, gameId, memberId } = await ownedGame();
     expect((await post(`/g/${gameId}/squad/${memberId}/role`, cookie, { role: "admin" })).status).toBe(400);
+  });
+
+  // Spec §8 requires the 404-not-403 pair on all three squad routes. This one
+  // shares `loadSquadTarget` and `wrongOrigin` with the remove route, so it is
+  // correct today by construction — these pin it, so a future change that
+  // gives this route its own loading or its own origin check cannot quietly
+  // drop either guarantee.
+  it("404s for a game the viewer does not own", async () => {
+    const { cookie } = await signIn();
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const memberId = await insertPlayer(db);
+    await insertMembership(db, gameId, memberId);
+
+    // 404, not 403: a 403 confirms the game exists (TR-18).
+    expect((await post(`/g/${gameId}/squad/${memberId}/role`, cookie, { role: "owner" })).status).toBe(404);
+  });
+
+  it("404s for a player who is in another game's squad", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const db = testDb();
+    const stranger = await insertPlayer(db);
+    await insertMembership(db, await insertGame(db), stranger);
+
+    expect((await post(`/g/${gameId}/squad/${stranger}/role`, cookie, { role: "owner" })).status).toBe(404);
+  });
+
+  it("rejects a cross-site post", async () => {
+    const { cookie, gameId, memberId } = await ownedGame();
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${memberId}/role`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.example", cookie },
+      body: new URLSearchParams({ role: "owner" }),
+      redirect: "manual",
+    });
+    expect(response.status).toBe(403);
   });
 });
 
