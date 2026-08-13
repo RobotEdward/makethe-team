@@ -59,7 +59,7 @@ branch to avoid an enumeration oracle:
 
 | Binding | Local value | Failure when unset |
 | --- | --- | --- |
-| `SIGNIN_ALLOWLIST` | the test addresses | fails closed (TR-35); no link is ever sent |
+| `SIGNIN_ALLOWLIST` | the test addresses | fails closed (TR-35); no link is ever sent. **Needed for driving the app by hand, not by the harness** — see §3.2 |
 | `NOTIFIER` | `console` | `wrangler.jsonc` says `resend`; `createNotifier` throws and `signin.ts` swallows it |
 | `BETTER_AUTH_URL` | `http://localhost:8787` | links are minted against production and cannot be followed |
 | `BETTER_AUTH_SECRET`, `CANCEL_TOKEN_SECRET` | any string | session signing and cancel tokens fail |
@@ -90,6 +90,28 @@ Reading D1 goes through `wrangler d1 execute --local --json`, not a direct
 SQLite open: Miniflare holds its own connection and a second writer is the
 WAL-deadlock hazard `src/auth/factory.ts` documents. The harness only reads,
 but it uses the supported path regardless.
+
+### 3.2 What signing in this way does not prove
+
+**Reading the token from storage bypasses TR-35's allowlist.** That gate
+suppresses the *send*; Better Auth has already written the `verification` row
+by the time `sendMagicLink` runs, refused or not — stated in
+`src/auth/factory.ts` and confirmed here by execution, since a `POST /sign-in`
+for an address absent from `SIGNIN_ALLOWLIST` still leaves a usable token
+behind.
+
+Two consequences, both worth stating plainly rather than discovering later:
+
+1. A browser test signing in proves nothing about whether a real person could.
+   The allowlist stays covered in `test/routes/signin.test.ts`, where it can be
+   asserted precisely, and must not be re-tested here.
+2. The harness would keep passing if `SIGNIN_ALLOWLIST` were misconfigured or
+   empty. It is kept in `.dev.vars` for a human driving the app by hand, who
+   does need an email to actually arrive.
+
+This is not a vulnerability: the token is disclosed only by email, so a refused
+address still cannot sign in from outside. It is a limit on what this harness
+can be read as evidence for.
 
 ## 4. The page catalogue
 

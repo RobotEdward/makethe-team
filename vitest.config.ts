@@ -87,7 +87,17 @@ export default defineConfig(async () => {
       // .gitignore, so without this the primary checkout also collects every
       // sibling branch's tests — a run here reported 1245 tests instead of 416,
       // silently mixing three branches' suites together.
-      exclude: ["**/node_modules/**", "**/dist/**", "**/.wrangler/**", ".worktrees/**"],
+      // `test/browser/**` holds Playwright specs, not Vitest ones. Discovery
+      // does not consult .gitignore or any extension convention, so without
+      // this the workers pool collects them and every one fails on an import
+      // of "@playwright/test" that cannot resolve inside workerd.
+      exclude: [
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/.wrangler/**",
+        ".worktrees/**",
+        "test/browser/**",
+      ],
     },
   };
 });

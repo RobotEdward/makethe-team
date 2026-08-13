@@ -1,7 +1,20 @@
 # Copy to .dev.vars (gitignored) for local development.
 # Any string works locally; production uses a Worker secret.
 RESPONSE_TOKEN_SECRET=local-development-secret-do-not-use-in-production
-# A *different* value from the one above, on purpose: the two token kinds are
-# kept apart by separate keys as well as by the discriminator inside the
-# signed payload. See CANCEL_TOKEN_SECRET in src/env.ts.
-CANCEL_TOKEN_SECRET=local-development-cancel-secret-do-not-use-in-production
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT here: NOTIFIER, BETTER_AUTH_URL, BETTER_AUTH_SECRET,
+# SIGNIN_ALLOWLIST, CANCEL_TOKEN_SECRET.
+#
+# Local sign-in needs all five, but this file is read by the Vitest workers
+# pool as well as by `wrangler dev`, and it *overrides* the bindings
+# vitest.config.ts sets explicitly. Adding SIGNIN_ALLOWLIST and
+# BETTER_AUTH_URL here turned 56 server tests red at once: every signed-in
+# test suddenly had a different allowlist and a different origin from the one
+# it asserts against, so pages redirected instead of rendering.
+#
+# The browser suite therefore passes them to `wrangler dev` on the command
+# line instead (see `DEV_VARS` in playwright.config.ts). To drive the app by
+# hand with a working sign-in, use `npm run dev:browser`, which starts the
+# dev server with the same values.
+# ---------------------------------------------------------------------------

@@ -8,3 +8,8 @@ worker-configuration.d.ts
 
 # git worktrees for parallel milestone work
 .worktrees/
+
+# Playwright
+test-results/
+playwright-report/
+test/browser/screenshots/
