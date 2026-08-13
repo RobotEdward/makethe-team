@@ -75,6 +75,30 @@ describe("joinSquad", () => {
   });
 
   /**
+   * The security boundary, asserted on its own terms: a public,
+   * unauthenticated invite link must never confer ownership, whatever the
+   * stale row says. Seeded as `owner` on purpose — `removeMember` demotes on
+   * the way out so this state should not arise, and that is exactly why this
+   * half has to hold without depending on it.
+   */
+  it("never restores ownership on a rejoin, even from a stale owner row", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const playerId = await insertPlayer(db, { email: "alex@example.com" });
+    const membershipId = await insertMembership(db, gameId, playerId, {
+      active: false,
+      role: "owner",
+      leftAt: new Date(Date.UTC(2026, 5, 1)),
+    });
+
+    await joinSquad({ db, gameId, name: "Alex", email: "alex@example.com", now: NOW });
+
+    const [membership] = await db.select().from(memberships).where(eq(memberships.id, membershipId));
+    expect(membership?.active).toBe(true);
+    expect(membership?.role).toBe("player");
+  });
+
+  /**
    * The double-tap. D1 has no interactive transactions, so both calls see no
    * player, both insert, and one loses on `UNIQUE (email)`. Before the retry
    * that loser threw, the route turned it into a 500, and the person had no

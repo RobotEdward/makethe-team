@@ -144,10 +144,21 @@ async function attemptJoin(params: JoinSquadParams): Promise<JoinOutcome> {
     // Reactivate rather than insert: UNIQUE (game_id, player_id) forbids a
     // second row. `joinedAt` is reset because it is what makes the N-6 dedupe
     // key differ, which is what lets a rejoin be welcomed again (§4.4).
+    //
+    // **`role: "player"` is a security boundary, not tidying — do not remove
+    // it.** This runs for an unauthenticated visitor holding a public invite
+    // link, with no proof of identity beyond an address typed into a form. A
+    // link like that must never confer ownership of a game, whatever the
+    // stale membership row happens to say. `removeMember` also demotes on the
+    // way out, so today no inactive row *should* read `owner` — this is the
+    // half that holds even if a row somehow does, and it is unconditional for
+    // exactly that reason. Without it, an owner removes a co-organiser and
+    // that person walks back in through `/j/:token` able to edit the game,
+    // rotate the invite link and remove the remaining organiser.
     await db.batch([
       db
         .update(memberships)
-        .set({ active: true, leftAt: null, joinedAt: now })
+        .set({ active: true, leftAt: null, joinedAt: now, role: "player" })
         .where(eq(memberships.id, membership.id)),
       buildAuditInsert(db, {
         // Null, not `playerId`. See the `membership.joined` comment in
@@ -157,7 +168,10 @@ async function attemptJoin(params: JoinSquadParams): Promise<JoinOutcome> {
         entityType: "membership",
         entityId: membership.id,
         action: "membership.rejoined",
-        after: { gameId, playerId, via: "invite_link" },
+        // `role` on both sides so the audit trail shows an invite-link rejoin
+        // can only ever land on `player` (BR-27).
+        before: { role: membership.role },
+        after: { gameId, playerId, via: "invite_link", role: "player" },
         now,
       }),
     ]);
