@@ -22,3 +22,67 @@ jobs:
       - run: npm test
       - name: Deploy dry run
         run: npx wrangler deploy --dry-run
+
+  # Deliberately a separate job rather than more steps in `check`.
+  #
+  # A browser flake must be legible as a browser flake. Folded into `check`
+  # it would sit behind lint, typecheck and 1009 unit tests, and a red cross
+  # would no longer say which kind of thing broke — which is how a suite
+  # stops being trusted and starts being re-run until it passes.
+  #
+  # The repository is public and this is a standard runner, so Actions
+  # minutes are free and unlimited; the only cost being managed here is
+  # wall-clock.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Resolve the Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Keyed on the exact Playwright version: browser builds are pinned per
+      # release, so a version bump must miss the cache rather than run against
+      # whatever the previous release downloaded.
+      - uses: actions/cache@v4
+        id: browser-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      # `--only-shell` installs the headless shell alone, a fraction of the
+      # full browser. Nothing in this suite needs a headed Chromium.
+      - name: Install the browser
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --only-shell chromium
+
+      # System libraries are not covered by the cache above.
+      - name: Install browser system dependencies
+        run: npx playwright install-deps chromium
+
+      # A developer's machine has an applied local D1 from months of use; a
+      # runner has an empty one, and `wrangler dev` will happily serve against
+      # a database with no tables. Without this every page 500s and the
+      # failure looks like the app, not the fixture.
+      - name: Apply migrations to the local D1
+        run: npx wrangler d1 migrations apply makethe-team --local
+
+      # No secrets. Every binding the suite needs is an obvious local-only
+      # dummy in test/browser/browser.env, which playwright.config.ts passes
+      # to `wrangler dev` — so this job runs identically on a fork's PR.
+      - run: npm run test:browser
+        env:
+          CI: "true"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

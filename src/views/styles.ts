@@ -250,20 +250,36 @@ export const FORM_CSS = `
   .squad { list-style: none; padding: 0; }
   .squad li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
   /* A squad row is a name plus two controls, one of which is a block-level
-     form element. Without this they stack into three lines per member and the
-     list reads as a mess. Flex keeps them on one line, wrapping rather than
-     overflowing on a narrow phone, with the name taking the slack so the
-     controls sit together at the end of the row. The form's own margin is
-     zeroed for the same reason: it is a block-level element and carries one.
+     form element. Without a layout they stack into three lines per member and
+     the list reads as a mess. The form's own margin is zeroed because it is a
+     block-level element and carries one.
      (No literal tag written here — test/routes/join.test.ts parses the first
      form element out of a rendered page, and a tag inside a style block is
-     indistinguishable from a real one to that parser.) */
-  .squad li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
-  .squad li .member { flex: 1 1 8rem; }
-  .squad li form { margin: 0; flex: 0 0 auto; }
+     indistinguishable from a real one to that parser.)
+
+     Grid, not flex. Flex wrapping made the row's shape depend on how long the
+     member's name happened to be: at 390px a short name pulled the button up
+     onto its line and pushed the Remove link down alone, while a longer name
+     took a line of its own with both controls beneath — two rows of identical
+     markup laid out differently, which reads as broken. Found by the browser
+     suite's visual capture; no string assertion could see it. Grid fixes the
+     columns, so every row has the same shape whatever the name. */
+  .squad li {
+    display: grid; grid-template-columns: 1fr auto auto;
+    align-items: center; gap: 0.5rem 0.75rem;
+  }
+  .squad li form { margin: 0; }
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */
-  .squad li .button { flex: 0 0 auto; font-size: 0.95rem; padding: 0.6rem 1rem; }
+  .squad li .button { width: auto; font-size: 0.95rem; padding: 0.6rem 1rem; }
+  /* Below this width the name and a button like "Make an ordinary member"
+     cannot share a line without squeezing one of them. Rather than let that
+     happen per-name, the name takes the whole first line for every member and
+     the two controls sit together beneath it — one shape for every row. */
+  @media (max-width: 30rem) {
+    .squad li { grid-template-columns: 1fr auto; }
+    .squad li .member { grid-column: 1 / -1; }
+  }
   .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left; }
 `;
 
