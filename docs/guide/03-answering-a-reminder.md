@@ -27,7 +27,7 @@ see who you'd be playing with before you decide — more on that below.
 
 Tapping a button on this page is what records your answer. Tap **I'm in**
 while there is a place free and the page comes back saying **You're in.**,
-with your name marked **In** in the squad below.
+with your name marked **In**.
 
 That headline is how you know it worked. Close the page without tapping a
 button on it and nothing has been saved — you are not counted, and the place
@@ -62,9 +62,9 @@ You do not need to do anything else. If someone drops out, the person at the
 top of the waitlist is moved in automatically and emailed. Nobody else is
 told.
 
-The squad list shows the same thing from the outside: ten players marked **In**,
-then Mika Toivonen first on the waitlist and Grace Abara second, in the order
-they answered. Anyone who has not answered yet — Ade Sowande here — shows as
-**Not yet responded**.
+When the squad is showing, it tells the same story from the outside: ten
+players marked **In**, then Mika Toivonen first on the waitlist and Grace
+Abara second, in the order they answered. Anyone who has not answered yet —
+Ade Sowande here — shows as **Not yet responded**.
 
 Next: [when someone drops out](04-when-someone-drops-out.md).
