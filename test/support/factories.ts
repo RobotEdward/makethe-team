@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
 import { fixtures, games, memberships, players, responses } from "../../src/db/schema.js";
+import { kickoffIn } from "./clock.js";
 
 /**
  * Shared builders for database fixtures used by the tests.
@@ -106,7 +107,7 @@ export async function insertFixture(
   await db.insert(fixtures).values({
     id,
     gameId,
-    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    kicksOffAt: kickoffIn(24 * 7),
     minPlayers: 10,
     maxPlayers: 14,
     prefersEvenNumbers: true,

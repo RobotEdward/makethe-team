@@ -5,6 +5,7 @@ import { auditLog, fixtures, memberships, notificationLog, players, responses } 
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, insertMembership, insertPlayer, playerRow, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
+import { kickoffIn } from "../support/clock.js";
 
 /** A form POST with the origin the app requires, matching `test/routes/squad.test.ts`. */
 function appPost(path: string, fields: Record<string, string>, cookie: string, origin: string = ORIGIN) {
@@ -82,7 +83,7 @@ async function seedOpenFixtureOwnedBy(ownerPlayerId: string): Promise<{ gameId: 
   await db.insert(fixtures).values({
     id: fixtureId,
     gameId,
-    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    kicksOffAt: kickoffIn(24 * 7),
     minPlayers: 1,
     maxPlayers: 14,
     prefersEvenNumbers: true,
@@ -115,7 +116,7 @@ async function seedFullFixtureOwnedBy(
   await db.insert(fixtures).values({
     id: fixtureId,
     gameId,
-    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    kicksOffAt: kickoffIn(24 * 7),
     minPlayers: 1,
     maxPlayers: 1,
     prefersEvenNumbers: false,
@@ -162,7 +163,7 @@ async function seedFullFixtureWithWaitlist(
   await db.insert(fixtures).values({
     id: fixtureId,
     gameId,
-    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    kicksOffAt: kickoffIn(24 * 7),
     minPlayers: 1,
     maxPlayers: 1,
     prefersEvenNumbers: false,
@@ -215,7 +216,7 @@ async function seedFullFixtureOwnedByWithGuestAndWaitlist(
   await db.insert(fixtures).values({
     id: fixtureId,
     gameId,
-    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    kicksOffAt: kickoffIn(24 * 7),
     minPlayers: 1,
     maxPlayers: 1,
     prefersEvenNumbers: false,
@@ -266,7 +267,7 @@ async function seedFullFixtureOverCapacity(ownerPlayerId: string): Promise<{ gam
   await db.insert(fixtures).values({
     id: fixtureId,
     gameId,
-    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    kicksOffAt: kickoffIn(24 * 7),
     minPlayers: 1,
     maxPlayers: 2,
     prefersEvenNumbers: false,
