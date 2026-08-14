@@ -288,6 +288,26 @@ describe("fixture page", () => {
     expect(html).not.toContain("marked in by");
   });
 
+  it("words an owner-set waitlisted row as marked in, not marked out", () => {
+    const html = renderFixturePage({
+      ...BASE,
+      squad: [
+        {
+          playerId: "p-1",
+          name: "Priya Raman",
+          status: "waitlisted",
+          waitlistRank: 1,
+          setBy: { playerId: "o-1", name: "Jamie Alderton" },
+          source: "owner",
+          isGuest: false,
+        },
+      ],
+    });
+
+    expect(html).toContain("marked in by");
+    expect(html).not.toContain("marked out by");
+  });
+
   it("words an owner-set out as marked out", () => {
     const html = renderFixturePage({
       ...BASE,

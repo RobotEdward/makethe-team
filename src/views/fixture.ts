@@ -172,10 +172,17 @@ function squadStatusLabel(member: SquadMember): string {
  * out. Shown only for `source === "owner"`: a `system` source is a waitlist
  * promotion, which the player's own headline already explains, and `token` and
  * `web` are the player themselves.
+ *
+ * `waitlisted` reads as "marked in", not "marked out": being marked in and
+ * landing on the waitlist is still having been marked in from the player's
+ * point of view, and the status badge beside this line already says
+ * "waitlisted". `withdrawn` never reaches a squad read (filtered out of
+ * `getFixtureWithSquad`), so `out` is the only status left that means "marked
+ * out".
  */
 function attribution(member: SquadMember): string {
   if (member.source !== "owner" || member.setBy === null) return "";
-  const verb = member.status === "in" ? "marked in" : "marked out";
+  const verb = member.status === "out" ? "marked out" : "marked in";
   return `<span class="set-by">${escapeHtml(`${verb} by ${member.setBy.name}`)}</span>`;
 }
 
