@@ -82,7 +82,14 @@ export class FixtureCapacity extends DurableObject<Bindings> {
 
     // A row exists for every player eligible when the fixture opened. No row
     // means this player was not in the squad at that moment (BR-2).
-    const existing = all.find((r) => r.playerId === input.playerId);
+    //
+    // A `withdrawn` row counts as no row: it is the marker that an organiser
+    // took this player out of the fixture (BR-3), and someone taken out is no
+    // longer eligible to answer. Without this, an old response link still in
+    // the removed player's inbox — or an organiser's own mark-in — would put
+    // them straight back into the squad, undoing the removal with no record
+    // that it had been undone.
+    const existing = all.find((r) => r.playerId === input.playerId && r.status !== "withdrawn");
     if (!existing) return { kind: "rejected", reason: "not-eligible" };
 
     const others = all.filter((r) => r.id !== existing.id);
@@ -158,14 +165,17 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // frees a slot exactly as `out` does, and this condition should already be
     // right on the day that status is first written.
     //
-    // No separate "was the fixture full" guard is needed here:
-    // `givesUpASlot` already implies `existing.status` was `in` (or, once
-    // `withdrawn` is written, held a slot some other way), which means
-    // `inCountWithoutThisPlayer` was `inCount - 1` — under `maxPlayers` only if
-    // the fixture had somehow gone over capacity, a data-corruption case this
-    // method does not otherwise guard against.
+    // Freeing a slot is necessary but not sufficient — an over-capacity
+    // fixture has no slot to give away, so `#slotTakenBy` also checks the
+    // fixture is back under `max_players` before handing it on. See that
+    // method for why.
     const givesUpASlot = occupiesSlot(existing.status) && !occupiesSlot(status);
-    const promotedRow = givesUpASlot ? this.#longestWaitingCandidate(waitlistedWithoutThisPlayer) : null;
+    const promotedRow = this.#slotTakenBy({
+      freesASlot: givesUpASlot,
+      inCountWithoutThisPlayer,
+      maxPlayers: fixture.maxPlayers,
+      waitlisted: waitlistedWithoutThisPlayer,
+    });
 
     // Exactly one player can be promoted here: this response releases at most
     // one slot. Anything that frees several — a cancellation, a squad change —
@@ -286,9 +296,16 @@ export class FixtureCapacity extends DurableObject<Bindings> {
 
     // Only an `in` row held a slot, so only an `in` row can free one (BR-7).
     // `occupiesSlot` rather than a literal `=== "in"`, to stay in step with
-    // the one definition of what holds a slot.
-    const freesASlot = occupiesSlot(previousStatus);
-    const promotedRow = freesASlot ? this.#longestWaitingCandidate(waitlistedWithoutThisPlayer) : null;
+    // the one definition of what holds a slot. `#slotTakenBy` then applies the
+    // same capacity gate `setResponse` does — removing someone an organiser
+    // squeezed in past the limit puts the fixture back at its limit rather
+    // than passing the extra place to the waitlist.
+    const promotedRow = this.#slotTakenBy({
+      freesASlot: occupiesSlot(previousStatus),
+      inCountWithoutThisPlayer,
+      maxPlayers: fixture.maxPlayers,
+      waitlisted: waitlistedWithoutThisPlayer,
+    });
 
     const inCount = inCountWithoutThisPlayer + (promotedRow ? 1 : 0);
     const waitlistCount = waitlistedWithoutThisPlayer.length - (promotedRow ? 1 : 0);
@@ -409,6 +426,36 @@ export class FixtureCapacity extends DurableObject<Bindings> {
   }
 
   /**
+   * Who, if anybody, takes the slot this write gives up (BR-7) — the **one**
+   * place `setResponse` and `withdrawMember` decide it, so the rule cannot be
+   * changed on one path and missed on the other.
+   *
+   * Two conditions, both required. A slot has to have been given up, and the
+   * fixture has to be back **under** `max_players` once this write lands
+   * (`inCountWithoutThisPlayer`, since the row being written no longer counts
+   * and the promotion is what would push the count back up).
+   *
+   * The capacity half used to be treated as implied by the first: a row that
+   * gave up a slot meant the count had been one higher, so it could only be
+   * under the limit already. Going over capacity is now a legitimate state an
+   * organiser can ask for deliberately, so that no longer holds. Without this
+   * check an over-capacity fixture never returns to its limit — every dropout
+   * hands the extra place to whoever is waiting instead — and a player would
+   * be put in over capacity by the system, off another player's tap, with no
+   * organiser deciding anything.
+   */
+  #slotTakenBy<T extends { waitlistPosition: number | null }>(args: {
+    freesASlot: boolean;
+    inCountWithoutThisPlayer: number;
+    maxPlayers: number;
+    waitlisted: readonly T[];
+  }): (T & { waitlistPosition: number }) | null {
+    if (!args.freesASlot) return null;
+    if (args.inCountWithoutThisPlayer >= args.maxPlayers) return null;
+    return this.#longestWaitingCandidate(args.waitlisted);
+  }
+
+  /**
    * Find the longest-waiting player among rows waitlisted on this fixture
    * (BR-6, BR-7).
    *
@@ -418,12 +465,10 @@ export class FixtureCapacity extends DurableObject<Bindings> {
    * restarts at 1 on an empty waitlist. What survives all of that is that the
    * lowest position among players *currently* waitlisted is always the
    * earliest arrival — never the first row returned or the smallest array
-   * index. Both `setResponse` (BR-7) and `withdrawMember` (BR-3) fill a freed
-   * slot through this one path so that a future change to the rule cannot be
-   * applied to one call site and missed on the other.
+   * index.
    *
-   * Callers gate the call on whether a slot was actually freed; this method
-   * only picks who takes it.
+   * `#slotTakenBy` decides *whether* a slot is going spare; this method only
+   * picks who takes it, and is called from there alone.
    */
   #longestWaitingCandidate<T extends { waitlistPosition: number | null }>(
     waitlisted: readonly T[],

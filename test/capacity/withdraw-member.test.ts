@@ -191,3 +191,101 @@ describe("FixtureCapacity.withdrawMember", () => {
     expect(await rowFor(other, playerId)).toMatchObject({ status: "in" });
   });
 });
+
+/**
+ * An organiser can put a fixture over its limit deliberately (BR-8). While it
+ * is over there is no spare place to hand on, so a removal returns the fixture
+ * towards its limit rather than promoting — including the removal of the very
+ * guest who was squeezed in, which must be undoable.
+ */
+describe("FixtureCapacity.withdrawMember while over capacity", () => {
+  beforeEach(async () => {
+    await resetDatabase();
+    await insertPlayer(testDb(), { id: OWNER });
+  });
+
+  it("promotes nobody when removing a member only brings the fixture back to its limit", async () => {
+    const db = testDb();
+    const fixtureId = await insertFixture(db, await insertGame(db), {
+      lifecycle: "open",
+      maxPlayers: 2,
+      inCount: 3,
+      waitlistCount: 1,
+    });
+    const leaving = await insertPlayer(db);
+    const held = [await insertPlayer(db), await insertPlayer(db)];
+    const waiter = await insertPlayer(db);
+    await insertResponse(db, fixtureId, leaving, { status: "in" });
+    for (const playerId of held) await insertResponse(db, fixtureId, playerId, { status: "in" });
+    await insertResponse(db, fixtureId, waiter, { status: "waitlisted", waitlistPosition: 1 });
+
+    const outcome = await withdraw(fixtureId, leaving);
+
+    expect(outcome).toMatchObject({ kind: "removed", previousStatus: "in", inCount: 2 });
+    expect("promoted" in outcome && outcome.promoted).toBeFalsy();
+    expect(await rowFor(fixtureId, waiter)).toMatchObject({ status: "waitlisted", waitlistPosition: 1 });
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(fixture!.inCount).toBe(2);
+    expect(fixture!.waitlistCount).toBe(1);
+  });
+
+  it("lets an organiser undo a guest they added over capacity", async () => {
+    const db = testDb();
+    const fixtureId = await insertFixture(db, await insertGame(db), {
+      lifecycle: "open",
+      maxPlayers: 2,
+      inCount: 2,
+      waitlistCount: 1,
+    });
+    const held = [await insertPlayer(db), await insertPlayer(db)];
+    const waiter = await insertPlayer(db);
+    for (const playerId of held) await insertResponse(db, fixtureId, playerId, { status: "in" });
+    await insertResponse(db, fixtureId, waiter, { status: "waitlisted", waitlistPosition: 1 });
+
+    const added = await env.FIXTURE_CAPACITY.getByName(fixtureId).addGuest({
+      name: "Sam",
+      actorPlayerId: OWNER,
+      whenFull: "exceed",
+      now: NOW.getTime(),
+    });
+    expect(added).toMatchObject({ kind: "added", inCount: 3 });
+    const guestId = added.kind === "added" ? added.playerId : "";
+
+    const outcome = await withdraw(fixtureId, guestId);
+
+    // Removing the guest gives the place back to the fixture, not to the
+    // waitlist — otherwise the override could never be undone.
+    expect(outcome).toMatchObject({ kind: "removed", previousStatus: "in", inCount: 2 });
+    expect("promoted" in outcome && outcome.promoted).toBeFalsy();
+    expect(await rowFor(fixtureId, waiter)).toMatchObject({ status: "waitlisted", waitlistPosition: 1 });
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(fixture!.inCount).toBe(2);
+  });
+
+  it("still promotes when the fixture was exactly at its limit", async () => {
+    const db = testDb();
+    const fixtureId = await insertFixture(db, await insertGame(db), {
+      lifecycle: "open",
+      maxPlayers: 2,
+      inCount: 2,
+      waitlistCount: 1,
+    });
+    const leaving = await insertPlayer(db);
+    const other = await insertPlayer(db);
+    const waiter = await insertPlayer(db);
+    await insertResponse(db, fixtureId, leaving, { status: "in" });
+    await insertResponse(db, fixtureId, other, { status: "in" });
+    await insertResponse(db, fixtureId, waiter, { status: "waitlisted", waitlistPosition: 1 });
+
+    const outcome = await withdraw(fixtureId, leaving);
+
+    // The gate narrows BR-7 to over-capacity fixtures only; at the limit the
+    // longest waiting player takes the freed place exactly as before.
+    expect(outcome).toMatchObject({
+      kind: "removed",
+      inCount: 2,
+      promoted: { playerId: waiter, previousWaitlistPosition: 1 },
+    });
+    expect(await rowFor(fixtureId, waiter)).toMatchObject({ status: "in", waitlistPosition: null });
+  });
+});
