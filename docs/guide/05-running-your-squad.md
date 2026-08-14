@@ -90,11 +90,10 @@ them, exactly as if they had tapped the button themselves.
 ![A player marked in by the organiser, with the attribution line naming who did it](images/owner-marked-in.png)
 
 Once you do, a line appears under their name saying who marked them in — here,
-Nadia Okafor never answered her own reminder, and it now says **marked in by
+Nadia Okafor never answered their own reminder, and it now says **marked in by
 jamie**. It shows on the player's page too, not just yours: if they open their
 own reminder link later, they'll see that somebody else answered for them, and
-who.
-Nothing is hidden from the player whose answer it is.
+who. Nothing is hidden from the player whose answer it is.
 
 ## Adding a guest
 
