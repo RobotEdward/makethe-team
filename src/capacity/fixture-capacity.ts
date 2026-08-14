@@ -1,10 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { getDb, type Db } from "../db/client.js";
-import { fixtures, responses } from "../db/schema.js";
+import { fixtures, players, responses } from "../db/schema.js";
 import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
 import type {
+  AddGuestInput,
+  AddGuestOutcome,
   SetResponseInput,
   SetResponseOutcome,
   WaitlistPromotion,
@@ -80,7 +82,14 @@ export class FixtureCapacity extends DurableObject<Bindings> {
 
     // A row exists for every player eligible when the fixture opened. No row
     // means this player was not in the squad at that moment (BR-2).
-    const existing = all.find((r) => r.playerId === input.playerId);
+    //
+    // A `withdrawn` row counts as no row: it is the marker that an organiser
+    // took this player out of the fixture (BR-3), and someone taken out is no
+    // longer eligible to answer. Without this, an old response link still in
+    // the removed player's inbox — or an organiser's own mark-in — would put
+    // them straight back into the squad, undoing the removal with no record
+    // that it had been undone.
+    const existing = all.find((r) => r.playerId === input.playerId && r.status !== "withdrawn");
     if (!existing) return { kind: "rejected", reason: "not-eligible" };
 
     const others = all.filter((r) => r.id !== existing.id);
@@ -100,7 +109,8 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     } else if (existing.status === "waitlisted") {
       // Already waitlisted and still full. Keep the original position — BR-6
       // fixes order by arrival, so re-tapping must not move them to the back.
-      if (inCountWithoutThisPlayer >= fixture.maxPlayers) {
+      if (inCountWithoutThisPlayer >= fixture.maxPlayers && input.whenFull !== "exceed") {
+        if (input.whenFull === "refuse") return { kind: "rejected", reason: "would-exceed-capacity" };
         return {
           kind: "waitlisted",
           waitlistPosition: existing.waitlistPosition ?? 1,
@@ -117,14 +127,26 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       // *without* them tapping; it does not apply here.
       status = "in";
     } else if (inCountWithoutThisPlayer >= fixture.maxPlayers) {
-      // Full (BR-4). Appended to the end of the waitlist (BR-5, BR-6) and told
-      // so explicitly — never silently.
-      const highest = waitlistedWithoutThisPlayer.reduce(
-        (max, r) => Math.max(max, r.waitlistPosition ?? 0),
-        0,
-      );
-      status = "waitlisted";
-      waitlistPosition = highest + 1;
+      // Full. What happens now is the caller's declared policy, decided in
+      // here rather than in the route because a route-level capacity check
+      // would be a genuine TOCTOU race against a concurrent tap — this branch
+      // runs under `blockConcurrencyWhile`, so the decision is atomic with the
+      // count it is deciding against.
+      if (input.whenFull === "refuse") return { kind: "rejected", reason: "would-exceed-capacity" };
+      if (input.whenFull === "exceed") {
+        // BR-8. The fixture goes over capacity, and `fixtureView` derives the
+        // `over_capacity` flag from the counts — nothing is stored to say so.
+        status = "in";
+      } else {
+        // BR-4/BR-5/BR-6: appended to the end of the waitlist and told so
+        // explicitly, never silently.
+        const highest = waitlistedWithoutThisPlayer.reduce(
+          (max, r) => Math.max(max, r.waitlistPosition ?? 0),
+          0,
+        );
+        status = "waitlisted";
+        waitlistPosition = highest + 1;
+      }
     } else {
       status = "in";
     }
@@ -143,14 +165,17 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // frees a slot exactly as `out` does, and this condition should already be
     // right on the day that status is first written.
     //
-    // No separate "was the fixture full" guard is needed here:
-    // `givesUpASlot` already implies `existing.status` was `in` (or, once
-    // `withdrawn` is written, held a slot some other way), which means
-    // `inCountWithoutThisPlayer` was `inCount - 1` — under `maxPlayers` only if
-    // the fixture had somehow gone over capacity, a data-corruption case this
-    // method does not otherwise guard against.
+    // Freeing a slot is necessary but not sufficient — an over-capacity
+    // fixture has no slot to give away, so `#slotTakenBy` also checks the
+    // fixture is back under `max_players` before handing it on. See that
+    // method for why.
     const givesUpASlot = occupiesSlot(existing.status) && !occupiesSlot(status);
-    const promotedRow = givesUpASlot ? this.#longestWaitingCandidate(waitlistedWithoutThisPlayer) : null;
+    const promotedRow = this.#slotTakenBy({
+      freesASlot: givesUpASlot,
+      inCountWithoutThisPlayer,
+      maxPlayers: fixture.maxPlayers,
+      waitlisted: waitlistedWithoutThisPlayer,
+    });
 
     // Exactly one player can be promoted here: this response releases at most
     // one slot. Anything that frees several — a cancellation, a squad change —
@@ -271,9 +296,16 @@ export class FixtureCapacity extends DurableObject<Bindings> {
 
     // Only an `in` row held a slot, so only an `in` row can free one (BR-7).
     // `occupiesSlot` rather than a literal `=== "in"`, to stay in step with
-    // the one definition of what holds a slot.
-    const freesASlot = occupiesSlot(previousStatus);
-    const promotedRow = freesASlot ? this.#longestWaitingCandidate(waitlistedWithoutThisPlayer) : null;
+    // the one definition of what holds a slot. `#slotTakenBy` then applies the
+    // same capacity gate `setResponse` does — removing someone an organiser
+    // squeezed in past the limit puts the fixture back at its limit rather
+    // than passing the extra place to the waitlist.
+    const promotedRow = this.#slotTakenBy({
+      freesASlot: occupiesSlot(previousStatus),
+      inCountWithoutThisPlayer,
+      maxPlayers: fixture.maxPlayers,
+      waitlisted: waitlistedWithoutThisPlayer,
+    });
 
     const inCount = inCountWithoutThisPlayer + (promotedRow ? 1 : 0);
     const waitlistCount = waitlistedWithoutThisPlayer.length - (promotedRow ? 1 : 0);
@@ -323,6 +355,107 @@ export class FixtureCapacity extends DurableObject<Bindings> {
   }
 
   /**
+   * Add a one-off guest to this fixture (J6b §5).
+   *
+   * **Why the `players` row is created in here.** It stretches this object's
+   * "capacity only" remit, and both alternatives are worse. Creating the
+   * person in the route first means a refused over-capacity add leaves an
+   * orphaned human being in the database; pre-checking capacity in the route
+   * to avoid that is exactly the TOCTOU race `whenFull` exists to close. The
+   * guest and the slot they occupy are one fact, so they are one batch.
+   *
+   * `blockConcurrencyWhile` is load-bearing here for the same reason it is on
+   * `setResponse` — read that method's comment.
+   */
+  async addGuest(input: AddGuestInput): Promise<AddGuestOutcome> {
+    return this.ctx.blockConcurrencyWhile(async () => this.#addGuestLocked(input));
+  }
+
+  async #addGuestLocked(input: AddGuestInput): Promise<AddGuestOutcome> {
+    // From the object's own identity, never from an argument — see
+    // `#setResponseLocked` for the full reasoning.
+    const fixtureId = this.ctx.id.name;
+    if (fixtureId === undefined) {
+      throw new Error(
+        "FixtureCapacity was addressed by unique id, not by fixture id — every caller must use getByName(fixtureId)",
+      );
+    }
+
+    const db = getDb(this.env.DB);
+    const now = new Date(input.now);
+
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    if (!fixture) return { kind: "rejected", reason: "fixture-not-found" };
+    if (fixture.lifecycle !== "open") return { kind: "rejected", reason: "fixture-not-open" };
+
+    const all = await db
+      .select({ status: responses.status })
+      .from(responses)
+      .where(eq(responses.fixtureId, fixtureId));
+    const currentIn = all.filter((row) => row.status === "in").length;
+
+    if (currentIn >= fixture.maxPlayers && input.whenFull === "refuse") {
+      return { kind: "rejected", reason: "would-exceed-capacity" };
+    }
+
+    const playerId = crypto.randomUUID();
+    const inCount = currentIn + 1;
+
+    // One batch. The person and their slot commit together or not at all —
+    // which is what makes the refusal above leave nothing behind.
+    await db.batch([
+      db.insert(players).values({ id: playerId, name: input.name, email: null, isGuest: true }),
+      db.insert(responses).values({
+        id: crypto.randomUUID(),
+        fixtureId,
+        playerId,
+        status: "in",
+        respondedAt: now,
+        setByPlayerId: input.actorPlayerId,
+        source: "owner",
+      }),
+      db.update(fixtures).set({ inCount }).where(eq(fixtures.id, fixtureId)),
+    ]);
+
+    return {
+      kind: "added",
+      playerId,
+      inCount,
+      spotsLeft: Math.max(0, fixture.maxPlayers - inCount),
+    };
+  }
+
+  /**
+   * Who, if anybody, takes the slot this write gives up (BR-7) — the **one**
+   * place `setResponse` and `withdrawMember` decide it, so the rule cannot be
+   * changed on one path and missed on the other.
+   *
+   * Two conditions, both required. A slot has to have been given up, and the
+   * fixture has to be back **under** `max_players` once this write lands
+   * (`inCountWithoutThisPlayer`, since the row being written no longer counts
+   * and the promotion is what would push the count back up).
+   *
+   * The capacity half used to be treated as implied by the first: a row that
+   * gave up a slot meant the count had been one higher, so it could only be
+   * under the limit already. Going over capacity is now a legitimate state an
+   * organiser can ask for deliberately, so that no longer holds. Without this
+   * check an over-capacity fixture never returns to its limit — every dropout
+   * hands the extra place to whoever is waiting instead — and a player would
+   * be put in over capacity by the system, off another player's tap, with no
+   * organiser deciding anything.
+   */
+  #slotTakenBy<T extends { waitlistPosition: number | null }>(args: {
+    freesASlot: boolean;
+    inCountWithoutThisPlayer: number;
+    maxPlayers: number;
+    waitlisted: readonly T[];
+  }): (T & { waitlistPosition: number }) | null {
+    if (!args.freesASlot) return null;
+    if (args.inCountWithoutThisPlayer >= args.maxPlayers) return null;
+    return this.#longestWaitingCandidate(args.waitlisted);
+  }
+
+  /**
    * Find the longest-waiting player among rows waitlisted on this fixture
    * (BR-6, BR-7).
    *
@@ -332,12 +465,10 @@ export class FixtureCapacity extends DurableObject<Bindings> {
    * restarts at 1 on an empty waitlist. What survives all of that is that the
    * lowest position among players *currently* waitlisted is always the
    * earliest arrival — never the first row returned or the smallest array
-   * index. Both `setResponse` (BR-7) and `withdrawMember` (BR-3) fill a freed
-   * slot through this one path so that a future change to the rule cannot be
-   * applied to one call site and missed on the other.
+   * index.
    *
-   * Callers gate the call on whether a slot was actually freed; this method
-   * only picks who takes it.
+   * `#slotTakenBy` decides *whether* a slot is going spare; this method only
+   * picks who takes it, and is called from there alone.
    */
   #longestWaitingCandidate<T extends { waitlistPosition: number | null }>(
     waitlisted: readonly T[],

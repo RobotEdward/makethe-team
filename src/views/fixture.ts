@@ -3,6 +3,7 @@ import type { SquadMember } from "../db/queries.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
+import { attribution, ordinal, squadStatusLabel } from "./squad-row.js";
 import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 /**
@@ -51,21 +52,6 @@ const STATUS_LABEL: Record<FixtureView["status"], string> = {
   cancelled: "Cancelled",
   played: "Played",
 };
-
-function ordinal(n: number): string {
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
 
 function viewerHeadline(
   viewer: FixturePageOptions["viewer"],
@@ -148,28 +134,13 @@ function viewerHeadlineClosed(
   }
 }
 
-function squadStatusLabel(member: SquadMember): string {
-  switch (member.status) {
-    case "in":
-      return "In";
-    case "waitlisted":
-      return member.waitlistRank === null ? "Waitlisted" : `Waitlisted (${ordinal(member.waitlistRank)})`;
-    case "pending":
-      return "Not yet responded";
-    case "out":
-      return "Can't make it";
-    case "withdrawn":
-      return "Withdrawn";
-  }
-}
-
 function renderSquadList(squad: readonly SquadMember[]): string {
   if (squad.length === 0) return `<p class="muted">No players yet.</p>`;
 
   const items = squad
     .map(
       (member) =>
-        `<li><span class="name">${escapeHtml(member.name)}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span></li>`,
+        `<li><span class="name">${escapeHtml(member.name)}${member.isGuest ? " (guest)" : ""}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}</li>`,
     )
     .join("");
 
@@ -179,6 +150,17 @@ function renderSquadList(squad: readonly SquadMember[]): string {
 function renderNudge(view: FixtureView): string {
   if (!view.flags.includes("uneven")) return "";
   return `<p class="nudge">The squad has an odd number of players in — one more would even it up.</p>`;
+}
+
+/**
+ * BR-8's required visibility, on the page a player actually reads. An owner
+ * has deliberately gone past `max_players`, and a player looking at a squad
+ * longer than the game's own limit deserves to be told why rather than left
+ * to count.
+ */
+function renderOverCapacity(view: FixtureView): string {
+  if (!view.flags.includes("over_capacity")) return "";
+  return `<p class="nudge">There are more players in than there are places — the organiser has added someone over the limit.</p>`;
 }
 
 /**
@@ -254,6 +236,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
     ${renderStatusLine(view)}
     ${renderNudge(view)}
+    ${renderOverCapacity(view)}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options)}
     <h2>Squad</h2>
     ${renderSquadList(squad)}

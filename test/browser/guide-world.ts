@@ -126,6 +126,23 @@ export interface GuideWorld {
    * chapter is explaining.
    */
   removablePlayerId: string;
+  /**
+   * A second, small game — not the Meadow Park Kickabout — built purely to
+   * demonstrate an owner's mark-in and guest-add (Task 8's three new shots).
+   * It cannot reuse the main fixture: every other chapter has already
+   * committed exact numbers to that fixture (chapter 1's "ten people in",
+   * chapter 3's "0 spots left" and Ade Sowande shown as not yet responded,
+   * chapter 6's headcount on the cancellation page), and the member who
+   * never answers there is *the* Ade Sowande those chapters name. Marking
+   * him in here would quietly falsify all of them on the next capture. A
+   * second game keeps this section's own screenshots honest without
+   * touching a number any other chapter depends on. Its kickoff is
+   * deliberately later in the day than the main game's (see
+   * `buildOverrideDemo`), so it never displaces the Meadow Park fixture from
+   * the front of the dashboard.
+   */
+  demoGameId: string;
+  demoFixtureId: string;
 }
 
 export async function buildGuideWorld(page: Page, browser: Browser): Promise<GuideWorld> {
@@ -254,6 +271,8 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     );
   }
 
+  const demo = await buildOverrideDemo(page, browser, slot);
+
   return {
     gameId,
     fixtureId: fixture.id,
@@ -263,6 +282,8 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     outToken,
     pendingToken: await tokenFor(pendingEmail),
     removablePlayerId: idFor(outEmail),
+    demoGameId: demo.gameId,
+    demoFixtureId: demo.fixtureId,
     cancelToken: await signCancelToken(
       {
         ownerPlayerId: idFor(GUIDE_ORGANISER),
@@ -272,6 +293,132 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
       CANCEL_SECRET,
     ),
   };
+}
+
+/**
+ * A second, small game solely for Task 8's owner-override screenshots — see
+ * `GuideWorld.demoGameId`'s comment for why the main fixture can't carry
+ * this.
+ *
+ * Filling the squad to capacity beforehand uses the same signed-token POSTs
+ * `buildGuideWorld` uses for the main squad: those are ordinary self-answers,
+ * not the organiser action being demonstrated. From the point the squad is
+ * full onward, every write goes through the owner fixture page's own forms —
+ * not the API — so the three screenshots depict a state the app itself
+ * produced.
+ */
+async function buildOverrideDemo(
+  page: Page,
+  browser: Browser,
+  slot: { weekday: string; kickoffTime: string },
+): Promise<{ gameId: string; fixtureId: string }> {
+  const DEMO_SQUAD = [
+    { name: "Callum Reyes", email: "callum@example.test" },
+    { name: "Freya Lindqvist", email: "freya@example.test" },
+    { name: "Theo Marchetti", email: "theo@example.test" },
+    // Never answers, on purpose: the mark-in below targets her precisely
+    // because she genuinely never responded, the same reason `buildGuideWorld`
+    // leaves Ade Sowande alone for chapter 3.
+    { name: "Nadia Okafor", email: "nadia@example.test" },
+  ] as const;
+  const neverAnswers = DEMO_SQUAD[3];
+
+  await page.goto("/g/new");
+  await page.fill('input[name="name"]', "Riverside Turf");
+  await page.fill('input[name="venueName"]', "Riverside Astro");
+  await page.fill('input[name="venueAddress"]', "9 Mill Lane");
+  await page.selectOption('select[name="weekday"]', slot.weekday);
+  // An hour after the main game's kickoff, same weekday: both fixtures share
+  // the same reminder instant — 09:00 the day before, independent of the
+  // kickoff hour (see `guideSlot`) — so the same cron sweep opens both, and
+  // this fixture always sorts after the Meadow Park one on the dashboard
+  // (`nth=0` there depends on that ordering).
+  await page.fill('input[name="kickoffTime"]', "20:00");
+  await page.fill('input[name="minPlayers"]', "2");
+  await page.fill('input[name="maxPlayers"]', "4");
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/\/g\/[^/]+$/);
+
+  const gameId = new URL(page.url()).pathname.split("/")[2]!;
+  const inviteToken = (await page.inputValue("#invite-url")).split("/j/")[1]!;
+
+  for (const person of DEMO_SQUAD) {
+    const context = await browser.newContext();
+    const joinerPage = await context.newPage();
+    await joinerPage.goto(`/j/${inviteToken}`);
+    await joinerPage.fill('input[name="name"]', person.name);
+    await joinerPage.fill('input[name="email"]', person.email);
+    await joinerPage.click('button[type="submit"]');
+    await joinerPage.waitForLoadState("networkidle");
+    await context.close();
+  }
+
+  // The same two sweeps `buildGuideWorld` already ran for the main game:
+  // materialisation and opening both walk every game, so running them again
+  // is what gets this one its first fixture too.
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=15+3+*+*+*`);
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=0+*+*+*+*`);
+
+  const [fixture] = await query<{ id: string }>(
+    `SELECT id FROM fixtures WHERE game_id = '${gameId}'
+       AND lifecycle = 'open' ORDER BY kicks_off_at LIMIT 1`,
+  );
+  if (!fixture) throw new Error(`buildOverrideDemo: game ${gameId} has no open fixture`);
+
+  const players = await query<{ id: string; email: string }>(
+    `SELECT id, email FROM players WHERE email LIKE '%@example.test'`,
+  );
+  const idFor = (email: string): string => {
+    const found = players.find((p) => p.email === email);
+    if (!found) throw new Error(`buildOverrideDemo: no player row for ${email}`);
+    return found.id;
+  };
+
+  // The organiser plus the first three answer "in", filling the cap of four
+  // exactly. `neverAnswers` gets no POST at all.
+  const answering = [GUIDE_ORGANISER, ...DEMO_SQUAD.slice(0, 3).map((p) => p.email)];
+  for (const email of answering) {
+    const token = await signResponseToken(
+      { playerId: idFor(email), fixtureId: fixture.id, expiresAt: Date.now() + 7 * 864e5 },
+      RESPONSE_SECRET,
+    );
+    await page.request.post(`${BASE_URL}/r/${token}`, {
+      form: { intent: "in" },
+      headers: { origin: BASE_URL },
+    });
+  }
+
+  const counts = await query<{ status: string; n: number }>(
+    `SELECT status, COUNT(*) AS n FROM responses WHERE fixture_id = '${fixture.id}' GROUP BY status`,
+  );
+  const inCount = counts.find((row) => row.status === "in")?.n ?? 0;
+  if (inCount !== 4) {
+    throw new Error(
+      `buildOverrideDemo: expected 4 in before the override, got ${inCount}. The ` +
+        `mark-in below depends on the squad already being full.`,
+    );
+  }
+
+  await page.goto(`/g/${gameId}/f/${fixture.id}`);
+
+  // The mark-in, through the owner's own row controls. The squad is already
+  // full, so this refuses with BR-8's over-capacity confirmation (§4.2)
+  // rather than silently waitlisting.
+  const neverAnswersRow = page.locator("ul.squad li", { hasText: neverAnswers.name });
+  await neverAnswersRow.getByRole("button", { name: "Mark in" }).click();
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: "Add them anyway" }).click();
+  await page.waitForLoadState("networkidle");
+
+  // The guest add, through the same page's own form. Now five in against a
+  // cap of four, so it needs the same confirmation.
+  await page.fill("#guest-name", "Jono Fielding");
+  await page.getByRole("button", { name: "Add guest" }).click();
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("button", { name: "Add them anyway" }).click();
+  await page.waitForLoadState("networkidle");
+
+  return { gameId, fixtureId: fixture.id };
 }
 
 /** The squad, for the guide's prose and its tests. */

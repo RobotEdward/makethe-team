@@ -31,6 +31,7 @@ const ROUTE_TO_ID = new Map<string, string>([
   [NEW_GAME_PATH, "new-game"],
   ["/g/:id", "game-overview"],
   ["/g/:id/edit", "edit-game"],
+  ["/g/:id/f/:fixtureId", "owner-fixture"],
   ["/g/:id/squad/:playerId/remove", "remove-member"],
   ["/j/:token", "join"],
   ["/r/:token", "respond"],

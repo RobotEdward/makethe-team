@@ -102,6 +102,7 @@ export const SQUAD_STYLES_CSS = `
   .squad .status { font-size: 0.85rem; color: var(--mut); white-space: nowrap; }
   .squad .status-in { color: var(--accent); font-weight: 600; }
   .squad .status-waitlisted { color: var(--warn); font-weight: 600; }
+  .squad .set-by { display: block; font-size: 0.85rem; color: var(--mut); }
 `;
 
 /**

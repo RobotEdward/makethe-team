@@ -11,6 +11,24 @@ export interface SetResponseInput {
   source: ResponseSource;
   /** Passed in rather than read from the clock — domain code stays testable. */
   now: number;
+  /**
+   * What to do when the fixture is already at `max_players` and this response
+   * would take a slot.
+   *
+   * `waitlist` is BR-5: a player answering for themselves joins the waitlist.
+   * `refuse` writes nothing and returns `would-exceed-capacity` — an owner's
+   * mark-in, so that BR-8's override is a second, explicit act rather than a
+   * silent consequence of the first. `exceed` **is** that second act: the
+   * player goes `in` regardless of `max_players`.
+   *
+   * Required rather than defaulted on purpose. A default is exactly what lets
+   * a future caller inherit a capacity policy it never chose; requiring it
+   * makes the compiler name every call site.
+   *
+   * It governs only *taking* a slot. An `out` intent frees one and is never
+   * refused.
+   */
+  whenFull: "waitlist" | "refuse" | "exceed";
 }
 
 /**
@@ -69,7 +87,10 @@ export type SetResponseOutcome =
    * amendment 5.
    */
   | { kind: "waitlisted"; waitlistPosition: number; inCount: number }
-  | { kind: "rejected"; reason: "fixture-not-open" | "not-eligible" | "fixture-not-found" };
+  | {
+      kind: "rejected";
+      reason: "fixture-not-open" | "not-eligible" | "fixture-not-found" | "would-exceed-capacity";
+    };
 
 /** What an owner's removal of a squad member does to one fixture (BR-3, J6a §3.2). */
 export interface WithdrawMemberInput {
@@ -99,3 +120,23 @@ export type WithdrawMemberOutcome =
     }
   /** Nothing to do. Not an error: a removal walks every open fixture, and most hold no row for the player. */
   | { kind: "no-op"; reason: "no-response-row" | "fixture-not-open" | "fixture-not-found" };
+
+/** An Owner adding a one-off guest to a single fixture (J6b §5). */
+export interface AddGuestInput {
+  /** Already parsed and trimmed by `parseGuestName`. */
+  name: string;
+  /** The owner doing it. Recorded on the response row (BR-27). */
+  actorPlayerId: string;
+  /**
+   * A guest never waitlists — they have no email address, so a guest who
+   * landed on a waitlist would be a person nobody could ever tell they got
+   * in. So `refuse`, and then `exceed` once the owner has confirmed.
+   */
+  whenFull: "refuse" | "exceed";
+  now: number;
+}
+
+export type AddGuestOutcome =
+  | { kind: "added"; playerId: string; inCount: number; spotsLeft: number }
+  /** No `promoted` variant: adding a guest only ever takes a slot, never frees one. */
+  | { kind: "rejected"; reason: "would-exceed-capacity" | "fixture-not-open" | "fixture-not-found" };

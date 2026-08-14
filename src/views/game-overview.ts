@@ -1,4 +1,4 @@
-import { gameEditPath, joinPath, memberRemovePath, memberRolePath } from "../auth/paths.js";
+import { gameEditPath, joinPath, memberRemovePath, memberRolePath, ownerFixturePath } from "../auth/paths.js";
 import { oddMaxWarning } from "../domain/game-form.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
@@ -77,8 +77,9 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     .join("");
 
   const fixtureItems = upcoming
-    .map((fixture) =>
-      `<li>${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))} — ${escapeHtml(fixture.lifecycle)}, ${fixture.inCount} in</li>`,
+    .map(
+      (fixture) =>
+        `<li><a href="${escapeHtml(ownerFixturePath(gameId, fixture.id))}">${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))}</a> — ${escapeHtml(fixture.lifecycle)}, ${fixture.inCount} in</li>`,
     )
     .join("");
 

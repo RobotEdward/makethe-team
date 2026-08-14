@@ -753,6 +753,14 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } }),
       );
 
+      // The owner's one-fixture page (J6b Task 4). Same owner membership and
+      // fixture as the captures above.
+      await capture(
+        "owner fixture",
+        /Back to the game/,
+        new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } }),
+      );
+
       // The squad-removal confirmation (Task 9, J6a). A second member is added
       // to the squad so this captures a removable member's own page, rather
       // than the game's only (organiser) member.
@@ -882,6 +890,7 @@ describe("no password field anywhere (TR-16)", () => {
         "game form",
         "game overview",
         "game edit",
+        "owner fixture",
         "squad remove confirm",
         "invite",
         "join outcome",
@@ -1021,6 +1030,26 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "origin), a plain-text 404 (entitlement failure) or a 303 redirect " +
       "(src/routes/games.ts); its own status-code coverage lives in " +
       "test/routes/squad.test.ts.",
+    "POST /g/:id/f/:fixtureId/response/:playerId":
+      "renders through the same renderOwnerFixturePage as GET /g/:id/f/:fixtureId on its " +
+      "two HTML-returning branches (BR-8's over-capacity confirmation and the " +
+      "fixture-not-open refusal) — no template of its own that could carry an " +
+      "un-enumerated script — and its other branches are a plain-text 400 (bad intent), " +
+      "a plain-text 403 (wrong origin), a plain-text 404 (entitlement failure) or a 303 " +
+      "redirect (src/routes/games.ts); its own status-code coverage lives in " +
+      "test/routes/owner-fixture.test.ts.",
+    "POST /g/:id/f/:fixtureId/guest":
+      "renders through the same renderOwnerFixturePage as GET /g/:id/f/:fixtureId on its " +
+      "two HTML-returning branches (BR-8's over-capacity confirmation and a rejected name, " +
+      "or the fixture-not-open refusal) — no template of its own that could carry an " +
+      "un-enumerated script — and its other branches are a plain-text 403 (wrong origin), " +
+      "a plain-text 404 (entitlement failure) or a 303 redirect (src/routes/games.ts); its " +
+      "own status-code coverage lives in test/routes/owner-fixture.test.ts.",
+    "POST /g/:id/f/:fixtureId/guest/:playerId/remove":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), a plain-text " +
+      "404 (entitlement failure, or a non-guest player) or a 303 redirect only " +
+      "(src/routes/games.ts); its own status-code coverage lives in " +
+      "test/routes/owner-fixture.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
@@ -1039,6 +1068,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",
     "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
+    "GET /g/:id/f/:fixtureId": "owner fixture",
     "GET /j/:token": "invite",
     "POST /j/:token": "join outcome",
   };

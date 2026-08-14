@@ -117,3 +117,29 @@ export function memberRolePath(gameId: string, playerId: string): string {
 export function memberRemovePath(gameId: string, playerId: string): string {
   return `/g/${gameId}/squad/${playerId}/remove`;
 }
+
+/**
+ * One fixture of a game, seen by its owner (J6b §3).
+ *
+ * `/f/` rather than `/fixtures/` to keep a link that lands in a group chat
+ * short; nested under the game because the entitlement check is the game's,
+ * and a fixture id alone would invite a route that forgets to scope it.
+ */
+export function ownerFixturePath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}`;
+}
+
+/** Where an owner's mark-in/mark-out for one player posts (J6b §4). */
+export function ownerResponsePath(gameId: string, fixtureId: string, playerId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/response/${playerId}`;
+}
+
+/** Where the add-a-guest form posts (J6b §5). */
+export function ownerGuestPath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/guest`;
+}
+
+/** Where removing a guest posts (J6b §5). */
+export function ownerGuestRemovePath(gameId: string, fixtureId: string, playerId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/guest/${playerId}/remove`;
+}

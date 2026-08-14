@@ -7,8 +7,24 @@ const BASE = {
   kicksOffAtLocal: "Thursday 13 August, 19:00",
   view: { status: "open" as const, flags: [], spotsLeft: 5, needsOwnerAttention: false },
   squad: [
-    { playerId: "p1", name: "Edward Cooper", status: "in" as const, waitlistRank: null },
-    { playerId: "p2", name: "Sam Okonjo", status: "pending" as const, waitlistRank: null },
+    {
+      playerId: "p1",
+      name: "Edward Cooper",
+      status: "in" as const,
+      waitlistRank: null,
+      setBy: null,
+      source: "token" as const,
+      isGuest: false,
+    },
+    {
+      playerId: "p2",
+      name: "Sam Okonjo",
+      status: "pending" as const,
+      waitlistRank: null,
+      setBy: null,
+      source: "token" as const,
+      isGuest: false,
+    },
   ],
   viewer: { playerId: "p2", status: "pending" as const },
   token: "tok",
@@ -32,7 +48,17 @@ describe("fixture page", () => {
   it("escapes player names", () => {
     const html = renderFixturePage({
       ...BASE,
-      squad: [{ playerId: "x", name: '<script>alert("x")</script>', status: "in", waitlistRank: null }],
+      squad: [
+        {
+          playerId: "x",
+          name: '<script>alert("x")</script>',
+          status: "in",
+          waitlistRank: null,
+          setBy: null,
+          source: "token",
+          isGuest: false,
+        },
+      ],
     });
     expect(html).not.toContain("<script>alert");
     expect(html).toContain("&lt;script&gt;");
@@ -222,5 +248,111 @@ describe("fixture page", () => {
       });
       expect(html).not.toContain('class="viewer-headline"');
     });
+  });
+
+  it("names the organiser who answered for a player", () => {
+    const html = renderFixturePage({
+      ...BASE,
+      squad: [
+        {
+          playerId: "p-1",
+          name: "Priya Raman",
+          status: "in",
+          waitlistRank: null,
+          setBy: { playerId: "o-1", name: "Jamie Alderton" },
+          source: "owner",
+          isGuest: false,
+        },
+      ],
+    });
+
+    expect(html).toContain("marked in by Jamie Alderton");
+  });
+
+  it("says nothing about who set a self-response", () => {
+    const html = renderFixturePage({
+      ...BASE,
+      squad: [
+        {
+          playerId: "p-1",
+          name: "Priya Raman",
+          status: "in",
+          waitlistRank: null,
+          setBy: null,
+          source: "token",
+          isGuest: false,
+        },
+      ],
+    });
+
+    expect(html).not.toContain("marked in by");
+  });
+
+  it("words an owner-set waitlisted row as marked in, not marked out", () => {
+    const html = renderFixturePage({
+      ...BASE,
+      squad: [
+        {
+          playerId: "p-1",
+          name: "Priya Raman",
+          status: "waitlisted",
+          waitlistRank: 1,
+          setBy: { playerId: "o-1", name: "Jamie Alderton" },
+          source: "owner",
+          isGuest: false,
+        },
+      ],
+    });
+
+    expect(html).toContain("marked in by");
+    expect(html).not.toContain("marked out by");
+  });
+
+  it("words an owner-set out as marked out", () => {
+    const html = renderFixturePage({
+      ...BASE,
+      squad: [
+        {
+          playerId: "p-1",
+          name: "Priya Raman",
+          status: "out",
+          waitlistRank: null,
+          setBy: { playerId: "o-1", name: "Jamie Alderton" },
+          source: "owner",
+          isGuest: false,
+        },
+      ],
+    });
+
+    expect(html).toContain("marked out by Jamie Alderton");
+  });
+
+  it("escapes a setter's name", () => {
+    const html = renderFixturePage({
+      ...BASE,
+      squad: [
+        {
+          playerId: "p-1",
+          name: "Priya Raman",
+          status: "in",
+          waitlistRank: null,
+          setBy: { playerId: "o-1", name: "<script>x</script>" },
+          source: "owner",
+          isGuest: false,
+        },
+      ],
+    });
+
+    expect(html).not.toContain("<script>x</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("says a fixture is over capacity", () => {
+    const html = renderFixturePage({
+      ...BASE,
+      view: { status: "confirmed", flags: ["over_capacity"], spotsLeft: 0, needsOwnerAttention: false },
+    });
+
+    expect(html).toContain("more players in than there are places");
   });
 });

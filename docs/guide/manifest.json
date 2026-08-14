@@ -113,6 +113,30 @@
       "shows": "The game's settings, filled in with what it currently uses."
     },
     {
+      "id": "owner-fixture",
+      "chapter": "05-running-your-squad",
+      "title": "One fixture, as its organiser sees it",
+      "route": "/g/:id/f/:fixtureId",
+      "image": "images/owner-fixture.png",
+      "shows": "Everyone's answer for one fixture, with Mark in and Mark out beside each name."
+    },
+    {
+      "id": "owner-marked-in",
+      "chapter": "05-running-your-squad",
+      "title": "Answering for someone",
+      "route": "/g/:id/f/:fixtureId",
+      "image": "images/owner-marked-in.png",
+      "shows": "A player marked in by the organiser, with the attribution line naming who did it."
+    },
+    {
+      "id": "owner-guest-added",
+      "chapter": "05-running-your-squad",
+      "title": "A guest for one week",
+      "route": "/g/:id/f/:fixtureId",
+      "image": "images/owner-guest-added.png",
+      "shows": "A guest in the squad list, marked as a guest, occupying a slot."
+    },
+    {
       "id": "cancel",
       "chapter": "06-calling-a-fixture-off",
       "title": "Calling it off",

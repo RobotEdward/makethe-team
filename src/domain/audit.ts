@@ -97,6 +97,16 @@ export const AUDIT_ACTIONS = [
   // `membership.role_changed` carries `role`.
   "membership.removed",
   "membership.role_changed",
+  // J6b. An owner answering on a player's behalf (BR-27). `before` carries the
+  // status the row held, which is what BR-27's "previous value" means here;
+  // `after.overCapacity` records whether this was BR-8's deliberate override
+  // rather than an ordinary mark-in, because the two are indistinguishable
+  // from the resulting row alone.
+  "fixture.response_overridden",
+  // J6b. A one-off guest, added to and removed from a single fixture. Both
+  // carry a real actor: only an owner can do either.
+  "fixture.guest_added",
+  "fixture.guest_removed",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

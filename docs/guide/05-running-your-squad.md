@@ -56,6 +56,60 @@ the imminent game is a job for the group chat, or for calling it off — see
 **Advanced** hides the settings you'll rarely want. **Save changes** applies
 everything at once.
 
+## One fixture at a time
+
+Every fixture has its own page, separate from the game page above — tap its
+date under **Coming up** to open it.
+
+![Everyone's answer for one fixture, with Mark in and Mark out beside each name](images/owner-fixture.png)
+
+Each row shows what the squad list already shows — in, waitlisted, out, or not
+yet responded — and, beside every name, two buttons: **Mark in** and **Mark
+out**.
+
+## Answering for someone
+
+Not everyone answers an email. If somebody tells you in person, on the phone,
+or in the group chat, **Mark in** or **Mark out** on their row records it for
+them, exactly as if they had tapped the button themselves.
+
+![A player marked in by the organiser, with the attribution line naming who did it](images/owner-marked-in.png)
+
+Once you do, a line appears under their name saying who marked them in — here,
+Nadia Okafor never answered her own reminder, and it now says **marked in by
+jamie**. It shows on her page too, not just yours: if she opens her own
+reminder link later, she'll see that somebody else answered for her, and who.
+Nothing is hidden from the player whose answer it is.
+
+## Adding a guest
+
+Sometimes someone is playing just this once — a friend a regular brought
+along, someone covering for the night. **Add a guest**, at the bottom of the
+fixture page, is a single box for their name. Tap **Add guest** and they're in
+the squad for that one fixture only.
+
+![A guest in the squad list, marked as a guest, occupying a slot](images/owner-guest-added.png)
+
+A guest isn't a member of the squad. They don't get an invite link, they don't
+get emailed — you'll need to tell them the details yourself — and they won't
+be there next week unless you add them again. **Remove** on their row takes
+them straight back out, with no confirmation page: there's no membership to
+undo, only the one answer.
+
+## Going over the limit on purpose
+
+A guest, or someone you mark in, can take the squad past the number of places
+you set. The app won't do that quietly: if adding them would go over the
+limit, it stops and tells you the game is full and asks whether to add them
+anyway. Nothing happens until you tap **Add them anyway**; **No, leave it**
+backs out instead.
+
+Confirm it, and the fixture page carries a plain notice for as long as it
+stays over: **Over capacity — 6 in, 4 places.** Anyone who opens their own
+fixture page sees the same thing, worded for them, so nobody wonders why the
+squad looks bigger than the game allows. It's a call you made on purpose, not
+a mistake the app happened to let through.
+
 ## Replacing the invite link
 
 If the link ends up somewhere you'd rather it hadn't — a public group, a work

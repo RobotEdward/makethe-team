@@ -119,6 +119,7 @@ async function setResponse(fixtureId: string, playerId: string, intent: "in" | "
     intent,
     actorPlayerId: null,
     source: "system",
+    whenFull: "waitlist",
     now: OPENED_AT.getTime(),
   });
 }
