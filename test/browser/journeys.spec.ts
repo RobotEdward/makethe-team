@@ -315,6 +315,38 @@ test("one more mark-in past capacity asks first, rather than waitlisting silentl
   expect(seen.errors().filter((error) => !error.includes(selfReport))).toEqual([]);
 });
 
+test("a player can leave a game from their own leave link, with JavaScript off", async ({ page, browser }) => {
+  // `seedWorld` already leaves `page` signed in as the owner — see the other
+  // single-run tests in this file for why a second `signIn` here would hang.
+  const world = await seedWorld(page, browser);
+
+  // A fresh, JS-off context: `/leave/:token` is reached from an inbox, with
+  // no session, and must work without script — an unsubscribe that needs
+  // JavaScript is not an unsubscribe.
+  const visitor = await browser.newContext({ javaScriptEnabled: false });
+  const visitorPage = await visitor.newPage();
+  const seen = observe(visitorPage);
+  await visitorPage.goto(`/leave/${world.leaveToken}`);
+
+  await expect(visitorPage.locator("h1")).toContainText("Thursday 7-a-side");
+  await expect(visitorPage.getByRole("button", { name: "Leave this game" })).toBeVisible();
+
+  await visitorPage.getByRole("button", { name: "Leave this game" }).click();
+  await expect(visitorPage.locator("main")).toContainText("out of");
+  await expect(visitorPage.locator("main")).toContainText("Thursday 7-a-side");
+
+  // Reload the same link: it must now say they are already out, not offer
+  // the button again.
+  await visitorPage.goto(`/leave/${world.leaveToken}`);
+  await expect(visitorPage.locator("main")).toContainText("already out");
+  await expect(visitorPage.getByRole("button", { name: "Leave this game" })).toHaveCount(0);
+
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+
+  await visitor.close();
+});
+
 test("the two identities never share a session", async ({ page, browser }) => {
   // Not parameterised: this is about cookie isolation, which JavaScript has
   // no bearing on. It guards the fixture setup every journey above relies on.

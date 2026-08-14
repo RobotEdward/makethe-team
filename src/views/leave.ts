@@ -14,8 +14,8 @@ import { FORM_CSS } from "./styles.js";
 export interface LeavePageParams {
   token: string;
   gameName: string;
-  /** "confirm" renders the button; the other two never do. */
-  state: "confirm" | "sole-organiser" | "already-left";
+  /** "confirm" renders the button; none of the others do. */
+  state: "confirm" | "sole-organiser" | "already-left" | "done";
   gameId: string;
   /** Task 4 fills this; absent means "no session, or not this player". */
   otherGames?: readonly { gameId: string; gameName: string }[];
@@ -43,6 +43,13 @@ function alreadyLeftBody(gameName: string): string {
   `;
 }
 
+function doneBody(gameName: string): string {
+  return `
+    <p>You're out of ${gameName}. You won't get any more email about it.</p>
+    <p>If you change your mind, an organiser can add you back.</p>
+  `;
+}
+
 export function renderLeavePage(params: LeavePageParams): string {
   const { token, gameId, state } = params;
   const gameName = escapeHtml(params.gameName);
@@ -54,7 +61,9 @@ export function renderLeavePage(params: LeavePageParams): string {
         ? confirmBody(gameName, token)
         : state === "sole-organiser"
           ? soleOrganiserBody(gameName, gameId)
-          : alreadyLeftBody(gameName)
+          : state === "already-left"
+            ? alreadyLeftBody(gameName)
+            : doneBody(gameName)
     }
   `;
 

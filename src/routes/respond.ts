@@ -6,6 +6,7 @@ import { getDb, type Db } from "../db/client.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { verifyLeaveToken, verifyResponseToken } from "../domain/token.js";
+import { removeMember } from "../domain/remove-member.js";
 import type { ResponseIntent, WaitlistPromotion } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
@@ -373,4 +374,95 @@ respond.get("/leave/:token", async (c) => {
       : "confirm";
 
   return c.html(renderLeavePage({ token, gameId, gameName: game.name, state }), 200);
+});
+
+/**
+ * `POST /leave/:token` (BR-22) — the write the confirmation page above posts
+ * to. `removeMember` does the entire job (deactivate the membership, demote
+ * an organiser, write the `membership.removed` audit row, withdraw the
+ * leaver from every open fixture, and promote the longest-waiting
+ * replacement on each) with the leaver as their own actor: a
+ * `membership.removed` row whose actor equals its subject reads
+ * unambiguously as "they left" rather than "an organiser removed them", so no
+ * new audit action is needed.
+ *
+ * **Deliberately no `wrongOrigin` check.** Every other state-changing POST in
+ * this application has one; this route does not, and that is a decision, not
+ * an oversight. This form is reached from a link in an email and submitted
+ * from whatever renders that email — a mail client's own webview, or a
+ * browser opened from it — where `Origin` is frequently absent altogether or
+ * set to the webmail provider's own domain rather than this app's. Checking
+ * it here would refuse the unsubscribe for exactly the population BR-22
+ * exists to serve. The signed, expiring token is the entire authorisation,
+ * the same reasoning `POST /r/:token` above already applies for not checking
+ * it either.
+ *
+ * `not-a-member` renders the same link-problem page a bad token does, rather
+ * than a 404 or an explanation: the token names a game this player was never
+ * in, which is indistinguishable from a broken link, and saying more would
+ * confirm or deny that the game exists.
+ *
+ * Sends no email to the leaver. §1.11's notification catalogue is closed —
+ * N-7 exists to tell someone something happened *to* them, and this person
+ * did it deliberately and is looking at the confirmation page right now. The
+ * only mail this route may cause is N-2, to any player promoted off a
+ * waitlist by the leaver's withdrawal, sent through the same
+ * `notifyPromotedPlayer` background path `POST /r/:token` uses.
+ */
+respond.post("/leave/:token", async (c) => {
+  const token = c.req.param("token");
+  const now = new Date(Date.now());
+  const verification = await verifyLeaveToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+
+  if (!verification.ok) {
+    console.error(`leave link token rejected: ${verification.reason}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const { gameId, playerId } = verification.payload;
+  const db = getDb(c.env.DB);
+
+  const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!game) {
+    console.error(`leave link token verified for a game that no longer exists: ${gameId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const result = await removeMember({
+    db,
+    gameId,
+    playerId,
+    // The leaver is their own actor. See this handler's doc comment.
+    actorPlayerId: playerId,
+    now,
+    withdraw: (fixtureId) =>
+      c.env.FIXTURE_CAPACITY.getByName(fixtureId).withdrawMember({
+        playerId,
+        actorPlayerId: playerId,
+        now: now.getTime(),
+      }),
+  });
+
+  if (result.kind === "not-a-member") {
+    console.error(`leave link token verified for a game the player is not a member of: ${gameId}, ${playerId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  if (result.kind === "refused") {
+    return c.html(
+      renderLeavePage({ token, gameId, gameName: game.name, state: "sole-organiser" }),
+      422,
+    );
+  }
+
+  // `removed` and `resumed` are handled identically and deliberately so — see
+  // `removeMember`'s doc comment on why a resume reaches the same end state a
+  // first attempt does, and why a second submission of this same POST (which
+  // is what a reload does) is the documented recovery for a removal that
+  // failed partway through its fixture loop.
+  for (const { fixtureId, promoted } of result.promotions) {
+    c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, promoted, now));
+  }
+
+  return c.html(renderLeavePage({ token, gameId, gameName: game.name, state: "done" }), 200);
 });
