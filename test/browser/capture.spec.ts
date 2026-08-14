@@ -1,7 +1,7 @@
 import { mkdirSync, statSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { CATALOGUE } from "./catalogue.js";
-import { signIn, TEST_OWNER } from "./sign-in.js";
+import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
 import { seedWorld, type World } from "./world.js";
 
 /**
@@ -41,7 +41,10 @@ for (const entry of CATALOGUE) {
   for (const size of WIDTHS) {
     test(`@capture ${entry.id} at ${size.label}`, async ({ page }) => {
       await page.setViewportSize({ width: size.width, height: size.height });
-      if (entry.persona !== "anonymous") await signIn(page, TEST_OWNER);
+      // `player` gets the joined member's own identity — see the same branch
+      // in `console-gate.spec.ts` for why.
+      if (entry.persona === "player") await signIn(page, TEST_PLAYER);
+      else if (entry.persona !== "anonymous") await signIn(page, TEST_OWNER);
       await page.goto(entry.path(world), { waitUntil: "networkidle" });
 
       const file = `${OUTPUT}/${entry.id}--${size.label}.png`;

@@ -247,14 +247,18 @@ describe("GET /g/:id — entitlement (TR-18)", () => {
     expect(response.status).toBe(404);
   });
 
-  it("404s for a member who is not an owner", async () => {
+  it("gives a member who is not an owner their own page", async () => {
+    // A demoted owner falls through the owner check, but is still an active
+    // member — Task 4 gives that case the player's page, not a 404 (see
+    // `test/routes/player-game.test.ts` for the fuller entitlement matrix).
     const { cookie, gameId } = await ownedGame();
     const db = testDb();
-    // Demote the only owner: the same person, no longer entitled.
+    // Demote the only owner: the same person, no longer entitled as owner.
     await db.update(memberships).set({ role: "player" }).where(eq(memberships.gameId, gameId));
 
     const response = await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie }, redirect: "manual" });
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain("Invite people");
   });
 
   it("404s for an owner whose membership has been deactivated", async () => {

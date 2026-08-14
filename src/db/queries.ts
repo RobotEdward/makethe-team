@@ -150,6 +150,36 @@ export async function findGameForOwner(
 }
 
 /**
+ * The game, if and only if this player is an **active member** of it, whatever
+ * their role (TR-18).
+ *
+ * The role-agnostic sibling of `findGameForOwner`. Returns `null` for "no such
+ * game", "not a member", "a member who was removed" and "a deactivated game"
+ * alike — the caller answers 404 for all four, so a game id cannot be probed
+ * and a removed member learns nothing from the difference.
+ */
+export async function findGameForMember(
+  db: Db,
+  gameId: string,
+  playerId: string,
+): Promise<typeof games.$inferSelect | null> {
+  const [row] = await db
+    .select({ game: games })
+    .from(games)
+    .innerJoin(memberships, eq(memberships.gameId, games.id))
+    .where(
+      and(
+        eq(games.id, gameId),
+        eq(games.active, true),
+        eq(memberships.playerId, playerId),
+        eq(memberships.active, true),
+      ),
+    )
+    .limit(1);
+  return row?.game ?? null;
+}
+
+/**
  * Every active Game this player owns, most recently created first — the
  * dashboard's "your games" list.
  *
