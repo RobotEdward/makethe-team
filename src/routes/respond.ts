@@ -12,6 +12,7 @@ import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { escapeHtml, layout } from "../views/layout.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
+import { squadForViewer } from "../domain/squad-visibility.js";
 
 export const respond = new Hono<AppEnv>();
 
@@ -122,7 +123,11 @@ async function renderFixtureForViewer(params: {
     venueName: fixture.venueOverride ?? game.venueName,
     kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
     view,
-    squad,
+    // The viewer of `/r/:token` is always a player: this route is reached
+    // with a signed response token and no session at all, so there is no
+    // owner to detect here.
+    squad: squadForViewer(game, squad, { isOwner: false }),
+    inCount: fixture.inCount,
     viewer,
     token,
     intent,

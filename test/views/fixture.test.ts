@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderFixturePage } from "../../src/views/fixture.js";
+import { renderFixturePage, type FixturePageOptions } from "../../src/views/fixture.js";
 
 const BASE = {
   gameName: "Thursday 7-a-side",
@@ -26,10 +26,15 @@ const BASE = {
       isGuest: false,
     },
   ],
+  inCount: 1,
   viewer: { playerId: "p2", status: "pending" as const },
   token: "tok",
   intent: null,
 };
+
+function optionsWith(overrides: Partial<FixturePageOptions>): FixturePageOptions {
+  return { ...BASE, ...overrides };
+}
 
 describe("fixture page", () => {
   it("contains no JavaScript at all (TR-4)", () => {
@@ -354,5 +359,29 @@ describe("fixture page", () => {
     });
 
     expect(html).toContain("more players in than there are places");
+  });
+
+  it("lists the squad when the game allows it", () => {
+    const html = renderFixturePage(optionsWith({
+      squad: [{ playerId: "p-1", name: "Priya Raman", status: "in", waitlistRank: null,
+                setBy: null, source: "token", isGuest: false }],
+      inCount: 1,
+    }));
+
+    expect(html).toContain("Priya Raman");
+  });
+
+  it("names nobody when the game does not, but still says how many are in", () => {
+    const html = renderFixturePage(optionsWith({ squad: null, inCount: 8 }));
+
+    expect(html).not.toContain("Priya Raman");
+    expect(html).toContain("8 in so far");
+    expect(html).toContain("isn't shown for this game");
+  });
+
+  it("says one in, not 1 in, for a single player", () => {
+    const html = renderFixturePage(optionsWith({ squad: null, inCount: 1 }));
+
+    expect(html).toContain("1 in so far");
   });
 });

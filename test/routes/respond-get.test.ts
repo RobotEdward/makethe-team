@@ -1,5 +1,5 @@
 import { SELF, env } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
@@ -16,10 +16,22 @@ interface SeedResult {
   gameId: string;
   fixtureId: string;
   playerId: string;
+  /** A token for `playerId`, at the default expiry `tokenFor` would give it. */
+  token: string;
 }
 
-async function seedOpenFixture(overrides: { lifecycle?: "open" | "played" | "cancelled" } = {}): Promise<SeedResult> {
-  const gameId = await insertGame(db, { maxPlayers: 14 });
+/**
+ * A second, distinct squad member ("Player 1"), always seeded alongside the
+ * viewer so the squad-visibility tests below have someone else's name to
+ * assert on or off the page.
+ */
+async function seedRespondableFixture(
+  overrides: { lifecycle?: "open" | "played" | "cancelled"; squadVisibleToPlayers?: boolean } = {},
+): Promise<SeedResult> {
+  const gameId = await insertGame(db, {
+    maxPlayers: 14,
+    ...(overrides.squadVisibleToPlayers === undefined ? {} : { squadVisibleToPlayers: overrides.squadVisibleToPlayers }),
+  });
   const fixtureId = crypto.randomUUID();
   await db.insert(fixtures).values({
     id: fixtureId,
@@ -36,13 +48,26 @@ async function seedOpenFixture(overrides: { lifecycle?: "open" | "played" | "can
   await db.insert(players).values({ id: playerId, name: "Edward Cooper", email: "edward@example.com" });
   await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId, active: true });
 
+  const otherPlayerId = crypto.randomUUID();
+  await db.insert(players).values({ id: otherPlayerId, name: "Player 1", email: "player1@example.com" });
+  await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId: otherPlayerId, active: true });
+
   await openFixture(db, fixtureId, NOW);
+  // openFixture already wrote a `pending` row for every active member,
+  // including the one above — flip it to `in` rather than inserting a
+  // second row, which would collide with the (fixture_id, player_id)
+  // unique index.
+  await db
+    .update(responses)
+    .set({ status: "in", respondedAt: NOW })
+    .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, otherPlayerId)));
 
   if (overrides.lifecycle && overrides.lifecycle !== "open") {
     await db.update(fixtures).set({ lifecycle: overrides.lifecycle }).where(eq(fixtures.id, fixtureId));
   }
 
-  return { gameId, fixtureId, playerId };
+  const token = await tokenFor(fixtureId, playerId);
+  return { gameId, fixtureId, playerId, token };
 }
 
 async function tokenFor(fixtureId: string, playerId: string, expiresAt = KICKOFF.getTime() + 86_400_000) {
@@ -89,7 +114,7 @@ beforeEach(async () => {
 
 describe("GET /r/:token — rendering", () => {
   it("renders the fixture page with 200 for a valid token", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const response = await SELF.fetch(`https://makethe.team/r/${token}`);
@@ -109,7 +134,7 @@ describe("GET /r/:token — rendering", () => {
    * already had.
    */
   it("carries no Cache-Control directive of its own", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const response = await SELF.fetch(`https://makethe.team/r/${token}`);
@@ -118,7 +143,7 @@ describe("GET /r/:token — rendering", () => {
   });
 
   it("shows two response buttons for an open fixture", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const body = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
@@ -130,7 +155,7 @@ describe("GET /r/:token — rendering", () => {
   });
 
   it("emphasises the 'in' button for ?intent=in but does not record anything", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const body = await (await SELF.fetch(`https://makethe.team/r/${token}?intent=in`)).text();
@@ -141,7 +166,7 @@ describe("GET /r/:token — rendering", () => {
   });
 
   it("emphasises the 'out' button for ?intent=out", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const body = await (await SELF.fetch(`https://makethe.team/r/${token}?intent=out`)).text();
@@ -151,7 +176,7 @@ describe("GET /r/:token — rendering", () => {
   });
 
   it("neither button is emphasised for an absent or unrecognised intent", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const bare = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
@@ -165,7 +190,7 @@ describe("GET /r/:token — rendering", () => {
 
 describe("GET /r/:token — the GET records nothing (TR-14/TR-15)", () => {
   it("leaves every response row byte-identical for a bare GET", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const before = await snapshotResponses(fixtureId);
@@ -179,7 +204,7 @@ describe("GET /r/:token — the GET records nothing (TR-14/TR-15)", () => {
   });
 
   it("leaves every response row byte-identical for ?intent=in", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const before = await snapshotResponses(fixtureId);
@@ -192,7 +217,7 @@ describe("GET /r/:token — the GET records nothing (TR-14/TR-15)", () => {
   });
 
   it("leaves every response row byte-identical for ?intent=out", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const before = await snapshotResponses(fixtureId);
@@ -205,7 +230,7 @@ describe("GET /r/:token — the GET records nothing (TR-14/TR-15)", () => {
   });
 
   it("does not change respondedAt for a player who already responded", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
       playerId, intent: "in", actorPlayerId: null, source: "token", whenFull: "waitlist", now: NOW.getTime(),
     });
@@ -222,7 +247,7 @@ describe("GET /r/:token — the GET records nothing (TR-14/TR-15)", () => {
 
 describe("GET /r/:token — token failures render one friendly page (TR-14)", () => {
   it("renders a friendly page, not a 500, for an expired token", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     // The route verifies against the real wall clock, not the fictional `NOW`
     // used elsewhere in this file for fixture timing — so "expired" must be
     // in the past relative to it. Deliberately an absolute instant, not
@@ -243,7 +268,7 @@ describe("GET /r/:token — token failures render one friendly page (TR-14)", ()
   });
 
   it("gives byte-identical copy for expired, tampered, wrong-fixture and malformed tokens", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
 
     // Absolute past instant, not `Date.now() - 1000` — see the comment on
     // the identical construction above for the isolate-clock-skew mechanism
@@ -272,7 +297,7 @@ describe("GET /r/:token — token failures render one friendly page (TR-14)", ()
   });
 
   it("never leaks whether the fixture exists — an otherwise-valid token for a deleted fixture renders the same page", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
     // Remove the fixture's responses and the fixture itself so the token still
     // verifies but the fixture is gone.
@@ -286,7 +311,7 @@ describe("GET /r/:token — token failures render one friendly page (TR-14)", ()
   });
 
   it("does not mutate anything for a bad-signature token", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
     const tampered = `${token.split(".")[0]}.wrongsignature`;
 
@@ -300,7 +325,7 @@ describe("GET /r/:token — token failures render one friendly page (TR-14)", ()
 
 describe("GET /r/:token — a finished fixture renders read-only (BR-24)", () => {
   it("renders no buttons and an explanation for a played fixture", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture({ lifecycle: "played" });
+    const { fixtureId, playerId } = await seedRespondableFixture({ lifecycle: "played" });
     const token = await tokenFor(fixtureId, playerId);
 
     const response = await SELF.fetch(`https://makethe.team/r/${token}`);
@@ -313,7 +338,7 @@ describe("GET /r/:token — a finished fixture renders read-only (BR-24)", () =>
   });
 
   it("renders no buttons and an explanation for a cancelled fixture", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture({ lifecycle: "cancelled" });
+    const { fixtureId, playerId } = await seedRespondableFixture({ lifecycle: "cancelled" });
     const token = await tokenFor(fixtureId, playerId);
 
     const response = await SELF.fetch(`https://makethe.team/r/${token}`);
@@ -326,7 +351,7 @@ describe("GET /r/:token — a finished fixture renders read-only (BR-24)", () =>
   });
 
   it("still verifies the token for a finished fixture — it is not treated as a failure", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture({ lifecycle: "played" });
+    const { fixtureId, playerId } = await seedRespondableFixture({ lifecycle: "played" });
     const token = await tokenFor(fixtureId, playerId);
 
     const body = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
@@ -338,7 +363,7 @@ describe("GET /r/:token — a finished fixture renders read-only (BR-24)", () =>
 
 describe("GET /r/:token — a valid token for a player no longer on the squad", () => {
   it("renders read-only with a neutral explanation, not the generic failure page", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
     // Simulate the player having been removed from the squad after their
     // link was sent: the token still verifies, but their response row is
@@ -361,7 +386,7 @@ describe("GET /r/:token — a valid token for a player no longer on the squad", 
   });
 
   it("does not mutate anything", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
     await db.delete(responses).where(eq(responses.playerId, playerId));
 
@@ -375,6 +400,25 @@ describe("GET /r/:token — a valid token for a player no longer on the squad", 
   });
 });
 
+describe("GET /r/:token — squad visibility (BR-33)", () => {
+  it("hides other players when the game says so", async () => {
+    const { token } = await seedRespondableFixture({ squadVisibleToPlayers: false });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).not.toContain("Player 1");
+    expect(html).toContain("in so far");
+  });
+
+  it("shows other players when the game says so", async () => {
+    const { token } = await seedRespondableFixture({ squadVisibleToPlayers: true });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).toContain("Player 1");
+  });
+});
+
 describe("vocabulary and safety", () => {
   it("never uses forbidden vocabulary on the failure page", async () => {
     const response = await SELF.fetch("https://makethe.team/r/not-a-real-token");
@@ -383,7 +427,7 @@ describe("vocabulary and safety", () => {
   });
 
   it("is not indexable", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
     const response = await SELF.fetch(`https://makethe.team/r/${token}`);
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
