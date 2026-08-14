@@ -159,8 +159,82 @@ describe("getFixtureWithSquad against openFixture output", () => {
 
     const result = await getFixtureWithSquad(db, fixtureId);
     expect(result?.squad).toEqual([
-      { playerId, name: "Eligible Player", status: "pending", waitlistRank: null },
+      {
+        playerId,
+        name: "Eligible Player",
+        status: "pending",
+        waitlistRank: null,
+        setBy: null,
+        source: "system",
+        isGuest: false,
+      },
     ]);
+  });
+});
+
+describe("getFixtureWithSquad — attribution and guests", () => {
+  let fixtureId: string;
+
+  beforeEach(async () => {
+    const gameId = await insertGame(db);
+    fixtureId = await insertFixture(db, gameId, { minPlayers: 1, maxPlayers: 14 });
+    await db.insert(players).values({ id: "o-1", name: "Olivia Nightingale", email: "o1@example.com" });
+    await db.insert(players).values({ id: "p-1", name: "Priya Raman", email: "p1@example.com" });
+    await db.insert(players).values({ id: "p-2", name: "Sam Okafor", email: "p2@example.com" });
+    await insertMembership(db, gameId, "o-1", { role: "owner" });
+    await insertMembership(db, gameId, "p-1");
+    await insertMembership(db, gameId, "p-2");
+    await openFixture(db, fixtureId, NOW);
+
+    // Owner `o-1` marks `p-1` in — written through the Durable Object so the
+    // row is stamped the way production writes it.
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId: "p-1",
+      intent: "in",
+      actorPlayerId: "o-1",
+      source: "owner",
+      whenFull: "waitlist",
+      now: NOW.getTime(),
+    });
+    // `p-2` answers for themselves.
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId: "p-2",
+      intent: "in",
+      actorPlayerId: null,
+      source: "token",
+      whenFull: "waitlist",
+      now: NOW.getTime(),
+    });
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).addGuest({
+      name: "Sam Whitlock",
+      actorPlayerId: "o-1",
+      whenFull: "refuse",
+      now: NOW.getTime(),
+    });
+  });
+
+  it("reports who set a response when an owner set it", async () => {
+    const result = await getFixtureWithSquad(db, fixtureId);
+    const member = result!.squad.find((m) => m.playerId === "p-1")!;
+
+    expect(member.setBy).toEqual({ playerId: "o-1", name: "Olivia Nightingale" });
+    expect(member.source).toBe("owner");
+    expect(member.isGuest).toBe(false);
+  });
+
+  it("reports no setter for a player who answered for themselves", async () => {
+    const result = await getFixtureWithSquad(db, fixtureId);
+    const member = result!.squad.find((m) => m.playerId === "p-2")!;
+
+    expect(member.setBy).toBeNull();
+    expect(member.source).toBe("token");
+  });
+
+  it("marks a guest as one", async () => {
+    const result = await getFixtureWithSquad(db, fixtureId);
+    const guest = result!.squad.find((m) => m.name === "Sam Whitlock")!;
+
+    expect(guest.isGuest).toBe(true);
   });
 });
 

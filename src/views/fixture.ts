@@ -163,13 +163,29 @@ function squadStatusLabel(member: SquadMember): string {
   }
 }
 
+/**
+ * BR-27's visible attribution, on the *player's* page and not only the
+ * owner's.
+ *
+ * With §1.11's notification catalogue closed, no email tells a player that
+ * somebody answered for them — so this line is the only way they can ever find
+ * out. Shown only for `source === "owner"`: a `system` source is a waitlist
+ * promotion, which the player's own headline already explains, and `token` and
+ * `web` are the player themselves.
+ */
+function attribution(member: SquadMember): string {
+  if (member.source !== "owner" || member.setBy === null) return "";
+  const verb = member.status === "in" ? "marked in" : "marked out";
+  return `<span class="set-by">${escapeHtml(`${verb} by ${member.setBy.name}`)}</span>`;
+}
+
 function renderSquadList(squad: readonly SquadMember[]): string {
   if (squad.length === 0) return `<p class="muted">No players yet.</p>`;
 
   const items = squad
     .map(
       (member) =>
-        `<li><span class="name">${escapeHtml(member.name)}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span></li>`,
+        `<li><span class="name">${escapeHtml(member.name)}${member.isGuest ? " (guest)" : ""}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}</li>`,
     )
     .join("");
 
@@ -179,6 +195,17 @@ function renderSquadList(squad: readonly SquadMember[]): string {
 function renderNudge(view: FixtureView): string {
   if (!view.flags.includes("uneven")) return "";
   return `<p class="nudge">The squad has an odd number of players in — one more would even it up.</p>`;
+}
+
+/**
+ * BR-8's required visibility, on the page a player actually reads. An owner
+ * has deliberately gone past `max_players`, and a player looking at a squad
+ * longer than the game's own limit deserves to be told why rather than left
+ * to count.
+ */
+function renderOverCapacity(view: FixtureView): string {
+  if (!view.flags.includes("over_capacity")) return "";
+  return `<p class="nudge">There are more players in than there are places — the organiser has added someone over the limit.</p>`;
 }
 
 /**
@@ -254,6 +281,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
     ${renderStatusLine(view)}
     ${renderNudge(view)}
+    ${renderOverCapacity(view)}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options)}
     <h2>Squad</h2>
     ${renderSquadList(squad)}

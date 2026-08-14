@@ -1,7 +1,10 @@
 import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm";
-import type { ResponseStatus } from "../domain/response-status.js";
+import { alias } from "drizzle-orm/sqlite-core";
+import type { ResponseSource, ResponseStatus } from "../domain/response-status.js";
 import type { Db } from "./client.js";
 import { fixtures, games, memberships, players, responses } from "./schema.js";
+
+const setter = alias(players, "setter");
 
 export interface SquadMember {
   playerId: string;
@@ -10,6 +13,15 @@ export interface SquadMember {
   /** Rank among current waitlisted members, 1-based. Null unless waitlisted.
    *  Computed here, never the stored column — see spec amendment 5. */
   waitlistRank: number | null;
+  /**
+   * Who set this response, when it was not the player themselves (BR-27).
+   * Null for every self-response, which is the overwhelming majority.
+   */
+  setBy: { playerId: string; name: string } | null;
+  /** How the response came to be set. `owner` is what makes `setBy` worth showing. */
+  source: ResponseSource;
+  /** A one-off guest (J6b §5). Never emailed, occupies a slot. */
+  isGuest: boolean;
 }
 
 export interface FixtureWithSquad {
@@ -55,9 +67,16 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
       name: players.name,
       status: responses.status,
       waitlistPosition: responses.waitlistPosition,
+      source: responses.source,
+      isGuest: players.isGuest,
+      setByPlayerId: setter.id,
+      setByName: setter.name,
     })
     .from(responses)
     .innerJoin(players, eq(responses.playerId, players.id))
+    // Left, not inner: `set_by_player_id` is null for every self-response, and
+    // an inner join would silently drop all of them from the squad.
+    .leftJoin(setter, eq(responses.setByPlayerId, setter.id))
     .where(and(eq(responses.fixtureId, fixtureId), ne(responses.status, "withdrawn")))
     .orderBy(asc(responses.respondedAt), asc(responses.createdAt));
 
@@ -77,6 +96,12 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
     name: r.name,
     status: r.status,
     waitlistRank: waitlistRanks.get(r.playerId) ?? null,
+    setBy:
+      r.setByPlayerId === null || r.setByName === null
+        ? null
+        : { playerId: r.setByPlayerId, name: r.setByName },
+    source: r.source,
+    isGuest: r.isGuest,
   }));
 
   squad.sort((a, b) => {
