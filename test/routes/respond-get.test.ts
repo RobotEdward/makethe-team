@@ -26,7 +26,13 @@ interface SeedResult {
  * assert on or off the page.
  */
 async function seedRespondableFixture(
-  overrides: { lifecycle?: "open" | "played" | "cancelled"; squadVisibleToPlayers?: boolean } = {},
+  overrides: {
+    lifecycle?: "open" | "played" | "cancelled";
+    squadVisibleToPlayers?: boolean;
+    /** The viewer's own membership of the game. Defaults to an active player. */
+    viewerRole?: "player" | "owner";
+    viewerActive?: boolean;
+  } = {},
 ): Promise<SeedResult> {
   const gameId = await insertGame(db, {
     maxPlayers: 14,
@@ -46,7 +52,13 @@ async function seedRespondableFixture(
 
   const playerId = crypto.randomUUID();
   await db.insert(players).values({ id: playerId, name: "Edward Cooper", email: "edward@example.com" });
-  await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId, active: true });
+  await db.insert(memberships).values({
+    id: crypto.randomUUID(),
+    gameId,
+    playerId,
+    active: true,
+    role: overrides.viewerRole ?? "player",
+  });
 
   const otherPlayerId = crypto.randomUUID();
   await db.insert(players).values({ id: otherPlayerId, name: "Player 1", email: "player1@example.com" });
@@ -61,6 +73,16 @@ async function seedRespondableFixture(
     .update(responses)
     .set({ status: "in", respondedAt: NOW })
     .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, otherPlayerId)));
+
+  if (overrides.viewerActive === false) {
+    // Deactivated *after* the fixture opened, which is the only way a removed
+    // member still holds a working link: they had a response row when it was
+    // minted.
+    await db
+      .update(memberships)
+      .set({ active: false, leftAt: NOW })
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, playerId)));
+  }
 
   if (overrides.lifecycle && overrides.lifecycle !== "open") {
     await db.update(fixtures).set({ lifecycle: overrides.lifecycle }).where(eq(fixtures.id, fixtureId));
@@ -416,6 +438,41 @@ describe("GET /r/:token — squad visibility (BR-33)", () => {
     const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
 
     expect(html).toContain("Player 1");
+  });
+
+  it("hides other players from an ordinary member when the setting is off", async () => {
+    const { token } = await seedRespondableFixture({
+      squadVisibleToPlayers: false,
+      viewerRole: "player",
+    });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).not.toContain("Player 1");
+    expect(html).toContain("in so far");
+  });
+
+  it("shows the squad to an organiser following their own reminder link, setting off", async () => {
+    const { token } = await seedRespondableFixture({
+      squadVisibleToPlayers: false,
+      viewerRole: "owner",
+    });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).toContain("Player 1");
+  });
+
+  it("gives a removed organiser no more than any other outsider", async () => {
+    const { token } = await seedRespondableFixture({
+      squadVisibleToPlayers: false,
+      viewerRole: "owner",
+      viewerActive: false,
+    });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).not.toContain("Player 1");
   });
 });
 
