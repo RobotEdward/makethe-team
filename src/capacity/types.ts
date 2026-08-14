@@ -120,3 +120,23 @@ export type WithdrawMemberOutcome =
     }
   /** Nothing to do. Not an error: a removal walks every open fixture, and most hold no row for the player. */
   | { kind: "no-op"; reason: "no-response-row" | "fixture-not-open" | "fixture-not-found" };
+
+/** An Owner adding a one-off guest to a single fixture (J6b §5). */
+export interface AddGuestInput {
+  /** Already parsed and trimmed by `parseGuestName`. */
+  name: string;
+  /** The owner doing it. Recorded on the response row (BR-27). */
+  actorPlayerId: string;
+  /**
+   * A guest never waitlists — they have no email address, so a guest who
+   * landed on a waitlist would be a person nobody could ever tell they got
+   * in. So `refuse`, and then `exceed` once the owner has confirmed.
+   */
+  whenFull: "refuse" | "exceed";
+  now: number;
+}
+
+export type AddGuestOutcome =
+  | { kind: "added"; playerId: string; inCount: number; spotsLeft: number }
+  /** No `promoted` variant: adding a guest only ever takes a slot, never frees one. */
+  | { kind: "rejected"; reason: "would-exceed-capacity" | "fixture-not-open" | "fixture-not-found" };

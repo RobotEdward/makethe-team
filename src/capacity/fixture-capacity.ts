@@ -1,10 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { getDb, type Db } from "../db/client.js";
-import { fixtures, responses } from "../db/schema.js";
+import { fixtures, players, responses } from "../db/schema.js";
 import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
 import type {
+  AddGuestInput,
+  AddGuestOutcome,
   SetResponseInput,
   SetResponseOutcome,
   WaitlistPromotion,
@@ -332,6 +334,77 @@ export class FixtureCapacity extends DurableObject<Bindings> {
             },
           }
         : {}),
+    };
+  }
+
+  /**
+   * Add a one-off guest to this fixture (J6b §5).
+   *
+   * **Why the `players` row is created in here.** It stretches this object's
+   * "capacity only" remit, and both alternatives are worse. Creating the
+   * person in the route first means a refused over-capacity add leaves an
+   * orphaned human being in the database; pre-checking capacity in the route
+   * to avoid that is exactly the TOCTOU race `whenFull` exists to close. The
+   * guest and the slot they occupy are one fact, so they are one batch.
+   *
+   * `blockConcurrencyWhile` is load-bearing here for the same reason it is on
+   * `setResponse` — read that method's comment.
+   */
+  async addGuest(input: AddGuestInput): Promise<AddGuestOutcome> {
+    return this.ctx.blockConcurrencyWhile(async () => this.#addGuestLocked(input));
+  }
+
+  async #addGuestLocked(input: AddGuestInput): Promise<AddGuestOutcome> {
+    // From the object's own identity, never from an argument — see
+    // `#setResponseLocked` for the full reasoning.
+    const fixtureId = this.ctx.id.name;
+    if (fixtureId === undefined) {
+      throw new Error(
+        "FixtureCapacity was addressed by unique id, not by fixture id — every caller must use getByName(fixtureId)",
+      );
+    }
+
+    const db = getDb(this.env.DB);
+    const now = new Date(input.now);
+
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    if (!fixture) return { kind: "rejected", reason: "fixture-not-found" };
+    if (fixture.lifecycle !== "open") return { kind: "rejected", reason: "fixture-not-open" };
+
+    const all = await db
+      .select({ status: responses.status })
+      .from(responses)
+      .where(eq(responses.fixtureId, fixtureId));
+    const currentIn = all.filter((row) => row.status === "in").length;
+
+    if (currentIn >= fixture.maxPlayers && input.whenFull === "refuse") {
+      return { kind: "rejected", reason: "would-exceed-capacity" };
+    }
+
+    const playerId = crypto.randomUUID();
+    const inCount = currentIn + 1;
+
+    // One batch. The person and their slot commit together or not at all —
+    // which is what makes the refusal above leave nothing behind.
+    await db.batch([
+      db.insert(players).values({ id: playerId, name: input.name, email: null, isGuest: true }),
+      db.insert(responses).values({
+        id: crypto.randomUUID(),
+        fixtureId,
+        playerId,
+        status: "in",
+        respondedAt: now,
+        setByPlayerId: input.actorPlayerId,
+        source: "owner",
+      }),
+      db.update(fixtures).set({ inCount }).where(eq(fixtures.id, fixtureId)),
+    ]);
+
+    return {
+      kind: "added",
+      playerId,
+      inCount,
+      spotsLeft: Math.max(0, fixture.maxPlayers - inCount),
     };
   }
 
