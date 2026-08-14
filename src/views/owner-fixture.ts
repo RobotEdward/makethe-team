@@ -35,18 +35,43 @@ function renderOverCapacity(view: FixtureView, inCount: number, maxPlayers: numb
   return `<p class="problem">Over capacity — ${inCount} in, ${maxPlayers} places.</p>`;
 }
 
-function renderSquadList(gameId: string, fixtureId: string, squad: readonly SquadMember[]): string {
+/**
+ * Whether this fixture is still taking changes — the one predicate the
+ * per-row controls and the add-a-guest form both gate on, so they cannot
+ * disagree about when an organiser can still act. A cancelled or played
+ * fixture is history, and a merely scheduled one is not yet asking anybody
+ * anything; in all three cases there is no capacity write for a control to
+ * make, and the Durable Object would refuse it.
+ */
+function takingChanges(view: FixtureView): boolean {
+  return view.status !== "cancelled" && view.status !== "played" && view.status !== "scheduled";
+}
+
+/** One squad row's controls: remove, for a guest; mark in or out, for a member. */
+function renderMemberControls(gameId: string, fixtureId: string, member: SquadMember): string {
+  if (member.isGuest) {
+    return `<form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form>`;
+  }
+  return `<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}">
+             <button class="button" type="submit" name="intent" value="in">Mark in</button>
+             <button class="button" type="submit" name="intent" value="out">Mark out</button>
+           </form>`;
+}
+
+function renderSquadList(
+  gameId: string,
+  fixtureId: string,
+  squad: readonly SquadMember[],
+  showControls: boolean,
+): string {
   if (squad.length === 0) return `<p class="muted">No players yet.</p>`;
 
   const items = squad
     .map((member) => {
       const guest = member.isGuest ? " (guest)" : "";
-      const controls = member.isGuest
-        ? `<form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form>`
-        : `<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}">
-             <button class="button" type="submit" name="intent" value="in">Mark in</button>
-             <button class="button" type="submit" name="intent" value="out">Mark out</button>
-           </form>`;
+      // The squad and everyone's state still render on a fixture that has
+      // closed — only the controls go, because there is nothing left to change.
+      const controls = showControls ? renderMemberControls(gameId, fixtureId, member) : "";
       return `<li><span class="name">${escapeHtml(member.name)}${guest}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}${controls}</li>`;
     })
     .join("");
@@ -98,9 +123,7 @@ function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixturePa
  * answers), there is no capacity write for it to make.
  */
 function renderGuestForm(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
-  if (params.view.status === "cancelled" || params.view.status === "played" || params.view.status === "scheduled") {
-    return "";
-  }
+  if (!takingChanges(params.view)) return "";
   return `<h2>Add a guest</h2>
           <p>Someone playing just this once. They won't be emailed — you'll need to tell them yourself.</p>
           <form method="post" action="${escapeHtml(ownerGuestPath(gameId, fixtureId))}" class="guest-form">
@@ -125,7 +148,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${renderConfirm(gameId, fixtureId, params)}
 
     <h2>Squad</h2>
-    ${renderSquadList(gameId, fixtureId, squad)}
+    ${renderSquadList(gameId, fixtureId, squad, takingChanges(view))}
 
     ${renderGuestForm(gameId, fixtureId, params)}
 

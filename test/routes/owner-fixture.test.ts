@@ -704,3 +704,91 @@ describe("guests", () => {
     expect(response.status).toBe(403);
   });
 });
+
+/**
+ * A fixture that has stopped taking changes still shows its squad — that is
+ * the record of who played, or who was going to — but the controls that would
+ * change it are gone, and a hand-built post to one of them is refused rather
+ * than answered as success.
+ */
+describe("a fixture that is no longer taking changes", () => {
+  beforeEach(resetDatabase);
+
+  /** An open fixture with a member in and a guest added, then cancelled. */
+  async function seedCancelledWithGuest(
+    ownerPlayerId: string,
+    cookie: string,
+  ): Promise<{ gameId: string; fixtureId: string; guestId: string }> {
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(ownerPlayerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/response/p-0`, { intent: "in" }, cookie);
+    await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "Sam Whitlock" }, cookie);
+    const db = testDb();
+    const [guest] = await db.select().from(players).where(eq(players.isGuest, true));
+    await db.update(fixtures).set({ lifecycle: "cancelled" }).where(eq(fixtures.id, fixtureId));
+    return { gameId, fixtureId, guestId: guest!.id };
+  }
+
+  it("still shows the squad, without any controls", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedCancelledWithGuest(viewerId, cookie);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    // Everyone and their state still render.
+    expect(html).toContain("Player 0");
+    expect(html).toContain("Sam Whitlock");
+    // Nothing left to act with.
+    expect(html).not.toContain("Mark in");
+    expect(html).not.toContain("Mark out");
+    expect(html).not.toContain(">Remove<");
+    expect(html).not.toContain("Add a guest");
+  });
+
+  it("refuses a hand-built guest removal instead of answering as success", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, guestId } = await seedCancelledWithGuest(viewerId, cookie);
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest/${guestId}/remove`, {}, cookie);
+
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("isn&#39;t taking changes any more");
+    const db = testDb();
+    const [row] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, guestId)));
+    expect(row?.status).toBe("in");
+    expect((await db.select().from(auditLog).where(eq(auditLog.action, "fixture.guest_removed"))).length).toBe(0);
+  });
+});
+
+/**
+ * A player an organiser has removed is not eligible to be answered for, so
+ * the override route cannot quietly put them back into the fixture.
+ */
+describe("an override for a removed player", () => {
+  beforeEach(resetDatabase);
+
+  it("404s and leaves the removal standing", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/response/p-0`, { intent: "in" }, cookie);
+    await stubFor(fixtureId).withdrawMember({
+      playerId: "p-0",
+      actorPlayerId: viewerId,
+      now: NOW.getTime(),
+    });
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/response/p-0`, { intent: "in" }, cookie);
+
+    expect(response.status).toBe(404);
+    const db = testDb();
+    const [row] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-0")));
+    expect(row?.status).toBe("withdrawn");
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(fixture?.inCount).toBe(0);
+  });
+});

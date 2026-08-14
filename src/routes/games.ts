@@ -665,21 +665,30 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
     now: now.getTime(),
   });
 
-  if (outcome.kind === "removed") {
-    await recordAudit(target.db, {
-      actorPlayerId: c.get("player")!.id,
-      entityType: "fixture",
-      entityId: target.fixture.id,
-      action: "fixture.guest_removed",
-      before: { playerId, name: previous.name, status: previous.status },
-      now,
-    });
-
-    // Removing a guest frees a slot, so it can promote (BR-7) — the same N-2
-    // path every other dropout takes.
-    if (outcome.promoted) {
-      c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, target.fixture.id, outcome.promoted, now));
+  // A refusal must never answer as success. The guest was on this fixture's
+  // squad a moment ago, so the one no-op reachable here is a fixture that has
+  // stopped taking changes since the page was rendered — say so, on the page
+  // itself, rather than redirecting back to a squad that still lists them.
+  if (outcome.kind === "no-op") {
+    if (outcome.reason === "fixture-not-open") {
+      return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
     }
+    return c.text("Not found", 404);
+  }
+
+  await recordAudit(target.db, {
+    actorPlayerId: c.get("player")!.id,
+    entityType: "fixture",
+    entityId: target.fixture.id,
+    action: "fixture.guest_removed",
+    before: { playerId, name: previous.name, status: previous.status },
+    now,
+  });
+
+  // Removing a guest frees a slot, so it can promote (BR-7) — the same N-2
+  // path every other dropout takes.
+  if (outcome.promoted) {
+    c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, target.fixture.id, outcome.promoted, now));
   }
 
   return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
