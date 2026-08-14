@@ -1,4 +1,4 @@
-import { gamePath } from "../auth/paths.js";
+import { gamePath, ownerFixturePath, ownerGuestPath, ownerGuestRemovePath, ownerResponsePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
@@ -35,13 +35,19 @@ function renderOverCapacity(view: FixtureView, inCount: number, maxPlayers: numb
   return `<p class="problem">Over capacity — ${inCount} in, ${maxPlayers} places.</p>`;
 }
 
-function renderSquadList(squad: readonly SquadMember[]): string {
+function renderSquadList(gameId: string, fixtureId: string, squad: readonly SquadMember[]): string {
   if (squad.length === 0) return `<p class="muted">No players yet.</p>`;
 
   const items = squad
     .map((member) => {
       const guest = member.isGuest ? " (guest)" : "";
-      return `<li><span class="name">${escapeHtml(member.name)}${guest}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}</li>`;
+      const controls = member.isGuest
+        ? `<form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form>`
+        : `<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}">
+             <button class="button" type="submit" name="intent" value="in">Mark in</button>
+             <button class="button" type="submit" name="intent" value="out">Mark out</button>
+           </form>`;
+      return `<li><span class="name">${escapeHtml(member.name)}${guest}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}${controls}</li>`;
     })
     .join("");
 
@@ -49,16 +55,45 @@ function renderSquadList(squad: readonly SquadMember[]): string {
 }
 
 /**
- * One fixture, as its organiser sees it (J6b §3): the squad, everyone's
- * current state, and (from Task 5 onward) the controls to change it.
+ * BR-8's over-capacity confirmation (§4.2): a banner above the squad asking
+ * the owner to confirm a mark-in that would take the fixture past
+ * `max_players`, or (Task 6) adding a guest that would do the same.
  *
- * Read-only for now — no `<script>`, no controls yet. Reuses
- * `renderStatusLine` from `src/views/fixture.ts` rather than restating its
- * wording, so the status badge reads identically on the player's page and the
- * organiser's.
+ * `confirm.playerId === null` is Task 6's guest case — wired here so the
+ * banner is written once, even though the guest route itself is not built
+ * yet.
+ */
+function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
+  if (params.confirm === undefined) return "";
+  const { confirm, gameName, inCount, maxPlayers } = params;
+
+  return `<div class="confirm">
+           <p>${escapeHtml(`${gameName} is full (${inCount} of ${maxPlayers}). Add ${confirm.name} anyway?`)}</p>
+           <form method="post" action="${escapeHtml(
+             confirm.playerId === null
+               ? ownerGuestPath(gameId, fixtureId)
+               : ownerResponsePath(gameId, fixtureId, confirm.playerId),
+           )}">
+             <input type="hidden" name="intent" value="in">
+             <input type="hidden" name="override" value="1">
+             ${confirm.playerId === null ? `<input type="hidden" name="name" value="${escapeHtml(confirm.name)}">` : ""}
+             <button class="button primary" type="submit">Add them anyway</button>
+           </form>
+           <p><a href="${escapeHtml(ownerFixturePath(gameId, fixtureId))}">No, leave it</a></p>
+         </div>`;
+}
+
+/**
+ * One fixture, as its organiser sees it (J6b §3): the squad, everyone's
+ * current state, and the controls to change it (Task 5).
+ *
+ * Reuses `renderStatusLine` from `src/views/fixture.ts` rather than restating
+ * its wording, so the status badge reads identically on the player's page and
+ * the organiser's. No `<script>` anywhere — every control here is a plain
+ * form, so the page works with JavaScript off.
  */
 export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
-  const { gameId, gameName, kicksOffAtLocal, venueName, inCount, maxPlayers, view, squad } = params;
+  const { gameId, fixtureId, gameName, kicksOffAtLocal, venueName, inCount, maxPlayers, view, squad } = params;
 
   const problem = params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
 
@@ -69,9 +104,10 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     <p class="venue">${escapeHtml(venueName)}</p>
     ${renderStatusLine(view)}
     ${renderOverCapacity(view, inCount, maxPlayers)}
+    ${renderConfirm(gameId, fixtureId, params)}
 
     <h2>Squad</h2>
-    ${renderSquadList(squad)}
+    ${renderSquadList(gameId, fixtureId, squad)}
 
     <p><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
   `;

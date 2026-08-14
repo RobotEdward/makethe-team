@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { DASHBOARD_PATH, NEW_GAME_PATH, gameEditPath, gamePath } from "../auth/paths.js";
+import { DASHBOARD_PATH, NEW_GAME_PATH, gameEditPath, gamePath, ownerFixturePath } from "../auth/paths.js";
 import { requirePlayer } from "../auth/session.js";
-import { buildAuditInsert } from "../db/audit.js";
+import { buildAuditInsert, recordAudit } from "../db/audit.js";
 import { getDb } from "../db/client.js";
 import {
   countCommitments,
@@ -464,15 +464,116 @@ function ownerFixtureParams(
   };
 }
 
+/**
+ * Render `/g/:id/f/:fixtureId` for a loaded target — the plain `GET` above
+ * and both of `POST …/response/:playerId`'s refusal paths, so the three
+ * cannot drift (see `ownerFixtureParams`'s own comment for why that builder
+ * exists).
+ */
+async function renderOwnerFixture(
+  c: Context<AppEnv>,
+  target: NonNullable<Awaited<ReturnType<typeof loadFixtureTarget>>>,
+  now: Date,
+  extras: { confirm?: OwnerFixtureParams["confirm"]; problem?: string } = {},
+  status: 200 | 422 = 200,
+) {
+  const withSquad = await getFixtureWithSquad(target.db, target.fixture.id);
+  if (withSquad === null) return c.text("Not found", 404);
+  return c.html(
+    renderOwnerFixturePage(ownerFixtureParams(withSquad, c.get("player")!.id, now, extras)),
+    status,
+  );
+}
+
 gamesRoutes.get("/g/:id/f/:fixtureId", requirePlayer, async (c) => {
   const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
   if (target === null) return c.text("Not found", 404);
 
   const now = new Date(Date.now());
-  const withSquad = await getFixtureWithSquad(target.db, target.fixture.id);
-  if (withSquad === null) return c.text("Not found", 404);
+  return renderOwnerFixture(c, target, now);
+});
 
-  return c.html(renderOwnerFixturePage(ownerFixtureParams(withSquad, c.get("player")!.id, now)));
+/**
+ * An owner marking a player in or out on their behalf (BR-27, §4), including
+ * BR-8's deliberate over-capacity confirmation.
+ *
+ * `whenFull` maps `intent` to the Durable Object's three policies: `out`
+ * frees a slot and is never refused, so it always waitlists (a no-op, since
+ * nothing is taken); a plain mark-in `refuse`s rather than silently
+ * waitlisting, so that going over capacity is a second, explicit act; and
+ * `override` — the confirmation banner's own resubmission — is that second
+ * act, `exceed`.
+ */
+gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const playerId = c.req.param("playerId");
+  const form = await c.req.parseBody();
+  const rawIntent = form["intent"];
+  const intent = rawIntent === "in" || rawIntent === "out" ? rawIntent : null;
+  // The value comes from a button this application rendered, so anything else
+  // is a hand-built request and gets a 400 rather than a guess.
+  if (intent === null) return c.text('Bad Request: "intent" must be exactly "in" or "out"', 400);
+
+  const now = new Date(Date.now());
+  const actor = c.get("player")!;
+  const override = form["override"] === "1";
+
+  // Read the previous status for the audit row *before* the write. BR-27 asks
+  // for the previous value, and after the Durable Object returns it is gone.
+  const before = await getFixtureWithSquad(target.db, target.fixture.id);
+  const previous = before?.squad.find((m) => m.playerId === playerId);
+
+  const outcome = await c.env.FIXTURE_CAPACITY.getByName(target.fixture.id).setResponse({
+    playerId,
+    intent,
+    actorPlayerId: actor.id,
+    source: "owner",
+    whenFull: intent === "out" ? "waitlist" : override ? "exceed" : "refuse",
+    now: now.getTime(),
+  });
+
+  if (outcome.kind === "rejected") {
+    if (outcome.reason === "would-exceed-capacity") {
+      // Not an error: the owner is one click from the thing they asked for.
+      // 422, and the same page again with the question on it (§4.2).
+      return renderOwnerFixture(
+        c,
+        target,
+        now,
+        { confirm: { playerId, name: previous?.name ?? "this player", intent: "in" } },
+        422,
+      );
+    }
+    if (outcome.reason === "not-eligible") return c.text("Not found", 404);
+    return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking answers any more." }, 422);
+  }
+
+  await recordAudit(target.db, {
+    actorPlayerId: actor.id,
+    entityType: "fixture",
+    entityId: target.fixture.id,
+    action: "fixture.response_overridden",
+    before: { playerId, status: previous?.status ?? "pending" },
+    after: {
+      playerId,
+      status: outcome.kind === "waitlisted" ? "waitlisted" : outcome.status,
+      overCapacity: override,
+    },
+    now,
+  });
+
+  // The same N-2 path a self-response takes, in the background, for the
+  // reasons `notifyPromotedPlayer` documents. An override that frees a slot
+  // promotes exactly as any other dropout does (BR-7).
+  if (outcome.kind === "recorded" && outcome.promoted) {
+    c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, target.fixture.id, outcome.promoted, now));
+  }
+
+  return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
 });
 
 /**

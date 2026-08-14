@@ -1030,6 +1030,14 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "origin), a plain-text 404 (entitlement failure) or a 303 redirect " +
       "(src/routes/games.ts); its own status-code coverage lives in " +
       "test/routes/squad.test.ts.",
+    "POST /g/:id/f/:fixtureId/response/:playerId":
+      "renders through the same renderOwnerFixturePage as GET /g/:id/f/:fixtureId on its " +
+      "two HTML-returning branches (BR-8's over-capacity confirmation and the " +
+      "fixture-not-open refusal) — no template of its own that could carry an " +
+      "un-enumerated script — and its other branches are a plain-text 400 (bad intent), " +
+      "a plain-text 403 (wrong origin), a plain-text 404 (entitlement failure) or a 303 " +
+      "redirect (src/routes/games.ts); its own status-code coverage lives in " +
+      "test/routes/owner-fixture.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
