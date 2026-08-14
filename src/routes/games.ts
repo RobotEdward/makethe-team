@@ -14,7 +14,7 @@ import {
   listUpcomingFixtures,
   type FixtureWithSquad,
 } from "../db/queries.js";
-import { fixtures, games, players } from "../db/schema.js";
+import { fixtures, games } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
 import { fixtureView } from "../domain/fixture-view.js";
@@ -632,10 +632,19 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest", requirePlayer, async (c) => {
  * An owner removing a one-off guest (§5), reusing `withdrawMember` — the same
  * capacity-freeing, promotion-triggering path any other dropout takes.
  *
- * Guests only: the `player.isGuest` check is the security property this route
- * exists to hold. Squad members leave through `/g/:id/squad/:playerId/remove`,
- * which has its own confirmation page; without this check, this route would be
- * a second, unconfirmed way to take a real person out of a squad.
+ * Guests only, and only when seated on *this* fixture. `players.isGuest` is a
+ * global flag — a guest's attachment to a fixture lives only in `responses`
+ * — so checking it alone would let a POST naming a guest seated on a
+ * *different* fixture (including one on a game this owner does not own) pass
+ * the entitlement check. `withdrawMember` would then find no response row
+ * here, no-op, and this handler would fall through to the same 303 a real
+ * removal produces — "that guest isn't here" answering as success. Requiring
+ * the guest to appear in *this* fixture's own squad (`getFixtureWithSquad`,
+ * fetched here rather than only for the audit row) closes that, and is the
+ * same TR-18 scoping every other refusal on `/g/*` uses. Squad members leave
+ * through `/g/:id/squad/:playerId/remove`, which has its own confirmation
+ * page; without both checks, this route would be a second, unconfirmed way to
+ * take a real person out of a squad.
  */
 gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
@@ -644,12 +653,11 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
   if (target === null) return c.text("Not found", 404);
 
   const playerId = c.req.param("playerId");
-  const [player] = await target.db.select().from(players).where(eq(players.id, playerId));
-  if (!player || !player.isGuest) return c.text("Not found", 404);
-
-  const now = new Date(Date.now());
   const before = await getFixtureWithSquad(target.db, target.fixture.id);
   const previous = before?.squad.find((m) => m.playerId === playerId);
+  if (!previous || !previous.isGuest) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
 
   const outcome = await c.env.FIXTURE_CAPACITY.getByName(target.fixture.id).withdrawMember({
     playerId,
@@ -663,7 +671,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
       entityType: "fixture",
       entityId: target.fixture.id,
       action: "fixture.guest_removed",
-      before: { playerId, name: player.name, status: previous?.status ?? outcome.previousStatus },
+      before: { playerId, name: previous.name, status: previous.status },
       now,
     });
 

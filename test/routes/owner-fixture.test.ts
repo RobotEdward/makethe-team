@@ -192,6 +192,59 @@ async function seedFullFixtureWithWaitlist(
 }
 
 /**
+ * A game owned by `ownerPlayerId`, with one open fixture at `maxPlayers: 1`: a
+ * guest already `in`, occupying the one slot, and a further real member
+ * waitlisted behind them — so removing the guest is exactly the case that
+ * must promote the waitlisted member (BR-7), the same way any other freed
+ * slot does.
+ *
+ * The guest is added through `addGuest` directly (not the HTTP route) so this
+ * seed produces the same shape `seedFullFixtureWithWaitlist` does, without a
+ * second app round-trip the test itself doesn't care about.
+ */
+async function seedFullFixtureOwnedByWithGuestAndWaitlist(
+  ownerPlayerId: string,
+): Promise<{ gameId: string; fixtureId: string; waitlistedId: string }> {
+  const db = testDb();
+  const gameId = await insertGame(db, { maxPlayers: 1 });
+  await insertMembership(db, gameId, ownerPlayerId, { role: "owner" });
+  const waitlistedId = await insertPlayer(db, { name: "Waiting Player" });
+  await insertMembership(db, gameId, waitlistedId);
+
+  const fixtureId = crypto.randomUUID();
+  await db.insert(fixtures).values({
+    id: fixtureId,
+    gameId,
+    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    minPlayers: 1,
+    maxPlayers: 1,
+    prefersEvenNumbers: false,
+    shortWarningOffsetHours: 12,
+    durationMinutes: 60,
+  });
+  await openFixture(db, fixtureId, NOW);
+
+  const guestOutcome = await stubFor(fixtureId).addGuest({
+    name: "Sam Whitlock",
+    actorPlayerId: ownerPlayerId,
+    whenFull: "refuse",
+    now: NOW.getTime(),
+  });
+  if (guestOutcome.kind !== "added") throw new Error(`seed expected the guest to be added, got ${guestOutcome.kind}`);
+
+  await stubFor(fixtureId).setResponse({
+    playerId: waitlistedId,
+    intent: "in",
+    actorPlayerId: null,
+    source: "token",
+    whenFull: "waitlist",
+    now: NOW.getTime(),
+  });
+
+  return { gameId, fixtureId, waitlistedId };
+}
+
+/**
  * A fixture whose squad has been driven past its own `maxPlayers` (BR-8), by
  * setting responses with `whenFull: "exceed"` — the only supported way to
  * reach that state, so this seed exercises exactly the path the Durable
@@ -575,6 +628,53 @@ describe("guests", () => {
     const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest/p-0/remove`, {}, cookie);
 
     expect(response.status).toBe(404);
+  });
+
+  it("refuses to remove a guest seated on a different fixture", async () => {
+    // `players.isGuest` is global; the guest's attachment to a *fixture*
+    // lives only in `responses`. Naming a real guest, but on a fixture they
+    // are not seated on, must 404 rather than silently no-op into a 303.
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "Sam Whitlock" }, cookie);
+    const db = testDb();
+    const [guest] = await db.select().from(players).where(eq(players.isGuest, true));
+
+    // The same owner's second game — the point is that the guest isn't on
+    // this fixture, not that the owner lacks access to it.
+    const other = await seedOpenFixtureOwnedBy(viewerId);
+
+    const response = await appPost(`/g/${other.gameId}/f/${other.fixtureId}/guest/${guest!.id}/remove`, {}, cookie);
+
+    expect(response.status).toBe(404);
+    const [row] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, guest!.id)));
+    expect(row?.status).toBe("in");
+  });
+
+  it("promotes a waitlisted player when a guest is removed", async () => {
+    // The route wiring, not the Durable Object's promotion logic (already
+    // unit-tested) or the override path's already-tested wiring — this is
+    // the assertion that *this* route's `withdrawMember` call actually
+    // promotes and sends exactly one N-2.
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, waitlistedId } = await seedFullFixtureOwnedByWithGuestAndWaitlist(viewerId);
+    const db = testDb();
+    const [guest] = await db.select().from(players).where(eq(players.isGuest, true));
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest/${guest!.id}/remove`, {}, cookie);
+    await settleNotifications(1);
+
+    expect(response.status).toBe(303);
+    const [promoted] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, waitlistedId)));
+    expect(promoted?.status).toBe("in");
+    const sent = await db.select().from(notificationLog).where(eq(notificationLog.playerId, waitlistedId));
+    expect(sent.length).toBe(1);
   });
 
   it("404s for a player who is not an owner", async () => {
