@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { CATALOGUE } from "./catalogue.js";
 import { observe } from "./observe.js";
-import { signIn, TEST_OWNER } from "./sign-in.js";
+import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
 import { seedWorld, type World } from "./world.js";
 
 /**
@@ -29,7 +29,11 @@ test.beforeAll(async ({ browser }) => {
 for (const entry of CATALOGUE) {
   test(`${entry.id} — no console errors, no CSP violations`, async ({ page }) => {
     const seen = observe(page);
-    if (entry.persona !== "anonymous") await signIn(page, TEST_OWNER);
+    // `player` gets the joined member's own identity, so a page like this
+    // one — a member's own view of a game — is loaded as the member it is
+    // built for, not as the game's owner.
+    if (entry.persona === "player") await signIn(page, TEST_PLAYER);
+    else if (entry.persona !== "anonymous") await signIn(page, TEST_OWNER);
 
     const response = await page.goto(entry.path(world), { waitUntil: "networkidle" });
     expect(response, `${entry.title} did not respond at all`).not.toBeNull();

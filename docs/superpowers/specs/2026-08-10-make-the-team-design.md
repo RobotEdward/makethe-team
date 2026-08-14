@@ -275,9 +275,10 @@ Numbered so tests can reference them.
 
 - **BR-23** Responding to a fixture requires only a valid response token (§2.6). No account, no session.
 - **BR-24** A response token is scoped to exactly one player and one fixture, and expires 24 hours after that fixture's kickoff. A token presented for a `played` or `cancelled` fixture renders a read-only page explaining why, never an error.
-- **BR-25** A valid response token authorises viewing that single fixture's squad. Viewing any other fixture, any other game, the player dashboard, or performing any Owner action requires an authenticated session.
+- **BR-25** A valid response token authorises viewing that single fixture's squad, subject to the game's squad-visibility setting (BR-33). Viewing any other fixture, any other game, the player dashboard, or performing any Owner action requires an authenticated session.
 - **BR-26** A visitor holding an invite link sees only: game name, venue, date, time, counts, and members rendered as first name plus surname initial ("Edward C."). Never email addresses, never full surnames.
 - **BR-27** Every Owner override is recorded in `audit_log` with actor, timestamp and previous value, and is visibly attributed in the UI ("marked in by Edward").
+- **BR-33** A Game carries a squad-visibility setting, default on. When it is off, players see a fixture's counts and their own response but not other players' names or responses. Owners are unaffected.
 
 ## 1.11 Notification catalogue
 
@@ -633,6 +634,7 @@ Each milestone is independently deployable and demonstrable.
 | **M5** | Better Auth — magic link, then passkeys. Player dashboard. Allowlist gate. | A player can sign in and see all their upcoming fixtures across games |
 | **M6** | Owner UI — create/edit game, manage squad, overrides, guests, invite link and QR | J1 and J6 work end to end with no seed data |
 | **M7** | Polish — empty states, error pages, accessibility pass, unsubscribe and leave-game flows, delete-my-data, `/privacy` stub | Usable by a stranger with no explanation, and a player can remove themselves and their data |
+| **M8** | Squad visibility — an owner-controlled setting, and a player's view of a game | A player can see who else is playing, and an owner can turn that off |
 
 M1–M4 are the product. M5–M7 make it shareable. Team picking, score recording, and the funding page come after, as separate specs.
 

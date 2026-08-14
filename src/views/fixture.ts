@@ -33,7 +33,14 @@ export interface FixturePageOptions {
   /** Already formatted for display in the game's timezone by the caller. */
   kicksOffAtLocal: string;
   view: FixtureView;
-  squad: readonly SquadMember[];
+  /** `null` when the organiser has kept the squad private from players (BR-33). */
+  squad: readonly SquadMember[] | null;
+  /**
+   * How many are in, independent of whether `squad` names them. Needed
+   * because when `squad` is `null` that count is no longer implied by a
+   * list's length.
+   */
+  inCount: number;
   /** The player this page is being rendered for, identified by their token. */
   viewer: { playerId: string; status: ResponseStatus; waitlistRank?: number | null };
   /** Echoed into the form action so the POST carries the same token. */
@@ -147,6 +154,24 @@ function renderSquadList(squad: readonly SquadMember[]): string {
   return `<ul class="squad">${items}</ul>`;
 }
 
+/**
+ * The squad, or a count when the organiser has kept it private (BR-33).
+ *
+ * The count stays deliberately. "Are there enough players this week?" is the
+ * question the whole product exists to answer, and hiding names is not a
+ * reason to stop answering it.
+ *
+ * Exported so the dashboard (task 4) can render the same sentence for the
+ * same setting rather than retyping it — two copies of this wording is how
+ * they drift apart.
+ */
+export function renderSquadSection(squad: readonly SquadMember[] | null, inCount: number): string {
+  if (squad === null) {
+    return `<p class="muted">Who's playing isn't shown for this game. ${inCount} in so far.</p>`;
+  }
+  return renderSquadList(squad);
+}
+
 function renderNudge(view: FixtureView): string {
   if (!view.flags.includes("uneven")) return "";
   return `<p class="nudge">The squad has an odd number of players in — one more would even it up.</p>`;
@@ -219,7 +244,7 @@ function renderReadOnlyNotice(reason: ReadOnlyReason): string {
  * button carries the `primary` CSS class, never what gets recorded.
  */
 export function renderFixturePage(options: FixturePageOptions): string {
-  const { gameName, venueName, kicksOffAtLocal, view, squad, viewer, readOnlyReason } = options;
+  const { gameName, venueName, kicksOffAtLocal, view, squad, inCount, viewer, readOnlyReason } = options;
 
   const headline = viewerHeadline(viewer, readOnlyReason);
   // A waitlisted viewer's headline gets the same warn treatment the roster
@@ -239,7 +264,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${renderOverCapacity(view)}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options)}
     <h2>Squad</h2>
-    ${renderSquadList(squad)}
+    ${renderSquadSection(squad, inCount)}
   `;
 
   return layout({

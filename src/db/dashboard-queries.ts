@@ -19,6 +19,8 @@ import { fixtures, games, memberships, responses } from "./schema.js";
  */
 export interface DashboardFixture {
   fixtureId: string;
+  /** The game this fixture belongs to, so the page can link to it. */
+  gameId: string;
   gameName: string;
   /** The fixture's venue override if it has one, else the game's (§2.8). */
   venueName: string;
@@ -101,6 +103,7 @@ function selectEntitledFixtures(db: Db, playerId: string, extra?: SQL) {
   return db
     .select({
       fixtureId: fixtures.id,
+      gameId: games.id,
       gameName: games.name,
       gameVenueName: games.venueName,
       venueOverride: fixtures.venueOverride,

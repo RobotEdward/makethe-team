@@ -73,6 +73,22 @@
       "shows": "A player who answered after the fixture filled, told their waitlist position."
     },
     {
+      "id": "respond-squad-shown",
+      "chapter": "03-answering-a-reminder",
+      "title": "Who else is playing",
+      "route": "/r/:token",
+      "image": "images/respond-squad-shown.png",
+      "shows": "The squad list on the response page, with everyone's name and answer, which is what a player sees while their organiser leaves the default setting on."
+    },
+    {
+      "id": "respond-squad-hidden",
+      "chapter": "03-answering-a-reminder",
+      "title": "When it's turned off",
+      "route": "/r/:token",
+      "image": "images/respond-squad-hidden.png",
+      "shows": "The response page for a game whose organiser has turned the setting off: a headcount and the player's own answer, no other names."
+    },
+    {
       "id": "respond-out",
       "chapter": "04-when-someone-drops-out",
       "title": "Changing your mind",
@@ -111,6 +127,14 @@
       "route": "/g/:id/edit",
       "image": "images/edit-game.png",
       "shows": "The game's settings, filled in with what it currently uses."
+    },
+    {
+      "id": "squad-visibility-checkbox",
+      "chapter": "05-running-your-squad",
+      "title": "Choosing who sees the squad",
+      "route": "/g/:id/edit",
+      "image": "images/squad-visibility-checkbox.png",
+      "shows": "The Let players see who else is playing checkbox on the edit form, checked because that's the default every game starts with."
     },
     {
       "id": "owner-fixture",

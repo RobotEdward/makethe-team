@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { getFixtureWithSquad } from "../db/queries.js";
+import { findMembershipInGame, getFixtureWithSquad } from "../db/queries.js";
 import { getDb, type Db } from "../db/client.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
@@ -12,6 +12,7 @@ import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { escapeHtml, layout } from "../views/layout.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
+import { squadForViewer } from "../domain/squad-visibility.js";
 
 export const respond = new Hono<AppEnv>();
 
@@ -108,6 +109,21 @@ async function renderFixtureForViewer(params: {
     waitlistRank: viewerMember?.waitlistRank ?? null,
   };
 
+  // An organiser who also plays gets a response row like everyone else when a
+  // fixture opens, so they are mailed a reminder carrying their own link and
+  // land here — there is nothing about this route that makes its viewer a
+  // player rather than an owner. The token names the player; the squad they
+  // may see is decided by the membership that player holds in *this* game, so
+  // it is read here rather than joined into `getFixtureWithSquad`: it is a
+  // fact about the viewer, not about the fixture, and every other caller of
+  // that query already knows its viewer's role without asking.
+  //
+  // `active` as well as `owner`: an organiser who has been removed from the
+  // squad keeps neither the standing nor the visibility (the same rule the
+  // owner-facing routes apply through `findGameForOwner`).
+  const membership = await findMembershipInGame(db, game.id, playerId);
+  const isOwner = membership?.active === true && membership.role === "owner";
+
   const readOnlyReason: ReadOnlyReason | undefined =
     fixture.lifecycle === "played" || fixture.lifecycle === "cancelled"
       ? fixture.lifecycle
@@ -122,7 +138,8 @@ async function renderFixtureForViewer(params: {
     venueName: fixture.venueOverride ?? game.venueName,
     kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
     view,
-    squad,
+    squad: squadForViewer(game, squad, { isOwner }),
+    inCount: fixture.inCount,
     viewer,
     token,
     intent,

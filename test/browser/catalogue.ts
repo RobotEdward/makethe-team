@@ -6,7 +6,7 @@ import {
 } from "../../src/auth/paths.js";
 import type { World } from "./world.js";
 
-export type Persona = "anonymous" | "owner";
+export type Persona = "anonymous" | "owner" | "player";
 
 export interface CataloguePage {
   /** Stable slug. Used in test names and screenshot filenames. */
@@ -81,6 +81,13 @@ export const CATALOGUE: CataloguePage[] = [
     path: (w) => `/g/${w.gameId}`,
     persona: "owner",
     note: "Squad, fixtures, invite link, QR code, and the J6a squad controls.",
+  },
+  {
+    id: "player-game",
+    title: "Game (player)",
+    path: (world) => `/g/${world.gameId}`,
+    persona: "player",
+    note: "A member's view of a game: who's playing this week, and what's coming up.",
   },
   {
     id: "owner-fixture",

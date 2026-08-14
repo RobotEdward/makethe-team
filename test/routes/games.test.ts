@@ -34,6 +34,8 @@ const VALID = {
   // and the "unchecking survives a validation round-trip" test below, which is
   // the behaviour it buys.
   prefersEvenNumbersSubmitted: "1",
+  squadVisibleToPlayers: "on",
+  squadVisibleToPlayersSubmitted: "1",
 };
 
 describe("GET /g/new", () => {
@@ -245,14 +247,18 @@ describe("GET /g/:id — entitlement (TR-18)", () => {
     expect(response.status).toBe(404);
   });
 
-  it("404s for a member who is not an owner", async () => {
+  it("gives a member who is not an owner their own page", async () => {
+    // A demoted owner falls through the owner check, but is still an active
+    // member — Task 4 gives that case the player's page, not a 404 (see
+    // `test/routes/player-game.test.ts` for the fuller entitlement matrix).
     const { cookie, gameId } = await ownedGame();
     const db = testDb();
-    // Demote the only owner: the same person, no longer entitled.
+    // Demote the only owner: the same person, no longer entitled as owner.
     await db.update(memberships).set({ role: "player" }).where(eq(memberships.gameId, gameId));
 
     const response = await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie }, redirect: "manual" });
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain("Invite people");
   });
 
   it("404s for an owner whose membership has been deactivated", async () => {
@@ -527,8 +533,28 @@ describe("editing a game", () => {
 
     expect(response.status).toBe(422);
     const html = await response.text();
-    expect(html).toContain('name="prefersEvenNumbers" type="checkbox">');
-    expect(html).not.toContain('type="checkbox" checked');
+    const box = html.match(/<input id="prefersEvenNumbers"[^>]*>/)?.[0] ?? "";
+    expect(box).toContain('name="prefersEvenNumbers" type="checkbox"');
+    expect(box).not.toContain("checked");
+  });
+
+  /**
+   * The trap §6.1 exists to prevent: an unchecked box is absent from the
+   * body, so without the hidden marker the redisplay re-ticks it and an
+   * owner who unticked it, mistyped something else, and corrected that
+   * silently saves it back on.
+   */
+  it("keeps the squad-visibility box unticked through a 422 redisplay", async () => {
+    const { cookie, gameId } = await ownedGame();
+
+    const unchecked: Record<string, string> = { ...VALID, kickoffTime: "not a time" };
+    delete unchecked["squadVisibleToPlayers"];
+    const response = await post(`/g/${gameId}/edit`, cookie, unchecked);
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+    const box = html.match(/<input id="squadVisibleToPlayers"[^>]*>/)?.[0] ?? "";
+    expect(box).not.toContain("checked");
   });
 
   /**

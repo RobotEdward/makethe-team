@@ -142,6 +142,7 @@ function auditShape(game: {
   minPlayers: number;
   maxPlayers: number;
   prefersEvenNumbers: boolean;
+  squadVisibleToPlayers: boolean;
   durationMinutes: number;
   shortWarningOffsetHours: number;
   timezone: string;
@@ -154,6 +155,7 @@ function auditShape(game: {
     minPlayers: game.minPlayers,
     maxPlayers: game.maxPlayers,
     prefersEvenNumbers: game.prefersEvenNumbers,
+    squadVisibleToPlayers: game.squadVisibleToPlayers,
     durationMinutes: game.durationMinutes,
     shortWarningOffsetHours: game.shortWarningOffsetHours,
     timezone: game.timezone,

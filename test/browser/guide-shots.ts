@@ -127,6 +127,32 @@ export const SHOTS: Shot[] = [
     persona: "anonymous",
   },
   {
+    id: "respond-squad-shown",
+    chapter: "03-answering-a-reminder",
+    title: "Who else is playing",
+    route: "/r/:token",
+    shows:
+      "The squad list on the response page, with everyone's name and answer, which is " +
+      "what a player sees while their organiser leaves the default setting on.",
+    // The same page as `respond-in`, cropped to the squad list — reusing that
+    // page's URL is deliberate (see `invite`/`invite-qr` above for the same
+    // pattern), so this needs no game of its own.
+    path: (w) => `/r/${w.inToken}`,
+    persona: "anonymous",
+    element: "ul.squad",
+  },
+  {
+    id: "respond-squad-hidden",
+    chapter: "03-answering-a-reminder",
+    title: "When it's turned off",
+    route: "/r/:token",
+    shows:
+      "The response page for a game whose organiser has turned the setting off: a " +
+      "headcount and the player's own answer, no other names.",
+    path: (w) => `/r/${w.hiddenSquadToken}`,
+    persona: "anonymous",
+  },
+  {
     id: "respond-out",
     chapter: "04-when-someone-drops-out",
     title: "Changing your mind",
@@ -174,6 +200,18 @@ export const SHOTS: Shot[] = [
     shows: "The game's settings, filled in with what it currently uses.",
     path: (w) => `/g/${w.gameId}/edit`,
     persona: "organiser",
+  },
+  {
+    id: "squad-visibility-checkbox",
+    chapter: "05-running-your-squad",
+    title: "Choosing who sees the squad",
+    route: "/g/:id/edit",
+    shows:
+      "The Let players see who else is playing checkbox on the edit form, checked " +
+      "because that's the default every game starts with.",
+    path: (w) => `/g/${w.gameId}/edit`,
+    persona: "organiser",
+    element: '.field:has(#squadVisibleToPlayers)',
   },
   {
     id: "owner-fixture",

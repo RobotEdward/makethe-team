@@ -13,10 +13,10 @@ the same action as answering in the first place: go back to the page — from th
 email again, or from the tab you still have open — and tap **Can't make it**
 there.
 
-The page then says **You said you can't make it**, and the squad below updates.
-Sam Whitlock has answered that way here, and the answer sits beside that name
-at the bottom of the list. Tapping **I'm in** puts you back, and there's no
-penalty and no message to write.
+The page then says **You said you can't make it** — that's how you know it
+worked, the same as with any answer. Sam Whitlock has answered that way here.
+Tapping **I'm in** puts you back, and there's no penalty and no message to
+write.
 
 Say one of the ten players marked **In** drops out. The place doesn't sit
 empty: Mika Toivonen, first on the waitlist, is moved in and gets an email

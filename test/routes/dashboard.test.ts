@@ -362,6 +362,22 @@ describe("GET /app", () => {
     expect(html).not.toContain("Thursday 7-a-side");
   });
 
+  /**
+   * The member's own game page is reachable from here or from nowhere: a
+   * player who owns nothing gets no "Games you own" list, so the fixture
+   * card's heading is their only link into it.
+   */
+  it("links a member who owns nothing to a game they are in", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { gameId } = await seedFixtureFor(playerId, { gameName: "Sunday Kickabout" });
+
+    const html = await (await SELF.fetch(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } })).text();
+
+    expect(html).not.toContain("Games you own");
+    expect(html).toContain(`href="/g/${gameId}"`);
+  });
+
   it("does not list a game the viewer belongs to but does not own", async () => {
     const { cookie } = await signIn();
     const playerId = await viewerId();

@@ -7,9 +7,11 @@ import { buildAuditInsert, recordAudit } from "../db/audit.js";
 import { getDb } from "../db/client.js";
 import {
   countCommitments,
+  findGameForMember,
   findGameForOwner,
   findMembershipInGame,
   getFixtureWithSquad,
+  listOpenFixtureIds,
   listSquad,
   listUpcomingFixtures,
   type FixtureWithSquad,
@@ -23,6 +25,7 @@ import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
+import { squadForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
@@ -30,6 +33,7 @@ import { sendRemovedEmail } from "../notify/send-removed.js";
 import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
+import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
 import { notifyPromotedPlayer } from "./respond.js";
 
@@ -132,7 +136,13 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
   // establishes whether. 404 rather than 403 for every failure mode, so a
   // game id cannot be probed.
   const game = await findGameForOwner(db, c.req.param("id"), player.id);
-  if (game === null) return c.text("Not found", 404);
+  if (game === null) {
+    // Not an owner. A member gets their own page; everyone else gets the same
+    // 404 an owner-entitlement failure gets, so the two are indistinguishable.
+    const asMember = await findGameForMember(db, c.req.param("id"), player.id);
+    if (asMember === null) return c.text("Not found", 404);
+    return renderPlayerGame(c, asMember, player.id, now);
+  }
 
   const [squad, upcoming] = await Promise.all([
     listSquad(db, game.id),
@@ -155,6 +165,64 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
     }),
   );
 });
+
+/**
+ * Render `/g/:id` for a member who is not this game's owner — the game's
+ * open fixture, if it has one, filtered through `squadForViewer` so a member
+ * sees the squad only when the organiser allows it, and what's coming up.
+ *
+ * Never given the invite token, and never imports `renderGameOverviewPage`
+ * or anything from `src/views/game-overview.ts`: the invite link is a
+ * capability, and this is the page every member — not just the organiser —
+ * can reach.
+ */
+async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSelect, viewerPlayerId: string, now: Date) {
+  const db = getDb(c.env.DB);
+
+  // `listOpenFixtureIds` returns them kickoff-ordered; a game has at most one
+  // open fixture at a time in practice, but the first is the right answer
+  // either way.
+  const [openFixtureIds, upcoming] = await Promise.all([
+    listOpenFixtureIds(db, game.id),
+    listUpcomingFixtures(db, game.id, now),
+  ]);
+
+  let openFixture: NonNullable<Parameters<typeof renderPlayerGamePage>[0]["openFixture"]> | null = null;
+  if (openFixtureIds[0] !== undefined) {
+    const withSquad = await getFixtureWithSquad(db, openFixtureIds[0]);
+    if (withSquad !== null) {
+      openFixture = {
+        kicksOffAtLocal: formatLocalDateTime(withSquad.fixture.kicksOffAt, game.timezone),
+        view: fixtureView(
+          {
+            lifecycle: withSquad.fixture.lifecycle,
+            kicksOffAt: withSquad.fixture.kicksOffAt,
+            inCount: withSquad.fixture.inCount,
+            minPlayers: withSquad.fixture.minPlayers,
+            maxPlayers: withSquad.fixture.maxPlayers,
+            prefersEvenNumbers: withSquad.fixture.prefersEvenNumbers,
+            shortWarningOffsetHours: withSquad.fixture.shortWarningOffsetHours,
+          },
+          now,
+        ),
+        inCount: withSquad.fixture.inCount,
+        squad: squadForViewer(game, withSquad.squad, { isOwner: false }),
+      };
+    }
+  }
+
+  return c.html(
+    renderPlayerGamePage({
+      gameName: game.name,
+      venueName: game.venueName,
+      venueAddress: game.venueAddress,
+      timezone: game.timezone,
+      openFixture,
+      upcoming,
+      viewerPlayerId,
+    }),
+  );
+}
 
 gamesRoutes.post("/g/:id/invite/rotate", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
@@ -211,6 +279,7 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
         minPlayers: String(game.minPlayers),
         maxPlayers: String(game.maxPlayers),
         prefersEvenNumbers: game.prefersEvenNumbers ? "on" : "",
+        squadVisibleToPlayers: game.squadVisibleToPlayers ? "on" : "",
         reminderDaysBefore: String(game.reminderDaysBefore),
         reminderLocalTime: game.reminderLocalTime,
         shortWarningOffsetHours: String(game.shortWarningOffsetHours),

@@ -17,9 +17,9 @@ recorded yet: the page asks **Can you make it?** and waits for you.
 
 **Confirmed — the game is on** means enough people have already said yes for
 the game to go ahead. Beside it, **0 spots left** is how many places are still
-free — none, in this one, which is what the waitlist below is about. The squad
-list shows who has answered what, so you can see who you'd be playing with
-before you decide.
+free — none, in this one, which is what the waitlist below is about. When your
+organiser allows it, the squad list shows who has answered what, so you can
+see who you'd be playing with before you decide — more on that below.
 
 ## Saying you're in
 
@@ -27,7 +27,7 @@ before you decide.
 
 Tapping a button on this page is what records your answer. Tap **I'm in**
 while there is a place free and the page comes back saying **You're in.**,
-with your name marked **In** in the squad below.
+with your name marked **In**.
 
 That headline is how you know it worked. Close the page without tapping a
 button on it and nothing has been saved — you are not counted, and the place
@@ -35,6 +35,20 @@ is still free for somebody else.
 
 Both buttons stay on the page afterwards, so you can change your mind by
 tapping the other one any time before kickoff.
+
+## Who else is playing
+
+![The squad list on the response page, every name and answer visible](images/respond-squad-shown.png)
+
+By default, this is what you see: everyone in the squad, and what each of
+them answered.
+
+![A response page for a game with that turned off, showing a headcount and the player's own answer but no other names](images/respond-squad-hidden.png)
+
+Your organiser can turn that off. Do that, and the page shows a count instead
+of the list — **3 in so far.**, here — plus your own answer above it. You
+still know whether there are enough people and whether you're in. You just
+don't see who anyone else is.
 
 ## When it is already full
 
@@ -48,9 +62,9 @@ You do not need to do anything else. If someone drops out, the person at the
 top of the waitlist is moved in automatically and emailed. Nobody else is
 told.
 
-The squad list shows the same thing from the outside: ten players marked **In**,
-then Mika Toivonen first on the waitlist and Grace Abara second, in the order
-they answered. Anyone who has not answered yet — Ade Sowande here — shows as
-**Not yet responded**.
+When the squad is showing, it tells the same story from the outside: ten
+players marked **In**, then Mika Toivonen first on the waitlist and Grace
+Abara second, in the order they answered. Anyone who has not answered yet —
+Ade Sowande here — shows as **Not yet responded**.
 
 Next: [when someone drops out](04-when-someone-drops-out.md).

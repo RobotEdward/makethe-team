@@ -55,6 +55,12 @@ export const games = sqliteTable("games", {
   minPlayers: integer("min_players").notNull(),
   maxPlayers: integer("max_players").notNull(),
   prefersEvenNumbers: integer("prefers_even_numbers", { mode: "boolean" }).notNull().default(true),
+  // M8. Whether players may see who else is playing (BR-33). Default on:
+  // the fixture page has listed the squad since M2, so defaulting off would
+  // silently remove a capability players already have.
+  squadVisibleToPlayers: integer("squad_visible_to_players", { mode: "boolean" })
+    .notNull()
+    .default(true),
   reminderDaysBefore: integer("reminder_days_before").notNull().default(1),
   reminderLocalTime: text("reminder_local_time").notNull().default("09:00"),
   shortWarningOffsetHours: integer("short_warning_offset_hours").notNull().default(12),
