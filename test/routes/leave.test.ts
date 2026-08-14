@@ -5,11 +5,14 @@ import { fixtures, memberships, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
+import { kickoffIn, NOW } from "../support/clock.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
-const NOW = new Date("2026-08-13T09:00:00Z");
-const KICKOFF = new Date("2026-08-13T18:00:00Z");
+// Relative to the real clock, not pinned to a date — the route verifies its
+// token against the real wall clock, so a fixed kickoff eventually falls into
+// the past and every token here reads as expired. See test/support/clock.ts.
+const KICKOFF = kickoffIn(9);
 
 interface SeedResult {
   fixtureId: string;
