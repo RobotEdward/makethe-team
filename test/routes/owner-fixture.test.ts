@@ -391,6 +391,49 @@ describe("POST /g/:id/f/:fixtureId/response/:playerId", () => {
     expect(promoted?.status).toBe("in");
   });
 
+  it("records the previous status when marking an `in` player out", async () => {
+    // `p-0` starts `in` here, unlike the "writes an audit row naming the
+    // previous status" case above (which starts `pending`, a state the
+    // `?? "pending"` fallback would also produce if the read were broken or
+    // misordered) — this is the case where reading the status *after* the
+    // write, rather than before it, would wrongly capture `"out"`.
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFullFixtureOwnedBy(viewerId);
+
+    // No waitlisted candidate exists on this fixture, so nothing is promoted
+    // and there is no background send to drain.
+    await appPost(`/g/${gameId}/f/${fixtureId}/response/p-0`, { intent: "out" }, cookie);
+
+    const db = testDb();
+    const [audit] = await db.select().from(auditLog).where(eq(auditLog.action, "fixture.response_overridden"));
+    expect(JSON.parse(audit!.beforeJson!)).toEqual({ playerId: "p-0", status: "in" });
+  });
+
+  it("records the previous status when overriding a waitlisted player", async () => {
+    // The third distinct prior state a real fixture produces (pending, in,
+    // waitlisted) — and the one most likely to be got wrong by a future
+    // refactor, since the waitlisted branch is the one place `setResponse`
+    // decides `in` without going through the `full` check at all.
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, waitlistedId } = await seedFullFixtureWithWaitlist(viewerId);
+
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/response/${waitlistedId}`,
+      { intent: "in", override: "1" },
+      cookie,
+    );
+
+    expect(response.status).toBe(303);
+    const db = testDb();
+    const [row] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, waitlistedId)));
+    expect(row?.status).toBe("in");
+    const [audit] = await db.select().from(auditLog).where(eq(auditLog.action, "fixture.response_overridden"));
+    expect(JSON.parse(audit!.beforeJson!)).toEqual({ playerId: waitlistedId, status: "waitlisted" });
+  });
+
   it("404s for a player who is not an owner", async () => {
     const { cookie, viewerId } = await ownerSession();
     const db = testDb();
