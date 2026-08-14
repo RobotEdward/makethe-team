@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import { BASE_URL } from "../../playwright.config.js";
+import { observe } from "./observe.js";
 import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
-import { seedWorld } from "./world.js";
+import { JOINER_NAME, seedWorld } from "./world.js";
 
 /**
  * Tier 2: the journeys a person must be able to complete, run twice — once
@@ -159,6 +161,97 @@ for (const javaScriptEnabled of [true, false] as const) {
     });
   });
 }
+
+/**
+ * Tier 2, but not run twice with JavaScript off: nothing on this page is
+ * script-only, and BR-27's attribution and the guest form are both plain
+ * form posts already covered end to end by the JS-off projection above for
+ * every other page in the catalogue. The point of this pair is the console
+ * gate over a page Tasks 4-6 never drove in a real browser (see this file's
+ * header for why that gap matters), and the two-step over-capacity
+ * confirmation neither server tests nor the loop above can distinguish from
+ * a page that lies and proceeds anyway.
+ */
+test("an organiser answers for a player, adds a guest, and goes over capacity", async ({ page, browser }) => {
+  const seen = observe(page);
+  // `seedWorld` already leaves `page` signed in as `TEST_OWNER` — a second
+  // `signIn` here would hit `GET /sign-in`'s own redirect for an
+  // already-authenticated session (straight to the dashboard, skipping the
+  // email form) and hang waiting for an input that was never going to render.
+  const world = await seedWorld(page, browser);
+
+  await page.goto(`/g/${world.gameId}/f/${world.fixtureId}`);
+
+  // Mark the joined member in on their behalf, and see BR-27's attribution
+  // appear on their row specifically — scoped so a stray "marked in by"
+  // anywhere on the page cannot pass this.
+  const row = squadRow(page, JOINER_NAME);
+  await row.getByRole("button", { name: "Mark in" }).click();
+  await expect(squadRow(page, JOINER_NAME).locator(".set-by")).toContainText("marked in by");
+
+  // Add a guest, who occupies a slot of their own.
+  await page.fill("#guest-name", "Sam Whitlock");
+  await page.getByRole("button", { name: "Add guest" }).click();
+  await expect(squadRow(page, "Sam Whitlock")).toHaveCount(1);
+
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+});
+
+test("one more mark-in past capacity asks first, rather than waitlisting silently", async ({
+  page,
+  browser,
+}) => {
+  const seen = observe(page);
+  // See the previous test for why `seedWorld` alone is enough here.
+  const world = await seedWorld(page, browser);
+
+  const fixturePath = `/g/${world.gameId}/f/${world.fixtureId}`;
+
+  // Fill every place directly over HTTP, the way `world.ts` mints response
+  // tokens rather than clicking through fourteen player pages. 14 is
+  // `/g/new`'s own default `maxPlayers` (src/routes/games.ts), which
+  // `seedWorld` never overrides. Guests need no prior membership, so this is
+  // the fastest way to a genuinely full fixture.
+  const maxPlayers = 14;
+  for (let i = 1; i <= maxPlayers; i++) {
+    const response = await page.request.post(`${BASE_URL}${fixturePath}/guest`, {
+      form: { name: `Filler ${i}` },
+      headers: { origin: BASE_URL },
+    });
+    expect(response.ok(), `filler guest ${i} of ${maxPlayers} should have had a free slot`).toBeTruthy();
+  }
+
+  await page.goto(fixturePath);
+  const squad = page.locator("ul.squad");
+  const seatedBefore = await squad.locator("li").count();
+
+  // One more is the over-capacity case: BR-8's confirmation, not a silent add.
+  await page.fill("#guest-name", "Priya Kapoor");
+  await page.getByRole("button", { name: "Add guest" }).click();
+
+  await expect(page.locator(".confirm")).toContainText("Add them anyway");
+  // The weight of this test: the guest must not already be seated. A page
+  // that just says the confirming words and adds them anyway would pass
+  // every assertion above this one.
+  await expect(squad).not.toContainText("Priya Kapoor");
+  await expect(squad.locator("li")).toHaveCount(seatedBefore);
+
+  await page.getByRole("button", { name: "Add them anyway" }).click();
+
+  await expect(squadRow(page, "Priya Kapoor")).toHaveCount(1);
+  await expect(squad.locator("li")).toHaveCount(seatedBefore + 1);
+  await expect(page.locator(".problem")).toContainText("Over capacity");
+
+  expect(await seen.violations()).toEqual([]);
+  // The deliberate 422 above is a real, correct navigation — Chromium logs a
+  // non-2xx navigation as a console error regardless of cause, the same one
+  // `console-gate.spec.ts` discounts for `expectedStatus` entries. Discount
+  // exactly that message and nothing else, so this still catches anything
+  // else the page might have logged.
+  const selfReport = "Failed to load resource: the server responded with a status of 422";
+  expect(seen.errors().filter((error) => !error.includes(selfReport))).toEqual([]);
+});
 
 test("the two identities never share a session", async ({ page, browser }) => {
   // Not parameterised: this is about cookie isolation, which JavaScript has
