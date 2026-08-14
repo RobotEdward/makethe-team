@@ -182,6 +182,16 @@ test("the organiser's squad-visibility setting hides and reveals names on the re
   // single-run tests in this file for why a second `signIn` would hang.
   const world = await seedWorld(page, browser);
 
+  // The token is minted for the joiner (see `world.ts`), so `/r/:token` is
+  // Alex Morgan's own fixture page: asserting only `JOINER_NAME`'s absence
+  // would just prove Alex Morgan's own name is hidden from Alex Morgan, which
+  // a future self/other split in `squadForViewer` could satisfy without the
+  // setting doing anything for *other* players. `OTHER_MEMBER_NAME` is the
+  // owner — a genuinely different squad member on the same fixture — so the
+  // real claim under test (a player stops seeing everyone else) is on both
+  // names together, not just the viewer's own.
+  const OTHER_MEMBER_NAME = "owner"; // displayName() in src/routes/signin.ts falls back to the email's local part; the sign-in form here never carries a name, so TEST_OWNER ("owner@example.test") renders as this.
+
   // --- 1: the owner page renders --------------------------------------
   await page.goto(`/g/${world.gameId}`);
   await expect(page.locator("#invite-url")).toBeVisible();
@@ -192,12 +202,13 @@ test("the organiser's squad-visibility setting hides and reveals names on the re
   await page.getByRole("button", { name: "Save changes" }).click();
   await page.waitForURL(/\/g\/[^/]+$/);
 
-  // --- 3: the response page hides the name but keeps the count ---------
+  // --- 3: the response page hides both names but keeps the count -------
   await page.goto(`/r/${world.responseToken}`);
   await expect(page.locator("main")).not.toContainText(JOINER_NAME);
+  await expect(page.locator("main")).not.toContainText(OTHER_MEMBER_NAME);
   await expect(page.locator("main")).toContainText("in so far");
 
-  // --- 4: turn it back on, the name reappears ---------------------------
+  // --- 4: turn it back on, both names reappear ---------------------------
   await page.goto(`/g/${world.gameId}/edit`);
   await page.getByLabel("Let players see who else is playing").check();
   await page.getByRole("button", { name: "Save changes" }).click();
@@ -207,6 +218,7 @@ test("the organiser's squad-visibility setting hides and reveals names on the re
   // Scoped to the squad list itself, per this file's own locator-discipline
   // note: `ul.squad li` matched two different lists on one page before.
   await expect(squadRow(page, JOINER_NAME)).toHaveCount(1);
+  await expect(squadRow(page, OTHER_MEMBER_NAME)).toHaveCount(1);
 
   expect(await seen.violations()).toEqual([]);
   expect(seen.errors()).toEqual([]);
