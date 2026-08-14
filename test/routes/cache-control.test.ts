@@ -3,8 +3,14 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
 
 /**
- * Every route that takes a `:token` is reached from an email by somebody with
- * no session, and each of them must answer `private, no-store`.
+ * Every route whose path literally contains the segment `:token` is reached
+ * from an email by somebody with no session, and each of them must answer
+ * `private, no-store`. The filter is a path-string match, not a semantic
+ * scan for "does this route carry a token" — a token passed as a query
+ * string, or a path param spelled `:inviteToken` rather than `:token`, would
+ * not be picked up. There is no such route today; if one is ever added, it
+ * needs its own coverage, not an extension of this filter to guess at future
+ * param names.
  *
  * **The route list is derived from the application, never restated here.**
  * That is the whole point of this file. The gap this test closes arose exactly
@@ -12,6 +18,13 @@ import { createApp } from "../../src/app.js";
  * and its three neighbours were not, and nothing noticed for two milestones. A
  * test carrying its own list of token routes would pass forever while a fifth
  * route shipped bare.
+ *
+ * The list comes from a `createApp()` built locally here, while the requests
+ * below go through `SELF` — a separate app instance from `cloudflare:test`'s
+ * own worker. That split is safe only because `createApp` registers every
+ * route unconditionally; a feature-flagged route registered conditionally
+ * would need the same flag on both sides, or this list and `SELF`'s
+ * behaviour would silently diverge.
  *
  * An invalid token is deliberate and sufficient. The middleware runs *after*
  * the handler, so the header is applied to whatever the handler produced —

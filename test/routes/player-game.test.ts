@@ -6,6 +6,7 @@ import { fixtures, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, insertMembership, insertPlayer, playerRow, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
+import { kickoffIn } from "../support/clock.js";
 
 const NOW = new Date("2026-08-13T09:00:00Z");
 
@@ -72,7 +73,7 @@ async function seedGameWithOpenFixture(options: {
   await db.insert(fixtures).values({
     id: fixtureId,
     gameId,
-    kicksOffAt: new Date("2026-08-20T18:00:00Z"),
+    kicksOffAt: kickoffIn(24 * 7),
     minPlayers: 1,
     maxPlayers: 14,
     prefersEvenNumbers: true,

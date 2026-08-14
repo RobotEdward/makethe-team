@@ -7,20 +7,35 @@ import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import type { ResponseStatus } from "../../src/domain/response-status.js";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
+import { kickoffIn } from "../support/clock.js";
+import { toLocalParts, toUtc } from "../../src/domain/time/zone.js";
 
 const db = getDb(env.DB);
 const CANCEL_SECRET = env.CANCEL_TOKEN_SECRET;
 const RESPONSE_SECRET = env.RESPONSE_TOKEN_SECRET;
 
 /**
- * Every instant in this suite is an explicit literal, and no token expiry is
- * ever derived from the clock: `Date.now()` is frozen between I/O inside
- * workerd while the test isolate's own clock keeps moving, so a token minted
- * as "now + 1ms" is a coin flip. `KICKOFF` is comfortably in the future
- * relative to the (real) clock the Worker reads, and `EXPIRED` comfortably in
- * the past, so neither depends on sub-second agreement between the two.
+ * `KICKOFF` is derived from `test/support/clock.ts`, not minted as an offset
+ * of the moment a token happens to be signed here: `Date.now()` is frozen
+ * between I/O inside workerd while the test isolate's own clock keeps moving,
+ * so an expiry computed as "now + 1ms" at mint time is a coin flip against the
+ * route's own read of the clock. `EXPIRED` is a fixed instant in the past —
+ * the one hardcoded date that is safe, because the past cannot un-expire.
+ *
+ * The "shows what cancelling will do" test below asserts on the literal
+ * rendered local time, "19:00". Pinning that by fixing the *UTC* hour (e.g.
+ * 18:00 UTC) is wrong: Europe/London is only UTC+1 during BST (late March to
+ * late October), so the same 18:00 UTC instant renders as "18:00" for the
+ * other five months of the year, and `kickoffIn`'s floating date will land in
+ * that window roughly half the year. Instead, take the calendar day
+ * `kickoffIn` lands on and ask `toUtc` (`src/domain/time/zone.ts`) for the
+ * instant that is genuinely 19:00 in `Europe/London` on that day — correct in
+ * both GMT and BST, whatever day the suite happens to run.
  */
-const KICKOFF = new Date("2099-08-13T18:00:00Z");
+const KICKOFF = toUtc(
+  { ...toLocalParts(kickoffIn(24 * 7), "Europe/London"), hour: 19, minute: 0, second: 0 },
+  "Europe/London",
+);
 const EXPIRED = new Date("2000-01-01T00:00:00Z");
 
 const OWNER = "owner-1";
@@ -199,7 +214,8 @@ describe("GET /cancel/:token", () => {
     expect(body).toContain("Thursday 7-a-side");
     expect(body).toContain("Oxford Sports Park");
     // Formatted through src/domain/time/zone.ts in the game's timezone
-    // (Europe/London, so BST — 19:00 local for an 18:00Z kickoff).
+    // (Europe/London). KICKOFF above is built to be genuinely 19:00 local on
+    // whatever day it lands, in both GMT and BST.
     expect(body).toContain("19:00");
     // 3 players are `in` (owner, p-in, p-guest); 3 will be emailed (owner,
     // p-in, p-wait — the guest is excluded by BR-32, `out`/`pending` by BR-20).
