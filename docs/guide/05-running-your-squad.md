@@ -56,6 +56,20 @@ the imminent game is a job for the group chat, or for calling it off — see
 **Advanced** hides the settings you'll rarely want. **Save changes** applies
 everything at once.
 
+## Choosing who sees the squad
+
+![The Let players see who else is playing checkbox on the edit form, checked](images/squad-visibility-checkbox.png)
+
+**Let players see who else is playing**, further down the same form, decides
+what a player finds on their response page: everyone's name and answer, or
+just a count. It's checked by default, which is why the walkthrough in
+[answering a reminder](03-answering-a-reminder.md) shows names.
+
+Uncheck it and save, and every player's page switches to counts only — no
+other names, no other answers, just theirs and how many are in so far. It
+changes nothing for you: as the organiser you always see the whole squad,
+whatever this is set to.
+
 ## One fixture at a time
 
 Every fixture has its own page, separate from the game page above — tap its

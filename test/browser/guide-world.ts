@@ -143,6 +143,13 @@ export interface GuideWorld {
    */
   demoGameId: string;
   demoFixtureId: string;
+  /**
+   * A response token for a player in a third, small game whose organiser has
+   * turned off "Let players see who else is playing" — see
+   * `buildVisibilityDemo` for why this needs its own game rather than
+   * toggling the Meadow Park Kickabout's own setting.
+   */
+  hiddenSquadToken: string;
 }
 
 export async function buildGuideWorld(page: Page, browser: Browser): Promise<GuideWorld> {
@@ -272,6 +279,7 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   }
 
   const demo = await buildOverrideDemo(page, browser, slot);
+  const hiddenSquadToken = await buildVisibilityDemo(page, browser, slot);
 
   return {
     gameId,
@@ -284,6 +292,7 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     removablePlayerId: idFor(outEmail),
     demoGameId: demo.gameId,
     demoFixtureId: demo.fixtureId,
+    hiddenSquadToken,
     cancelToken: await signCancelToken(
       {
         ownerPlayerId: idFor(GUIDE_ORGANISER),
@@ -419,6 +428,102 @@ async function buildOverrideDemo(
   await page.waitForLoadState("networkidle");
 
   return { gameId, fixtureId: fixture.id };
+}
+
+/**
+ * A third, small game solely for chapter 3's "squad hidden" screenshot.
+ *
+ * The Meadow Park Kickabout keeps its default — the setting on — because
+ * chapters 1, 3, 4 and 6 already quote its exact squad and its names
+ * verbatim ("ten people in", Ade Sowande as the one who never answers).
+ * Turning that game's setting off would silently falsify every one of those
+ * sentences on the next capture. This game exists only to show the other
+ * state, and nothing else in the guide depends on its numbers.
+ *
+ * The setting is turned off through the edit form itself — not written to
+ * the database directly — so the screenshot depicts a state the app itself
+ * produced, exactly as BR-33 and its checkbox are meant to be used.
+ */
+async function buildVisibilityDemo(
+  page: Page,
+  browser: Browser,
+  slot: { weekday: string; kickoffTime: string },
+): Promise<string> {
+  const HIDDEN_SQUAD = [
+    { name: "Isla Ferreira", email: "isla@example.test" },
+    { name: "Noah Kessler", email: "noah@example.test" },
+  ] as const;
+
+  await page.goto("/g/new");
+  await page.fill('input[name="name"]', "Oakfield Six-a-side");
+  await page.fill('input[name="venueName"]', "Oakfield Astro");
+  await page.fill('input[name="venueAddress"]', "2 Oak Lane");
+  await page.selectOption('select[name="weekday"]', slot.weekday);
+  // Later again than both the Meadow Park and Riverside Turf kickoffs, same
+  // weekday and reminder instant, so this fixture always sorts after both of
+  // theirs and never disturbs `dashboard`'s `nth=0` card.
+  await page.fill('input[name="kickoffTime"]', "21:00");
+  await page.fill('input[name="minPlayers"]', "1");
+  await page.fill('input[name="maxPlayers"]', "4");
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/\/g\/[^/]+$/);
+
+  const gameId = new URL(page.url()).pathname.split("/")[2]!;
+  const inviteToken = (await page.inputValue("#invite-url")).split("/j/")[1]!;
+
+  for (const person of HIDDEN_SQUAD) {
+    const context = await browser.newContext();
+    const joinerPage = await context.newPage();
+    await joinerPage.goto(`/j/${inviteToken}`);
+    await joinerPage.fill('input[name="name"]', person.name);
+    await joinerPage.fill('input[name="email"]', person.email);
+    await joinerPage.click('button[type="submit"]');
+    await joinerPage.waitForLoadState("networkidle");
+    await context.close();
+  }
+
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=15+3+*+*+*`);
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=0+*+*+*+*`);
+
+  const [fixture] = await query<{ id: string }>(
+    `SELECT id FROM fixtures WHERE game_id = '${gameId}'
+       AND lifecycle = 'open' ORDER BY kicks_off_at LIMIT 1`,
+  );
+  if (!fixture) throw new Error(`buildVisibilityDemo: game ${gameId} has no open fixture`);
+
+  const players = await query<{ id: string; email: string }>(
+    `SELECT id, email FROM players WHERE email LIKE '%@example.test'`,
+  );
+  const idFor = (email: string): string => {
+    const found = players.find((p) => p.email === email);
+    if (!found) throw new Error(`buildVisibilityDemo: no player row for ${email}`);
+    return found.id;
+  };
+
+  // The organiser plus both joiners answer in — three in, so the hidden
+  // count reads "3 in so far." rather than the less legible "1".
+  const answering = [GUIDE_ORGANISER, ...HIDDEN_SQUAD.map((p) => p.email)];
+  let hiddenSquadToken = "";
+  for (const email of answering) {
+    const token = await signResponseToken(
+      { playerId: idFor(email), fixtureId: fixture.id, expiresAt: Date.now() + 7 * 864e5 },
+      RESPONSE_SECRET,
+    );
+    await page.request.post(`${BASE_URL}/r/${token}`, {
+      form: { intent: "in" },
+      headers: { origin: BASE_URL },
+    });
+    if (email === HIDDEN_SQUAD[0]!.email) hiddenSquadToken = token;
+  }
+
+  // Turn the setting off through the edit form — the same route and the same
+  // checkbox an organiser uses — not a direct write.
+  await page.goto(`/g/${gameId}/edit`);
+  await page.uncheck("#squadVisibleToPlayers");
+  await page.click('button[type="submit"]');
+  await page.waitForURL(new RegExp(`/g/${gameId}$`));
+
+  return hiddenSquadToken;
 }
 
 /** The squad, for the guide's prose and its tests. */
