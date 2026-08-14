@@ -1,0 +1,1 @@
+ALTER TABLE `games` ADD `squad_visible_to_players` integer DEFAULT true NOT NULL;

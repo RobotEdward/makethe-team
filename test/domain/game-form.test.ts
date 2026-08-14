@@ -55,6 +55,20 @@ describe("parseGameForm", () => {
     expect(result.values.prefersEvenNumbers).toBe(false);
   });
 
+  it("reads the squad-visibility checkbox when ticked", () => {
+    const result = parseGameForm(body({ squadVisibleToPlayers: "on" }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.values.squadVisibleToPlayers).toBe(true);
+  });
+
+  it("treats an absent squad-visibility checkbox as off", () => {
+    // An unchecked checkbox is simply absent from the POST body. This is the
+    // whole reason the view needs a hidden marker field — see the view test.
+    const result = parseGameForm(body({ squadVisibleToPlayers: undefined }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.values.squadVisibleToPlayers).toBe(false);
+  });
+
   it("trims the free-text fields", () => {
     const result = parseGameForm(body({ name: "  Thursday 7-a-side  " }));
     if (!result.ok) throw new Error("expected ok");

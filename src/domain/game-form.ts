@@ -50,6 +50,7 @@ export interface GameFormValues {
   minPlayers: number;
   maxPlayers: number;
   prefersEvenNumbers: boolean;
+  squadVisibleToPlayers: boolean;
   reminderDaysBefore: number;
   reminderLocalTime: string;
   shortWarningOffsetHours: number;
@@ -201,6 +202,7 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
   }
 
   const prefersEvenNumbers = typeof body["prefersEvenNumbers"] === "string";
+  const squadVisibleToPlayers = typeof body["squadVisibleToPlayers"] === "string";
 
   // Advisory, per BR-29 and spec Part 3 item 6: a full fixture at an odd max
   // can never satisfy parity, so it carries the `uneven` flag permanently.
@@ -262,6 +264,7 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
       minPlayers: minPlayers!,
       maxPlayers: maxPlayers!,
       prefersEvenNumbers,
+      squadVisibleToPlayers,
       reminderDaysBefore: reminderDaysBefore!,
       reminderLocalTime,
       shortWarningOffsetHours: shortWarningOffsetHours!,

@@ -34,6 +34,8 @@ const VALID = {
   // and the "unchecking survives a validation round-trip" test below, which is
   // the behaviour it buys.
   prefersEvenNumbersSubmitted: "1",
+  squadVisibleToPlayers: "on",
+  squadVisibleToPlayersSubmitted: "1",
 };
 
 describe("GET /g/new", () => {
@@ -527,8 +529,28 @@ describe("editing a game", () => {
 
     expect(response.status).toBe(422);
     const html = await response.text();
-    expect(html).toContain('name="prefersEvenNumbers" type="checkbox">');
-    expect(html).not.toContain('type="checkbox" checked');
+    const box = html.match(/<input id="prefersEvenNumbers"[^>]*>/)?.[0] ?? "";
+    expect(box).toContain('name="prefersEvenNumbers" type="checkbox"');
+    expect(box).not.toContain("checked");
+  });
+
+  /**
+   * The trap §6.1 exists to prevent: an unchecked box is absent from the
+   * body, so without the hidden marker the redisplay re-ticks it and an
+   * owner who unticked it, mistyped something else, and corrected that
+   * silently saves it back on.
+   */
+  it("keeps the squad-visibility box unticked through a 422 redisplay", async () => {
+    const { cookie, gameId } = await ownedGame();
+
+    const unchecked: Record<string, string> = { ...VALID, kickoffTime: "not a time" };
+    delete unchecked["squadVisibleToPlayers"];
+    const response = await post(`/g/${gameId}/edit`, cookie, unchecked);
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+    const box = html.match(/<input id="squadVisibleToPlayers"[^>]*>/)?.[0] ?? "";
+    expect(box).not.toContain("checked");
   });
 
   /**

@@ -36,6 +36,22 @@ function prefersEvenChecked(values: Partial<Record<string, string>>): boolean {
   return values["prefersEvenNumbers"] === undefined || values["prefersEvenNumbers"] === "on";
 }
 
+/**
+ * The hidden companion to the "Let players see who else is playing" checkbox.
+ * Mirrors `PREFERS_EVEN_SUBMITTED` above exactly — see its comment for why.
+ */
+const SQUAD_VISIBLE_SUBMITTED = "squadVisibleToPlayersSubmitted";
+
+function squadVisibleChecked(values: Partial<Record<string, string>>): boolean {
+  if (values[SQUAD_VISIBLE_SUBMITTED] !== undefined) {
+    // A real submission: absent means unchecked, full stop.
+    return values["squadVisibleToPlayers"] === "on";
+  }
+  // A fresh render. Absent means the caller said nothing, and a new game
+  // shows the squad; the edit route says `""` explicitly for a saved false.
+  return values["squadVisibleToPlayers"] === undefined || values["squadVisibleToPlayers"] === "on";
+}
+
 export interface GameFormPageParams {
   /** Where the form posts. Always a same-origin relative path (`form-action 'self'`). */
   action: string;
@@ -139,6 +155,15 @@ export function renderGameFormPage(params: GameFormPageParams): string {
             prefersEvenChecked(values) ? " checked" : ""
           }>
           Prefer even numbers
+        </label>
+      </div>
+      <div class="field">
+        <input type="hidden" name="${SQUAD_VISIBLE_SUBMITTED}" value="1">
+        <label for="squadVisibleToPlayers">
+          <input id="squadVisibleToPlayers" name="squadVisibleToPlayers" type="checkbox"${
+            squadVisibleChecked(values) ? " checked" : ""
+          }>
+          Let players see who else is playing
         </label>
       </div>
       ${advanced}
