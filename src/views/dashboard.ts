@@ -19,6 +19,12 @@ import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
  */
 export interface DashboardRow {
   fixtureId: string;
+  /**
+   * The game this fixture belongs to. Here for one reason: the card's heading
+   * links to that game's page, which is the only route a member who owns
+   * nothing has into it — see `renderRow`.
+   */
+  gameId: string;
   gameName: string;
   venueName: string;
   /** Already formatted in the game's timezone by the caller (TR-5). */
@@ -57,6 +63,16 @@ function renderActions(row: DashboardRow): string {
       </form>`;
 }
 
+/**
+ * One fixture card. Its heading is a link to the game's own page.
+ *
+ * That link is the *only* way a member who owns nothing reaches their game —
+ * "Games you own" below lists games they own, which for most players is none —
+ * and it costs no extra query, because the dashboard already loads every game
+ * the viewer has a fixture in. The same "built but nobody can get to it"
+ * failure that `renderOwnedGamesSection` exists to prevent for `/g/new` had
+ * happened again for the member's own game page; this is the fix for it.
+ */
 function renderRow(row: DashboardRow): string {
   // Same sentences the fixture page uses for the same statuses — imported, not
   // restated, so a waitlisted player can never read as confirmed on one page
@@ -66,7 +82,7 @@ function renderRow(row: DashboardRow): string {
 
   return `
     <li class="fixture-card">
-      <h2>${escapeHtml(row.gameName)}</h2>
+      <h2><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></h2>
       <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
       ${renderStatusLine(row.view)}

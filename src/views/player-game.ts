@@ -1,3 +1,4 @@
+import { DASHBOARD_PATH } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
@@ -65,6 +66,8 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
 
     <h2>Coming up</h2>
     <ul class="squad">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>
+
+    <p><a href="${DASHBOARD_PATH}">Back to your games</a></p>
   `;
 
   return layout({

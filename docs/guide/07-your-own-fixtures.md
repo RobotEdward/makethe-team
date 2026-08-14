@@ -16,6 +16,10 @@ Meadow Park 3G, the date and 19:00. **Confirmed — the game is on** means enoug
 people have said yes. **0 spots left** means the places are taken. **You're
 in** is your own answer.
 
+The game's name at the top of the card is a link. Tap it to see that game on
+its own — where it's played, who else is playing if the organiser shows that,
+and the dates coming up.
+
 **I'm in** and **Can't make it** sit on the card, and you can use them whether
 or not you've answered already. There's no email in the way here, so it's one
 tap rather than two: tapping a button on the card saves your answer there and

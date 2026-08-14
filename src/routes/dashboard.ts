@@ -52,6 +52,7 @@ dashboard.get(DASHBOARD_PATH, requirePlayer, async (c) => {
 function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
   return {
     fixtureId: fixture.fixtureId,
+    gameId: fixture.gameId,
     gameName: fixture.gameName,
     venueName: fixture.venueName,
     // Every timezone conversion in this codebase goes through this one module.

@@ -1,6 +1,7 @@
 import { SELF } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { DASHBOARD_PATH } from "../../src/auth/paths.js";
 import { fixtures, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, insertMembership, insertPlayer, playerRow, resetDatabase, testDb } from "../support/factories.js";
@@ -139,6 +140,14 @@ describe("GET /g/:id as a member", () => {
     // The invite link is the owner page's tell, and it must never appear on
     // the player's — it is a capability, not a decoration.
     expect(html).toContain("Invite people");
+  });
+
+  it("gives a member a way back to their games", async () => {
+    const { gameId, cookie } = await seedGameWithOpenFixture({ viewerRole: "player", squadVisibleToPlayers: true });
+
+    const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
+
+    expect(html).toContain(`href="${DASHBOARD_PATH}"`);
   });
 
   it("never shows a member the invite link", async () => {
