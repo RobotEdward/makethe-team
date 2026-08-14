@@ -7,20 +7,27 @@ import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import type { ResponseStatus } from "../../src/domain/response-status.js";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
+import { kickoffIn } from "../support/clock.js";
 
 const db = getDb(env.DB);
 const CANCEL_SECRET = env.CANCEL_TOKEN_SECRET;
 const RESPONSE_SECRET = env.RESPONSE_TOKEN_SECRET;
 
 /**
- * Every instant in this suite is an explicit literal, and no token expiry is
- * ever derived from the clock: `Date.now()` is frozen between I/O inside
- * workerd while the test isolate's own clock keeps moving, so a token minted
- * as "now + 1ms" is a coin flip. `KICKOFF` is comfortably in the future
- * relative to the (real) clock the Worker reads, and `EXPIRED` comfortably in
- * the past, so neither depends on sub-second agreement between the two.
+ * `KICKOFF` is derived from `test/support/clock.ts`, not minted as an offset
+ * of the moment a token happens to be signed here: `Date.now()` is frozen
+ * between I/O inside workerd while the test isolate's own clock keeps moving,
+ * so an expiry computed as "now + 1ms" at mint time is a coin flip against the
+ * route's own read of the clock. `EXPIRED` is a fixed instant in the past —
+ * the one hardcoded date that is safe, because the past cannot un-expire.
+ *
+ * The hour is then pinned to 18:00 UTC (BST's 19:00 local) so the "shows what
+ * cancelling will do" test below can assert on a known formatted time without
+ * pinning the *date* — only the day, which nothing here depends on, floats
+ * with `kickoffIn`.
  */
-const KICKOFF = new Date("2099-08-13T18:00:00Z");
+const KICKOFF = kickoffIn(24 * 7);
+KICKOFF.setUTCHours(18, 0, 0, 0);
 const EXPIRED = new Date("2000-01-01T00:00:00Z");
 
 const OWNER = "owner-1";
