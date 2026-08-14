@@ -157,6 +157,33 @@ async function findPlayer(db: Db, authUserId: string): Promise<Player | null> {
   return player ?? null;
 }
 
+/**
+ * Resolves the caller's Player exactly as `sessionMiddleware` would, without
+ * mounting it — for a handler outside every session-mounted prefix that still
+ * wants to recognise a signed-in visitor.
+ *
+ * `GET /leave/:token` (M7a Task 4) is the one caller today. `/leave/*` sits
+ * outside `AUTHENTICATED_PREFIX`, `SIGN_IN_PREFIX` and `GAMES_PREFIX`
+ * deliberately (see `sessionMiddleware`'s own doc comment on why those three
+ * are the current list of mounts, not "everywhere a session is ever needed"):
+ * a fourth mount here would put session resolution — a cookie parse, an HMAC
+ * verification, and on a hit a D1 round trip — on a path strangers reach on
+ * every open of a mailed link, which is exactly the blast-radius argument
+ * that keeps `sessionMiddleware` off `/r/:token` too. Calling this function
+ * directly from the handler pays that cost only for a request that actually
+ * carries a session cookie, and changes nothing about who may reach the page
+ * without one.
+ */
+export async function resolveSessionPlayer(
+  env: Bindings,
+  db: Db,
+  now: Date,
+  headers: Headers,
+): Promise<Player | null> {
+  const session = await resolveSession(env, db, now, headers);
+  return session === null ? null : await findPlayer(db, session.user.id);
+}
+
 // ---------------------------------------------------------------------------
 // Route guards.
 //

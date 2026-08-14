@@ -594,3 +594,106 @@ describe("POST /app", () => {
     expect((await responseRow(fixtureId, playerId))!.status).toBe("pending");
   });
 });
+
+describe("POST /app/games/:gameId/leave", () => {
+  // Signed in fresh for every test in this block, matching every other
+  // describe in this file — the harness supports one real signed-in identity
+  // (`ALLOWED`), and `VIEWER_ID` is that identity's own Player id.
+  let cookie: string;
+  let VIEWER_ID: string;
+
+  beforeEach(async () => {
+    ({ cookie } = await signIn());
+    VIEWER_ID = await viewerId();
+  });
+
+  /** A same-origin form POST, matching `leaveOtherGamePath`'s own route. */
+  function appPost(path: string, fields: Record<string, string>) {
+    return SELF.fetch(`${ORIGIN}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, cookie },
+      body: new URLSearchParams(fields),
+      redirect: "manual",
+    });
+  }
+
+  /** A second game, besides whatever the viewer already has, that the viewer is an ordinary member of. */
+  async function seedMembershipForViewer(): Promise<{ gameId: string }> {
+    const gameId = await insertGame(db, { name: "Sunday Kickabout" });
+    await insertMembership(db, gameId, VIEWER_ID, { role: "player", active: true });
+    return { gameId };
+  }
+
+  /** A game the viewer holds no membership in at all. */
+  async function seedGameWithoutViewer(): Promise<{ gameId: string }> {
+    const gameId = await insertGame(db, { name: "Someone Else's Game" });
+    return { gameId };
+  }
+
+  /** A game where the viewer is the one and only active organiser. */
+  async function seedViewerAsSoleOrganiser(): Promise<{ gameId: string }> {
+    const gameId = await insertGame(db, { name: "Sole-Organised Game" });
+    await insertMembership(db, gameId, VIEWER_ID, { role: "owner", active: true });
+    return { gameId };
+  }
+
+  it("lets a signed-in player leave another game they are in", async () => {
+    const { gameId } = await seedMembershipForViewer();
+
+    const response = await appPost(`/app/games/${gameId}/leave`, {});
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(DASHBOARD_PATH);
+    const [membership] = await db.select().from(memberships)
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, VIEWER_ID)));
+    expect(membership?.active).toBe(false);
+  });
+
+  it("404s when the signed-in player is not in that game", async () => {
+    const { gameId } = await seedGameWithoutViewer();
+
+    expect((await appPost(`/app/games/${gameId}/leave`, {})).status).toBe(404);
+  });
+
+  it("refuses a sole organiser", async () => {
+    const { gameId } = await seedViewerAsSoleOrganiser();
+
+    const response = await appPost(`/app/games/${gameId}/leave`, {});
+
+    expect(response.status).toBe(422);
+    const [membership] = await db.select().from(memberships)
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, VIEWER_ID)));
+    expect(membership?.active).toBe(true);
+  });
+
+  it("refuses a cross-site post", async () => {
+    const { gameId } = await seedMembershipForViewer();
+
+    const response = await SELF.fetch(`${ORIGIN}/app/games/${gameId}/leave`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: "https://evil.test", cookie },
+      body: new URLSearchParams({}),
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(403);
+    const [membership] = await db.select().from(memberships)
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, VIEWER_ID)));
+    expect(membership?.active).toBe(true);
+  });
+
+  it("sends an anonymous poster to sign-in", async () => {
+    await signIn();
+    const { gameId } = await seedGameWithoutViewer();
+
+    const response = await SELF.fetch(`${ORIGIN}/app/games/${gameId}/leave`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+      body: new URLSearchParams({}),
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(SIGN_IN_PATH);
+  });
+});

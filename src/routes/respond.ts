@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
-import { countActiveOwners, findMembershipInGame, getFixtureWithSquad } from "../db/queries.js";
+import { countActiveOwners, findMembershipInGame, getFixtureWithSquad, listOtherActiveGames } from "../db/queries.js";
 import { games } from "../db/schema.js";
 import { getDb, type Db } from "../db/client.js";
+import { resolveSessionPlayer } from "../auth/session.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { verifyLeaveToken, verifyResponseToken } from "../domain/token.js";
@@ -14,7 +15,7 @@ import { createNotifier } from "../notify/factory.js";
 import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
-import { renderLeavePage } from "../views/leave.js";
+import { renderLeavePage, type LeavePageParams } from "../views/leave.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 
 export const respond = new Hono<AppEnv>();
@@ -343,6 +344,32 @@ export async function notifyPromotedPlayer(
  * `renderLinkProblemPage()` at 200 that `/r/:token` answers with, so trying
  * one path against the other tells an attacker nothing.
  */
+/**
+ * The "other squads" a signed-in visitor may be shown on this page (M7a Task
+ * 4). `undefined` unless a session exists **and** its player id equals the
+ * token's own — this is the entire security property of this task (BR-25). A
+ * leave token names one player and one game; without this match, a forwarded
+ * link opened by a different signed-in person would show them somebody
+ * else's squads, and a leaked link would become a multi-game capability
+ * rather than a single-game one.
+ *
+ * Resolved by calling `resolveSessionPlayer` directly rather than by mounting
+ * `sessionMiddleware` on `/leave/*` — see that function's own doc comment for
+ * why a mount here would be the wrong trade.
+ */
+async function resolveOtherGames(
+  env: AppEnv["Bindings"],
+  db: Db,
+  now: Date,
+  headers: Headers,
+  gameId: string,
+  tokenPlayerId: string,
+): Promise<LeavePageParams["otherGames"]> {
+  const viewer = await resolveSessionPlayer(env, db, now, headers);
+  if (viewer === null || viewer.id !== tokenPlayerId) return undefined;
+  return listOtherActiveGames(db, tokenPlayerId, gameId);
+}
+
 respond.get("/leave/:token", async (c) => {
   const token = c.req.param("token");
   const now = new Date(Date.now());
@@ -363,9 +390,13 @@ respond.get("/leave/:token", async (c) => {
   }
 
   const membership = await findMembershipInGame(db, gameId, playerId);
+  const otherGames = await resolveOtherGames(c.env, db, now, c.req.raw.headers, gameId, playerId);
 
   if (!membership || !membership.active) {
-    return c.html(renderLeavePage({ token, gameId, gameName: game.name, state: "already-left" }), 200);
+    return c.html(
+      renderLeavePage({ token, gameId, gameName: game.name, state: "already-left", otherGames }),
+      200,
+    );
   }
 
   const state =
@@ -373,7 +404,7 @@ respond.get("/leave/:token", async (c) => {
       ? "sole-organiser"
       : "confirm";
 
-  return c.html(renderLeavePage({ token, gameId, gameName: game.name, state }), 200);
+  return c.html(renderLeavePage({ token, gameId, gameName: game.name, state, otherGames }), 200);
 });
 
 /**

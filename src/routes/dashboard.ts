@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { notifyPromotedPlayer } from "./respond.js";
 import { DASHBOARD_PATH } from "../auth/paths.js";
 import { requirePlayer } from "../auth/session.js";
@@ -8,6 +9,7 @@ import { findActionableFixture, listDashboardFixtures } from "../db/dashboard-qu
 import type { DashboardFixture } from "../db/dashboard-queries.js";
 import { listOwnedGames } from "../db/queries.js";
 import { fixtureView } from "../domain/fixture-view.js";
+import { removeMember } from "../domain/remove-member.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { renderDashboardPage, type DashboardRow } from "../views/dashboard.js";
@@ -27,7 +29,17 @@ export const dashboard = new Hono<AppEnv>();
  * question — which games, which fixtures, whether this one may be changed — is
  * re-asked against the database by `src/db/dashboard-queries.ts`.
  */
-dashboard.get(DASHBOARD_PATH, requirePlayer, async (c) => {
+dashboard.get(DASHBOARD_PATH, requirePlayer, async (c) => renderDashboard(c));
+
+/**
+ * Renders `/app` from scratch — the plain `GET` above, and the sole-organiser
+ * refusal `POST /app/games/:gameId/leave` answers with, so the two cannot
+ * drift apart. Its own function for the same reason `renderOwnerFixture` and
+ * `renderSquadRefusal` are their own functions in `src/routes/games.ts`: a
+ * refusal must show the same page a normal load would, with the reason on it,
+ * never a bare error.
+ */
+async function renderDashboard(c: Context<AppEnv>, problem?: string) {
   // The one wall-clock read at this edge; `fixtureView` takes it as an
   // argument (see the lint rule banning bare `new Date()` downstream).
   const now = new Date(Date.now());
@@ -44,9 +56,11 @@ dashboard.get(DASHBOARD_PATH, requirePlayer, async (c) => {
       playerName: player.name,
       rows: rows.map((row) => toRow(row, now)),
       ownedGames,
+      problem,
     }),
+    problem === undefined ? 200 : 422,
   );
-});
+}
 
 /** A queried fixture as the page shows it. No other player's data is involved. */
 function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
@@ -160,6 +174,68 @@ dashboard.post(DASHBOARD_PATH, requirePlayer, async (c) => {
     // deleted between that read and the lock. The redirect re-renders the list
     // from the database, which is the honest answer either way.
     console.warn(`dashboard response rejected by the capacity object: ${outcome.reason}`);
+  }
+
+  return c.redirect(DASHBOARD_PATH, 303);
+});
+
+/**
+ * A signed-in player leaving a game from their own account (M7a Task 4) — the
+ * write behind the "your other squads" list on `/leave/:token`, and also
+ * reachable from the dashboard itself. `leaveOtherGamePath` names its path.
+ *
+ * **`wrongOrigin` here, unlike `POST /leave/:token`.** That route is
+ * deliberately origin-check-free because it is reached from a link in an
+ * email, opened by whatever renders the mail; this one is a same-origin form
+ * on our own page, so the same check every other `/g/*` and `/app` mutation
+ * makes applies here too.
+ *
+ * The subject and the actor are the same player throughout — the signed-in
+ * viewer removing themselves, exactly as `POST /leave/:token` treats the
+ * leaver as their own actor. `removeMember` re-establishes entitlement on its
+ * own (`not-a-member` for a game this player is not actually in), so nothing
+ * upstream of it needs to check membership first; `requirePlayer` only
+ * established *who* is asking (TR-18).
+ */
+dashboard.post(`${DASHBOARD_PATH}/games/:gameId/leave`, requirePlayer, async (c) => {
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== originOf(c.env)) {
+    return c.text("Forbidden", 403);
+  }
+
+  const now = new Date(Date.now());
+  const player = c.get("player")!;
+  const db = getDb(c.env.DB);
+  const gameId = c.req.param("gameId");
+
+  const result = await removeMember({
+    db,
+    gameId,
+    playerId: player.id,
+    actorPlayerId: player.id,
+    now,
+    withdraw: (fixtureId) =>
+      c.env.FIXTURE_CAPACITY.getByName(fixtureId).withdrawMember({
+        playerId: player.id,
+        actorPlayerId: player.id,
+        now: now.getTime(),
+      }),
+  });
+
+  // Not a member of this game at all: a fabricated or stale game id, and a
+  // 404 rather than a 403 so it cannot be probed for existence (TR-18).
+  if (result.kind === "not-a-member") return c.text("Not found", 404);
+
+  // The one refusal J6a's invariant produces, same as the owner-facing squad
+  // routes in `src/routes/games.ts`: a game needs at least one organiser, and
+  // this player is its only one. Re-rendered as the dashboard itself at 422,
+  // with the reason on it, rather than a dead end.
+  if (result.kind === "refused") {
+    return renderDashboard(c, "A game needs at least one organiser. Make someone else an organiser first, then come back here to leave.");
+  }
+
+  for (const { fixtureId, promoted } of result.promotions) {
+    c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, promoted, now));
   }
 
   return c.redirect(DASHBOARD_PATH, 303);

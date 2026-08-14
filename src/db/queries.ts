@@ -418,3 +418,34 @@ export async function countCommitments(
     waitlisted: rows.filter((row) => row.status === "waitlisted").length,
   };
 }
+
+/**
+ * Every other active game a player belongs to, besides `excludeGameId` (M7a
+ * Task 4's "your other squads").
+ *
+ * Only ever called once the caller has already confirmed the viewer *is*
+ * `playerId` — see `respond.ts`'s `GET /leave/:token`, whose identity match is
+ * BR-25's line: a leave token names one player and one game, and this query is
+ * the multi-game view that only a matching session may unlock, never the token
+ * alone.
+ */
+export async function listOtherActiveGames(
+  db: Db,
+  playerId: string,
+  excludeGameId: string,
+): Promise<Array<{ gameId: string; gameName: string }>> {
+  const rows = await db
+    .select({ gameId: games.id, gameName: games.name })
+    .from(memberships)
+    .innerJoin(games, eq(games.id, memberships.gameId))
+    .where(
+      and(
+        eq(memberships.playerId, playerId),
+        eq(memberships.active, true),
+        eq(games.active, true),
+        ne(memberships.gameId, excludeGameId),
+      ),
+    )
+    .orderBy(asc(games.name));
+  return rows;
+}

@@ -1,4 +1,4 @@
-import { gamePath } from "../auth/paths.js";
+import { gamePath, leaveOtherGamePath, SIGN_IN_PATH } from "../auth/paths.js";
 import { escapeHtml, layout } from "./layout.js";
 import { FORM_CSS } from "./styles.js";
 
@@ -50,6 +50,47 @@ function doneBody(gameName: string): string {
   `;
 }
 
+/**
+ * "Your other squads" (M7a Task 4) — reachable only from a session whose
+ * player matches the token's own, which is enforced by the caller, not here:
+ * `otherGames` is `undefined` for every other visitor, including one signed
+ * in as somebody else, and this function has no way to tell those two cases
+ * apart from a mismatch. See `respond.ts`'s `GET /leave/:token` for the
+ * identity check itself — the whole security property this task adds (BR-25).
+ *
+ * `undefined` renders a sign-in offer rather than nothing: a visitor with no
+ * session has a genuine reason to want this (they may hold other squads too),
+ * so the empty state is worded as something to gain, not as a refusal.
+ */
+function otherGamesBody(otherGames: readonly { gameId: string; gameName: string }[] | undefined): string {
+  if (otherGames === undefined) {
+    return `
+      <h2>Your other squads</h2>
+      <p><a href="${escapeHtml(SIGN_IN_PATH)}">Sign in to see your other squads, and leave any of them from here too.</a></p>
+    `;
+  }
+
+  if (otherGames.length === 0) return "";
+
+  const items = otherGames
+    .map(
+      (game) => `
+      <li>
+        ${escapeHtml(game.gameName)}
+        <form method="post" action="${escapeHtml(leaveOtherGamePath(game.gameId))}">
+          <button class="button" type="submit">Leave</button>
+        </form>
+      </li>
+    `,
+    )
+    .join("");
+
+  return `
+    <h2>Your other squads</h2>
+    <ul>${items}</ul>
+  `;
+}
+
 export function renderLeavePage(params: LeavePageParams): string {
   const { token, gameId, state } = params;
   const gameName = escapeHtml(params.gameName);
@@ -65,6 +106,7 @@ export function renderLeavePage(params: LeavePageParams): string {
             ? alreadyLeftBody(gameName)
             : doneBody(gameName)
     }
+    ${otherGamesBody(params.otherGames)}
   `;
 
   return layout({ title: `Leave ${params.gameName} — Make The Team`, body, pageStyles: [FORM_CSS] });

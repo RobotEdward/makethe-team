@@ -139,6 +139,15 @@ export function ownerGuestPath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}/guest`;
 }
 
+/**
+ * Where a signed-in player leaves a game from their own account, as opposed
+ * to from an emailed token (M7a Task 4). Under `DASHBOARD_PATH` so it sits
+ * behind the session mount and its `private, no-store` header.
+ */
+export function leaveOtherGamePath(gameId: string): string {
+  return `${DASHBOARD_PATH}/games/${gameId}/leave`;
+}
+
 /** Where removing a guest posts (J6b §5). */
 export function ownerGuestRemovePath(gameId: string, fixtureId: string, playerId: string): string {
   return `/g/${gameId}/f/${fixtureId}/guest/${playerId}/remove`;

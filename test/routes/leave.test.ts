@@ -2,10 +2,11 @@ import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { auditLog, memberships, notificationLog, responses } from "../../src/db/schema.js";
+import { auditLog, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { leaveTokenExpiry, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
 import { insertFixture, insertGame, insertMembership, insertPlayer, resetDatabase } from "../support/factories.js";
+import { ALLOWED, signIn } from "../support/sign-in.js";
 import { NOW } from "../support/clock.js";
 
 const db = getDb(env.DB);
@@ -101,6 +102,67 @@ async function seedLeavableOnFullFixture(): Promise<SeedFullFixtureResult> {
   );
 
   return { token, waitlistedId, fixtureId };
+}
+
+interface SeedWithOtherGameOptions {
+  /**
+   * `"self"` signs in as the harness's one real identity and mints the token
+   * for *that same* player. `"someone-else"` signs in the same way but mints
+   * the token for a freshly created, different player — the case that pins
+   * BR-25's identity match: a forwarded link opened by a different signed-in
+   * person must not show either party's squads. Omitted entirely mints the
+   * token for an unrelated player and signs nobody in.
+   */
+  signedIn?: "self" | "someone-else";
+}
+
+interface SeedWithOtherGameResult {
+  token: string;
+  otherGameName: string;
+  cookie: string;
+}
+
+/**
+ * A leavable game plus a *second* active game the token's player also
+ * belongs to — the "your other squads" list's raw material. Follows
+ * `test/routes/owner-fixture.test.ts`'s pattern for this harness's one real
+ * signed-in identity: rather than trying to sign in as two different people,
+ * only *which player the token names* varies.
+ */
+async function seedLeavableWithAnotherGame(
+  options: SeedWithOtherGameOptions = {},
+): Promise<SeedWithOtherGameResult> {
+  const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+  const otherGameName = "Sunday Kickabout";
+  const otherGameId = await insertGame(db, { name: otherGameName });
+
+  let cookie = "";
+  let tokenPlayerId: string;
+
+  if (options.signedIn === "self") {
+    const signedIn = await signIn();
+    cookie = signedIn.cookie;
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    tokenPlayerId = viewer!.id;
+  } else if (options.signedIn === "someone-else") {
+    const signedIn = await signIn();
+    cookie = signedIn.cookie;
+    // Deliberately a different player from the one just signed in — the
+    // token must name somebody the session is *not*.
+    tokenPlayerId = await insertPlayer(db, { name: "A Different Player" });
+  } else {
+    tokenPlayerId = await insertPlayer(db, { name: "Edward Cooper" });
+  }
+
+  await insertMembership(db, gameId, tokenPlayerId, { role: "player", active: true });
+  await insertMembership(db, otherGameId, tokenPlayerId, { role: "player", active: true });
+
+  const token = await signLeaveToken(
+    { gameId, playerId: tokenPlayerId, expiresAt: leaveTokenExpiry(NOW).getTime() },
+    SECRET,
+  );
+
+  return { token, otherGameName, cookie };
 }
 
 beforeEach(async () => {
@@ -252,5 +314,38 @@ describe("POST /leave/:token", () => {
 
     expect(await response.text()).toContain("link isn't working");
     expect(await db.select().from(auditLog)).toEqual([]);
+  });
+});
+
+describe("the other-squads list", () => {
+  it("is absent for a visitor with no session", async () => {
+    const { token, otherGameName } = await seedLeavableWithAnotherGame();
+
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${token}`)).text();
+
+    expect(body).not.toContain(otherGameName);
+    expect(body).toContain("Sign in");
+  });
+
+  it("lists the player's other squads when they are signed in as themselves", async () => {
+    const { token, otherGameName, cookie } = await seedLeavableWithAnotherGame({ signedIn: "self" });
+
+    const body = await (await SELF.fetch(
+      new Request(`https://makethe.team/leave/${token}`, { headers: { cookie } }),
+    )).text();
+
+    expect(body).toContain(otherGameName);
+  });
+
+  it("is absent when the session belongs to somebody else", async () => {
+    // A forwarded link opened by a different signed-in person must not show
+    // either party's squads.
+    const { token, otherGameName, cookie } = await seedLeavableWithAnotherGame({ signedIn: "someone-else" });
+
+    const body = await (await SELF.fetch(
+      new Request(`https://makethe.team/leave/${token}`, { headers: { cookie } }),
+    )).text();
+
+    expect(body).not.toContain(otherGameName);
   });
 });
