@@ -9,21 +9,26 @@ import {
   countCommitments,
   findGameForOwner,
   findMembershipInGame,
+  getFixtureWithSquad,
   listSquad,
   listUpcomingFixtures,
+  type FixtureWithSquad,
 } from "../db/queries.js";
-import { games } from "../db/schema.js";
+import { fixtures, games } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
+import { fixtureView } from "../domain/fixture-view.js";
 import { parseGameForm } from "../domain/game-form.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
+import { formatLocalDateTime } from "../domain/time/zone.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
+import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
 import { notifyPromotedPlayer } from "./respond.js";
 
@@ -399,6 +404,75 @@ gamesRoutes.post("/g/:id/squad/:playerId/role", requirePlayer, async (c) => {
   if (result.kind === "refused") return renderSquadRefusal(c, target.game.id, now);
 
   return c.redirect(gamePath(target.game.id), 303);
+});
+
+/**
+ * The game and fixture behind a `/g/:id/f/:fixtureId` path, or `null`.
+ *
+ * Scoped by game id as well as fixture id, which is the whole point: without
+ * it a fixture id in the path would be a global identifier and one owner could
+ * read another squad's fixture. `null` for every refusal — no such game, not an
+ * owner, no such fixture, a fixture of a different game — and the caller
+ * answers 404 for all of them (TR-18).
+ */
+async function loadFixtureTarget(c: Context<AppEnv>, gameId: string, fixtureId: string) {
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, gameId, c.get("player")!.id);
+  if (game === null) return null;
+  const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+  if (!fixture || fixture.gameId !== game.id) return null;
+  return { db, game, fixture };
+}
+
+/**
+ * Build `OwnerFixtureParams` from a loaded `FixtureWithSquad`.
+ *
+ * One place for the three render paths this page has (a plain GET here, plus
+ * Tasks 5 and 6's re-renders after a refusal) to agree on the derived `view`
+ * and the formatted kickoff, so a change to either cannot drift between them.
+ */
+function ownerFixtureParams(
+  withSquad: FixtureWithSquad,
+  viewerPlayerId: string,
+  now: Date,
+  extras: { confirm?: OwnerFixtureParams["confirm"]; problem?: string } = {},
+): OwnerFixtureParams {
+  const { fixture, game, squad } = withSquad;
+  return {
+    gameId: game.id,
+    gameName: game.name,
+    fixtureId: fixture.id,
+    kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
+    venueName: game.venueName,
+    inCount: fixture.inCount,
+    maxPlayers: fixture.maxPlayers,
+    view: fixtureView(
+      {
+        lifecycle: fixture.lifecycle,
+        kicksOffAt: fixture.kicksOffAt,
+        inCount: fixture.inCount,
+        minPlayers: fixture.minPlayers,
+        maxPlayers: fixture.maxPlayers,
+        prefersEvenNumbers: fixture.prefersEvenNumbers,
+        shortWarningOffsetHours: fixture.shortWarningOffsetHours,
+      },
+      now,
+    ),
+    squad,
+    viewerPlayerId,
+    ...extras,
+  };
+}
+
+gamesRoutes.get("/g/:id/f/:fixtureId", requirePlayer, async (c) => {
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
+  const withSquad = await getFixtureWithSquad(target.db, target.fixture.id);
+  if (withSquad === null) return c.text("Not found", 404);
+
+  return c.html(renderOwnerFixturePage(ownerFixtureParams(withSquad, c.get("player")!.id, now)));
 });
 
 /**

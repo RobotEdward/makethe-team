@@ -83,6 +83,13 @@ export const CATALOGUE: CataloguePage[] = [
     note: "Squad, fixtures, invite link, QR code, and the J6a squad controls.",
   },
   {
+    id: "owner-fixture",
+    title: "Fixture (organiser)",
+    path: (world) => `/g/${world.gameId}/f/${world.fixtureId}`,
+    persona: "owner",
+    note: "One fixture as its organiser sees it: everyone's state, and the controls to change it.",
+  },
+  {
     id: "edit-game",
     title: "Edit game",
     path: (w) => `/g/${w.gameId}/edit`,
