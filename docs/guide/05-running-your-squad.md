@@ -91,8 +91,9 @@ them, exactly as if they had tapped the button themselves.
 
 Once you do, a line appears under their name saying who marked them in — here,
 Nadia Okafor never answered her own reminder, and it now says **marked in by
-jamie**. It shows on her page too, not just yours: if she opens her own
-reminder link later, she'll see that somebody else answered for her, and who.
+jamie**. It shows on the player's page too, not just yours: if they open their
+own reminder link later, they'll see that somebody else answered for them, and
+who.
 Nothing is hidden from the player whose answer it is.
 
 ## Adding a guest
