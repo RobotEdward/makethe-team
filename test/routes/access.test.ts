@@ -19,11 +19,19 @@ describe("holding page", () => {
 
   /**
    * `Cache-Control: private, no-store` is applied by several scoped mounts —
-   * `AUTHENTICATED_PREFIX`, `GAMES_PREFIX`, and the token routes (`/r/*`,
-   * `/leave/*`, `/cancel/*`) each carry it via their own mount, for their own
-   * reason (see `src/app.ts`) — but never globally. This page has no
-   * signed-in visitor to protect and must keep whatever caching it already
-   * had.
+   * never globally (see `src/app.ts`):
+   *
+   * - `AUTHENTICATED_PREFIX` and `GAMES_PREFIX`, protecting a signed-in
+   *   player's own data.
+   * - `/r/*`, `/leave/*` and `/cancel/*`, for confidentiality and staleness:
+   *   these render names and state that change on every response and must
+   *   never be served stale from a shared cache.
+   * - `/j/*`, for a different reason — revocation: rotating the invite token
+   *   or deactivating the game are an owner's only ways to kill a leaked
+   *   link, and a cached 200 for the old URL would silently defeat both.
+   *
+   * This page has no signed-in visitor to protect and must keep whatever
+   * caching it already had.
    */
   it("carries no Cache-Control directive of its own", async () => {
     const response = await SELF.fetch("https://makethe.team/");
