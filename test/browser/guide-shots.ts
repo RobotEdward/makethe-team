@@ -176,6 +176,42 @@ export const SHOTS: Shot[] = [
     persona: "organiser",
   },
   {
+    id: "owner-fixture",
+    chapter: "05-running-your-squad",
+    title: "One fixture, as its organiser sees it",
+    route: "/g/:id/f/:fixtureId",
+    shows: "Everyone's answer for one fixture, with Mark in and Mark out beside each name.",
+    path: (w) => `/g/${w.demoGameId}/f/${w.demoFixtureId}`,
+    persona: "organiser",
+  },
+  {
+    id: "owner-marked-in",
+    chapter: "05-running-your-squad",
+    title: "Answering for someone",
+    route: "/g/:id/f/:fixtureId",
+    shows: "A player marked in by the organiser, with the attribution line naming who did it.",
+    path: (w) => `/g/${w.demoGameId}/f/${w.demoFixtureId}`,
+    persona: "organiser",
+    // Every one of these three shots is the same URL and (by the time any of
+    // them is captured) the same final page — `buildOverrideDemo` finishes
+    // driving both the mark-in and the guest-add before this run ever takes
+    // a screenshot, so an unscoped capture here would be byte-identical to
+    // `owner-fixture`. Scoping to the one row this shot is actually about
+    // keeps that from happening, the same reason `squad-controls`/`invite`/
+    // `invite-qr` above are each scoped to their own part of `/g/:id`.
+    element: 'ul.squad li:has-text("Nadia Okafor")',
+  },
+  {
+    id: "owner-guest-added",
+    chapter: "05-running-your-squad",
+    title: "A guest for one week",
+    route: "/g/:id/f/:fixtureId",
+    shows: "A guest in the squad list, marked as a guest, occupying a slot.",
+    path: (w) => `/g/${w.demoGameId}/f/${w.demoFixtureId}`,
+    persona: "organiser",
+    element: 'ul.squad li:has-text("Jono Fielding")',
+  },
+  {
     id: "cancel",
     chapter: "06-calling-a-fixture-off",
     title: "Calling it off",

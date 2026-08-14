@@ -638,13 +638,14 @@ M1–M4 are the product. M5–M7 make it shareable. Team picking, score recordin
 
 **Status:** M0 and M1 delivered by `docs/superpowers/plans/2026-08-10-m0-m1-foundation.md`. M2 and M3 delivered by `docs/superpowers/plans/2026-08-10-m2-m3-responses-and-email.md`. M4 delivered by `docs/superpowers/plans/2026-08-11-m4-waitlist-cancellation-attention.md`. M5 delivered by `docs/superpowers/plans/2026-08-11-m5-auth-and-dashboard.md`.
 
-**M6 is half done.** It splits into two independent sub-projects (see
+**M6 is complete.** It split into two independent sub-projects (see
 `docs/superpowers/specs/2026-08-12-m6a-game-setup-and-invites-design.md` §1):
 **M6a (J1 — game setup and invites)** is delivered by
 `docs/superpowers/plans/2026-08-12-m6a-game-setup-and-invites.md`. **J6 (owner
-overrides, guests, squad removal / BR-3) is a separate sub-project, not yet
-started.** M6 as a whole is not complete until J6 ships — do not read M6a's
-delivery as M6's.
+overrides, guests, squad removal / BR-3)** is delivered by two further plans:
+`docs/superpowers/plans/2026-08-13-j6a-squad-management.md` (squad removal)
+and `docs/superpowers/plans/2026-08-14-j6b-owner-overrides-and-guests.md`
+(mark-in/out overrides, one-off guests, and BR-8's deliberate over-capacity).
 
 ---
 
