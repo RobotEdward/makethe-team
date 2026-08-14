@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, games, memberships, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
+import { signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, signIn } from "../support/sign-in.js";
 import { kickoffIn, NOW } from "../support/clock.js";
@@ -239,9 +239,9 @@ describe("Content-Security-Policy", () => {
   });
 
   it("GET /leave/:token: fixed directives present and inline styles covered", async () => {
-    const { fixtureId, playerId } = await seedOpenFixture();
-    const token = await signResponseToken(
-      { playerId, fixtureId, expiresAt: KICKOFF.getTime() + 86_400_000 },
+    const { gameId, playerId } = await seedOpenFixture();
+    const token = await signLeaveToken(
+      { gameId, playerId, expiresAt: KICKOFF.getTime() + 86_400_000 },
       RESPONSE_SECRET,
     );
     const response = await SELF.fetch(`https://makethe.team/leave/${token}`);
@@ -386,7 +386,7 @@ describe("no inline style attribute on any served page", () => {
 
     await capture("holding page", /Make The Team/, "https://makethe.team/");
 
-    const { fixtureId, playerId } = await seedOpenFixture();
+    const { gameId, fixtureId, playerId } = await seedOpenFixture();
     const respondToken = await signResponseToken(
       { playerId, fixtureId, expiresAt: KICKOFF.getTime() + 86_400_000 },
       RESPONSE_SECRET,
@@ -402,7 +402,11 @@ describe("no inline style attribute on any served page", () => {
       `https://makethe.team/r/${respondToken}?intent=out`,
     );
     await capture("bad respond token", /This link isn't working/, "https://makethe.team/r/not-a-real-token");
-    await capture("leave", /Thursday 7-a-side/, `https://makethe.team/leave/${respondToken}`);
+    const leaveToken = await signLeaveToken(
+      { gameId, playerId, expiresAt: KICKOFF.getTime() + 86_400_000 },
+      RESPONSE_SECRET,
+    );
+    await capture("leave", /Thursday 7-a-side/, `https://makethe.team/leave/${leaveToken}`);
 
     const cancelToken = await signCancelToken(
       { ownerPlayerId: playerId, fixtureId, expiresAt: KICKOFF.getTime() },

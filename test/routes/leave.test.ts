@@ -1,49 +1,55 @@
 import { SELF, env } from "cloudflare:test";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { fixtures, memberships, players } from "../../src/db/schema.js";
-import { openFixture } from "../../src/domain/open-fixture.js";
-import { signResponseToken } from "../../src/domain/token.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
-import { kickoffIn, NOW } from "../support/clock.js";
+import { auditLog, memberships } from "../../src/db/schema.js";
+import { leaveTokenExpiry, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
+import { insertGame, insertMembership, insertPlayer, resetDatabase } from "../support/factories.js";
+import { NOW } from "../support/clock.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
-// Relative to the real clock, not pinned to a date — the route verifies its
-// token against the real wall clock, so a fixed kickoff eventually falls into
-// the past and every token here reads as expired. See test/support/clock.ts.
-const KICKOFF = kickoffIn(9);
+
+interface SeedOptions {
+  role?: "player" | "owner";
+  /** Owners besides the seeded player, when `role` is `"owner"`. */
+  otherOwners?: number;
+  alreadyLeft?: boolean;
+}
 
 interface SeedResult {
-  fixtureId: string;
+  token: string;
+  /** A response token for the same player — the wrong kind, presented here. */
+  responseToken: string;
+  gameId: string;
   playerId: string;
+  gameName: string;
 }
 
-async function seed(): Promise<SeedResult> {
-  const gameId = await insertGame(db, { name: "Thursday 7-a-side", maxPlayers: 14 });
-  const fixtureId = crypto.randomUUID();
-  await db.insert(fixtures).values({
-    id: fixtureId,
-    gameId,
-    kicksOffAt: KICKOFF,
-    minPlayers: 10,
-    maxPlayers: 14,
-    prefersEvenNumbers: true,
-    shortWarningOffsetHours: 12,
-    durationMinutes: 60,
+/** Seed a game, a player, and a leave token scoped to both. */
+async function seedLeavable(options: SeedOptions = {}): Promise<SeedResult> {
+  const gameName = "Thursday 7-a-side";
+  const gameId = await insertGame(db, { name: gameName });
+
+  const playerId = await insertPlayer(db, { name: "Edward Cooper" });
+  await insertMembership(db, gameId, playerId, {
+    role: options.role ?? "player",
+    active: !options.alreadyLeft,
+    leftAt: options.alreadyLeft ? NOW : null,
   });
 
-  const playerId = crypto.randomUUID();
-  await db.insert(players).values({ id: playerId, name: "Edward Cooper", email: "edward@example.com" });
-  await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId, active: true });
+  for (let i = 0; i < (options.otherOwners ?? 0); i++) {
+    const ownerId = await insertPlayer(db, { name: `Other Owner ${i}` });
+    await insertMembership(db, gameId, ownerId, { role: "owner", active: true });
+  }
 
-  await openFixture(db, fixtureId, NOW);
+  const token = await signLeaveToken({ gameId, playerId, expiresAt: leaveTokenExpiry(NOW).getTime() }, SECRET);
+  const responseToken = await signResponseToken(
+    { playerId, fixtureId: crypto.randomUUID(), expiresAt: NOW.getTime() + 86_400_000 },
+    SECRET,
+  );
 
-  return { fixtureId, playerId };
-}
-
-async function tokenFor(fixtureId: string, playerId: string, expiresAt = KICKOFF.getTime() + 86_400_000) {
-  return signResponseToken({ playerId, fixtureId, expiresAt }, SECRET);
+  return { token, responseToken, gameId, playerId, gameName };
 }
 
 beforeEach(async () => {
@@ -51,67 +57,71 @@ beforeEach(async () => {
 });
 
 describe("GET /leave/:token", () => {
-  it("renders a page naming the Game and saying leaving is not yet self-service", async () => {
-    const { fixtureId, playerId } = await seed();
-    const token = await tokenFor(fixtureId, playerId);
+  it("offers to leave, naming the game", async () => {
+    const { token, gameName } = await seedLeavable();
 
     const response = await SELF.fetch(`https://makethe.team/leave/${token}`);
     const body = await response.text();
 
     expect(response.status).toBe(200);
-    expect(body).toContain("Thursday 7-a-side");
-    expect(body.toLowerCase()).toContain("self-service");
-    expect(body.toLowerCase()).toContain("organis");
+    expect(body).toContain(gameName);
+    expect(body).toContain("Leave this game");
   });
 
-  it("is a plain GET that never mutates: no response is recorded", async () => {
-    const { fixtureId, playerId } = await seed();
-    const token = await tokenFor(fixtureId, playerId);
+  it("changes nothing at all", async () => {
+    // The prefetcher guarantee. Mail scanners GET every URL in a message; if
+    // this route wrote, they would unsubscribe people who never clicked.
+    const { token, gameId, playerId } = await seedLeavable();
 
     await SELF.fetch(`https://makethe.team/leave/${token}`);
 
-    const [membership] = await db.select().from(memberships);
+    const [membership] = await db
+      .select()
+      .from(memberships)
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, playerId)));
     expect(membership?.active).toBe(true);
+    expect(membership?.leftAt).toBeNull();
+    expect(await db.select().from(auditLog)).toEqual([]);
   });
 
-  it("does not offer a POST — the route only accepts GET", async () => {
-    const { fixtureId, playerId } = await seed();
-    const token = await tokenFor(fixtureId, playerId);
+  it("tells a sole organiser why they cannot leave, and offers no button", async () => {
+    const { token } = await seedLeavable({ role: "owner", otherOwners: 0 });
 
-    const response = await SELF.fetch(`https://makethe.team/leave/${token}`, { method: "POST" });
-    expect(response.status).not.toBe(200);
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${token}`)).text();
+
+    expect(body).toContain("needs an organiser");
+    expect(body).not.toContain("Leave this game");
   });
 
-  it("shows the same friendly failure page for a bad token as /r/:token does", async () => {
-    const response = await SELF.fetch("https://makethe.team/leave/not-a-real-token");
-    const body = await response.text();
+  it("offers the button to an organiser who is not the only one", async () => {
+    const { token } = await seedLeavable({ role: "owner", otherOwners: 1 });
 
-    expect(response.status).toBe(200);
-    expect(body).toContain("This link isn't working");
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${token}`)).text();
+
+    expect(body).toContain("Leave this game");
   });
 
-  it("shows the friendly failure page for an expired token", async () => {
-    const { fixtureId, playerId } = await seed();
-    // The route verifies against the real wall clock, not the fictional `NOW`
-    // used for fixture timing elsewhere in this file — an absolute instant
-    // years in the past, not `NOW - 1000`, avoids any isolate-clock-skew
-    // flake (see the identical comment in test/routes/respond-get.test.ts).
-    const expired = await tokenFor(fixtureId, playerId, new Date("2020-01-01T00:00:00Z").getTime());
+  it("says so when the player already left", async () => {
+    const { token } = await seedLeavable({ alreadyLeft: true });
 
-    const response = await SELF.fetch(`https://makethe.team/leave/${expired}`);
-    const body = await response.text();
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${token}`)).text();
 
-    expect(response.status).toBe(200);
-    expect(body).toContain("This link isn't working");
+    expect(body).toContain("already out");
+    expect(body).not.toContain("Leave this game");
   });
 
-  it("shows the friendly failure page when the fixture no longer exists", async () => {
-    const token = await tokenFor("no-such-fixture", "no-such-player");
+  it("shows the same link-problem page for a bad token as /r/ does", async () => {
+    const body = await (await SELF.fetch("https://makethe.team/leave/not-a-real-token")).text();
 
-    const response = await SELF.fetch(`https://makethe.team/leave/${token}`);
-    const body = await response.text();
+    expect(body).toContain("link isn't working");
+  });
 
-    expect(response.status).toBe(200);
-    expect(body).toContain("This link isn't working");
+  it("shows the link-problem page for a response token presented here", async () => {
+    // Same secret, different kind. An attacker swapping paths learns nothing.
+    const { responseToken } = await seedLeavable();
+
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${responseToken}`)).text();
+
+    expect(body).toContain("link isn't working");
   });
 });

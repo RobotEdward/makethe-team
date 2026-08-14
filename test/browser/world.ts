@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
-import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
+import { signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
 import { toLocalParts } from "../../src/domain/time/zone.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
@@ -89,6 +89,8 @@ export interface World {
   /** The joined member — the one the squad-management pages act on. */
   memberPlayerId: string;
   responseToken: string;
+  /** For the joined member, in the seeded game — see the "leave" catalogue entry. */
+  leaveToken: string;
   ownerPlayerId: string;
   cancelToken: string;
 }
@@ -213,6 +215,15 @@ export async function seedWorld(
     RESPONSE_SECRET,
   );
 
+  const leaveToken = await signLeaveToken(
+    {
+      gameId,
+      playerId: member.id,
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    },
+    RESPONSE_SECRET,
+  );
+
   // `/cancel/:token` is an owner's one-tap link out of the "this fixture needs
   // attention" email. It is signed with a *different* secret from the response
   // token on purpose (see CANCEL_TOKEN_SECRET in src/env.ts): the two are kept
@@ -232,6 +243,7 @@ export async function seedWorld(
     inviteToken,
     memberPlayerId: member.id,
     responseToken,
+    leaveToken,
     ownerPlayerId: owner.id,
     cancelToken,
   };

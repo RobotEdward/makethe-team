@@ -1,17 +1,19 @@
 import { Hono } from "hono";
-import { findMembershipInGame, getFixtureWithSquad } from "../db/queries.js";
+import { eq } from "drizzle-orm";
+import { countActiveOwners, findMembershipInGame, getFixtureWithSquad } from "../db/queries.js";
+import { games } from "../db/schema.js";
 import { getDb, type Db } from "../db/client.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import { verifyResponseToken } from "../domain/token.js";
+import { verifyLeaveToken, verifyResponseToken } from "../domain/token.js";
 import type { ResponseIntent, WaitlistPromotion } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendPromotionEmail } from "../notify/send-promotion.js";
-import { escapeHtml, layout } from "../views/layout.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
+import { renderLeavePage } from "../views/leave.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 
 export const respond = new Hono<AppEnv>();
@@ -29,27 +31,6 @@ export const respond = new Hono<AppEnv>();
  */
 function parseIntent(value: string | undefined): "in" | "out" | null {
   return value === "in" || value === "out" ? value : null;
-}
-
-/**
- * The interim `/leave/:token` page (BR-22, task-15 fix round 1).
- *
- * Leaving a Game is not self-service yet — there is no write path here, on
- * purpose: this route is `GET`-only and renders, never mutates. It exists so
- * the reminder email's leave link is truthful rather than a 404: the token
- * verifies (proving it really was issued to this player for this fixture)
- * and the page says plainly what a player can and can't do here today,
- * rather than presenting buttons that quietly do nothing (or, worse, that
- * look like "I'm in" / "Can't make it" and get mistaken for a real opt-out).
- * The full self-service leave flow is a later milestone.
- */
-function renderLeavePage(gameName: string): string {
-  const body = `
-    <h1>Leaving ${escapeHtml(gameName)}</h1>
-    <p>You can't remove yourself from a Game here yet — that isn't self-service yet.</p>
-    <p>Ask whoever organises ${escapeHtml(gameName)} to take you off the squad, or get in touch with them directly.</p>
-  `;
-  return layout({ title: `Leaving ${gameName} — Make The Team`, body });
 }
 
 /**
@@ -347,28 +328,49 @@ export async function notifyPromotedPlayer(
 }
 
 /**
- * `GET /leave/:token` — see `renderLeavePage` for why this exists and why it
- * has no corresponding `POST`. Reuses the same signed response token and the
- * same "this link isn't working" page a bad or expired token gets on `/r/`,
- * so an attacker learns nothing new by trying this path instead.
+ * `GET /leave/:token` (BR-22) — the confirmation a player reaches from the
+ * leave link in every reminder and promotion email. `GET`-only, deliberately:
+ * it performs **no write on any path**, for the same reason `POST /sign-out`
+ * has no `GET` alias. Mail scanners and link-preview bots issue a `GET` on
+ * every URL in an incoming message before a person ever opens it; a `GET`
+ * that removed someone from their squad would unsubscribe people who never
+ * clicked anything.
+ *
+ * Every failure that is about the token itself — expired, tampered,
+ * malformed, or a response token presented here (the `kind` discriminator
+ * inside `verifyLeaveToken` rejects it as `malformed`) — renders the same
+ * `renderLinkProblemPage()` at 200 that `/r/:token` answers with, so trying
+ * one path against the other tells an attacker nothing.
  */
 respond.get("/leave/:token", async (c) => {
   const token = c.req.param("token");
   const now = new Date(Date.now());
-  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+  const verification = await verifyLeaveToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
 
   if (!verification.ok) {
     console.error(`leave link token rejected: ${verification.reason}`);
     return c.html(renderLinkProblemPage(), 200);
   }
 
-  const { fixtureId } = verification.payload;
+  const { gameId, playerId } = verification.payload;
   const db = getDb(c.env.DB);
-  const loaded = await getFixtureWithSquad(db, fixtureId);
-  if (!loaded) {
-    console.error(`leave link token verified for a fixture that no longer exists: ${fixtureId}`);
+
+  const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!game) {
+    console.error(`leave link token verified for a game that no longer exists: ${gameId}`);
     return c.html(renderLinkProblemPage(), 200);
   }
 
-  return c.html(renderLeavePage(loaded.game.name), 200);
+  const membership = await findMembershipInGame(db, gameId, playerId);
+
+  if (!membership || !membership.active) {
+    return c.html(renderLeavePage({ token, gameId, gameName: game.name, state: "already-left" }), 200);
+  }
+
+  const state =
+    membership.role === "owner" && (await countActiveOwners(db, gameId)) === 1
+      ? "sole-organiser"
+      : "confirm";
+
+  return c.html(renderLeavePage({ token, gameId, gameName: game.name, state }), 200);
 });
