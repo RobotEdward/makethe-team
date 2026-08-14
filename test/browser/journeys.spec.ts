@@ -163,6 +163,56 @@ for (const javaScriptEnabled of [true, false] as const) {
 }
 
 /**
+ * The squad-visibility setting (M8), driven end to end through real page
+ * loads and a real form post — the tier this suite's own header explains:
+ * `renderSquadSection`'s branch could save correctly and change nothing a
+ * browser actually renders, and the server suite would never notice.
+ *
+ * Not parameterised over JavaScript: the edit form is a plain POST and
+ * `/r/:token` a plain GET, both already covered end to end for every other
+ * page by the loop above, so a second pass here would only repeat the console
+ * gate.
+ */
+test("the organiser's squad-visibility setting hides and reveals names on the response page", async ({
+  page,
+  browser,
+}) => {
+  const seen = observe(page);
+  // `seedWorld` already leaves `page` signed in as the owner — see the other
+  // single-run tests in this file for why a second `signIn` would hang.
+  const world = await seedWorld(page, browser);
+
+  // --- 1: the owner page renders --------------------------------------
+  await page.goto(`/g/${world.gameId}`);
+  await expect(page.locator("#invite-url")).toBeVisible();
+
+  // --- 2: turn the setting off through the edit form -------------------
+  await page.goto(`/g/${world.gameId}/edit`);
+  await page.getByLabel("Let players see who else is playing").uncheck();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.waitForURL(/\/g\/[^/]+$/);
+
+  // --- 3: the response page hides the name but keeps the count ---------
+  await page.goto(`/r/${world.responseToken}`);
+  await expect(page.locator("main")).not.toContainText(JOINER_NAME);
+  await expect(page.locator("main")).toContainText("in so far");
+
+  // --- 4: turn it back on, the name reappears ---------------------------
+  await page.goto(`/g/${world.gameId}/edit`);
+  await page.getByLabel("Let players see who else is playing").check();
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await page.waitForURL(/\/g\/[^/]+$/);
+
+  await page.goto(`/r/${world.responseToken}`);
+  // Scoped to the squad list itself, per this file's own locator-discipline
+  // note: `ul.squad li` matched two different lists on one page before.
+  await expect(squadRow(page, JOINER_NAME)).toHaveCount(1);
+
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+});
+
+/**
  * Tier 2, but not run twice with JavaScript off: nothing on this page is
  * script-only, and BR-27's attribution and the guest form are both plain
  * form posts already covered end to end by the JS-off projection above for
