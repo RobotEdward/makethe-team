@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   cancelTokenExpiry,
+  leaveTokenExpiry,
   responseTokenExpiry,
   signCancelToken,
+  signLeaveToken,
   signResponseToken,
   verifyCancelToken,
+  verifyLeaveToken,
   verifyResponseToken,
 } from "../../src/domain/token.js";
+import { NOW as CLOCK_NOW } from "../support/clock.js";
 
 const SECRET = "test-secret-not-used-anywhere-real";
 const OTHER_SECRET = "a-different-secret-entirely";
@@ -562,5 +566,62 @@ describe("cancelTokenExpiry", () => {
   it("is exactly kickoff, not 24 hours after it", () => {
     const expiry = cancelTokenExpiry(new Date("2026-08-13T18:00:00Z"));
     expect(expiry.toISOString()).toBe("2026-08-13T18:00:00.000Z");
+  });
+});
+
+describe("leave tokens", () => {
+  const SECRET = "leave-token-tests-only";
+
+  it("round-trips a game-scoped payload", async () => {
+    const expiresAt = leaveTokenExpiry(CLOCK_NOW).getTime();
+    const token = await signLeaveToken({ gameId: "g-1", playerId: "p-1", expiresAt }, SECRET);
+
+    const result = await verifyLeaveToken(token, SECRET, CLOCK_NOW);
+
+    expect(result).toEqual({ ok: true, payload: { gameId: "g-1", playerId: "p-1", expiresAt } });
+  });
+
+  it("expires ninety days after minting", () => {
+    const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+    expect(leaveTokenExpiry(CLOCK_NOW).getTime()).toBe(CLOCK_NOW.getTime() + ninetyDays);
+  });
+
+  it("rejects a token presented after its expiry", async () => {
+    const token = await signLeaveToken(
+      { gameId: "g-1", playerId: "p-1", expiresAt: CLOCK_NOW.getTime() - 1 },
+      SECRET,
+    );
+
+    expect(await verifyLeaveToken(token, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "expired" });
+  });
+
+  it("refuses a response token presented as a leave token", async () => {
+    // The discriminator is inside the signed bytes, so this fails as
+    // `malformed` at the kind check — not as a bad signature — even though
+    // both kinds share RESPONSE_TOKEN_SECRET.
+    const responseToken = await signResponseToken(
+      { playerId: "p-1", fixtureId: "f-1", expiresAt: CLOCK_NOW.getTime() + 60_000 },
+      SECRET,
+    );
+
+    expect(await verifyLeaveToken(responseToken, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "malformed" });
+  });
+
+  it("refuses a leave token presented as a response token", async () => {
+    const leaveToken = await signLeaveToken(
+      { gameId: "g-1", playerId: "p-1", expiresAt: CLOCK_NOW.getTime() + 60_000 },
+      SECRET,
+    );
+
+    expect(await verifyResponseToken(leaveToken, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "malformed" });
+  });
+
+  it("refuses a leave token signed with a different secret", async () => {
+    const token = await signLeaveToken(
+      { gameId: "g-1", playerId: "p-1", expiresAt: CLOCK_NOW.getTime() + 60_000 },
+      SECRET,
+    );
+
+    expect(await verifyLeaveToken(token, "a-different-secret", CLOCK_NOW)).toEqual({ ok: false, reason: "bad-signature" });
   });
 });
