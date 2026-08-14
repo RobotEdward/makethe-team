@@ -100,7 +100,8 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     } else if (existing.status === "waitlisted") {
       // Already waitlisted and still full. Keep the original position — BR-6
       // fixes order by arrival, so re-tapping must not move them to the back.
-      if (inCountWithoutThisPlayer >= fixture.maxPlayers) {
+      if (inCountWithoutThisPlayer >= fixture.maxPlayers && input.whenFull !== "exceed") {
+        if (input.whenFull === "refuse") return { kind: "rejected", reason: "would-exceed-capacity" };
         return {
           kind: "waitlisted",
           waitlistPosition: existing.waitlistPosition ?? 1,
@@ -117,14 +118,26 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       // *without* them tapping; it does not apply here.
       status = "in";
     } else if (inCountWithoutThisPlayer >= fixture.maxPlayers) {
-      // Full (BR-4). Appended to the end of the waitlist (BR-5, BR-6) and told
-      // so explicitly — never silently.
-      const highest = waitlistedWithoutThisPlayer.reduce(
-        (max, r) => Math.max(max, r.waitlistPosition ?? 0),
-        0,
-      );
-      status = "waitlisted";
-      waitlistPosition = highest + 1;
+      // Full. What happens now is the caller's declared policy, decided in
+      // here rather than in the route because a route-level capacity check
+      // would be a genuine TOCTOU race against a concurrent tap — this branch
+      // runs under `blockConcurrencyWhile`, so the decision is atomic with the
+      // count it is deciding against.
+      if (input.whenFull === "refuse") return { kind: "rejected", reason: "would-exceed-capacity" };
+      if (input.whenFull === "exceed") {
+        // BR-8. The fixture goes over capacity, and `fixtureView` derives the
+        // `over_capacity` flag from the counts — nothing is stored to say so.
+        status = "in";
+      } else {
+        // BR-4/BR-5/BR-6: appended to the end of the waitlist and told so
+        // explicitly, never silently.
+        const highest = waitlistedWithoutThisPlayer.reduce(
+          (max, r) => Math.max(max, r.waitlistPosition ?? 0),
+          0,
+        );
+        status = "waitlisted";
+        waitlistPosition = highest + 1;
+      }
     } else {
       status = "in";
     }

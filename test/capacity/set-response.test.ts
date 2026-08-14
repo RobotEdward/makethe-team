@@ -38,13 +38,13 @@ function stubFor(fixtureId: string) {
 // or reading the wall clock (see the BR-7 ordering test below).
 function accept(fixtureId: string, playerId: string, now: number = NOW.getTime()) {
   return stubFor(fixtureId).setResponse({
-    playerId, intent: "in", actorPlayerId: null, source: "token", now,
+    playerId, intent: "in", actorPlayerId: null, source: "token", whenFull: "waitlist", now,
   });
 }
 
 function decline(fixtureId: string, playerId: string, now: number = NOW.getTime()) {
   return stubFor(fixtureId).setResponse({
-    playerId, intent: "out", actorPlayerId: null, source: "token", now,
+    playerId, intent: "out", actorPlayerId: null, source: "token", whenFull: "waitlist", now,
   });
 }
 
@@ -236,10 +236,10 @@ describe("BR-9 — no double-booking, ever", () => {
       accept(fixtureId, "p-2"),
       accept(fixtureId, "p-3"),
       env.FIXTURE_CAPACITY.getByName(wrongName).setResponse({
-        playerId: "p-2", intent: "in", actorPlayerId: null, source: "token", now: NOW.getTime(),
+        playerId: "p-2", intent: "in", actorPlayerId: null, source: "token", whenFull: "waitlist", now: NOW.getTime(),
       }),
       env.FIXTURE_CAPACITY.getByName(wrongName).setResponse({
-        playerId: "p-3", intent: "in", actorPlayerId: null, source: "token", now: NOW.getTime(),
+        playerId: "p-3", intent: "in", actorPlayerId: null, source: "token", whenFull: "waitlist", now: NOW.getTime(),
       }),
     ]);
 
@@ -262,7 +262,7 @@ describe("BR-9 — no double-booking, ever", () => {
     ];
     for (const [playerId, intent] of script) {
       await stubFor(fixtureId).setResponse({
-        playerId, intent, actorPlayerId: null, source: "web", now: NOW.getTime(),
+        playerId, intent, actorPlayerId: null, source: "web", whenFull: "waitlist", now: NOW.getTime(),
       });
     }
 
@@ -528,8 +528,82 @@ describe("rejections", () => {
     expect(
       await env.FIXTURE_CAPACITY.getByName("nope").setResponse({
         playerId: "p-0", intent: "in",
-        actorPlayerId: null, source: "token", now: NOW.getTime(),
+        actorPlayerId: null, source: "token", whenFull: "waitlist", now: NOW.getTime(),
       }),
     ).toMatchObject({ kind: "rejected", reason: "fixture-not-found" });
+  });
+});
+
+describe("whenFull (BR-8)", () => {
+  it("refuses without writing when an owner marks in on a full fixture", async () => {
+    const fixtureId = await seedOpenFixture(5, 2);
+    await accept(fixtureId, "p-0");
+    await accept(fixtureId, "p-1");
+
+    const outcome = await stubFor(fixtureId).setResponse({
+      playerId: "p-2", intent: "in", actorPlayerId: "p-0", source: "owner",
+      whenFull: "refuse", now: NOW.getTime(),
+    });
+
+    expect(outcome).toEqual({ kind: "rejected", reason: "would-exceed-capacity" });
+    // Nothing written: the row is untouched and the cached count did not move.
+    const [row] = await db.select().from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-2")));
+    expect(row?.status).toBe("pending");
+    expect(row?.respondedAt).toBeNull();
+    expect(await counts(fixtureId)).toEqual({ inCount: 2, cached: 2 });
+  });
+
+  it("goes over capacity when the owner confirms", async () => {
+    const fixtureId = await seedOpenFixture(5, 2);
+    await accept(fixtureId, "p-0");
+    await accept(fixtureId, "p-1");
+
+    const outcome = await stubFor(fixtureId).setResponse({
+      playerId: "p-2", intent: "in", actorPlayerId: "p-0", source: "owner",
+      whenFull: "exceed", now: NOW.getTime(),
+    });
+
+    expect(outcome).toMatchObject({ kind: "recorded", status: "in", inCount: 3, spotsLeft: 0 });
+    expect(await counts(fixtureId)).toEqual({ inCount: 3, cached: 3 });
+    const [row] = await db.select().from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-2")));
+    expect(row?.setByPlayerId).toBe("p-0");
+    expect(row?.source).toBe("owner");
+    expect(row?.waitlistPosition).toBeNull();
+  });
+
+  it("still waitlists a player answering for themselves", async () => {
+    const fixtureId = await seedOpenFixture(5, 2);
+    await accept(fixtureId, "p-0");
+    await accept(fixtureId, "p-1");
+
+    const outcome = await accept(fixtureId, "p-2");
+
+    expect(outcome).toMatchObject({ kind: "waitlisted", waitlistPosition: 1 });
+  });
+
+  it("marks in normally when the fixture is not full, whatever whenFull says", async () => {
+    const fixtureId = await seedOpenFixture(5, 10);
+
+    const outcome = await stubFor(fixtureId).setResponse({
+      playerId: "p-0", intent: "in", actorPlayerId: "p-1", source: "owner",
+      whenFull: "refuse", now: NOW.getTime(),
+    });
+
+    expect(outcome).toMatchObject({ kind: "recorded", status: "in", inCount: 1 });
+  });
+
+  it("refuses `out` never — whenFull only governs taking a slot", async () => {
+    const fixtureId = await seedOpenFixture(5, 2);
+    await accept(fixtureId, "p-0");
+    await accept(fixtureId, "p-1");
+
+    const outcome = await stubFor(fixtureId).setResponse({
+      playerId: "p-1", intent: "out", actorPlayerId: "p-0", source: "owner",
+      whenFull: "refuse", now: NOW.getTime(),
+    });
+
+    expect(outcome).toMatchObject({ kind: "recorded", status: "out" });
   });
 });

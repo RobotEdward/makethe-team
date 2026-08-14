@@ -202,6 +202,7 @@ respond.post("/r/:token", async (c) => {
     actorPlayerId: null,
     source: "token",
     now: now.getTime(),
+    whenFull: "waitlist",
   });
 
   if (outcome.kind === "rejected" && outcome.reason === "fixture-not-found") {

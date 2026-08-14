@@ -207,7 +207,7 @@ describe("GET /r/:token — the GET records nothing (TR-14/TR-15)", () => {
   it("does not change respondedAt for a player who already responded", async () => {
     const { fixtureId, playerId } = await seedOpenFixture();
     await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
-      playerId, intent: "in", actorPlayerId: null, source: "token", now: NOW.getTime(),
+      playerId, intent: "in", actorPlayerId: null, source: "token", whenFull: "waitlist", now: NOW.getTime(),
     });
     const token = await tokenFor(fixtureId, playerId);
 

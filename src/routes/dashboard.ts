@@ -139,6 +139,7 @@ dashboard.post(DASHBOARD_PATH, requirePlayer, async (c) => {
     actorPlayerId: null,
     source: "web",
     now: now.getTime(),
+    whenFull: "waitlist",
   });
 
   if (outcome.kind === "recorded" && outcome.promoted) {
