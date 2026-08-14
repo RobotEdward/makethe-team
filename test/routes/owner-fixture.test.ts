@@ -1,7 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditLog, fixtures, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, insertMembership, insertPlayer, playerRow, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
@@ -463,6 +463,140 @@ describe("POST /g/:id/f/:fixtureId/response/:playerId", () => {
     const response = await appPost(
       `/g/${gameId}/f/${fixtureId}/response/p-0`,
       { intent: "in" },
+      cookie,
+      "https://evil.example",
+    );
+
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("guests", () => {
+  beforeEach(resetDatabase);
+
+  it("adds a guest who occupies a slot", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "Sam Whitlock" }, cookie);
+
+    expect(response.status).toBe(303);
+    const db = testDb();
+    const [guest] = await db.select().from(players).where(eq(players.isGuest, true));
+    expect(guest).toMatchObject({ name: "Sam Whitlock", email: null });
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(fixture?.inCount).toBe(1);
+  });
+
+  it("gives the guest no membership", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "Sam Whitlock" }, cookie);
+
+    const db = testDb();
+    const [guest] = await db.select().from(players).where(eq(players.isGuest, true));
+    expect(await db.select().from(memberships).where(eq(memberships.playerId, guest!.id))).toEqual([]);
+  });
+
+  it("writes an audit row", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "Sam Whitlock" }, cookie);
+
+    const db = testDb();
+    const [row] = await db.select().from(auditLog).where(eq(auditLog.action, "fixture.guest_added"));
+    expect(row).toMatchObject({ actorPlayerId: viewerId, entityType: "fixture", entityId: fixtureId });
+    expect(JSON.parse(row!.afterJson!).name).toBe("Sam Whitlock");
+  });
+
+  it("refuses an empty name without creating anybody", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "  " }, cookie);
+
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("Give your guest a name");
+    const db = testDb();
+    expect(await db.select().from(players).where(eq(players.isGuest, true))).toEqual([]);
+  });
+
+  it("asks before adding a guest over capacity", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFullFixtureOwnedBy(viewerId);
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "Sam Whitlock" }, cookie);
+
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("Add them anyway");
+    const db = testDb();
+    expect(await db.select().from(players).where(eq(players.isGuest, true))).toEqual([]);
+  });
+
+  it("adds the guest over capacity once confirmed", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFullFixtureOwnedBy(viewerId);
+
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/guest`,
+      { name: "Sam Whitlock", override: "1" },
+      cookie,
+    );
+
+    expect(response.status).toBe(303);
+    const db = testDb();
+    expect((await db.select().from(players).where(eq(players.isGuest, true))).length).toBe(1);
+  });
+
+  it("removes a guest and frees their slot", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "Sam Whitlock" }, cookie);
+    const db = testDb();
+    const [guest] = await db.select().from(players).where(eq(players.isGuest, true));
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest/${guest!.id}/remove`, {}, cookie);
+
+    expect(response.status).toBe(303);
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(fixture?.inCount).toBe(0);
+    const [audit] = await db.select().from(auditLog).where(eq(auditLog.action, "fixture.guest_removed"));
+    expect(JSON.parse(audit!.beforeJson!).name).toBe("Sam Whitlock");
+  });
+
+  it("refuses to remove a squad member through the guest route", async () => {
+    // `p-0` is a real member, not a guest. The guest route must not become a
+    // second, unconfirmed way to remove people from a squad.
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest/p-0/remove`, {}, cookie);
+
+    expect(response.status).toBe(404);
+  });
+
+  it("404s for a player who is not an owner", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const db = testDb();
+    const strangerOwner = await insertPlayer(db);
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(strangerOwner);
+    // The viewer is a real member of this game, just not an organiser of it.
+    await insertMembership(db, gameId, viewerId);
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/guest`, { name: "Sam" }, cookie);
+
+    expect(response.status).toBe(404);
+  });
+
+  it("403s a cross-site post", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/guest`,
+      { name: "Sam" },
       cookie,
       "https://evil.example",
     );

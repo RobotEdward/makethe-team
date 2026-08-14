@@ -103,6 +103,10 @@ export const AUDIT_ACTIONS = [
   // rather than an ordinary mark-in, because the two are indistinguishable
   // from the resulting row alone.
   "fixture.response_overridden",
+  // J6b. A one-off guest, added to and removed from a single fixture. Both
+  // carry a real actor: only an owner can do either.
+  "fixture.guest_added",
+  "fixture.guest_removed",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
