@@ -6,11 +6,14 @@ import { fixtures, memberships, players, responses } from "../../src/db/schema.j
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
+import { kickoffIn, NOW } from "../support/clock.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
-const NOW = new Date("2026-08-13T09:00:00Z");
-const KICKOFF = new Date("2026-08-13T18:00:00Z");
+// Relative to the real clock, not pinned to a date — the route verifies its
+// token against the real wall clock, so a fixed kickoff eventually falls into
+// the past and every token here reads as expired. See test/support/clock.ts.
+const KICKOFF = kickoffIn(9);
 
 interface SeedResult {
   gameId: string;
@@ -150,18 +153,20 @@ describe("GET /r/:token — rendering", () => {
   });
 
   /**
-   * `Cache-Control: private, no-store`, added for the dashboard, is mounted on
-   * `AUTHENTICATED_PREFIX` (`/app` and below) only — `/r/:token` is reached by
-   * a signed token, not a session, and must keep whatever caching behaviour it
-   * already had.
+   * `/r/:token` is reached by a signed token, not a session, so it sits
+   * outside `AUTHENTICATED_PREFIX` — but it renders full names and every
+   * player's current answer, state that changes on every tap, so it carries
+   * `private, no-store` via its own `/r/*` mount in `src/app.ts` rather than
+   * inheriting the dashboard's. See `test/routes/cache-control.test.ts` for
+   * the guard that derives this from the route table.
    */
-  it("carries no Cache-Control directive of its own", async () => {
+  it("carries private, no-store", async () => {
     const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
     const response = await SELF.fetch(`https://makethe.team/r/${token}`);
 
-    expect(response.headers.get("cache-control")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
   });
 
   it("shows two response buttons for an open fixture", async () => {

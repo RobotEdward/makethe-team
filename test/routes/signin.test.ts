@@ -29,6 +29,7 @@ import { signCancelToken } from "../../src/domain/token.js";
 import type { AppEnv } from "../../src/env.js";
 import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
+import { kickoffIn, NOW as CLOCK_NOW } from "../support/clock.js";
 import { EMAIL_LOOKUP, interferingBinding } from "../support/interference.js";
 // The whole browser journey through sign-in lives in `test/support/sign-in.ts`
 // so the dashboard suite can reach a real session the same way this one does —
@@ -655,10 +656,17 @@ describe("no password field anywhere (TR-16)", () => {
       const [player] = await db.select().from(players);
       const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
       const fixtureId = crypto.randomUUID();
+      // Relative to the real clock, not pinned to a date: the cancel token
+      // minted below is verified by `/cancel/:token` against the real wall
+      // clock, and a cancel token expires at kickoff itself (BR-24's cancel
+      // analogue) — so a fixed future kickoff eventually stops being in the
+      // future and this capture starts rendering the failure page instead.
+      // See test/support/clock.ts.
+      const kickoff = kickoffIn(9);
       await db.insert(fixtures).values({
         id: fixtureId,
         gameId,
-        kicksOffAt: new Date("2030-06-13T18:00:00Z"),
+        kicksOffAt: kickoff,
         minPlayers: 1,
         maxPlayers: 14,
         prefersEvenNumbers: true,
@@ -668,7 +676,7 @@ describe("no password field anywhere (TR-16)", () => {
       await db
         .insert(memberships)
         .values({ id: crypto.randomUUID(), gameId, playerId: player!.id, active: true });
-      await openFixture(db, fixtureId, new Date("2030-06-01T09:00:00Z"));
+      await openFixture(db, fixtureId, CLOCK_NOW);
 
       await capture(
         "dashboard",
@@ -710,7 +718,7 @@ describe("no password field anywhere (TR-16)", () => {
         {
           ownerPlayerId: player!.id,
           fixtureId,
-          expiresAt: new Date("2030-06-13T18:00:00Z").getTime(),
+          expiresAt: kickoff.getTime(),
         },
         env.CANCEL_TOKEN_SECRET,
       );

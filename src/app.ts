@@ -27,10 +27,11 @@ export function createApp(): Hono<AppEnv> {
 
   // A signed-in player's own data must never be written to a shared or disk
   // cache. Scoped to `AUTHENTICATED_PREFIX` for the same blast-radius reason
-  // `sessionMiddleware` is (see its own doc comment): the public holding page
-  // and `/r/:token`/`/leave/:token` are reached by everyone including
-  // logged-out strangers and must keep whatever caching behaviour they already
-  // have, so this must not become a global mount.
+  // `sessionMiddleware` is (see its own doc comment): the token routes
+  // (`/r/:token`, `/leave/:token`, `/cancel/:token`) carry `private, no-store`
+  // via their own mounts below, each for its own reason, while the public
+  // holding page and `robots.txt` genuinely keep whatever caching behaviour
+  // they already have, so this must not become a global mount.
   app.use(AUTHENTICATED_PREFIX, async (c, next) => {
     await next();
     c.header("Cache-Control", "private, no-store");
@@ -64,6 +65,32 @@ export function createApp(): Hono<AppEnv> {
   // branch also echoes the submitter's own address back into the form, which
   // no shared cache should ever hold.
   app.use("/j/*", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "private, no-store");
+  });
+
+  // The response page. Confidentiality *and* staleness: it renders full names
+  // and every player's current answer, and that state changes on every tap, so
+  // a cached copy is wrong almost immediately and can still be served.
+  app.use("/r/*", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "private, no-store");
+  });
+
+  // The leave page. Reached by the same population from the same emails, and
+  // it names the Game. It performs no write today (BR-22's self-service leave
+  // is M7), so the argument is weaker than its two neighbours' — but a visitor
+  // with no session has no way to tell that a page they were served is stale.
+  app.use("/leave/*", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "private, no-store");
+  });
+
+  // The owner's cancellation link, and the strongest case of the three:
+  // presenting it does not merely show a fixture, it calls the fixture off for
+  // the entire squad. A shared cache holding a 200 for that URL is the worst
+  // outcome on this list.
+  app.use("/cancel/*", async (c, next) => {
     await next();
     c.header("Cache-Control", "private, no-store");
   });
