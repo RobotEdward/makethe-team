@@ -18,10 +18,12 @@ describe("holding page", () => {
   });
 
   /**
-   * `Cache-Control: private, no-store` is mounted on `AUTHENTICATED_PREFIX`
-   * only (`/app` and below), for the same blast-radius reason
-   * `sessionMiddleware` is scoped there — this page has no signed-in visitor
-   * to protect and must keep whatever caching it already had.
+   * `Cache-Control: private, no-store` is applied by several scoped mounts —
+   * `AUTHENTICATED_PREFIX`, `GAMES_PREFIX`, and the token routes (`/r/*`,
+   * `/leave/*`, `/cancel/*`) each carry it via their own mount, for their own
+   * reason (see `src/app.ts`) — but never globally. This page has no
+   * signed-in visitor to protect and must keep whatever caching it already
+   * had.
    */
   it("carries no Cache-Control directive of its own", async () => {
     const response = await SELF.fetch("https://makethe.team/");
