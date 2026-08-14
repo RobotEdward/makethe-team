@@ -3,6 +3,7 @@ import type { SquadMember } from "../db/queries.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
+import { attribution, squadStatusLabel } from "./squad-row.js";
 import { FORM_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 export interface OwnerFixtureParams {
@@ -32,33 +33,6 @@ export interface OwnerFixtureParams {
 function renderOverCapacity(view: FixtureView, inCount: number, maxPlayers: number): string {
   if (!view.flags.includes("over_capacity")) return "";
   return `<p class="problem">Over capacity — ${inCount} in, ${maxPlayers} places.</p>`;
-}
-
-function squadStatusLabel(member: SquadMember): string {
-  switch (member.status) {
-    case "in":
-      return "In";
-    case "waitlisted":
-      return member.waitlistRank === null ? "Waitlisted" : `Waitlisted (${member.waitlistRank})`;
-    case "pending":
-      return "Not yet responded";
-    case "out":
-      return "Can't make it";
-    case "withdrawn":
-      return "Withdrawn";
-  }
-}
-
-/**
- * BR-27's visible attribution, on the organiser's own page as well as the
- * player's (`src/views/fixture.ts`). Shown only for `source === "owner"`: a
- * `system` source is a waitlist promotion and `token`/`web` are the player
- * themselves, neither of which is "set by" anyone else.
- */
-function attribution(member: SquadMember): string {
-  if (member.source !== "owner" || member.setBy === null) return "";
-  const verb = member.status === "out" ? "marked out" : "marked in";
-  return `<span class="set-by">${escapeHtml(`${verb} by ${member.setBy.name}`)}</span>`;
 }
 
 function renderSquadList(squad: readonly SquadMember[]): string {

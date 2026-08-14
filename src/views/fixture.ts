@@ -3,6 +3,7 @@ import type { SquadMember } from "../db/queries.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
+import { attribution, ordinal, squadStatusLabel } from "./squad-row.js";
 import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 /**
@@ -51,21 +52,6 @@ const STATUS_LABEL: Record<FixtureView["status"], string> = {
   cancelled: "Cancelled",
   played: "Played",
 };
-
-function ordinal(n: number): string {
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
 
 function viewerHeadline(
   viewer: FixturePageOptions["viewer"],
@@ -146,44 +132,6 @@ function viewerHeadlineClosed(
     case "withdrawn":
       return "You're no longer in this squad.";
   }
-}
-
-function squadStatusLabel(member: SquadMember): string {
-  switch (member.status) {
-    case "in":
-      return "In";
-    case "waitlisted":
-      return member.waitlistRank === null ? "Waitlisted" : `Waitlisted (${ordinal(member.waitlistRank)})`;
-    case "pending":
-      return "Not yet responded";
-    case "out":
-      return "Can't make it";
-    case "withdrawn":
-      return "Withdrawn";
-  }
-}
-
-/**
- * BR-27's visible attribution, on the *player's* page and not only the
- * owner's.
- *
- * With §1.11's notification catalogue closed, no email tells a player that
- * somebody answered for them — so this line is the only way they can ever find
- * out. Shown only for `source === "owner"`: a `system` source is a waitlist
- * promotion, which the player's own headline already explains, and `token` and
- * `web` are the player themselves.
- *
- * `waitlisted` reads as "marked in", not "marked out": being marked in and
- * landing on the waitlist is still having been marked in from the player's
- * point of view, and the status badge beside this line already says
- * "waitlisted". `withdrawn` never reaches a squad read (filtered out of
- * `getFixtureWithSquad`), so `out` is the only status left that means "marked
- * out".
- */
-function attribution(member: SquadMember): string {
-  if (member.source !== "owner" || member.setBy === null) return "";
-  const verb = member.status === "out" ? "marked out" : "marked in";
-  return `<span class="set-by">${escapeHtml(`${verb} by ${member.setBy.name}`)}</span>`;
 }
 
 function renderSquadList(squad: readonly SquadMember[]): string {
