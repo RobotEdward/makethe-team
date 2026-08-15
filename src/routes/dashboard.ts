@@ -57,6 +57,13 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
       rows: rows.map((row) => toRow(row, now)),
       ownedGames,
       problem,
+      // `player` already carries `erasesAt` — `sessionMiddleware` selects the
+      // whole row, so this is a field read, not a second query. Not scoped to
+      // a game, same as `send-erasure-scheduled.ts`'s N-8 email, so there is
+      // no game timezone to format in; `Europe/London` is the only zone this
+      // product has any right to assume for a person absent one.
+      erasesAtLocal:
+        player.erasesAt === null ? undefined : formatLocalDateTime(player.erasesAt, "Europe/London"),
     }),
     problem === undefined ? 200 : 422,
   );

@@ -2,7 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { DASHBOARD_PATH, SIGN_IN_PATH } from "../../src/auth/paths.js";
+import { DASHBOARD_PATH, DELETE_ACCOUNT_CANCEL_PATH, DELETE_ACCOUNT_PATH, SIGN_IN_PATH } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
@@ -435,6 +435,43 @@ describe("GET /app", () => {
     const response = await get(cookie);
 
     expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  /**
+   * Without this link `/app/delete` exists and nothing reaches it — the same
+   * "built but nobody can get to it" failure `renderOwnedGamesSection`'s
+   * comment describes, and which happened again at M8.
+   */
+  it("links to deleting my account and data, with no erasure banner when none is pending", async () => {
+    const { cookie } = await signIn();
+    await viewerId();
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(`href="${DELETE_ACCOUNT_PATH}"`);
+    expect(body).not.toContain(DELETE_ACCOUNT_CANCEL_PATH);
+  });
+
+  /**
+   * BR-34: a pending erasure must be visible somewhere a person who did *not*
+   * request it will actually see it, not only on the page where it was
+   * requested. The dashboard is the page a player actually visits.
+   */
+  it("banners a pending erasure with its date and a cancel form", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await db
+      .update(players)
+      .set({ erasesAt: new Date("2030-06-15T09:00:00Z") })
+      .where(eq(players.id, playerId));
+
+    const body = await (await get(cookie)).text();
+
+    // Europe/London, matching `send-erasure-scheduled.ts`'s choice for the
+    // same not-scoped-to-a-game message. June is BST, so 09:00Z is 10:00 local.
+    expect(body).toContain("Saturday 15 June at 10:00");
+    expect(body).toContain(`action="${DELETE_ACCOUNT_CANCEL_PATH}"`);
+    expect(body).toContain('method="post"');
   });
 });
 

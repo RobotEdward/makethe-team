@@ -1,4 +1,11 @@
-import { DASHBOARD_PATH, NEW_GAME_PATH, PASSKEYS_PATH, gamePath } from "../auth/paths.js";
+import {
+  DASHBOARD_PATH,
+  DELETE_ACCOUNT_CANCEL_PATH,
+  DELETE_ACCOUNT_PATH,
+  NEW_GAME_PATH,
+  PASSKEYS_PATH,
+  gamePath,
+} from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import { renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
@@ -46,6 +53,8 @@ export interface DashboardPageOptions {
   ownedGames: readonly OwnedGame[];
   /** The one refusal `POST /app/games/:gameId/leave` can produce (M7a Task 4). */
   problem?: string;
+  /** Set when this player has an erasure pending — already formatted (M7b). */
+  erasesAtLocal?: string;
 }
 
 /**
@@ -120,6 +129,32 @@ function renderOwnedGamesSection(games: readonly OwnedGame[]): string {
 }
 
 /**
+ * The pending-erasure banner (BR-34, M7b).
+ *
+ * **Shown here, not only on `/app/delete`.** The request can be made by
+ * anyone who signs in as this player, on any device — a shared computer, a
+ * second browser, a session that outlives the one that started it — and the
+ * only page that visits routinely enough to be noticed is this one. A pending
+ * erasure visible solely on the page where it was requested is invisible to
+ * whoever did *not* request it, which is exactly the person a two-day window
+ * exists to warn.
+ *
+ * The cancel form posts straight from here rather than linking through
+ * `/app/delete` first: stopping an erasure someone did not start is the
+ * one-click case this banner exists for, and a detour through another page
+ * buys nothing but a chance to give up partway.
+ */
+function renderErasureBanner(erasesAtLocal: string): string {
+  return `
+    <div class="nudge">
+      <p>Your data is due to be erased on <strong>${escapeHtml(erasesAtLocal)}</strong>.</p>
+      <form method="post" action="${DELETE_ACCOUNT_CANCEL_PATH}">
+        <button type="submit" class="button">Keep my account</button>
+      </form>
+    </div>`;
+}
+
+/**
  * The player dashboard (J7, BR-25): every upcoming fixture across every game
  * the viewer is an active member of, with the response they can change.
  *
@@ -135,12 +170,20 @@ function renderOwnedGamesSection(games: readonly OwnedGame[]): string {
  * scriptless, and the enhancement is quarantined on the page that cannot
  * exist without it.
  */
-export function renderDashboardPage({ playerName, rows, ownedGames, problem }: DashboardPageOptions): string {
+export function renderDashboardPage({
+  playerName,
+  rows,
+  ownedGames,
+  problem,
+  erasesAtLocal,
+}: DashboardPageOptions): string {
   const problemNotice = problem === undefined ? "" : `<p class="nudge">${escapeHtml(problem)}</p>`;
+  const erasureBanner = erasesAtLocal === undefined ? "" : renderErasureBanner(erasesAtLocal);
   const body = `
     <h1>Your games</h1>
     <p>Signed in as ${escapeHtml(playerName)}.</p>
     ${problemNotice}
+    ${erasureBanner}
     ${
       rows.length === 0
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
@@ -148,6 +191,7 @@ export function renderDashboardPage({ playerName, rows, ownedGames, problem }: D
     }
     ${renderOwnedGamesSection(ownedGames)}
     <p><a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
+    <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a></p>
     ${signOutForm("Sign out")}
   `;
 
