@@ -8,8 +8,10 @@ import { FORM_CSS } from "./styles.js";
  * Modelled on `src/views/cancel.ts`: a token-reached page with no session,
  * stating one destructive action plainly and putting it behind a real `<form
  * method="post">`, never a link or a button that a `GET` could trigger. The
- * route that renders this performs no write on any path — see
- * `respond.ts`'s handler for why that is the entire point of this page.
+ * `GET` that renders this performs no write on any path — the `POST` this
+ * page's form submits to is what actually leaves the squad — see
+ * `respond.ts`'s handler for why the `GET` staying writeless is the entire
+ * point of this page.
  */
 export interface LeavePageParams {
   token: string;
