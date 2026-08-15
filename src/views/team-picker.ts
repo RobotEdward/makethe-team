@@ -190,8 +190,10 @@ function renderPublish(params: TeamPickerParams): string {
  *
  * Saving sends nothing to anybody — publishing is a separate act, in its own
  * form below — so there is no confirmation step on the save and no warning
- * about interrupting anyone. A saved pick stays invisible to players until it
- * is published.
+ * about interrupting anyone. A saved pick stays invisible to players until
+ * the fixture is first published; after that, every save is live on their
+ * pages straight away, while the email they already hold is unchanged —
+ * which is exactly what the re-publish prompt above is for.
  *
  * The list of rows carries `data-team=""` because it is the third drop target
  * once the script runs: the players nobody has placed. That is the same value

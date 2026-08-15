@@ -155,7 +155,9 @@ Saving and telling the squad are two separate things, and the page says so:
 you publish.**
 
 So a half-finished pick is fine. Save six of twelve, go and cook dinner, come
-back and finish it. Nobody has seen anything, and nothing has been sent.
+back and finish it. Nobody has seen anything, and nothing has been sent —
+that's true up to your first publish. Once you've published a fixture once,
+saving works differently, as the next section explains.
 
 **Publish teams**, which appears once you've saved a pick, is what tells
 everyone. Every player who is in and has an email address gets a message
@@ -191,9 +193,13 @@ playing is now holding an email that matches the pick. It comes back the
 moment they diverge again — including when *you* are the one who changed them.
 Move two people between sides after publishing, press **Save teams**, and the
 same note appears, because nine people are holding last week's version and
-nothing has told them otherwise. The button stays **Publish again** from the
-first time you publish onwards, so you can always tell a squad that has been
-told something from one that never has.
+nothing has told them otherwise. Their own pages don't wait for **Publish
+again**, though — the moment you save, each player's page shows the sides as
+they now stand, so anyone who checks sees the true picture straight away.
+It's only the email already sitting in their inbox that's out of date, which
+is exactly what the note is warning you about. The button stays **Publish
+again** from the first time you publish onwards, so you can always tell a
+squad that has been told something from one that never has.
 
 Once the fixture has been played or called off, the teams stay on the page as
 a record of who was on which side. The controls go; the pick doesn't.
