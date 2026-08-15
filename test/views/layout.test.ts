@@ -65,4 +65,16 @@ describe("layout", () => {
       .filter((v) => !v.startsWith("var(--t-"));
     expect(sizes).toEqual([]);
   });
+
+  it("preconnects and swaps, so a slow font never blanks the page", () => {
+    const html = layout({ title: "T", body: "" });
+    expect(html).toContain(`rel="preconnect" href="https://fonts.gstatic.com" crossorigin`);
+    expect(html).toContain("display=swap");
+  });
+
+  it("keeps the system stack behind the webfont", () => {
+    // If the font request is blocked, this is the whole appearance of the
+    // product. It must still be the stack that shipped before M10.
+    expect(STYLES).toContain(`"Instrument Sans", ui-sans-serif, system-ui`);
+  });
 });

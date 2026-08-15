@@ -68,6 +68,7 @@ export const STYLES = `
        the product were styled as neither. See the M10 spec §2.1. */
     --danger: #a4321f; --danger-bg: #fbe9e5; --danger-fg: #fbfaf8;
     --t-title: 2rem; --t-lead: 1.25rem; --t-body: 1rem; --t-support: 0.875rem;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -86,7 +87,7 @@ export const STYLES = `
   body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
     padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
-    font: var(--t-body)/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: var(--t-body)/1.6 "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   /* Left by default. Centring is opt-in via centred on layout(), for pages
      that are a single statement and nothing else. Until M10 the default was
@@ -168,6 +169,9 @@ export function layout({ title, body, pageStyles, pageScripts, centred }: Layout
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <title>${escapeHtml(title)}</title>
 ${styleTags}
 </head>

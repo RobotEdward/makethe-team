@@ -134,9 +134,9 @@ M2's carry-forward note about nothing being able to produce an `open` fixture is
 — M3's hourly sweep now owns the `scheduled → open` transition — and has been removed from
 this list per the rule above.
 
-Three notes remain. None is a defect: the first is relevant to whichever milestone adds a
-second environment, the second to the milestone that writes `/privacy`, and the third to
-the milestone that records results.
+Four notes remain. None is a defect: the first is relevant to whichever milestone adds a
+second environment, the second and fourth to the milestone that writes `/privacy`, and the
+third to the milestone that records results.
 
 1. **`triggers.crons` sits at the top level of `wrangler.jsonc`**, which is correct while
    production is the only environment — but it is inherited, so adding a staging
@@ -195,6 +195,14 @@ the milestone that records results.
 
    Decide this when results are designed, not after a season of data has accumulated
    without it.
+
+4. **Every page load now discloses the visitor's IP address to Google.** M10 (§2.4 of the
+   design treatment spec) adopted Instrument Sans and IBM Plex Mono from Google Fonts, over
+   a recorded objection, opening the first two external-host holes in an otherwise
+   `default-src 'none'` CSP (`style-src` and `font-src` in `src/security/csp.ts`, naming
+   `FONT_ORIGINS`). The stylesheet request is unauthenticated and unavoidable — it happens
+   on every page, for every visitor, before they have made any choice — so it is a
+   disclosure the product makes on their behalf. `/privacy` must say so.
 
 ## Repository and deploy hardening — applied 11 August 2026
 

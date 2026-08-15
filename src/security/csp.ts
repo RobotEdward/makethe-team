@@ -2,6 +2,21 @@ import { SCRIPT_BLOCKS } from "../views/scripts.js";
 import { STYLE_BLOCKS } from "../views/styles.js";
 
 /**
+ * The two hosts M10's typeface needs, and the only external origins any page
+ * is allowed to touch.
+ *
+ * Exported so `test/security/csp.test.ts` asserts on exactly these rather than
+ * on a pasted string, and so the test can prove the policy is no *wider* than
+ * this — a `font-src https:` would satisfy "the fonts load" and give away the
+ * whole point of having the directive.
+ *
+ * Adopted over an objection recorded in the M10 spec §2.4: every page load now
+ * discloses the visitor's IP to Google. `/privacy` must say so, and
+ * `docs/known-issues.md` carries it on the list that page is written from.
+ */
+export const FONT_ORIGINS = ["https://fonts.googleapis.com", "https://fonts.gstatic.com"] as const;
+
+/**
  * `Content-Security-Policy` for every page this Worker serves (BR-14 /
  * Task 7 finally justifies it — see `docs/known-issues.md`, which deferred
  * this to "M4, alongside the next page that takes user input").
@@ -49,6 +64,16 @@ import { STYLE_BLOCKS } from "../views/styles.js";
  *       same exported constants the pages actually render, so they can
  *       never drift from what ships — the CSP changes automatically the
  *       moment the CSS does, with no manual step to forget.
+ *   M10 also allows `FONT_ORIGINS[0]` (`https://fonts.googleapis.com`) by
+ *   **host**: the Google Fonts stylesheet is external and cannot be hashed,
+ *   so it is named by origin instead, while every inline block above stays
+ *   hash-allowed and nothing wider is opened.
+ * - `font-src` — `FONT_ORIGINS[1]` (`https://fonts.gstatic.com`), where the
+ *   font *files* the stylesheet references actually live. This does **not**
+ *   fall back to `default-src` and must be named explicitly, or the
+ *   stylesheet loads fine and every font file is then refused — a failure
+ *   mode indistinguishable from "the CSS works" until the fallback stack
+ *   appears on screen.
  * - `form-action 'self'` — both forms this site has (`POST /r/:token`,
  *   `POST /cancel/:token`) submit to a same-origin relative path. Neither
  *   `default-src` nor `style-src`'s allowance covers this directive; it does
@@ -96,7 +121,9 @@ async function buildCspHeader(): Promise<string> {
 
   return [
     "default-src 'none'",
-    `style-src ${sources(styleHashes)}`,
+    `style-src ${sources(styleHashes)} ${FONT_ORIGINS[0]}`,
+    // Does not fall back to default-src — see the header comment.
+    `font-src ${FONT_ORIGINS[1]}`,
     // Not 'none' any more, and deliberately not 'unsafe-inline': passkeys are
     // the one feature that cannot work server-side (WebAuthn is a browser
     // API), so their two scripts are allowed by hash and nothing else is.

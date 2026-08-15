@@ -114,6 +114,12 @@ beforeEach(async () => {
   await resetDatabase();
 });
 
+/** The CSP header as served for the holding page — any page carries the same fixed directives. */
+async function cspHeader(): Promise<string> {
+  const response = await SELF.fetch("https://makethe.team/");
+  return response.headers.get("content-security-policy") as string;
+}
+
 /** Assert every literal (non-`style-src`) directive this task adds. */
 function expectFixedDirectives(csp: string | null) {
   expect(csp).not.toBeNull();
@@ -210,6 +216,23 @@ async function expectStylesAllowed(csp: string, html: string) {
 }
 
 describe("Content-Security-Policy", () => {
+  it("allows the two font origins and nothing wider", async () => {
+    const header = await cspHeader();
+    const styleSrc = header.split("; ").find((d) => d.startsWith("style-src "))!;
+    const fontSrc = header.split("; ").find((d) => d.startsWith("font-src "))!;
+
+    expect(styleSrc).toContain("https://fonts.googleapis.com");
+    expect(fontSrc).toBe("font-src https://fonts.gstatic.com");
+
+    // The point of the directive is what it refuses. A wildcard scheme source
+    // would pass any test that only checks the fonts load.
+    expect(header).not.toContain("https:;");
+    expect(header).not.toContain("'unsafe-inline'");
+    for (const directive of [styleSrc, fontSrc]) {
+      expect(directive).not.toContain("*");
+    }
+  });
+
   it("holding page (/): fixed directives present and inline styles covered", async () => {
     const response = await SELF.fetch("https://makethe.team/");
     const csp = response.headers.get("content-security-policy");

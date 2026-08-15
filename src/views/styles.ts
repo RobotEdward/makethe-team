@@ -244,7 +244,7 @@ export const FORM_CSS = `
   .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
   .qr { margin: 1rem 0; max-width: 240px; }
   .invite-link { display: flex; gap: 0.5rem; align-items: center; }
-  .invite-link input { flex: 1; font-family: ui-monospace, monospace; font-size: var(--t-support); }
+  .invite-link input { flex: 1; font-family: var(--mono); font-size: var(--t-support); }
   .squad { list-style: none; padding: 0; }
   .squad li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
   /* A squad row is a name plus two controls, one of which is a block-level
