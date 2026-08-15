@@ -3,6 +3,7 @@ import { materialiseFixtures } from "../domain/materialise.js";
 import type { Bindings } from "../env.js";
 import { createNotifier, parseMaxEmailsPerDay } from "../notify/factory.js";
 import type { Notifier } from "../notify/notifier.js";
+import { notifyPromotedPlayer } from "../routes/respond.js";
 import { sendOwnerAttention, type AttentionResult } from "../sweep/attention.js";
 import { runDueErasures } from "../sweep/erasures.js";
 import { openAndRemind } from "../sweep/open-and-remind.js";
@@ -118,6 +119,15 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       // `runDueErasures` takes a withdraw *factory* keyed by player id rather
       // than a plain `withdraw`: each erasure withdraws a different player and
       // the capacity object has to be told which one.
+      //
+      // Not wrapped in a `try`/`catch` the way `runAttentionStep` is, and the
+      // difference is the position rather than the risk: attention is wrapped
+      // precisely because retirement runs after it and must not be taken down
+      // by it. Nothing runs after this step, so a throw that escaped
+      // `runDueErasures` — a D1 error in its own `select`, the one failure its
+      // per-player isolation cannot catch — would fail exactly the invocation
+      // it should fail, and cost nothing else. Moving this step earlier means
+      // giving it a wrapper.
       const erasureResult = await runDueErasures(db, now, (playerId) => (fixtureId) =>
         env.FIXTURE_CAPACITY.getByName(fixtureId).withdrawMember({
           playerId,
@@ -128,6 +138,23 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       console.log("erasures", JSON.stringify(erasureResult));
       for (const failure of erasureResult.failures) {
         console.error(`erasure failed for player ${failure.playerId}: ${failure.message}`);
+      }
+
+      // Leaving a squad frees slots, and freeing a slot promotes whoever has
+      // waited longest (BR-7) — so an erasure puts real people into fixtures,
+      // and this is the only production path on which that happens. Telling
+      // them is the caller's job everywhere in this codebase, and the caller
+      // here is this case. `src/domain/erasure-window.ts` rests the whole
+      // 48-hour window on "those promotions send email and cannot be taken
+      // back"; this loop is what makes that sentence true.
+      //
+      // `await`ed, unlike the routes' `waitUntil`: there is no response being
+      // held up on a cron, and a background failure on a scheduled invocation
+      // has no user in front of it to notice. `notifyPromotedPlayer` never
+      // throws — every outcome is a durable `notification_log` row and a
+      // logged line — so this cannot abort the run either.
+      for (const promotion of erasureResult.promotions) {
+        await notifyPromotedPlayer(env, promotion.fixtureId, promotion.promoted, now);
       }
 
       const failed =

@@ -3,6 +3,7 @@ import type { Db } from "../db/client.js";
 import { players } from "../db/schema.js";
 import type { WithdrawMemberOutcome } from "../capacity/types.js";
 import { erasePlayer } from "../domain/erase-player.js";
+import type { FixturePromotion } from "../domain/remove-member.js";
 
 /** One player the sweep could not erase, and why. */
 export interface ErasureFailure {
@@ -20,6 +21,25 @@ export interface ErasureSweepResult {
    */
   blocked: number;
   failures: ErasureFailure[];
+  /**
+   * Every waitlisted player an erasure moved into a squad, across all of this
+   * run's erasures — **returned for the caller to notify**, exactly as
+   * `erasePlayer` and `removeMember` return theirs, and exactly as
+   * `POST /r/:token`, the dashboard and the games routes already treat them.
+   *
+   * Dropping these on the floor would move a real person off a waitlist and
+   * into a fixture without ever telling them, and this is the only production
+   * path on which an erasure-driven promotion can happen at all. It would also
+   * falsify `src/domain/erasure-window.ts`, whose "those promotions send email
+   * and cannot be taken back" is the whole reason the 48-hour window has to be
+   * inert.
+   *
+   * Sending from here would mean holding a mail provider's latency inside the
+   * erasure loop and giving this module a Workers binding it deliberately does
+   * not have — so, like every other producer of promotions in the codebase, it
+   * hands them back instead.
+   */
+  promotions: FixturePromotion[];
 }
 
 /**
@@ -69,6 +89,7 @@ export async function runDueErasures(
   let erased = 0;
   let blocked = 0;
   const failures: ErasureFailure[] = [];
+  const promotions: FixturePromotion[] = [];
 
   // Sequential, and one `try` per player. Erasure walks a player's whole squad
   // and every open fixture behind its own Durable Object, so running these
@@ -78,8 +99,14 @@ export async function runDueErasures(
   for (const player of due) {
     try {
       const result = await erasePlayer({ db, playerId: player.id, now, withdraw: withdraw(player.id) });
-      if (result.kind === "erased") erased++;
-      else if (result.kind === "blocked") blocked++;
+      if (result.kind === "erased") {
+        erased++;
+        // Carried out whole, not summarised: the caller needs the fixture id
+        // and the `promotedAt` echo to build N-2's dedupe key. A promotion is
+        // already durable in D1 by the time it appears here — telling the
+        // person is the only part still outstanding.
+        promotions.push(...result.promotions);
+      } else if (result.kind === "blocked") blocked++;
       // `already-erased` and `not-found` are neither: the first is a row that
       // was erased between this run's select and its turn in the loop, the
       // second a row deleted underneath us. Both mean there is nothing left to
@@ -92,5 +119,5 @@ export async function runDueErasures(
     }
   }
 
-  return { erased, blocked, failures };
+  return { erased, blocked, failures, promotions };
 }

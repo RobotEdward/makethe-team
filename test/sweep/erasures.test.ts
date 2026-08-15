@@ -43,7 +43,7 @@ describe("runDueErasures", () => {
 
     const result = await runDueErasures(db, NOW, noWithdraw);
 
-    expect(result).toEqual({ erased: 1, blocked: 0, failures: [] });
+    expect(result).toEqual({ erased: 1, blocked: 0, failures: [], promotions: [] });
     const row = await playerRowOf(playerId);
     expect(row?.name).toBe(ERASED_NAME);
     expect(row?.email).toBeNull();
@@ -59,7 +59,7 @@ describe("runDueErasures", () => {
 
     const result = await runDueErasures(db, NOW, noWithdraw);
 
-    expect(result).toEqual({ erased: 0, blocked: 0, failures: [] });
+    expect(result).toEqual({ erased: 0, blocked: 0, failures: [], promotions: [] });
     const row = await playerRowOf(playerId);
     expect(row?.name).toBe("Edward Cooper");
     expect(row?.erasedAt).toBeNull();
@@ -91,7 +91,7 @@ describe("runDueErasures", () => {
 
     const result = await runDueErasures(db, NOW, noWithdraw);
 
-    expect(result).toEqual({ erased: 0, blocked: 0, failures: [] });
+    expect(result).toEqual({ erased: 0, blocked: 0, failures: [], promotions: [] });
     const row = await playerRowOf(playerId);
     expect(row?.erasedAt?.getTime()).toBe(NOW.getTime() - HOUR_MS);
     const audit = await db.select().from(auditLog).where(eq(auditLog.entityId, playerId));
@@ -159,6 +159,30 @@ describe("runDueErasures", () => {
     expect(doomed?.name).toBe("Doomed Dave");
     expect(doomed?.erasedAt).toBeNull();
     expect(doomed?.erasesAt?.getTime()).toBe(erasesAt.getTime());
+  });
+
+  // The caller sends N-2. Swallowing these here would move someone off a
+  // waitlist and into a fixture without ever telling them — and this sweep is
+  // the only production path on which an erasure-driven promotion happens.
+  it("hands back every promotion its erasures caused, for the caller to notify", async () => {
+    const erasingId = await insertPlayer(db, {
+      email: "edward@example.test",
+      erasesAt: new Date(NOW.getTime() - HOUR_MS),
+    });
+    const gameId = await insertGame(db);
+    const otherOwnerId = await insertPlayer(db, { email: "owner@example.test" });
+    await insertMembership(db, gameId, otherOwnerId, { role: "owner" });
+    await insertMembership(db, gameId, erasingId);
+    const fixtureId = await insertFixture(db, gameId, { lifecycle: "open" });
+
+    const promoted = { playerId: "waiting-player", previousWaitlistPosition: 1, promotedAt: NOW.getTime() };
+    const withdraw = () => async () =>
+      ({ kind: "removed", previousStatus: "in", inCount: 1, promoted }) as const;
+
+    const result = await runDueErasures(db, NOW, withdraw);
+
+    expect(result.erased).toBe(1);
+    expect(result.promotions).toEqual([{ fixtureId, promoted }]);
   });
 
   it("erases exactly at the boundary instant, not a millisecond later", async () => {

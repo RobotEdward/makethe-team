@@ -9,10 +9,18 @@ import {
   handleScheduled,
 } from "../../src/cron/handler.js";
 import { ERASED_NAME } from "../../src/domain/erase-player.js";
+import { openFixture } from "../../src/domain/open-fixture.js";
 import { createNotifier } from "../../src/notify/factory.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import { retirePastFixtures } from "../../src/sweep/retire.js";
-import { insertGame, resetDatabase, testDb } from "../support/factories.js";
+import {
+  insertFixture,
+  insertGame,
+  insertMembership,
+  insertPlayer,
+  resetDatabase,
+  testDb,
+} from "../support/factories.js";
 
 const db = testDb();
 const NOW = new Date("2026-08-10T03:15:00Z");
@@ -319,21 +327,75 @@ describe("handleScheduled: the sweep", () => {
   // The wiring, end to end: nothing erases anything until the sweep does, so
   // this proves the fifth step is actually reached by a real invocation rather
   // than only by `runDueErasures`' own tests.
-  it("performs a due erasure", async () => {
-    const playerId = crypto.randomUUID();
-    await db.insert(players).values({
-      id: playerId,
+  //
+  // The squad and the full open fixture are not scenery. `runDueErasures`'
+  // own tests always substitute their own `withdraw`, so the closure
+  // `handleScheduled` actually passes — the one that binds `playerId`,
+  // `actorPlayerId` and `fixtureId` onto the real Durable Object call — has no
+  // other execution coverage anywhere in the suite. With them, a swapped
+  // `playerId`/`fixtureId` or an `actorPlayerId` bound to the wrong person
+  // fails here instead of passing silently into production. They also make
+  // the promotion below real: the erasing player holds the fixture's only
+  // slot, so their withdrawal has someone to promote.
+  it("performs a due erasure, and tells the player it promotes off the waitlist", async () => {
+    const gameId = await insertGame(db, { maxPlayers: 1 });
+
+    const erasingId = await insertPlayer(db, {
       name: "Edward Cooper",
       email: "edward@example.com",
       erasesAt: new Date(NOW.getTime() - 3_600_000),
     });
+    await insertMembership(db, gameId, erasingId, { role: "player", active: true });
+
+    const waitingId = await insertPlayer(db, { name: "Waiting Winnie", email: "winnie@example.com" });
+    await insertMembership(db, gameId, waitingId, { role: "player", active: true });
+
+    const fixtureId = await insertFixture(db, gameId, {
+      minPlayers: 1,
+      maxPlayers: 1,
+      kicksOffAt: new Date(NOW.getTime() + 7 * 86_400_000),
+    });
+    // Opened through the real path, which is also what creates the `pending`
+    // response rows the capacity object then works from.
+    await openFixture(db, fixtureId, NOW);
+    // Through the real capacity path, so the waitlist position is genuine
+    // rather than a hand-written `responses` row the object knows nothing of.
+    for (const playerId of [erasingId, waitingId]) {
+      await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+        playerId,
+        intent: "in",
+        actorPlayerId: null,
+        source: "system",
+        whenFull: "waitlist",
+        now: NOW.getTime(),
+      });
+    }
 
     await handleScheduled(CRON_SWEEP, env, NOW);
 
-    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    const [row] = await db.select().from(players).where(eq(players.id, erasingId));
     expect(row?.name).toBe(ERASED_NAME);
     expect(row?.email).toBeNull();
     expect(row?.erasedAt?.getTime()).toBe(NOW.getTime());
+
+    // The withdrawal really went through the capacity object: the waiting
+    // player holds the slot now.
+    const [promotedResponse] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, waitingId)));
+    expect(promotedResponse?.status).toBe("in");
+    expect(promotedResponse?.waitlistPosition).toBeNull();
+
+    // And they were told. Without this the sweep would move a real person into
+    // a fixture in silence — and it is the only path on which an
+    // erasure-driven promotion happens at all.
+    const n2 = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.playerId, waitingId), eq(notificationLog.notificationType, "n2")));
+    expect(n2).toHaveLength(1);
+    expect(n2[0]?.status).toBe("sent");
   });
 
   it("leaves an erasure whose window has not elapsed alone", async () => {
