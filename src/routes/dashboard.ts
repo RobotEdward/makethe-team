@@ -181,8 +181,9 @@ dashboard.post(DASHBOARD_PATH, requirePlayer, async (c) => {
 
 /**
  * A signed-in player leaving a game from their own account (M7a Task 4) — the
- * write behind the "your other squads" list on `/leave/:token`, and also
- * reachable from the dashboard itself. `leaveOtherGamePath` names its path.
+ * write behind the "your other squads" list on `/leave/:token`, which is its
+ * only entry point today — there is no leave control on the dashboard itself.
+ * `leaveOtherGamePath` names its path.
  *
  * **`wrongOrigin` here, unlike `POST /leave/:token`.** That route is
  * deliberately origin-check-free because it is reached from a link in an

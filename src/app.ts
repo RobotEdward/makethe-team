@@ -77,10 +77,13 @@ export function createApp(): Hono<AppEnv> {
     c.header("Cache-Control", "private, no-store");
   });
 
-  // The leave page. Reached by the same population from the same emails, and
-  // it names the Game. It performs no write today (BR-22's self-service leave
-  // is M7), so the argument is weaker than its two neighbours' — but a visitor
-  // with no session has no way to tell that a page they were served is stale.
+  // The leave page. Reached by the same population from the same emails. It
+  // names the Game, its POST takes the visitor out of the squad, and for a
+  // signed-in visitor it also lists the other squads they belong to — so both
+  // halves of the argument apply as strongly as they do to its neighbours:
+  // confidentiality, and a state that changes the moment the button is
+  // pressed. A visitor with no session has no way to tell that a page they
+  // were served is stale.
   app.use("/leave/*", async (c, next) => {
     await next();
     c.header("Cache-Control", "private, no-store");
