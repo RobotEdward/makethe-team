@@ -155,6 +155,21 @@ export function ownerTeamsPath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}/teams`;
 }
 
+/**
+ * Where the team picker's Publish posts (BR-35 §4).
+ *
+ * A sibling of `ownerTeamsPath` rather than a flag on it, because the two are
+ * different acts with different consequences: saving is private and reversible,
+ * publishing sets `teams_published_at` and emails the whole squad. A shared
+ * endpoint distinguished by a submit button's value would make an accidental
+ * announcement one stray `name="intent"` away, and would give the two no way
+ * to differ in what they refuse — a partial pick saves happily and must never
+ * publish.
+ */
+export function ownerTeamsPublishPath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/teams/publish`;
+}
+
 /** Where an owner's mark-in/mark-out for one player posts (J6b §4). */
 export function ownerResponsePath(gameId: string, fixtureId: string, playerId: string): string {
   return `/g/${gameId}/f/${fixtureId}/response/${playerId}`;

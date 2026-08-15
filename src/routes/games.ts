@@ -19,6 +19,7 @@ import {
   getFixtureWithSquad,
   listOpenFixtureIds,
   listSquad,
+  listTeamAssignments,
   listUpcomingFixtures,
   type FixtureWithSquad,
   type SquadMember,
@@ -26,21 +27,30 @@ import {
 import { fixtures, games, responses } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
-import { fixtureView } from "../domain/fixture-view.js";
+import { displayName } from "../domain/display-name.js";
+import { fixtureView, takingChanges } from "../domain/fixture-view.js";
 import { parseGameForm } from "../domain/game-form.js";
 import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
-import { isTeamId, teamNames, type TeamId } from "../domain/teams.js";
+import {
+  isTeamId,
+  teamNames,
+  teamsNeedAnotherLook,
+  unassignedIn,
+  type TeamAssignment,
+  type TeamId,
+} from "../domain/teams.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
+import { sendTeamsEmails } from "../notify/send-teams.js";
 import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
-import { renderOwnerFixturePage, takingChanges, type OwnerFixtureParams } from "../views/owner-fixture.js";
+import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
 import { notifyPromotedPlayer } from "./respond.js";
@@ -505,6 +515,14 @@ async function loadFixtureTarget(c: Context<AppEnv>, gameId: string, fixtureId: 
 }
 
 /**
+ * The parts of the owner fixture page a *refusal* gets to set: the
+ * over-capacity confirmation, a one-line problem, and the publish guard's
+ * list of players with no side yet. Everything else about the page is derived
+ * from the database, so a refusal can only ever add an explanation to it.
+ */
+type FixtureRenderExtras = Partial<Pick<OwnerFixtureParams, "confirm" | "problem" | "unassignedProblem">>;
+
+/**
  * Build `OwnerFixtureParams` from a loaded `FixtureWithSquad`.
  *
  * One place for the three render paths this page has (a plain GET here, plus
@@ -513,9 +531,10 @@ async function loadFixtureTarget(c: Context<AppEnv>, gameId: string, fixtureId: 
  */
 function ownerFixtureParams(
   withSquad: FixtureWithSquad,
+  assignments: readonly TeamAssignment[],
   viewerPlayerId: string,
   now: Date,
-  extras: { confirm?: OwnerFixtureParams["confirm"]; problem?: string } = {},
+  extras: FixtureRenderExtras = {},
 ): OwnerFixtureParams {
   const { fixture, game, squad } = withSquad;
   return {
@@ -542,6 +561,12 @@ function ownerFixtureParams(
     ),
     squad,
     viewerPlayerId,
+    teamsPublished: fixture.teamsPublishedAt !== null,
+    // From the *unfiltered* rows: `withSquad.squad` has `withdrawn` filtered
+    // out, and a withdrawn player still carrying a side is precisely one of
+    // the two staleness conditions (`src/domain/teams.ts`), so deriving this
+    // from the squad above would answer "no" to half the question.
+    teamsNeedAnotherLook: teamsNeedAnotherLook(assignments),
     ...extras,
   };
 }
@@ -556,13 +581,17 @@ async function renderOwnerFixture(
   c: Context<AppEnv>,
   target: NonNullable<Awaited<ReturnType<typeof loadFixtureTarget>>>,
   now: Date,
-  extras: { confirm?: OwnerFixtureParams["confirm"]; problem?: string } = {},
+  extras: FixtureRenderExtras = {},
   status: 200 | 422 = 200,
 ) {
-  const withSquad = await getFixtureWithSquad(target.db, target.fixture.id);
+  const [withSquad, assignments] = await Promise.all([
+    getFixtureWithSquad(target.db, target.fixture.id),
+    // The unfiltered rows, `withdrawn` included — see `ownerFixtureParams`.
+    listTeamAssignments(target.db, target.fixture.id),
+  ]);
   if (withSquad === null) return c.text("Not found", 404);
   return c.html(
-    renderOwnerFixturePage(ownerFixtureParams(withSquad, c.get("player")!.id, now, extras)),
+    renderOwnerFixturePage(ownerFixtureParams(withSquad, assignments, c.get("player")!.id, now, extras)),
     status,
   );
 }
@@ -808,7 +837,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
 
   // The same predicate the picker renders behind, so a form that was on
   // screen when the fixture closed cannot save through the back of it.
-  if (!takingChanges(ownerFixtureParams(withSquad, c.get("player")!.id, now).view)) {
+  if (!takingChanges(fixtureView(target.fixture, now))) {
     return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
   }
 
@@ -846,6 +875,140 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
 
   return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
 });
+
+/**
+ * An organiser publishing a team pick (BR-35 §4) — the act that tells the
+ * squad, and the only one in this milestone that emails anybody.
+ *
+ * **The order of the three checks is load-bearing, in this order:**
+ *
+ *  1. *Entitlement* (`loadFixtureTarget`), because everything below it reads
+ *     the fixture's own rows. Answering "you haven't picked everyone yet" to
+ *     somebody who does not own this game would confirm the fixture exists and
+ *     leak how many players are on it (TR-18).
+ *  2. *The fixture is open.* Announcing teams for a cancelled or played
+ *     fixture would send a squad to a game that is not happening.
+ *  3. *Completeness.* Only then is it worth reading the assignments.
+ *
+ * **A partial pick is refused, and this is the only place that refuses it.**
+ * Saving one is deliberately allowed (see the save route above) — an organiser
+ * interrupted halfway keeps their work — but an announcement that silently
+ * omits whoever has no side yet is worse than no announcement: the omitted
+ * player is the one person who most needs to be told. The refusal comes back
+ * as the fixture page itself at 422 with the names on it, the same shape
+ * `renderDashboard(c, problem)` uses, because the fix is on that page.
+ *
+ * `unassignedIn` reads `listTeamAssignments`, which deliberately includes
+ * `withdrawn` rows — they cannot be `in`, so they cannot block a publish, but
+ * asking the same query the staleness predicate asks keeps one source of truth
+ * for what "the teams" are.
+ */
+gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  // Check 1: entitlement, before anything reads or reveals a fixture.
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
+
+  // Check 2: still open. The same predicate the picker and the save route use.
+  if (!takingChanges(fixtureView(target.fixture, now))) {
+    return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
+  }
+
+  // Check 3: everyone who is in has a side.
+  const assignments = await listTeamAssignments(target.db, target.fixture.id);
+  const unassigned = unassignedIn(assignments);
+  if (unassigned.length > 0) {
+    const withSquad = await getFixtureWithSquad(target.db, target.fixture.id);
+    const nameOf = new Map(withSquad?.squad.map((m) => [m.playerId, displayName(m.name, m.erasedAt)]) ?? []);
+    return renderOwnerFixture(
+      c,
+      target,
+      now,
+      // The names, not the count: "3 players still need a side" sends an
+      // organiser back to count fourteen radio groups by hand.
+      { unassignedProblem: unassigned.map((row) => nameOf.get(row.playerId) ?? "someone who has since left") },
+      422,
+    );
+  }
+
+  await target.db.batch([
+    // `now` is the published instant, and it is what `teamsKey` builds every
+    // recipient's dedupe key from — so the row and the emails describe the
+    // same publish, and a second publish (which must genuinely re-send) gets
+    // a genuinely different key.
+    target.db.update(fixtures).set({ teamsPublishedAt: now }).where(eq(fixtures.id, target.fixture.id)),
+    buildAuditInsert(target.db, {
+      actorPlayerId: c.get("player")!.id,
+      entityType: "fixture",
+      entityId: target.fixture.id,
+      action: "fixture.teams_published",
+      // The pick as announced. No `before`: publishing changes no side, only
+      // whether the sides are public, and the save that produced them already
+      // filed its own row.
+      after: { teams: Object.fromEntries(assignments.filter((a) => a.status === "in").map((a) => [a.playerId, a.team])) },
+      now,
+    }),
+  ]);
+
+  // `waitUntil`, matching the dashboard's promotion send: everything the
+  // organiser is waiting for is already committed, no correctness property
+  // depends on delivery, and a slow provider must not hold up their redirect.
+  // Failures are not silent — every outcome is a durable `notification_log`
+  // row and `publishTeams` logs the rest.
+  c.executionCtx.waitUntil(publishTeams(c.env, target.fixture.id, now));
+
+  return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
+});
+
+/**
+ * Send N-9 in the background, logging every non-success on one greppable line.
+ *
+ * The `catch` is the same one `notifyRemovedPlayer` carries and for the same
+ * reason: a rejected promise inside a `waitUntil` resolves into nothing, and a
+ * thrown D1 error here would otherwise vanish entirely. The notifier is built
+ * here rather than passed in because it must be the quota-wrapped one from
+ * `createNotifier` (TR-31), and this is a per-request send path fanning out to
+ * a whole squad — exactly where a runaway would show up.
+ *
+ * `publishedAt` and `now` are the same instant on this path, and are still
+ * passed separately: `sendTeamsEmails` uses the first for the dedupe key of
+ * the publish being announced and the second for `sent_at` and the leave
+ * token's expiry, and collapsing them here would tie a future re-send of an
+ * *older* publish to whenever it happened to be retried.
+ */
+async function publishTeams(env: AppEnv["Bindings"], fixtureId: string, publishedAt: Date): Promise<void> {
+  const who = `fixture ${fixtureId}`;
+  try {
+    const db = getDb(env.DB);
+    const result = await sendTeamsEmails({
+      db,
+      notifier: createNotifier(env, db, publishedAt),
+      fixtureId,
+      publishedAt,
+      now: publishedAt,
+      responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
+    });
+    if (result.failed > 0) console.error(`teams email (N-9) failed for ${result.failed} player(s) on ${who}`);
+    if (result.deferred > 0) {
+      // No `recordCeilingDeferral` here, unlike N-2 and N-3: those record a
+      // message nothing can ever retry, whereas an organiser can simply
+      // publish again tomorrow and every recipient gets a fresh dedupe key
+      // (`teamsKey` includes the publish instant), so the deferral is
+      // recoverable by the person who caused it.
+      console.error(`teams email (N-9) refused by the daily send ceiling for ${result.deferred} player(s) on ${who}`);
+    }
+    // `console.log`, not `error`: a guest has no address, and BR-32 says so —
+    // an error line per guest would file a fault for working correctly.
+    if (result.guestsSkipped > 0) console.log(`teams email (N-9) skipped ${result.guestsSkipped} guest(s) on ${who}`);
+  } catch (error) {
+    console.error(
+      `teams email (N-9) threw for ${who}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    );
+  }
+}
 
 /** The current pick, keyed by player id, for the audit row's `before`. */
 function teamsOf(squad: readonly SquadMember[]): Record<string, TeamId | null> {

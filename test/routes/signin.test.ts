@@ -1093,6 +1093,13 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "branches are a plain-text 403 (wrong origin), a plain-text 404 (entitlement " +
       "failure) or a 303 redirect (src/routes/games.ts); its own status-code coverage " +
       "lives in test/routes/team-picker.test.ts.",
+    "POST /g/:id/f/:fixtureId/teams/publish":
+      "renders through the same renderOwnerFixturePage as GET /g/:id/f/:fixtureId on its " +
+      "two HTML-returning branches (the fixture-not-taking-changes refusal and the " +
+      "partial-pick refusal, both 422) — no template of its own that could carry an " +
+      "un-enumerated script — and its other branches are a plain-text 403 (wrong origin), " +
+      "a plain-text 404 (entitlement failure) or a 303 redirect (src/routes/games.ts); its " +
+      "own status-code coverage lives in test/routes/team-publish.test.ts.",
     "POST /g/:id/f/:fixtureId/guest/:playerId/remove":
       "never returns HTML on any branch — a plain-text 403 (wrong origin), a plain-text " +
       "404 (entitlement failure, or a non-guest player) or a 303 redirect only " +

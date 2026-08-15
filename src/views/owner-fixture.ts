@@ -1,7 +1,7 @@
 import { gamePath, ownerFixturePath, ownerGuestPath, ownerGuestRemovePath, ownerResponsePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { displayName } from "../domain/display-name.js";
-import type { FixtureView } from "../domain/fixture-view.js";
+import { takingChanges, type FixtureView } from "../domain/fixture-view.js";
 import { sideCounts, type TeamId } from "../domain/teams.js";
 import { escapeHtml, layout } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
@@ -33,6 +33,16 @@ export interface OwnerFixtureParams {
   confirm?: { playerId: string | null; name: string; intent: "in" };
   /** A refused publish's list of names with no side yet, shown on the picker. */
   unassignedProblem?: readonly string[];
+  /** Whether this fixture's teams have been published (`teams_published_at` is set). */
+  teamsPublished: boolean;
+  /**
+   * From `teamsNeedAnotherLook` over the *unfiltered* assignment rows — which
+   * is why it arrives as a boolean rather than being derived here from
+   * `squad`: the page's squad excludes `withdrawn` rows, and a withdrawn
+   * player still carrying a side is one of the two ways a published pick goes
+   * stale (see `src/domain/teams.ts`).
+   */
+  teamsNeedAnotherLook: boolean;
   /** A refusal to explain near the top, e.g. Task 6's guard. Escaped and shown. */
   problem?: string;
 }
@@ -45,23 +55,6 @@ export interface OwnerFixtureParams {
 function renderOverCapacity(view: FixtureView, inCount: number, maxPlayers: number): string {
   if (!view.flags.includes("over_capacity")) return "";
   return `<p class="problem">Over capacity — ${inCount} in, ${maxPlayers} places.</p>`;
-}
-
-/**
- * Whether this fixture is still taking changes — the one predicate the
- * per-row controls and the add-a-guest form both gate on, so they cannot
- * disagree about when an organiser can still act. A cancelled or played
- * fixture is history, and a merely scheduled one is not yet asking anybody
- * anything; in all three cases there is no capacity write for a control to
- * make, and the Durable Object would refuse it.
- *
- * Exported for the team-picker route (BR-35), which is the one owner control
- * that writes straight to D1 instead of going through the Durable Object —
- * so nothing else would refuse a pick on a cancelled fixture, and it has to
- * ask the same question this page asks before rendering the form.
- */
-export function takingChanges(view: FixtureView): boolean {
-  return view.status !== "cancelled" && view.status !== "played" && view.status !== "scheduled";
 }
 
 /** One squad row's controls: remove, for a guest; mark in or out, for a member. */
@@ -181,6 +174,8 @@ function renderTeams(params: OwnerFixtureParams): string {
     counts,
     uneven: prefersEvenNumbers && counts.a !== counts.b,
     unassignedProblem,
+    published: params.teamsPublished,
+    needsAnotherLook: params.teamsNeedAnotherLook,
   });
 }
 

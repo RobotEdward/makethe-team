@@ -1,4 +1,4 @@
-import { ownerTeamsPath } from "../auth/paths.js";
+import { ownerTeamsPath, ownerTeamsPublishPath } from "../auth/paths.js";
 import { displayName } from "../domain/display-name.js";
 import { TEAM_IDS, type TeamId } from "../domain/teams.js";
 import { escapeHtml } from "./layout.js";
@@ -35,6 +35,10 @@ export interface TeamPickerParams {
   uneven: boolean;
   /** Set when a publish was refused: the names with no side yet. */
   unassignedProblem?: readonly string[];
+  /** Whether a publish is on record for this fixture (`teams_published_at` is set). */
+  published: boolean;
+  /** From `teamsNeedAnotherLook` — the squad has moved since the pick was made. */
+  needsAnotherLook: boolean;
 }
 
 /**
@@ -87,11 +91,51 @@ function renderRow(member: TeamPickerParams["members"][number], names: Record<Te
 }
 
 /**
+ * Publishing: its own form, below the picker's, and never a second button
+ * inside it.
+ *
+ * Two forms because they are two acts. Publishing emails the whole squad and
+ * cannot be taken back, and a submit button sharing the picker's form would
+ * announce whatever half-finished state the radios happened to be in — which
+ * is also why it posts nothing but the path: the sides being published are
+ * the ones already saved, not the ones currently on screen. An organiser who
+ * has moved a radio without saving must press Save first, and sees the same
+ * teams the email will describe.
+ *
+ * Shown only when there is something to publish — a pick has been started, or
+ * one was published before. On a fixture nobody has picked, a Publish button
+ * would offer to announce an empty pick that the route would then refuse.
+ */
+function renderPublish(params: TeamPickerParams): string {
+  const { gameId, fixtureId, members, published, needsAnotherLook } = params;
+
+  const anyPick = published || needsAnotherLook || members.some((member) => member.team !== null);
+  if (!anyPick) return "";
+
+  // `teamsNeedAnotherLook` is true in two different worlds (see
+  // `src/domain/teams.ts`), and only one of them has ever sent anything — so
+  // the prompt says which one it is rather than telling an organiser their
+  // teams "changed since they were sent out" when nobody has been sent
+  // anything at all.
+  const prompt = !needsAnotherLook
+    ? ""
+    : published
+      ? `<p class="team-note">The teams have changed since they were last sent out. Send them again?</p>`
+      : `<p class="team-note">The squad has changed since you started picking. Worth another look before you publish.</p>`;
+
+  return `${prompt}
+          <form method="post" action="${escapeHtml(ownerTeamsPublishPath(gameId, fixtureId))}">
+            <button class="button primary" type="submit">${published ? "Publish again" : "Publish teams"}</button>
+          </form>`;
+}
+
+/**
  * The picker, for a fixture that is still taking changes.
  *
- * Saving sends nothing to anybody — publishing is a separate, later act — so
- * there is no confirmation step here and no warning about interrupting
- * anyone. A saved pick stays invisible to players until it is published.
+ * Saving sends nothing to anybody — publishing is a separate act, in its own
+ * form below — so there is no confirmation step on the save and no warning
+ * about interrupting anyone. A saved pick stays invisible to players until it
+ * is published.
  */
 export function renderTeamPicker(params: TeamPickerParams): string {
   const { gameId, fixtureId, names, members, counts, uneven, unassignedProblem } = params;
@@ -123,7 +167,8 @@ export function renderTeamPicker(params: TeamPickerParams): string {
             ${unevenNote}
             <ul class="teams">${members.map((member) => renderRow(member, names)).join("")}</ul>
             <button class="button primary" type="submit">Save teams</button>
-          </form>`;
+          </form>
+          ${renderPublish(params)}`;
 }
 
 /**
