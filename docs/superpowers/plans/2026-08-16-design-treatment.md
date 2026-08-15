@@ -18,7 +18,13 @@
 - **Escape everything interpolated into HTML** with `escapeHtml` from `src/views/layout.ts`.
 - **Never use `member.name` directly** — always `displayName(member.name, member.erasedAt)` (BR-34).
 - The exact colour values, in both themes, are in Task 1 Step 1. Copy them verbatim; do not invent near-misses.
-- Run `npm run lint && npm run typecheck && npm test` before every commit. The browser suite (`npm run test:browser`) is required for Tasks 1, 2, 6 and 9 and is called out in those tasks.
+- Run `npm run lint && npm run typecheck && npm test` before every commit.
+- **`npm run test:browser` does not include the visual captures.** `playwright.config.ts:81` sets `grepInvert: /@capture|@guide/` unless `CAPTURE` is set, so the journeys run and the screenshots do not. Any task whose steps call for a visual gate must run **both**:
+  ```bash
+  npm run test:browser                            # journeys — behaviour
+  CAPTURE=1 npx playwright test --grep @capture    # screenshots — layout
+  ```
+  The second is the only thing that can see a layout break: no string assertion in the unit suite renders a page at 390px. Running the first alone and reporting "browser suite green" is a false negative for every finding in this milestone.
 
 ---
 
@@ -813,7 +819,7 @@ The comment on the assertion should say what it is really proving: that a contro
 
 - [ ] **Step 6: Run the tests**
 
-`npm run lint && npm run typecheck && npm test && npm run test:browser`
+`npm run lint && npm run typecheck && npm test && npm run test:browser && CAPTURE=1 npx playwright test --grep @capture`
 
 - [ ] **Step 7: Commit**
 
@@ -998,7 +1004,9 @@ Verify `.squad li` rules still apply on the organiser's page after `.squad` chan
 
 - [ ] **Step 6: Run the browser suite**
 
-`npm run test:browser` — the capture of the respond page at 390px is the only thing that will show chips wrapping badly.
+`npm run test:browser && CAPTURE=1 npx playwright test --grep @capture`
+
+The capture half is the point here: chips wrapping badly at 390px is invisible to every other test in the repo.
 
 - [ ] **Step 7: Commit**
 
@@ -1150,7 +1158,7 @@ The existing squad-management journey in `test/browser/journeys.spec.ts` makes s
 
 - [ ] **Step 6: Run the tests**
 
-`npm run lint && npm run typecheck && npm test && npm run test:browser`
+`npm run lint && npm run typecheck && npm test && npm run test:browser && CAPTURE=1 npx playwright test --grep @capture`
 
 - [ ] **Step 7: Commit**
 
