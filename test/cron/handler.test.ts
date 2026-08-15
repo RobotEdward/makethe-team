@@ -8,6 +8,7 @@ import {
   CRON_SWEEP,
   handleScheduled,
 } from "../../src/cron/handler.js";
+import { ERASED_NAME } from "../../src/domain/erase-player.js";
 import { createNotifier } from "../../src/notify/factory.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import { retirePastFixtures } from "../../src/sweep/retire.js";
@@ -313,6 +314,42 @@ describe("handleScheduled: the sweep", () => {
         .from(notificationLog)
         .where(eq(notificationLog.notificationType, "n4")),
     ).toHaveLength(0);
+  });
+
+  // The wiring, end to end: nothing erases anything until the sweep does, so
+  // this proves the fifth step is actually reached by a real invocation rather
+  // than only by `runDueErasures`' own tests.
+  it("performs a due erasure", async () => {
+    const playerId = crypto.randomUUID();
+    await db.insert(players).values({
+      id: playerId,
+      name: "Edward Cooper",
+      email: "edward@example.com",
+      erasesAt: new Date(NOW.getTime() - 3_600_000),
+    });
+
+    await handleScheduled(CRON_SWEEP, env, NOW);
+
+    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    expect(row?.name).toBe(ERASED_NAME);
+    expect(row?.email).toBeNull();
+    expect(row?.erasedAt?.getTime()).toBe(NOW.getTime());
+  });
+
+  it("leaves an erasure whose window has not elapsed alone", async () => {
+    const playerId = crypto.randomUUID();
+    await db.insert(players).values({
+      id: playerId,
+      name: "Edward Cooper",
+      email: "edward@example.com",
+      erasesAt: new Date(NOW.getTime() + 3_600_000),
+    });
+
+    await handleScheduled(CRON_SWEEP, env, NOW);
+
+    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    expect(row?.name).toBe("Edward Cooper");
+    expect(row?.erasedAt).toBeNull();
   });
 
   it("keeps reminders already committed even if retirement itself were to fail afterwards", async () => {

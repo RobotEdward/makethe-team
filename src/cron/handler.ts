@@ -4,6 +4,7 @@ import type { Bindings } from "../env.js";
 import { createNotifier, parseMaxEmailsPerDay } from "../notify/factory.js";
 import type { Notifier } from "../notify/notifier.js";
 import { sendOwnerAttention, type AttentionResult } from "../sweep/attention.js";
+import { runDueErasures } from "../sweep/erasures.js";
 import { openAndRemind } from "../sweep/open-and-remind.js";
 import { retirePastFixtures } from "../sweep/retire.js";
 
@@ -106,13 +107,41 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       const retireResult = await retirePastFixtures(db, now);
       console.log("retire-past-fixtures", JSON.stringify(retireResult));
 
-      const failed = remindResult.failures.length + attentionResult.failures.length;
+      // Step 5: perform every erasure whose 48-hour window has elapsed
+      // (BR-34). Last, and deliberately so, in both directions: an erasure
+      // walks a player's whole squad and every open fixture behind it, so
+      // putting it earlier would delay time-critical reminders behind a slow
+      // one — and running it after retirement means a failing erasure cannot
+      // stop fixtures being retired either. Nothing above depends on its
+      // result, which is what makes the position free to choose.
+      //
+      // `runDueErasures` takes a withdraw *factory* keyed by player id rather
+      // than a plain `withdraw`: each erasure withdraws a different player and
+      // the capacity object has to be told which one.
+      const erasureResult = await runDueErasures(db, now, (playerId) => (fixtureId) =>
+        env.FIXTURE_CAPACITY.getByName(fixtureId).withdrawMember({
+          playerId,
+          actorPlayerId: playerId,
+          now: now.getTime(),
+        }),
+      );
+      console.log("erasures", JSON.stringify(erasureResult));
+      for (const failure of erasureResult.failures) {
+        console.error(`erasure failed for player ${failure.playerId}: ${failure.message}`);
+      }
+
+      const failed =
+        remindResult.failures.length + attentionResult.failures.length + erasureResult.failures.length;
       if (failed > 0) {
         throw new Error(
-          `sweep failed for ${failed} fixture(s) during open/remind/attention ` +
+          // "fixture(s) and player(s)" because the erasure step counts people,
+          // not fixtures; the leading "fixture(s)" wording is kept so the
+          // existing log searches and tests that match on it still do.
+          `sweep failed for ${failed} fixture(s) and player(s) during open/remind/attention/erasure ` +
             `(opened ${remindResult.fixturesOpened}, sent ${remindResult.remindersSent}, ` +
             `failed ${remindResult.remindersFailed}, attention sent ${attentionResult.attentionSent}, ` +
-            `retired ${retireResult.retired})`,
+            `retired ${retireResult.retired}, erased ${erasureResult.erased}, ` +
+            `erasures blocked ${erasureResult.blocked}, erasures failed ${erasureResult.failures.length})`,
         );
       }
       return;
