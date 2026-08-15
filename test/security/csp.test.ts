@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, games, memberships, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
+import { leaveTokenExpiry, signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, signIn } from "../support/sign-in.js";
 import { kickoffIn, NOW } from "../support/clock.js";
@@ -74,7 +74,17 @@ async function seedOpenFixture(): Promise<Seeded> {
   });
   const playerId = crypto.randomUUID();
   await db.insert(players).values({ id: playerId, name: "Edward Cooper", email: "edward@example.com" });
-  await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId, active: true, role: "owner" });
+  await db.insert(memberships).values({
+    id: crypto.randomUUID(),
+    gameId,
+    playerId,
+    active: true,
+    role: "owner",
+    // Pinned to the suite's clock, like `insertMembership` does: the leave
+    // page refuses a token minted before the membership began, and the
+    // column's own default is the wall clock at insert.
+    joinedAt: NOW,
+  });
   await openFixture(db, fixtureId, NOW);
   return { gameId, fixtureId, playerId };
 }
@@ -241,7 +251,10 @@ describe("Content-Security-Policy", () => {
   it("GET /leave/:token: fixed directives present and inline styles covered", async () => {
     const { gameId, playerId } = await seedOpenFixture();
     const token = await signLeaveToken(
-      { gameId, playerId, expiresAt: KICKOFF.getTime() + 86_400_000 },
+      // Minted through `leaveTokenExpiry`, like every leave link the app
+      // actually sends: the route derives a token's mint time from its expiry,
+      // so a hand-picked expiry would describe a token minted months ago.
+      { gameId, playerId, expiresAt: leaveTokenExpiry(NOW).getTime() },
       RESPONSE_SECRET,
     );
     const response = await SELF.fetch(`https://makethe.team/leave/${token}`);
@@ -403,7 +416,7 @@ describe("no inline style attribute on any served page", () => {
     );
     await capture("bad respond token", /This link isn't working/, "https://makethe.team/r/not-a-real-token");
     const leaveToken = await signLeaveToken(
-      { gameId, playerId, expiresAt: KICKOFF.getTime() + 86_400_000 },
+      { gameId, playerId, expiresAt: leaveTokenExpiry(NOW).getTime() },
       RESPONSE_SECRET,
     );
     await capture("leave", /Thursday 7-a-side/, `https://makethe.team/leave/${leaveToken}`);

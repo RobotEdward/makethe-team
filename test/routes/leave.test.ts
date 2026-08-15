@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { auditLog, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { joinSquad } from "../../src/domain/join-squad.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { leaveTokenExpiry, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
 import { insertFixture, insertGame, insertMembership, insertPlayer, resetDatabase } from "../support/factories.js";
@@ -214,6 +215,42 @@ describe("GET /leave/:token", () => {
     expect(body).toContain("Leave this game");
   });
 
+  it("warns an organiser that leaving gives the role up", async () => {
+    const { token } = await seedLeavable({ role: "owner", otherOwners: 1 });
+
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${token}`)).text();
+
+    expect(body).toContain("You're an organiser");
+    expect(body).toContain("takes that away too");
+  });
+
+  it("says nothing about organising to an ordinary member", async () => {
+    const { token } = await seedLeavable();
+
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${token}`)).text();
+
+    expect(body).not.toContain("takes that away too");
+  });
+
+  it("refuses a token from before the player rejoined, rather than offering a button that fails", async () => {
+    const gameId = await insertGame(db);
+    const playerId = await insertPlayer(db, { name: "Edward Cooper" });
+    await insertMembership(db, gameId, playerId, {
+      role: "player",
+      active: true,
+      joinedAt: new Date(NOW.getTime() + 60_000),
+    });
+    const token = await signLeaveToken(
+      { gameId, playerId, expiresAt: leaveTokenExpiry(NOW).getTime() },
+      SECRET,
+    );
+
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${token}`)).text();
+
+    expect(body).toContain("link isn't working");
+    expect(body).not.toContain("Leave this game");
+  });
+
   it("says so when the player already left", async () => {
     const { token } = await seedLeavable({ alreadyLeft: true });
 
@@ -307,6 +344,66 @@ describe("POST /leave/:token", () => {
     expect(rows.length).toBe(1);
   });
 
+  it("stops working once the player has rejoined, so one email cannot evict them twice", async () => {
+    // The whole point of binding a leave token to the spell it was minted in.
+    // Without it, anyone holding a copy of one email — a forward, a shared
+    // inbox, a mailing list — could push this player out again every time
+    // they came back, for the ninety days the token lives.
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    const email = "rejoiner@example.com";
+    const playerId = await insertPlayer(db, { name: "Edward Cooper", email });
+    await insertMembership(db, gameId, playerId, { role: "player", active: true });
+    const token = await signLeaveToken(
+      { gameId, playerId, expiresAt: leaveTokenExpiry(NOW).getTime() },
+      SECRET,
+    );
+    const url = `https://makethe.team/leave/${token}`;
+
+    await SELF.fetch(new Request(url, { method: "POST" }));
+
+    // Back in, through the real join path, which resets `joined_at`.
+    const rejoined = await joinSquad({
+      db,
+      gameId,
+      name: "Edward Cooper",
+      email,
+      now: new Date(NOW.getTime() + 60_000),
+    });
+    expect(rejoined.kind).toBe("rejoined");
+
+    const replay = await SELF.fetch(new Request(url, { method: "POST" }));
+
+    expect(await replay.text()).toContain("link isn't working");
+    const [membership] = await db.select().from(memberships)
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, playerId)));
+    expect(membership?.active).toBe(true);
+    const rows = await db.select().from(auditLog).where(eq(auditLog.action, "membership.removed"));
+    expect(rows.length).toBe(1);
+  });
+
+  it("still works for a token minted during the player's current spell", async () => {
+    // The regression guard on the check above: an ordinary link, minted after
+    // the membership began, must be untouched by it.
+    const gameId = await insertGame(db);
+    const playerId = await insertPlayer(db, { name: "Edward Cooper" });
+    await insertMembership(db, gameId, playerId, {
+      role: "player",
+      active: true,
+      joinedAt: new Date(NOW.getTime() - 60_000),
+    });
+    const token = await signLeaveToken(
+      { gameId, playerId, expiresAt: leaveTokenExpiry(NOW).getTime() },
+      SECRET,
+    );
+
+    const response = await SELF.fetch(new Request(`https://makethe.team/leave/${token}`, { method: "POST" }));
+
+    expect(await response.text()).toContain("out of");
+    const [membership] = await db.select().from(memberships)
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, playerId)));
+    expect(membership?.active).toBe(false);
+  });
+
   it("shows the link-problem page for a bad token and writes nothing", async () => {
     const response = await SELF.fetch(
       new Request("https://makethe.team/leave/not-a-real-token", { method: "POST" }),
@@ -335,6 +432,18 @@ describe("the other-squads list", () => {
     )).text();
 
     expect(body).toContain(otherGameName);
+  });
+
+  it("survives the leave itself, so the done page still lists the rest", async () => {
+    const { token, otherGameName, cookie } = await seedLeavableWithAnotherGame({ signedIn: "self" });
+
+    const body = await (await SELF.fetch(
+      new Request(`https://makethe.team/leave/${token}`, { method: "POST", headers: { cookie } }),
+    )).text();
+
+    expect(body).toContain("out of");
+    expect(body).toContain(otherGameName);
+    expect(body).not.toContain("Sign in to see your other squads");
   });
 
   it("is absent when the session belongs to somebody else", async () => {

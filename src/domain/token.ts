@@ -368,6 +368,26 @@ export async function signLeaveToken(payload: LeaveTokenPayload, secret: string)
   return signToken("leave", payload, secret);
 }
 
+/**
+ * When a leave token was minted, derived from the only time it carries.
+ *
+ * Every leave token in existence gets its `expiresAt` from
+ * {@link leaveTokenExpiry}, which is `mintedAt + LEAVE_TOKEN_LIFETIME_MS` —
+ * so subtracting the same constant recovers the instant it was signed,
+ * without a second field, a second secret, or a stored record of the token.
+ *
+ * The one caller is `/leave/:token`, which refuses a token minted before the
+ * player's current spell in the squad began (`memberships.joined_at`). That
+ * is what stops a leave link from being a repeatable eviction: a copy of an
+ * old email would otherwise push the same player out again every time they
+ * rejoined, for the whole ninety days. Deriving the mint time here, beside
+ * the definition of the lifetime, keeps the arithmetic in one place — a
+ * route doing it for itself would be a lifetime constant maintained twice.
+ */
+export function leaveTokenMintedAt(payload: LeaveTokenPayload): Date {
+  return new Date(payload.expiresAt - LEAVE_TOKEN_LIFETIME_MS);
+}
+
 /** Verify and decode a leave token. See {@link verifyToken}. */
 export async function verifyLeaveToken(
   token: string,

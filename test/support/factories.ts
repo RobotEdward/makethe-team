@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
 import { fixtures, games, memberships, players, responses } from "../../src/db/schema.js";
-import { kickoffIn } from "./clock.js";
+import { kickoffIn, NOW } from "./clock.js";
 
 /**
  * Shared builders for database fixtures used by the tests.
@@ -94,7 +94,12 @@ export async function insertMembership(
   overrides: Partial<typeof memberships.$inferInsert> = {},
 ): Promise<string> {
   const id = crypto.randomUUID();
-  await db.insert(memberships).values({ id, gameId, playerId, ...overrides });
+  // `joinedAt` is pinned to the suite's own `NOW` rather than left to the
+  // column's default (the wall clock at insert). `/leave/:token` compares a
+  // token's mint time against this column, and a test that mints its token at
+  // `NOW` would otherwise be racing the few milliseconds between the two — the
+  // same class of clock-relative fragility `clock.ts` exists to remove.
+  await db.insert(memberships).values({ id, gameId, playerId, joinedAt: NOW, ...overrides });
   return id;
 }
 

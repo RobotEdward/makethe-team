@@ -328,6 +328,16 @@ export interface MembershipInGame {
    * cannot send a second removal email.
    */
   leftAt: Date | null;
+  /**
+   * When this player's *current* spell in the squad began — rewritten by
+   * `joinSquad` every time it reactivates a membership, so it moves forward
+   * on a rejoin rather than recording the first ever join.
+   *
+   * Read by `/leave/:token`, which refuses a leave token minted before it:
+   * such a token belongs to a previous spell, and honouring it would let one
+   * copy of an old email evict the same player again after every rejoin.
+   */
+  joinedAt: Date;
 }
 
 /**
@@ -356,6 +366,7 @@ export async function findMembershipInGame(
       role: memberships.role,
       active: memberships.active,
       leftAt: memberships.leftAt,
+      joinedAt: memberships.joinedAt,
     })
     .from(memberships)
     .innerJoin(players, eq(players.id, memberships.playerId))

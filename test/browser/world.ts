@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
-import { signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
+import { leaveTokenExpiry, signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
 import { toLocalParts } from "../../src/domain/time/zone.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
@@ -219,7 +219,11 @@ export async function seedWorld(
     {
       gameId,
       playerId: member.id,
-      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      // Through `leaveTokenExpiry`, exactly as every mailed leave link is
+      // minted: `/leave/:token` derives when a token was signed from its
+      // expiry and refuses one older than the player's current spell in the
+      // squad, so an invented expiry would describe a token from months ago.
+      expiresAt: leaveTokenExpiry(new Date(Date.now())).getTime(),
     },
     RESPONSE_SECRET,
   );

@@ -19,11 +19,35 @@ export interface LeavePageParams {
   gameId: string;
   /** Task 4 fills this; absent means "no session, or not this player". */
   otherGames?: readonly { gameId: string; gameName: string }[];
+  /**
+   * Whether the person being offered this page organises the game. Only the
+   * `confirm` state uses it, to warn that leaving gives the role up — see
+   * `confirmBody`. A sole organiser is refused outright and never sees it.
+   */
+  isOrganiser?: boolean;
 }
 
-function confirmBody(gameName: string, token: string): string {
+/**
+ * The offer itself.
+ *
+ * **The organiser sentence is not decoration.** Leaving demotes the leaver to
+ * a player in the same write that deactivates their membership, and rejoining
+ * with the invite link comes back as a player too — so the only way back to
+ * organising this game is another organiser handing the role over. That is
+ * irreversible by the person tapping this button, alone, and they may well be
+ * tapping it from an email to stop the reminders rather than to give up the
+ * role. The owner-facing removal page already discloses exactly this about
+ * somebody else ("Removing them takes that away too", `views/remove-member.ts`);
+ * saying less to the person it happens *to* would be the wrong way round.
+ */
+function confirmBody(gameName: string, token: string, isOrganiser: boolean): string {
+  const organiserWarning = isOrganiser
+    ? `<p class="nudge">You're an organiser of ${gameName}. Leaving takes that away too, and only another organiser can give it back.</p>`
+    : "";
+
   return `
     <p>Leaving means you'll stop getting email about ${gameName}, and your place in any fixture that's still open is freed for someone else.</p>
+    ${organiserWarning}
     <form method="post" action="/leave/${escapeHtml(token)}">
       <button class="button primary" type="submit">Leave this game</button>
     </form>
@@ -99,7 +123,7 @@ export function renderLeavePage(params: LeavePageParams): string {
     <h1>${gameName}</h1>
     ${
       state === "confirm"
-        ? confirmBody(gameName, token)
+        ? confirmBody(gameName, token, params.isOrganiser === true)
         : state === "sole-organiser"
           ? soleOrganiserBody(gameName, gameId)
           : state === "already-left"

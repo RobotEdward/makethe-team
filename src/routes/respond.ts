@@ -6,7 +6,12 @@ import { getDb, type Db } from "../db/client.js";
 import { resolveSessionPlayer } from "../auth/session.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import { verifyLeaveToken, verifyResponseToken } from "../domain/token.js";
+import {
+  leaveTokenMintedAt,
+  verifyLeaveToken,
+  verifyResponseToken,
+  type LeaveTokenPayload,
+} from "../domain/token.js";
 import { removeMember } from "../domain/remove-member.js";
 import type { ResponseIntent, WaitlistPromotion } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
@@ -357,6 +362,14 @@ export async function notifyPromotedPlayer(
  * `sessionMiddleware` on `/leave/*` — see that function's own doc comment for
  * why a mount here would be the wrong trade.
  */
+/*
+ * Never fatal, for the same reason `resolveSession` isn't. This is the one
+ * part of this page that needs a session, on a route whose entire promise is
+ * that it works without one — so a D1 fault in the session lookup or in the
+ * list query must cost the visitor the extra list, not the page. Degrading to
+ * `undefined` renders the sign-in offer a signed-out visitor already sees,
+ * which is the honest answer when we could not establish who is asking.
+ */
 async function resolveOtherGames(
   env: AppEnv["Bindings"],
   db: Db,
@@ -365,9 +378,46 @@ async function resolveOtherGames(
   gameId: string,
   tokenPlayerId: string,
 ): Promise<LeavePageParams["otherGames"]> {
-  const viewer = await resolveSessionPlayer(env, db, now, headers);
-  if (viewer === null || viewer.id !== tokenPlayerId) return undefined;
-  return listOtherActiveGames(db, tokenPlayerId, gameId);
+  try {
+    const viewer = await resolveSessionPlayer(env, db, now, headers);
+    if (viewer === null || viewer.id !== tokenPlayerId) return undefined;
+    return await listOtherActiveGames(db, tokenPlayerId, gameId);
+  } catch (error) {
+    console.error(
+      `other-squads list failed, rendering the leave page without it: ${
+        error instanceof Error ? (error.stack ?? error.message) : String(error)
+      }`,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * Whether this token belongs to a spell in the squad that has since ended.
+ *
+ * A leave token names a player and a game, and nothing about *which*
+ * membership it was minted against — so on its own it keeps working across a
+ * leave and a rejoin, and one copy of an old email becomes a repeatable
+ * eviction: tap, rejoin, tap again, for the ninety days the token lives. That
+ * matters more here than on any other link in a message, because this one is
+ * deliberately usable with no session and from any origin.
+ *
+ * The binding needs no new field. `joinSquad` rewrites `joined_at` every time
+ * it reactivates a membership, and a leave token's mint time comes out of its
+ * own expiry (`leaveTokenMintedAt`) — so a token minted *before* the current
+ * spell began is, by construction, from a previous one, and must not act.
+ * A token minted during the current spell is unaffected, which is the whole
+ * of the narrowing: ordinary links keep working.
+ *
+ * Applied on the `GET` as well as the `POST`. The `GET` writes nothing, so it
+ * is not where the harm is, but a stale token that renders a live "Leave this
+ * game" button which then refuses on submission is a worse answer than the
+ * link-problem page the token has earned — and it would confirm to the holder
+ * that the player is back in the squad, which is exactly what the silent
+ * refusal exists not to say.
+ */
+function isFromAPreviousSpell(payload: LeaveTokenPayload, joinedAt: Date): boolean {
+  return leaveTokenMintedAt(payload).getTime() < joinedAt.getTime();
 }
 
 respond.get("/leave/:token", async (c) => {
@@ -390,6 +440,14 @@ respond.get("/leave/:token", async (c) => {
   }
 
   const membership = await findMembershipInGame(db, gameId, playerId);
+
+  if (membership && isFromAPreviousSpell(verification.payload, membership.joinedAt)) {
+    // Silent on purpose: saying "you rejoined, so this link is finished" would
+    // tell whoever holds this copy of the email something about the player.
+    console.error(`leave link token predates the player's current membership: ${gameId}, ${playerId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
   const otherGames = await resolveOtherGames(c.env, db, now, c.req.raw.headers, gameId, playerId);
 
   if (!membership || !membership.active) {
@@ -399,12 +457,13 @@ respond.get("/leave/:token", async (c) => {
     );
   }
 
-  const state =
-    membership.role === "owner" && (await countActiveOwners(db, gameId)) === 1
-      ? "sole-organiser"
-      : "confirm";
+  const isOrganiser = membership.role === "owner";
+  const state = isOrganiser && (await countActiveOwners(db, gameId)) === 1 ? "sole-organiser" : "confirm";
 
-  return c.html(renderLeavePage({ token, gameId, gameName: game.name, state, otherGames }), 200);
+  return c.html(
+    renderLeavePage({ token, gameId, gameName: game.name, state, otherGames, isOrganiser }),
+    200,
+  );
 });
 
 /**
@@ -427,6 +486,11 @@ respond.get("/leave/:token", async (c) => {
  * exists to serve. The signed, expiring token is the entire authorisation,
  * the same reasoning `POST /r/:token` above already applies for not checking
  * it either.
+ *
+ * A token minted before this player's current spell in the squad began is
+ * refused before any write, with the same link-problem page — see
+ * `isFromAPreviousSpell` for why that binding is what stops this from being a
+ * repeatable eviction rather than a single one.
  *
  * `not-a-member` renders the same link-problem page a bad token does, rather
  * than a 404 or an explanation: the token names a game this player was never
@@ -459,6 +523,17 @@ respond.post("/leave/:token", async (c) => {
     return c.html(renderLinkProblemPage(), 200);
   }
 
+  // The binding this token is missing — see `isFromAPreviousSpell`. Read
+  // before the write, so a token from a previous spell never reaches
+  // `removeMember` at all.
+  const membership = await findMembershipInGame(db, gameId, playerId);
+  if (membership && isFromAPreviousSpell(verification.payload, membership.joinedAt)) {
+    console.error(`leave link token predates the player's current membership: ${gameId}, ${playerId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const otherGames = await resolveOtherGames(c.env, db, now, c.req.raw.headers, gameId, playerId);
+
   const result = await removeMember({
     db,
     gameId,
@@ -481,7 +556,7 @@ respond.post("/leave/:token", async (c) => {
 
   if (result.kind === "refused") {
     return c.html(
-      renderLeavePage({ token, gameId, gameName: game.name, state: "sole-organiser" }),
+      renderLeavePage({ token, gameId, gameName: game.name, state: "sole-organiser", otherGames }),
       422,
     );
   }
@@ -495,5 +570,5 @@ respond.post("/leave/:token", async (c) => {
     c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, promoted, now));
   }
 
-  return c.html(renderLeavePage({ token, gameId, gameName: game.name, state: "done" }), 200);
+  return c.html(renderLeavePage({ token, gameId, gameName: game.name, state: "done", otherGames }), 200);
 });
