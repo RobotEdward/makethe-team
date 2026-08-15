@@ -206,6 +206,7 @@ export async function notifyJoiner(
       membershipId: outcome.membershipId,
       joinedAt: outcome.joinedAt,
       now,
+      responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
     });
 
     switch (result.kind) {

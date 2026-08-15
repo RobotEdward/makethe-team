@@ -167,9 +167,9 @@ export const SHOTS: Shot[] = [
     title: "Leaving a game",
     route: "/leave/:token",
     shows:
-      "The page reached from the footer of every email: leaving isn't self-service " +
-      "yet, so it asks you to speak to whoever organises the game.",
-    path: (w) => `/leave/${w.inToken}`,
+      "The confirmation page reached from the footer of every email: what leaving " +
+      "does, and the button that actually does it.",
+    path: (w) => `/leave/${w.leaveToken}`,
     persona: "anonymous",
   },
   {

@@ -40,10 +40,10 @@ export interface PromotionEmailPayload {
   /** As `respondInUrl`, but opens with "Can't make it" emphasised — the way a promoted Player hands the spot straight back. */
   respondOutUrl: string;
   /**
-   * A working leave-game/unsubscribe link (BR-22). Currently
-   * `/leave/:token`, which explains that leaving is not self-service yet;
-   * this module only ever embeds whatever URL it is given and never inspects
-   * it, so that change needs no edit here.
+   * A working leave-game/unsubscribe link (BR-22): `/leave/:token`, signed
+   * with a leave token scoped to the Game rather than to this Fixture. This
+   * module only ever embeds whatever URL it is given and never inspects it,
+   * so how that token is built needs no edit here.
    */
   leaveUrl: string;
 }
@@ -136,7 +136,7 @@ ${escapeHtml(lead)}
 <p style="margin:0; font-size:12px; line-height:1.6; color:#928d84;">
 Make The Team — organising this Game for your squad.
 <br>
-Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">See how to leave this Game</a>.
+Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">Leave this game</a>.
 </p>
 
 </td>
@@ -169,7 +169,7 @@ Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">See how
     "",
     "---",
     "Make The Team — organising this Game for your squad.",
-    `Not playing any more? See how to leave this Game: ${leaveUrl}`,
+    `Not playing any more? Leave this game: ${leaveUrl}`,
     "",
   ].join("\n");
 

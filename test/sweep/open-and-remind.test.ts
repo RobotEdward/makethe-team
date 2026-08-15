@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb, type Db } from "../../src/db/client.js";
 import { auditLog, fixtures, memberships, notificationLog, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
+import { verifyLeaveToken } from "../../src/domain/token.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
@@ -137,6 +138,24 @@ describe("openAndRemind", () => {
     expect(logRows).toHaveLength(3);
     expect(logRows.every((r) => r.status === "sent")).toBe(true);
     expect(logRows.every((r) => r.providerMessageId !== null)).toBe(true);
+  });
+
+  it("carries a leave link scoped to the game, not the fixture", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const onePlayer = [{ id: "leave-link-player", name: "Player", email: "leave-link@example.com" }];
+    const { gameId } = await seedFixture({ kicksOffAt, squad: onePlayer });
+    const notifier = new RecordingNotifier();
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    await openAndRemind(db, notifier, now, SECRET);
+
+    const message = notifier.sent.flat()[0];
+    const match = message?.html.match(/\/leave\/([^"]+)"/);
+    const token = match?.[1];
+    expect(token).toBeDefined();
+
+    const verified = await verifyLeaveToken(token!, SECRET, now);
+    expect(verified).toMatchObject({ ok: true, payload: { gameId, playerId: "leave-link-player" } });
   });
 
   it("running the sweep twice sends exactly one email per player (BR-19)", async () => {

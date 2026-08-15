@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { verifyLeaveToken } from "../../src/domain/token.js";
 import { promotionKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
@@ -112,6 +113,13 @@ async function logRows() {
   return db.select().from(notificationLog);
 }
 
+/** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
+function leaveTokenFrom(message: Message | undefined): string {
+  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  if (!match?.[1]) throw new Error("no /leave/ link found in message html");
+  return match[1];
+}
+
 beforeEach(async () => {
   await resetDatabase();
 });
@@ -153,6 +161,20 @@ describe("sendPromotionEmail (N-2)", () => {
     // this path takes a URL from a request.
     expect(message?.html).toContain("https://makethe.team/r/");
     expect(message?.html).toContain("https://makethe.team/leave/");
+  });
+
+  it("carries a leave link scoped to the game, not the fixture", async () => {
+    const { gameId, fixtureId } = await seedFixture([
+      { id: "promoted", name: "Promoted", email: "promoted@example.com" },
+    ]);
+    const notifier = new RecordingNotifier();
+
+    await send(fixtureId, notifier, promotion("promoted"));
+
+    const token = leaveTokenFrom(notifier.all[0]);
+    const verified = await verifyLeaveToken(token, SECRET, NOW);
+
+    expect(verified).toMatchObject({ ok: true, payload: { gameId, playerId: "promoted" } });
   });
 
   it("records the send in notification_log as an n2 row for the promoted player", async () => {

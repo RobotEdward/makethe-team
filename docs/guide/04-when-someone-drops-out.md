@@ -28,14 +28,20 @@ see [calling a fixture off](06-calling-a-fixture-off.md).
 
 ## Leaving for good
 
-![The page explaining that leaving isn't self-service](images/leave.png)
+![The confirmation page for leaving a game, with the button that does it](images/leave.png)
 
-Every reminder email has a link in its footer for people who don't want them
-any more. This is the page it leads to.
+Every reminder, promotion and cancellation email has a link in its footer for
+people who don't want them any more, and the welcome email you get when you
+first join has one too. All of them lead here.
 
-At the moment it explains rather than does: you can't take yourself off a squad
-here, so it asks you to speak to whoever organises the game. If you're the
-organiser and somebody sends you this, taking them out takes two taps — see
-[running your squad](05-running-your-squad.md).
+Tapping through explains what's about to happen — you'll stop getting email
+about this game, and your place in any fixture that's still open is freed for
+someone else, the same as if you'd said **Can't make it** and then some. Tap
+**Leave this game** and that's it: no account, no password, nothing more to
+confirm. You won't hear about this game again.
+
+Changed your mind afterwards? Nobody can put you back in for you — you rejoin
+the same way you joined the first time, with the invite link. If you don't
+have it any more, ask whoever organises the game to send it again.
 
 Next: [running your squad](05-running-your-squad.md).

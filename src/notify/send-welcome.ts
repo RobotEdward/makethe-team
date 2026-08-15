@@ -3,6 +3,7 @@ import { DASHBOARD_PATH } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog, players } from "../db/schema.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
+import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
 import { welcomeKey } from "./dedupe-key.js";
 import { applySendResult, insertQueuedLogRows, SITE_ORIGIN, type PendingNotification } from "./delivery.js";
 import type { Notifier } from "./notifier.js";
@@ -55,6 +56,7 @@ export interface SendWelcomeEmailParams {
   joinedAt: Date;
   /** The request's `now`. Used for `sent_at` and for "which fixture is ahead of them". */
   now: Date;
+  responseTokenSecret: string;
 }
 
 /**
@@ -95,7 +97,7 @@ export interface SendWelcomeEmailParams {
  * reached the inbox and BR-19 treats a duplicate as worse than a miss.
  */
 export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<WelcomeSendOutcome> {
-  const { db, notifier, gameId, playerId, membershipId, joinedAt, now } = params;
+  const { db, notifier, gameId, playerId, membershipId, joinedAt, now, responseTokenSecret } = params;
 
   const [player] = await db
     .select({ name: players.name, email: players.email, isGuest: players.isGuest })
@@ -132,6 +134,13 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
     .orderBy(asc(fixtures.kicksOffAt))
     .limit(1);
 
+  // A leave token, scoped to this Game rather than to any Fixture — the same
+  // reason N-6 has no Fixture behind it at all (see the module doc comment).
+  const leaveToken = await signLeaveToken(
+    { gameId, playerId, expiresAt: leaveTokenExpiry(now).getTime() },
+    responseTokenSecret,
+  );
+
   const rendered = renderWelcomeEmail({
     playerName: player.name,
     gameName: game.name,
@@ -141,6 +150,7 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
     whenLocal: firstFixture ? formatLocalDateTime(firstFixture.kicksOffAt, game.timezone) : null,
     // Built here, from `SITE_ORIGIN` — never from anything in the request.
     dashboardUrl: `${SITE_ORIGIN}${DASHBOARD_PATH}`,
+    leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
   });
 
   const dedupeKey = welcomeKey(membershipId, joinedAt.toISOString());

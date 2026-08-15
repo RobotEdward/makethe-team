@@ -13,13 +13,12 @@ import { escapeHtml } from "../../views/layout.js";
  * joining a *squad*, and a squad can be joined before any Fixture exists.
  * That is why `whenLocal` is nullable — see `renderWelcomeEmail`.
  *
- * There is no leave/unsubscribe link, unlike `promotion.ts` and `reminder.ts`:
- * those are built from a signed response token scoped to a Fixture, and this
- * email is sent when there may be no Fixture to scope one to. It follows
- * `magic-link.ts` instead, whose footer carries no such link either. The
- * dashboard is the honest destination here — it is where leaving will live
- * (§1.6, M7) and it is behind sign-in, which this email's arrival proves the
- * Player can do.
+ * Its leave link is a leave token, not a response token, unlike `promotion.ts`
+ * and `reminder.ts`: those are scoped to a Fixture, and this email is sent
+ * when there may be no Fixture to scope one to. A leave token is scoped to
+ * the Game instead (BR-22, §2.2), which is exactly the gap N-6 used to carry
+ * — someone who joins and never wants to hear from this squad again had no
+ * working way to say so until now.
  */
 export interface WelcomeEmailPayload {
   /** The Player this copy of the email is for. Shown only in a plain greeting. */
@@ -38,6 +37,12 @@ export interface WelcomeEmailPayload {
   whenLocal: string | null;
   /** Absolute URL of the player dashboard. Server-built by the caller from `SITE_ORIGIN`. */
   dashboardUrl: string;
+  /**
+   * A working leave-game/unsubscribe link (BR-22), scoped to the Game rather
+   * than to any Fixture — see the module doc comment for why N-6 needs that
+   * and not a response token.
+   */
+  leaveUrl: string;
 }
 
 export interface WelcomeEmail {
@@ -77,7 +82,7 @@ function href(url: string): string {
  * the same place.
  */
 export function renderWelcomeEmail(payload: WelcomeEmailPayload): WelcomeEmail {
-  const { playerName, gameName, venueName, whenLocal, dashboardUrl } = payload;
+  const { playerName, gameName, venueName, whenLocal, dashboardUrl, leaveUrl } = payload;
 
   const subject = `You're in the squad for ${gameName}`;
 
@@ -137,6 +142,8 @@ ${escapeHtml(lead)}
 
 <p style="margin:0; font-size:12px; line-height:1.6; color:#928d84;">
 Make The Team — organising this Game for your squad.
+<br>
+Didn't mean to join? <a href="${href(leaveUrl)}" style="color:#928d84;">Leave this game</a>.
 </p>
 
 </td>
@@ -167,6 +174,7 @@ Make The Team — organising this Game for your squad.
     "",
     "---",
     "Make The Team — organising this Game for your squad.",
+    `Didn't mean to join? Leave this game: ${leaveUrl}`,
     "",
   ].join("\n");
 

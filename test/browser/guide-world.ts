@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
-import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
+import { leaveTokenExpiry, signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
 import { toLocalParts } from "../../src/domain/time/zone.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn } from "./sign-in.js";
@@ -118,6 +118,16 @@ export interface GuideWorld {
    * state a player is actually in when they open the reminder.
    */
   pendingToken: string;
+  /**
+   * A leave token (M7a) for a squad member — never the organiser, who is the
+   * sole owner of this world's game and would land on the "you're the only
+   * organiser" page instead of the confirmation this shot is about. Reuses
+   * the player who answered "can't make it" (`outToken`'s player), the same
+   * one `removablePlayerId` names, rather than minting a fresh member: this
+   * is a `GET`, which `respond.ts` guarantees performs no write, so it
+   * cannot disturb the counts chapters 1, 3, 4 and 6 already quote verbatim.
+   */
+  leaveToken: string;
   /**
    * The member the removal confirmation page is shown for. Deliberately the
    * player who already answered "can't make it", so the page is not about
@@ -289,6 +299,10 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     waitlistedToken: await tokenFor(SQUAD[10]!.email),
     outToken,
     pendingToken: await tokenFor(pendingEmail),
+    leaveToken: await signLeaveToken(
+      { gameId, playerId: idFor(outEmail), expiresAt: leaveTokenExpiry(new Date(Date.now())).getTime() },
+      RESPONSE_SECRET,
+    ),
     removablePlayerId: idFor(outEmail),
     demoGameId: demo.gameId,
     demoFixtureId: demo.fixtureId,
