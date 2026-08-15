@@ -154,7 +154,14 @@ second environment, the second to the milestone that writes `/privacy`.
      the deadline, **stays pending indefinitely** rather than half-completing. That is the
      safe direction (a game is never left without an organiser, and no squad is left
      half-departed), but it means a scheduled erasure is not a promise of a date. The way
-     out is to make somebody else an organiser; nothing else clears it.
+     out is to make somebody else an organiser; **nothing else unblocks it**. It can still
+     be *cancelled*: `POST /app/delete/cancel` refuses only once execution has actually
+     begun and stopped part-way (`players.erasure_started_at`), which a block found by the
+     pre-check never does — so a blocked player is never trapped, they can hand over or
+     keep their account. While it waits, the delete page and the dashboard banner both say
+     it is held up and name the game, one `player.erasure_blocked` audit row records the
+     transition (once, not once per hourly retry), and the sweep names the player in its
+     log line.
    - **During the trial, `SIGNIN_ALLOWLIST` fails closed.** Erasure is reachable only from
      a signed-in session, and a player whose address is not on the allowlist cannot get
      one — so they cannot reach the page at all and must ask the author directly. This is

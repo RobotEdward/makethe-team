@@ -61,15 +61,25 @@ the day arrives. That's what the wait is for. A tap you didn't mean costs you
 nothing if you notice it by Thursday.
 
 Games you've already played still count you. They show the same number of
-players they always did, with your name gone from the list — a ten-a-side
-game still reads as ten-a-side. That's not us holding on to something: it's
-what stops last month's fixture turning into a nine-a-side that never
-happened, for everyone else who was there.
+players they always did, with **a former player** where your name used to be —
+a ten-a-side game still reads as ten-a-side. That's not us holding on to
+something: it's what stops last month's fixture turning into a nine-a-side that
+never happened, for everyone else who was there. Anywhere your name appeared on
+somebody else's page — a squad list, or a line saying who marked somebody in —
+reads the same way afterwards.
 
 Two things worth knowing before you go looking for it. If you're the only
 organiser a game has, the page won't let you start: the game would be left
 with nobody running it, so make somebody else an organiser first and then come
 back. And nobody can do this for you — not another organiser, not us. There's
 no button anywhere with somebody else's name on it.
+
+The organiser check runs again on the day. If somebody made you the only
+organiser of a game in the meantime — a co-organiser left, say — the erasure
+waits rather than leaving that game with nobody running it, and your games page
+says so and names the game. Make somebody else an organiser there and it goes
+ahead by itself within the hour. It's the one case where a date you were given
+can pass without the erasure happening, and it's the safe direction: nothing is
+half-done while it waits.
 
 Next: [running your squad](05-running-your-squad.md).

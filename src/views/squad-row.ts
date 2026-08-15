@@ -1,4 +1,5 @@
 import type { SquadMember } from "../db/queries.js";
+import { displayName } from "../domain/display-name.js";
 import { escapeHtml } from "./layout.js";
 
 /**
@@ -68,5 +69,10 @@ export function squadStatusLabel(member: SquadMember): string {
 export function attribution(member: SquadMember): string {
   if (member.source !== "owner" || member.setBy === null) return "";
   const verb = member.status === "out" ? "marked out" : "marked in";
-  return `<span class="set-by">${escapeHtml(`${verb} by ${member.setBy.name}`)}</span>`;
+  // §4: never `setBy.name` directly. An organiser who has since erased
+  // themselves leaves this line behind on every response they set — the
+  // `responses` rows are deliberately untouched by erasure — so without the
+  // branch a played fixture reads "marked in by [erased player]".
+  const who = displayName(member.setBy.name, member.setBy.erasedAt);
+  return `<span class="set-by">${escapeHtml(`${verb} by ${who}`)}</span>`;
 }

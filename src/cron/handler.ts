@@ -139,6 +139,19 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       for (const failure of erasureResult.failures) {
         console.error(`erasure failed for player ${failure.playerId}: ${failure.message}`);
       }
+      // Named, not just counted. A blocked erasure is not a failure — the
+      // player has become the last organiser of a game and the sweep is right
+      // to refuse — but it is the one outcome on this path that can persist
+      // indefinitely, and until the final review the only trace of it in
+      // production was an aggregate `blocked: 1` with no player in it. The
+      // player sees a banner and an audit row records the transition; this
+      // line is the operator's half, so "who is stuck, and on what?" is
+      // answerable from Workers Logs rather than from an ad-hoc D1 query.
+      for (const block of erasureResult.blockedPlayers) {
+        console.warn(
+          `erasure blocked for player ${block.playerId}: still the last active organiser of game(s) ${block.gameIds.join(", ")} — pending until somebody else is made an organiser`,
+        );
+      }
 
       // Leaving a squad frees slots, and freeing a slot promotes whoever has
       // waited longest (BR-7) — so an erasure puts real people into fixtures,

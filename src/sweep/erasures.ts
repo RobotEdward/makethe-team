@@ -11,6 +11,12 @@ export interface ErasureFailure {
   message: string;
 }
 
+/** One erasure the sole-organiser invariant refused, and which games did it. */
+export interface ErasureBlock {
+  playerId: string;
+  gameIds: string[];
+}
+
 export interface ErasureSweepResult {
   erased: number;
   /**
@@ -20,6 +26,14 @@ export interface ErasureSweepResult {
    * person takes their time finding a replacement organiser.
    */
   blocked: number;
+  /**
+   * The same set, named. A bare count told an operator that *somebody* was
+   * stuck and gave them no way to find out who without an ad-hoc D1 query —
+   * on the one path in this product where being stuck is invisible to
+   * everyone but the person it happens to. Carried alongside `failures`, in
+   * the same shape, so the cron's log line names both.
+   */
+  blockedPlayers: ErasureBlock[];
   failures: ErasureFailure[];
   /**
    * Every waitlisted player an erasure moved into a squad, across all of this
@@ -53,9 +67,12 @@ export interface ErasureSweepResult {
  *
  * `blocked` is not a failure. A player who has become the last organiser of a
  * game since requesting erasure stays pending and is retried on the next run;
- * `erasePlayer` writes nothing in that case, so retrying costs one query and
- * can never half-complete. It is counted separately so a log reader can tell
- * "waiting on a handover" apart from "something is wrong".
+ * `erasePlayer` removes nothing in that case, so retrying can never
+ * half-complete. It is counted separately — and, since the final review,
+ * *named* in `blockedPlayers` — so a log reader can tell "waiting on a
+ * handover" apart from "something is wrong", and can tell *who* is waiting.
+ * The audit row and the player's own dashboard banner are the other two thirds
+ * of §6's answer to it; both come from `erasePlayer`, not from here.
  *
  * The `erased_at is null` half of the filter is what makes re-running this
  * free: `erases_at` is deliberately *not* cleared by an erasure (it is the
@@ -87,7 +104,7 @@ export async function runDueErasures(
     .where(and(isNotNull(players.erasesAt), lte(players.erasesAt, now), isNull(players.erasedAt)));
 
   let erased = 0;
-  let blocked = 0;
+  const blockedPlayers: ErasureBlock[] = [];
   const failures: ErasureFailure[] = [];
   const promotions: FixturePromotion[] = [];
 
@@ -106,7 +123,9 @@ export async function runDueErasures(
         // already durable in D1 by the time it appears here — telling the
         // person is the only part still outstanding.
         promotions.push(...result.promotions);
-      } else if (result.kind === "blocked") blocked++;
+      } else if (result.kind === "blocked") {
+        blockedPlayers.push({ playerId: player.id, gameIds: result.gameIds });
+      }
       // `already-erased` and `not-found` are neither: the first is a row that
       // was erased between this run's select and its turn in the loop, the
       // second a row deleted underneath us. Both mean there is nothing left to
@@ -119,5 +138,7 @@ export async function runDueErasures(
     }
   }
 
-  return { erased, blocked, failures, promotions };
+  // `blocked` stays a count as well as a list: the cron's failure message and
+  // every existing log search read it, and a number is what a reader scans for.
+  return { erased, blocked: blockedPlayers.length, blockedPlayers, failures, promotions };
 }

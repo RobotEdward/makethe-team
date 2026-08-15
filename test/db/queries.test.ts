@@ -1,4 +1,5 @@
 import { env } from "cloudflare:test";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
@@ -162,6 +163,7 @@ describe("getFixtureWithSquad against openFixture output", () => {
       {
         playerId,
         name: "Eligible Player",
+        erasedAt: null,
         status: "pending",
         waitlistRank: null,
         setBy: null,
@@ -217,9 +219,30 @@ describe("getFixtureWithSquad — attribution and guests", () => {
     const result = await getFixtureWithSquad(db, fixtureId);
     const member = result!.squad.find((m) => m.playerId === "p-1")!;
 
-    expect(member.setBy).toEqual({ playerId: "o-1", name: "Olivia Nightingale" });
+    expect(member.setBy).toEqual({ playerId: "o-1", name: "Olivia Nightingale", erasedAt: null });
     expect(member.source).toBe("owner");
     expect(member.isGuest).toBe(false);
+  });
+
+  /**
+   * §4: "Renderers must branch on `erased_at`". They cannot branch on a column
+   * the query does not return, and until the final review this one did not
+   * return it — for the member or for BR-27's setter — so `[erased player]`
+   * reached the screen in both positions.
+   */
+  it("carries erased_at for the member and for whoever set their response", async () => {
+    const erasedAt = new Date("2026-08-20T09:00:00Z");
+    await db.update(players).set({ erasedAt }).where(eq(players.id, "o-1"));
+    await db.update(players).set({ erasedAt }).where(eq(players.id, "p-2"));
+
+    const result = await getFixtureWithSquad(db, fixtureId);
+
+    const setByErased = result!.squad.find((m) => m.playerId === "p-1")!;
+    expect(setByErased.erasedAt).toBeNull();
+    expect(setByErased.setBy?.erasedAt?.getTime()).toBe(erasedAt.getTime());
+
+    const erasedMember = result!.squad.find((m) => m.playerId === "p-2")!;
+    expect(erasedMember.erasedAt?.getTime()).toBe(erasedAt.getTime());
   });
 
   it("reports no setter for a player who answered for themselves", async () => {

@@ -40,9 +40,16 @@ export type ErasePlayerResult =
   | { kind: "erased"; promotions: FixturePromotion[] }
   | {
       /**
-       * At least one game would be left with no active organiser. **Nothing
-       * has been written** — the check runs across every game before any
-       * removal happens.
+       * At least one game would be left with no active organiser. **No
+       * membership, response or session has been touched** — the check runs
+       * across every game before any removal happens — but the refusal itself
+       * is recorded (`players.erasure_blocked_at` and one
+       * `player.erasure_blocked` audit row, written once per transition; see
+       * `recordBlocked`). The erasure stays pending and is retried hourly.
+       *
+       * The one exception is a *late* block, returned from inside the removal
+       * loop after a concurrent change: earlier memberships may already be
+       * gone, and `players.erasure_started_at` is what says so.
        */
       kind: "blocked";
       gameIds: string[];
@@ -63,6 +70,52 @@ function escapeLike(value: string): string {
 }
 
 /**
+ * Report a blocked erasure, and record it if it is news.
+ *
+ * §6 asks for three things when execution is refused: the erasure stays
+ * pending, an audit row is written, and the player's dashboard names the game
+ * holding it up. This is the second; `players.erasure_blocked_at` — set here —
+ * is also what the third reads. Only the first was implemented until the final
+ * review, which meant a blocked erasure had no durable trace at all: an
+ * aggregate count in one log line, and a page that went on promising a date
+ * that had already passed.
+ *
+ * **Once per transition, not once per retry.** The sweep runs hourly and a
+ * block can last for weeks — nobody is obliged to find a replacement organiser
+ * — so an unconditional insert here is a row an hour, forever, into a table
+ * nothing prunes. `alreadyBlocked` is the guard, and the marker it reads is
+ * cleared by any run that gets past the pre-check, so a genuine re-block after
+ * a handover is recorded again.
+ *
+ * Nothing else is written: the erasure stays exactly as pending as it was, and
+ * a retry costs the same queries it always did.
+ */
+async function recordBlocked(
+  db: Db,
+  playerId: string,
+  gameIds: string[],
+  now: Date,
+  alreadyBlocked: boolean,
+): Promise<ErasePlayerResult> {
+  if (!alreadyBlocked) {
+    await db.batch([
+      db.update(players).set({ erasureBlockedAt: now }).where(eq(players.id, playerId)),
+      buildAuditInsert(db, {
+        actorPlayerId: playerId,
+        entityType: "player",
+        entityId: playerId,
+        action: "player.erasure_blocked",
+        // Ids, never names: §3's rule for this table. The games are named on
+        // the page, from a live join, not from a payload frozen weeks ago.
+        after: { gameIds },
+        now,
+      }),
+    ]);
+  }
+  return { kind: "blocked", gameIds };
+}
+
+/**
  * Erase a player: leave every squad, then anonymise the row in place (§3).
  *
  * **In place, not deleted.** `responses`, `audit_log` and `notification_log`
@@ -76,7 +129,9 @@ function escapeLike(value: string): string {
  * discovering that on the third game after leaving the first two would leave
  * the person half-erased with no way to finish and no way to undo. So the
  * whole set is checked first and the operation either runs or reports
- * `blocked`, having written nothing — except that a *concurrent* change
+ * `blocked`, having touched no membership, no response and no session — only
+ * the marker and audit row `recordBlocked` writes, which are the record *of*
+ * the refusal rather than any part of the erasure. A *concurrent* change
  * between the check and the removal loop can still produce a late `blocked`;
  * see the comment inside the loop.
  *
@@ -95,7 +150,13 @@ export async function erasePlayer(params: ErasePlayerParams): Promise<ErasePlaye
   const { db, playerId, now, withdraw } = params;
 
   const [player] = await db
-    .select({ email: players.email, authUserId: players.authUserId, erasedAt: players.erasedAt })
+    .select({
+      email: players.email,
+      authUserId: players.authUserId,
+      erasedAt: players.erasedAt,
+      erasureStartedAt: players.erasureStartedAt,
+      erasureBlockedAt: players.erasureBlockedAt,
+    })
     .from(players)
     .where(eq(players.id, playerId));
 
@@ -112,7 +173,28 @@ export async function erasePlayer(params: ErasePlayerParams): Promise<ErasePlaye
       blocked.push(membership.gameId);
     }
   }
-  if (blocked.length > 0) return { kind: "blocked", gameIds: blocked };
+  if (blocked.length > 0) {
+    return recordBlocked(db, playerId, blocked, now, player.erasureBlockedAt !== null);
+  }
+
+  // Past the pre-check: everything below writes, and none of it can be undone.
+  // Marking that here — before the first removal, not after the last write —
+  // is what makes a run that stops half-way distinguishable from one that
+  // never started. Without it the page goes on saying "nothing has changed,
+  // you're still in your squads" to somebody whose place has already been
+  // given away, and cancel strands the account out of its squads with nothing
+  // left to finish the job. See the column comment in `src/db/schema.ts`.
+  //
+  // `?? now` rather than `now`: a resumed run keeps the instant the *first*
+  // one began, which is the moment the irreversible part actually started.
+  //
+  // The blocked marker is cleared in the same statement. A run that gets this
+  // far is no longer blocked, so a block after this point is a new transition
+  // and earns its own audit row.
+  await db
+    .update(players)
+    .set({ erasureStartedAt: player.erasureStartedAt ?? now, erasureBlockedAt: null })
+    .where(eq(players.id, playerId));
 
   // Leave every squad. The player is their own actor, exactly as `POST
   // /leave/:token` treats a leaver, so the audit trail reads as "they left".
@@ -143,7 +225,14 @@ export async function erasePlayer(params: ErasePlayerParams): Promise<ErasePlaye
     // is still null, so nothing has claimed the player is erased, and
     // `removeMember` is idempotent on a membership already left — a retry
     // (the next sweep run, or the player trying again) finishes cleanly.
-    if (result.kind === "refused") return { kind: "blocked", gameIds: [membership.gameId] };
+    //
+    // `false` for `alreadyBlocked`: the update above cleared the marker on the
+    // way past the pre-check, so this is always a fresh transition and always
+    // earns its row — and that row is the only durable trace that a *started*
+    // erasure has stopped part-way.
+    if (result.kind === "refused") {
+      return recordBlocked(db, playerId, [membership.gameId], now, false);
+    }
   }
 
   // Better Auth's own rows. Hard-deleted, unlike everything above: nothing
@@ -161,6 +250,18 @@ export async function erasePlayer(params: ErasePlayerParams): Promise<ErasePlaye
   // address, so these rows are residual personal data in their own right as
   // well as a live way in. Matched by `LIKE` because the address is embedded
   // in that blob rather than being the whole of it.
+  //
+  // **What this match does and does not cover.** Better Auth's magic-link
+  // rows (N-5, the only way into this product for most people) store
+  // `JSON.stringify({ email, name })`, so the address is in `value` and the
+  // pattern finds them. An abandoned *passkey registration* challenge does
+  // not: its `value` holds `userData: { id, name, displayName }`, with no
+  // address in it, so it is only reached while `user.name` happens to be the
+  // address — which it is for a player who signed in by magic link and never
+  // set a name, and is not otherwise. Such a row is a short-lived WebAuthn
+  // challenge for a user record this function has just hard-deleted, so it
+  // authenticates nothing and expires on its own; it is recorded here because
+  // "every verification row is gone" would be the wrong thing to believe.
   //
   // Built as a single `sql` template rather than Drizzle's `like()` helper:
   // `like()` has no way to attach an `ESCAPE` clause, and the escaping is not

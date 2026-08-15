@@ -472,6 +472,55 @@ describe("GET /app", () => {
     expect(body).toContain("Saturday 15 June at 10:00");
     expect(body).toContain(`action="${DELETE_ACCOUNT_CANCEL_PATH}"`);
     expect(body).toContain('method="post"');
+    expect(body).toContain("due to be erased on");
+  });
+
+  /**
+   * §6's third clause, and the defect the final review found: an erasure the
+   * sweep refuses stays pending forever, and the banner went on promising a
+   * date that had already passed, naming nothing.
+   */
+  it("banners an overdue erasure as held up, naming and linking the game holding it", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const gameId = await insertGame(db, { name: "Sole-Organised Game" });
+    await insertMembership(db, gameId, playerId, { role: "owner", active: true });
+    await db
+      .update(players)
+      .set({ erasesAt: new Date(Date.now() - 3_600_000) })
+      .where(eq(players.id, playerId));
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("hasn't happened yet");
+    // Past tense, not the plain banner's future-tense promise.
+    expect(body).not.toContain("is due to be erased on");
+    expect(body).toContain("Sole-Organised Game");
+    expect(body).toContain(`href="/g/${gameId}"`);
+    // Still cancellable: nothing has been written, so keeping the account is
+    // still an honest offer.
+    expect(body).toContain(`action="${DELETE_ACCOUNT_CANCEL_PATH}"`);
+  });
+
+  /**
+   * The half-run case. Squads have already been left and other people
+   * promoted into the places given up, so the cancel button must go: pressing
+   * it would strand the account out of those squads with nothing left to
+   * finish the job.
+   */
+  it("drops the cancel form from the banner once execution has begun", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const past = new Date(Date.now() - 3_600_000);
+    await db
+      .update(players)
+      .set({ erasesAt: past, erasureStartedAt: past })
+      .where(eq(players.id, playerId));
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("already begun");
+    expect(body).not.toContain(`action="${DELETE_ACCOUNT_CANCEL_PATH}"`);
   });
 });
 

@@ -8,6 +8,7 @@ import { getDb } from "../db/client.js";
 import { findActionableFixture, listDashboardFixtures } from "../db/dashboard-queries.js";
 import type { DashboardFixture } from "../db/dashboard-queries.js";
 import { listOwnedGames } from "../db/queries.js";
+import { blockingGamesFor } from "../domain/blocking-games.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { removeMember } from "../domain/remove-member.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
@@ -51,6 +52,21 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
     listOwnedGames(db, player.id),
   ]);
 
+  // §6's third clause: a blocked erasure "surfaces on the player's dashboard
+  // as a banner naming the game that is holding it up". Selected on the date
+  // having passed rather than on `erasure_blocked_at`, exactly as
+  // `/app/delete` selects its own `held-up` state and for the same reason —
+  // the plain banner promises a future instant, and the instant passing is
+  // what makes it false, whatever the reason. The extra queries only run for a
+  // player whose erasure is overdue, which is nobody on an ordinary load.
+  const heldUp =
+    player.erasesAt !== null && (player.erasesAt <= now || player.erasureStartedAt !== null)
+      ? {
+          blockingGames: await blockingGamesFor(db, player.id),
+          started: player.erasureStartedAt !== null,
+        }
+      : undefined;
+
   return c.html(
     renderDashboardPage({
       playerName: player.name,
@@ -64,6 +80,7 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
       // product has any right to assume for a person absent one.
       erasesAtLocal:
         player.erasesAt === null ? undefined : formatLocalDateTime(player.erasesAt, "Europe/London"),
+      erasureHeldUp: heldUp,
     }),
     problem === undefined ? 200 : 422,
   );

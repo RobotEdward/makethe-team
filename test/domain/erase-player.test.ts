@@ -100,7 +100,7 @@ describe("erasePlayer", () => {
   // The check runs before any removal, so a blocked erasure changes nothing at
   // all. Removing the first game and then discovering the second is blocked
   // would leave the person half-erased with no way to finish or undo it.
-  it("refuses without touching anything when a game would lose its last organiser", async () => {
+  it("refuses without touching any membership when a game would lose its last organiser", async () => {
     const db = testDb();
     const playerId = await insertPlayer(db, { name: "Edward Cooper", email: "edward@example.test" });
     const soleOwned = await insertGame(db);
@@ -116,13 +116,12 @@ describe("erasePlayer", () => {
     expect(row?.name).toBe("Edward Cooper");
     expect(row?.erasedAt).toBeNull();
 
-    // "Nothing has been written" means every membership too, not just the
-    // player row and the audit rows keyed to the player: an interleaved
-    // implementation that checks-then-removes game by game would deactivate
-    // `ordinary`'s membership (writing a `membership.removed` row keyed to
-    // the *membership* id, not the player id) before ever reaching the game
-    // that blocks it, and a query filtered to `entityId = playerId` alone
-    // would not catch that.
+    // "Nothing has been erased" means every membership too, not just the
+    // player row: an interleaved implementation that checks-then-removes game
+    // by game would deactivate `ordinary`'s membership (writing a
+    // `membership.removed` row keyed to the *membership* id, not the player
+    // id) before ever reaching the game that blocks it, and a query filtered
+    // to `entityId = playerId` alone would not catch that.
     const memberRows = await db
       .select()
       .from(memberships)
@@ -132,8 +131,86 @@ describe("erasePlayer", () => {
       expect(member.active).toBe(true);
       expect(member.leftAt).toBeNull();
     }
+    // The refusal itself *is* recorded — that is the whole of §6's second
+    // clause, and its absence was the defect the final review found. One row,
+    // naming the game, and no `membership.*` row alongside it.
     const allAudit = await db.select().from(auditLog);
-    expect(allAudit).toHaveLength(0);
+    expect(allAudit).toHaveLength(1);
+    expect(allAudit[0]?.action).toBe("player.erasure_blocked");
+    expect(allAudit[0]?.entityId).toBe(playerId);
+    expect(JSON.parse(allAudit[0]?.afterJson ?? "null")).toEqual({ gameIds: [soleOwned] });
+    // Nothing has *started*: the pre-check ran before any write, so cancel is
+    // still an honest offer and the page must not say otherwise.
+    expect(row?.erasureStartedAt).toBeNull();
+    expect(row?.erasureBlockedAt?.getTime()).toBe(NOW.getTime());
+  });
+
+  /**
+   * The sweep runs hourly and a block is cleared only by a handover, which
+   * nobody is obliged to perform — so an unconditional insert here is one
+   * audit row an hour, forever, into a table nothing prunes.
+   */
+  it("writes the blocked audit row once, not once per hourly retry", async () => {
+    const db = testDb();
+    const playerId = await insertPlayer(db, { email: "edward@example.test" });
+    const soleOwned = await insertGame(db);
+    await insertMembership(db, soleOwned, playerId, { role: "owner" });
+
+    await erasePlayer({ db, playerId, now: NOW, withdraw: noWithdraw });
+    const later = new Date(NOW.getTime() + 60 * 60 * 1000);
+    const again = await erasePlayer({ db, playerId, now: later, withdraw: noWithdraw });
+
+    expect(again).toEqual({ kind: "blocked", gameIds: [soleOwned] });
+    const rows = await db.select().from(auditLog);
+    expect(rows).toHaveLength(1);
+    // And the marker keeps the *first* transition's instant, so "how long has
+    // this been stuck?" remains answerable.
+    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    expect(row?.erasureBlockedAt?.getTime()).toBe(NOW.getTime());
+  });
+
+  /**
+   * The other half of "once per transition": a block that is resolved and then
+   * happens again is a second, real event, and must be recorded as one.
+   */
+  it("records a second block after a run has got past the pre-check", async () => {
+    const db = testDb();
+    const playerId = await insertPlayer(db, { email: "edward@example.test" });
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, playerId, { role: "owner" });
+
+    // Blocked: the only organiser.
+    await erasePlayer({ db, playerId, now: NOW, withdraw: noWithdraw });
+    expect(await db.select().from(auditLog)).toHaveLength(1);
+
+    // What a run that gets past the pre-check does to the marker, done
+    // directly: reaching that state for real means a handover, a completed
+    // erasure, and nothing left to block. Clearing it is the whole mechanism
+    // under test — a later block is a new event and must be recorded again.
+    await db.update(players).set({ erasureBlockedAt: null }).where(eq(players.id, playerId));
+
+    const later = new Date(NOW.getTime() + 2 * 60 * 60 * 1000);
+    await erasePlayer({ db, playerId, now: later, withdraw: noWithdraw });
+
+    const rows = await db.select().from(auditLog);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.action === "player.erasure_blocked")).toBe(true);
+  });
+
+  /**
+   * Important 1's marker. Everything past the pre-check writes, and none of it
+   * can be undone — so the row has to say so before the first removal, not
+   * after the last write.
+   */
+  it("marks execution as started, and keeps the first run's instant on a retry", async () => {
+    const db = testDb();
+    const playerId = await insertPlayer(db, { email: "edward@example.test" });
+
+    await erasePlayer({ db, playerId, now: NOW, withdraw: noWithdraw });
+
+    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    expect(row?.erasureStartedAt?.getTime()).toBe(NOW.getTime());
+    expect(row?.erasedAt?.getTime()).toBe(NOW.getTime());
   });
 
   it("proceeds when the game has another active organiser", async () => {

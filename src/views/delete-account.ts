@@ -23,13 +23,30 @@ export interface DeleteAccountPageParams {
   /**
    * - `offer` — nothing pending; renders the request button.
    * - `sole-organiser` — renders **no button**, and names the games.
-   * - `pending` — an erasure is scheduled; renders the cancel button.
+   * - `pending` — an erasure is scheduled and its date is still ahead;
+   *   renders the cancel button.
+   * - `held-up` — the date has arrived and the erasure has not happened.
+   *   Names whatever is blocking it, and renders the cancel button only while
+   *   cancelling is still an honest offer (see `started`).
    */
-  state: "offer" | "sole-organiser" | "pending";
-  /** For `sole-organiser`. Each links to its own game page to hand over. */
+  state: "offer" | "sole-organiser" | "pending" | "held-up";
+  /**
+   * For `sole-organiser` and `held-up`. Each links to its own game page to
+   * hand over. Empty on `held-up` means nothing is blocking it and the run is
+   * simply still to come — the sweep is hourly, so a date can be minutes past
+   * with nothing wrong at all.
+   */
   blockingGames?: readonly { gameId: string; gameName: string }[];
-  /** For `pending`, already formatted by the caller. */
+  /** For `pending` and `held-up`, already formatted by the caller. */
   erasesAtLocal?: string;
+  /**
+   * `held-up` only: execution has begun and stopped part-way
+   * (`players.erasure_started_at`). Squads have already been left and other
+   * people promoted into the places given up, so the copy must not claim
+   * nothing has changed and there must be no cancel button — cancelling would
+   * strand the account out of its squads with nothing left to finish the job.
+   */
+  started?: boolean;
   /**
    * Why a `POST` was refused, rendered above the body at 422. The refusal
    * shows this same page with the reason on it rather than a bare error, the
@@ -96,6 +113,12 @@ function soleOrganiserBody(blockingGames: readonly { gameId: string; gameName: s
  * It names the exact instant rather than "in two days": the person reading it
  * may be reading it a day later, having been told about a request they did not
  * make, and "two days" from the wrong starting point is not an answer.
+ *
+ * **Only ever rendered while that instant is still ahead.** Both sentences —
+ * the date, and "until then nothing has changed" — are false the moment it is
+ * not, and one of them is false in the direction that matters: an erasure that
+ * has begun has already taken the player out of squads. `held-up` is the state
+ * for everything past the deadline; the route selects between them.
  */
 function pendingBody(erasesAtLocal: string): string {
   return `
@@ -104,6 +127,61 @@ function pendingBody(erasesAtLocal: string): string {
     <form method="post" action="${escapeHtml(DELETE_ACCOUNT_CANCEL_PATH)}">
       <button class="button primary" type="submit">Keep my account</button>
     </form>
+  `;
+}
+
+/**
+ * The state the page had no words for until the final review: the date has
+ * arrived and the erasure has not run (§6).
+ *
+ * The `pending` body asserts a future date and "until then nothing has
+ * changed". Both go stale the moment the deadline passes, and a blocked
+ * erasure can sit unfulfilled for weeks — so that page told the player,
+ * forever, that their data was due to be erased on a Wednesday that was three
+ * weeks ago, with nothing naming the game that was actually holding it up.
+ *
+ * Selected on the date rather than on the blocked marker, deliberately: the
+ * date passing is what makes the old copy false, whatever the reason, so this
+ * state also covers "the sweep has not come round yet" and "an erasure that
+ * threw last hour". The games list is what distinguishes them, and it is read
+ * live rather than out of the audit payload, so a handover done ten seconds
+ * ago is reflected here.
+ *
+ * `started` removes the cancel button rather than disabling it, for
+ * `soleOrganiserBody`'s reason: there is nothing to press, and a control that
+ * exists but refuses invites the press.
+ */
+function heldUpBody(
+  erasesAtLocal: string,
+  blockingGames: readonly { gameId: string; gameName: string }[],
+  started: boolean,
+): string {
+  const items = blockingGames
+    .map(
+      (game) =>
+        `<li><a href="${escapeHtml(gamePath(game.gameId))}">${escapeHtml(game.gameName)}</a></li>`,
+    )
+    .join("");
+
+  const why =
+    blockingGames.length > 0
+      ? `
+    <p>Each of these games needs an organiser, and you're the only one it has:</p>
+    <ul>${items}</ul>
+    <p>Make someone else an organiser and it will go ahead by itself, within the hour. Nothing else will start it.</p>`
+      : `<p>It runs on the hour, so it should happen shortly on its own. Nothing has gone wrong and you don't need to do anything.</p>`;
+
+  const ending = started
+    ? `<p>It has already begun. You've been taken out of some or all of your squads, and the places you'd given up have gone to whoever was waiting for them — that part can't be undone, so this can't be stopped now. It will finish once the way is clear.</p>`
+    : `
+    <form method="post" action="${escapeHtml(DELETE_ACCOUNT_CANCEL_PATH)}">
+      <button class="button primary" type="submit">Keep my account</button>
+    </form>`;
+
+  return `
+    <p>Your data was due to be erased on <strong>${escapeHtml(erasesAtLocal)}</strong>, and it hasn't happened yet.</p>
+    ${why}
+    ${ending}
   `;
 }
 
@@ -123,7 +201,7 @@ const ON_NOBODY_ELSE_S_BEHALF = `
 `;
 
 /**
- * The page, in whichever of its three states the route decided on.
+ * The page, in whichever of its four states the route decided on.
  *
  * The player's own name is on every state, not as a greeting: this page acts
  * on the session's player and on nothing else, so knowing *which* account is
@@ -143,7 +221,13 @@ export function renderDeleteAccountPage(params: DeleteAccountPageParams): string
         ? offerBody()
         : state === "sole-organiser"
           ? soleOrganiserBody(params.blockingGames ?? [])
-          : pendingBody(params.erasesAtLocal ?? "")
+          : state === "held-up"
+            ? heldUpBody(
+                params.erasesAtLocal ?? "",
+                params.blockingGames ?? [],
+                params.started ?? false,
+              )
+            : pendingBody(params.erasesAtLocal ?? "")
     }
     ${ON_NOBODY_ELSE_S_BEHALF}
     <p><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>

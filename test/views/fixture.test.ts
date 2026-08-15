@@ -10,6 +10,7 @@ const BASE = {
     {
       playerId: "p1",
       name: "Edward Cooper",
+      erasedAt: null,
       status: "in" as const,
       waitlistRank: null,
       setBy: null,
@@ -19,6 +20,7 @@ const BASE = {
     {
       playerId: "p2",
       name: "Sam Okonjo",
+      erasedAt: null,
       status: "pending" as const,
       waitlistRank: null,
       setBy: null,
@@ -57,6 +59,7 @@ describe("fixture page", () => {
         {
           playerId: "x",
           name: '<script>alert("x")</script>',
+          erasedAt: null,
           status: "in",
           waitlistRank: null,
           setBy: null,
@@ -262,9 +265,10 @@ describe("fixture page", () => {
         {
           playerId: "p-1",
           name: "Priya Raman",
+          erasedAt: null,
           status: "in",
           waitlistRank: null,
-          setBy: { playerId: "o-1", name: "Jamie Alderton" },
+          setBy: { playerId: "o-1", name: "Jamie Alderton", erasedAt: null },
           source: "owner",
           isGuest: false,
         },
@@ -274,6 +278,49 @@ describe("fixture page", () => {
     expect(html).toContain("marked in by Jamie Alderton");
   });
 
+  /**
+   * §4, and the defect the final review found: no renderer branched on
+   * `erased_at`, so the deliberately-conspicuous `[erased player]` placeholder
+   * — chosen precisely so that a forgotten branch would be visible — reached
+   * both of the positions a squad read puts a name in.
+   *
+   * A played fixture keeps its erased participants (that is what stops last
+   * month's ten-a-side becoming a nine-a-side), and `responses.set_by_player_id`
+   * is untouched by erasure, so both are live cases rather than theoretical.
+   */
+  it("shows the erased label rather than the stored placeholder, in both positions", () => {
+    const erasedAt = new Date("2026-08-20T09:00:00Z");
+    const html = renderFixturePage({
+      ...BASE,
+      squad: [
+        {
+          playerId: "p-1",
+          name: "[erased player]",
+          erasedAt,
+          status: "in",
+          waitlistRank: null,
+          setBy: null,
+          source: "token",
+          isGuest: false,
+        },
+        {
+          playerId: "p-2",
+          name: "Priya Raman",
+          erasedAt: null,
+          status: "in",
+          waitlistRank: null,
+          setBy: { playerId: "o-1", name: "[erased player]", erasedAt },
+          source: "owner",
+          isGuest: false,
+        },
+      ],
+    });
+
+    expect(html).not.toContain("erased player");
+    expect(html).toContain("a former player");
+    expect(html).toContain("marked in by a former player");
+  });
+
   it("says nothing about who set a self-response", () => {
     const html = renderFixturePage({
       ...BASE,
@@ -281,6 +328,7 @@ describe("fixture page", () => {
         {
           playerId: "p-1",
           name: "Priya Raman",
+          erasedAt: null,
           status: "in",
           waitlistRank: null,
           setBy: null,
@@ -300,9 +348,10 @@ describe("fixture page", () => {
         {
           playerId: "p-1",
           name: "Priya Raman",
+          erasedAt: null,
           status: "waitlisted",
           waitlistRank: 1,
-          setBy: { playerId: "o-1", name: "Jamie Alderton" },
+          setBy: { playerId: "o-1", name: "Jamie Alderton", erasedAt: null },
           source: "owner",
           isGuest: false,
         },
@@ -320,9 +369,10 @@ describe("fixture page", () => {
         {
           playerId: "p-1",
           name: "Priya Raman",
+          erasedAt: null,
           status: "out",
           waitlistRank: null,
-          setBy: { playerId: "o-1", name: "Jamie Alderton" },
+          setBy: { playerId: "o-1", name: "Jamie Alderton", erasedAt: null },
           source: "owner",
           isGuest: false,
         },
@@ -339,9 +389,10 @@ describe("fixture page", () => {
         {
           playerId: "p-1",
           name: "Priya Raman",
+          erasedAt: null,
           status: "in",
           waitlistRank: null,
-          setBy: { playerId: "o-1", name: "<script>x</script>" },
+          setBy: { playerId: "o-1", name: "<script>x</script>", erasedAt: null },
           source: "owner",
           isGuest: false,
         },
@@ -363,7 +414,7 @@ describe("fixture page", () => {
 
   it("lists the squad when the game allows it", () => {
     const html = renderFixturePage(optionsWith({
-      squad: [{ playerId: "p-1", name: "Priya Raman", status: "in", waitlistRank: null,
+      squad: [{ playerId: "p-1", name: "Priya Raman", erasedAt: null, status: "in", waitlistRank: null,
                 setBy: null, source: "token", isGuest: false }],
       inCount: 1,
     }));

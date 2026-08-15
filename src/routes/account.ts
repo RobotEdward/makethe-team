@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
@@ -8,11 +8,10 @@ import {
 } from "../auth/paths.js";
 import { requirePlayer } from "../auth/session.js";
 import { recordAudit } from "../db/audit.js";
-import { getDb, type Db } from "../db/client.js";
-import { listActiveMemberships } from "../db/queries.js";
-import { games, players } from "../db/schema.js";
+import { getDb } from "../db/client.js";
+import { players } from "../db/schema.js";
+import { blockingGamesFor } from "../domain/blocking-games.js";
 import { erasureDeadline } from "../domain/erasure-window.js";
-import { isLastActiveOwner } from "../domain/last-owner.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
@@ -27,40 +26,6 @@ function originOf(env: Bindings): string {
 }
 
 /**
- * The games this player is the last active organiser of — the set that blocks
- * an erasure, with the names the refusal page shows.
- *
- * Asked exactly the way `erasePlayer` asks it (`listActiveMemberships`, then
- * `isLastActiveOwner` per game), and deliberately not a second implementation
- * of the rule: if this page's verdict and the erasure's could disagree, one of
- * them would be a lie — either an offer that the sweep then refuses, or a
- * refusal shown to someone who is not blocked at all.
- *
- * The names come from a single `inArray` join rather than a query per game,
- * and only for the blocking games: the offer state names nothing.
- */
-async function blockingGamesFor(
-  db: Db,
-  playerId: string,
-): Promise<{ gameId: string; gameName: string }[]> {
-  const memberships = await listActiveMemberships(db, playerId);
-
-  const blocked: string[] = [];
-  for (const membership of memberships) {
-    if (await isLastActiveOwner(db, membership.gameId, { role: membership.role, active: true })) {
-      blocked.push(membership.gameId);
-    }
-  }
-  if (blocked.length === 0) return [];
-
-  const rows = await db
-    .select({ gameId: games.id, gameName: games.name })
-    .from(games)
-    .where(inArray(games.id, blocked));
-  return rows;
-}
-
-/**
  * Render `/app/delete` from scratch, in whichever state the database is in.
  *
  * Its own function for the reason `renderDashboard` is one: the `POST`'s
@@ -72,9 +37,13 @@ async function blockingGamesFor(
 async function renderDeleteAccount(c: Context<AppEnv>, problem?: string) {
   const player = c.get("player")!;
   const db = getDb(c.env.DB);
+  const now = new Date(Date.now());
 
   const [row] = await db
-    .select({ erasesAt: players.erasesAt })
+    .select({
+      erasesAt: players.erasesAt,
+      erasureStartedAt: players.erasureStartedAt,
+    })
     .from(players)
     .where(eq(players.id, player.id));
 
@@ -84,14 +53,39 @@ async function renderDeleteAccount(c: Context<AppEnv>, problem?: string) {
   // never mentions the erasure they came here about — one that is still going
   // to happen, because a block only stops the sweep, not the countdown.
   if (row?.erasesAt != null) {
+    // Not scoped to a game, so there is no game timezone to format in;
+    // `Europe/London` matches what the N-8 email itself says, and the two must
+    // name the same instant in the same words.
+    const erasesAtLocal = formatLocalDateTime(row.erasesAt, "Europe/London");
+
+    // Past its own date — or already part-run, which implies it — is a
+    // different page from "pending". The `pending` copy promises a future
+    // instant and says nothing has changed; both are false here, and the
+    // second is false in the direction that matters. Chosen on the clock
+    // rather than on `erasure_blocked_at` so that *every* way an erasure can
+    // fail to run on time lands somewhere honest, not only the blocked one.
+    if (row.erasesAt <= now || row.erasureStartedAt !== null) {
+      return c.html(
+        renderDeleteAccountPage({
+          playerName: player.name,
+          state: "held-up",
+          erasesAtLocal,
+          // Read live. The audit row's payload records what blocked it when it
+          // was blocked; this page has to say what is blocking it now, so a
+          // handover done a minute ago shows.
+          blockingGames: await blockingGamesFor(db, player.id),
+          started: row.erasureStartedAt !== null,
+          problem,
+        }),
+        problem === undefined ? 200 : 422,
+      );
+    }
+
     return c.html(
       renderDeleteAccountPage({
         playerName: player.name,
         state: "pending",
-        // Not scoped to a game, so there is no game timezone to format in;
-        // `Europe/London` matches what the N-8 email itself says, and the two
-        // must name the same instant in the same words.
-        erasesAtLocal: formatLocalDateTime(row.erasesAt, "Europe/London"),
+        erasesAtLocal,
         problem,
       }),
       problem === undefined ? 200 : 422,
@@ -190,9 +184,18 @@ account.post(DELETE_ACCOUNT_PATH, requirePlayer, async (c) => {
 
   // `waitUntil`, matching how the dashboard hands off its promotion emails: the
   // deadline is already committed, so no correctness property depends on the
-  // send, and a slow provider must not hold up this redirect. A failure is not
-  // silent — `sendErasureScheduledEmail` leaves a durable `notification_log`
-  // row either way.
+  // send, and a slow provider must not hold up this redirect.
+  //
+  // The outcome is inspected rather than discarded. §7 calls N-8 "the only
+  // thing that reaches someone whose account was misused within the window",
+  // and the one outcome that leaves *no* durable trace is `deferred`: the
+  // daily ceiling refusal deletes the `notification_log` row so a retry stays
+  // possible, and nothing here retries. Dropping the return value made that
+  // case completely silent. This is the minimal fix — a log line each, worded
+  // distinctly so they are greppable; a retry, or a
+  // `player.erasure_email_deferred` audit action alongside the four the
+  // ceiling already has, is deliberately left for the milestone that builds
+  // the owner-visible ceiling UI.
   c.executionCtx.waitUntil(
     sendErasureScheduledEmail({
       db,
@@ -200,6 +203,16 @@ account.post(DELETE_ACCOUNT_PATH, requirePlayer, async (c) => {
       playerId: player.id,
       erasesAt,
       now,
+    }).then((outcome) => {
+      if (outcome.kind === "deferred") {
+        console.warn(
+          `DAILY EMAIL CEILING REACHED: N-8 erasure confirmation for player ${player.id} was refused and nothing retries it — they have not been told their data is due to be erased on ${erasesAt.toISOString()}`,
+        );
+      } else if (outcome.kind === "failed") {
+        console.error(
+          `N-8 erasure confirmation failed for player ${player.id} (erases at ${erasesAt.toISOString()}): ${outcome.reason}`,
+        );
+      }
     }),
   );
 
@@ -213,12 +226,23 @@ account.post(DELETE_ACCOUNT_PATH, requirePlayer, async (c) => {
  * Stop a pending erasure. The other half of the window, and the reason it
  * exists at all.
  *
- * No confirmation step and no refusal path: keeping an account is not
+ * No confirmation step, and **one** refusal path. Keeping an account is not
  * destructive, and anything that could turn this into an error page is a way
- * for an erasure nobody wants to go ahead. Cancelling when nothing is pending
- * clears a column that is already null and redirects exactly as a real cancel
- * does — a double-submitted form, or the second of two open tabs, must not
- * produce something that reads as a failure to cancel.
+ * for an erasure nobody wants to go ahead — so cancelling when nothing is
+ * pending clears a column that is already null and redirects exactly as a real
+ * cancel does. A double-submitted form, or the second of two open tabs, must
+ * not produce something that reads as a failure to cancel.
+ *
+ * The exception is an erasure that has already begun and stopped part-way
+ * (`players.erasure_started_at`; see the column comment). By then the player
+ * is out of some or all of their squads and the places they gave up have been
+ * promoted to whoever was waiting and emailed about it. Clearing `erases_at`
+ * there does not restore any of that — nothing can — it just removes the only
+ * thing that would ever finish the job, leaving an account permanently
+ * half-erased with no retry and nothing pending. So this refuses, on the page
+ * itself with the reason on it at 422, the way the sole-organiser refusal
+ * does. A refusal that explains is worse than a cancel and far better than a
+ * silent unreachable state.
  *
  * Origin-checked like its sibling. It is state-changing, and while the state
  * it changes is the harmless direction, a cross-site post that silently
@@ -234,7 +258,29 @@ account.post(DELETE_ACCOUNT_CANCEL_PATH, requirePlayer, async (c) => {
   const player = c.get("player")!;
   const db = getDb(c.env.DB);
 
-  await db.update(players).set({ erasesAt: null }).where(eq(players.id, player.id));
+  const [row] = await db
+    .select({ erasedAt: players.erasedAt, erasureStartedAt: players.erasureStartedAt })
+    .from(players)
+    .where(eq(players.id, player.id));
+
+  if (row !== undefined && row.erasedAt === null && row.erasureStartedAt !== null) {
+    return renderDeleteAccount(
+      c,
+      "This erasure has already started, so it can't be stopped now. You've been taken out of some of your squads and those places have gone to whoever was waiting for them, and nothing can put that back.",
+    );
+  }
+
+  // Scoped by `erased_at is null` as well as by id. The sweep's final batch
+  // sets `erased_at` without touching `erases_at` — §2.1 keeps the latter as
+  // the record of what was promised — so a cancel landing between that batch
+  // and this update would otherwise produce `erased_at` set with `erases_at`
+  // null: a row that says it was erased with no trace of the request that
+  // erased it. The `where` makes the loser of that race a no-op, and the
+  // redirect below is unchanged, which is right — the account really is gone.
+  await db
+    .update(players)
+    .set({ erasesAt: null })
+    .where(and(eq(players.id, player.id), isNull(players.erasedAt)));
   await recordAudit(db, {
     actorPlayerId: player.id,
     entityType: "player",

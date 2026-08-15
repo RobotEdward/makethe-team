@@ -354,4 +354,153 @@ describe("POST /app/delete/cancel", () => {
     expect(response.status).toBe(403);
     expect((await playerRowFor(playerId))!.erasesAt).not.toBeNull();
   });
+
+  /**
+   * **The state this window cannot get out of, and the reason cancel now has
+   * a refusal at all.**
+   *
+   * `erasePlayer` leaves squads one game at a time and can stop part-way — a
+   * late sole-organiser refusal, a D1 error, the subrequest budget. By then
+   * the player is out of some squads, whoever was waitlisted for their places
+   * has been promoted and emailed, and none of that can be taken back.
+   * Clearing `erases_at` there removes the only thing that would ever finish
+   * the job, leaving an account permanently half-erased with nothing pending
+   * and no retry.
+   */
+  it("refuses to cancel once execution has begun, and leaves the erasure pending", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await post(DELETE_ACCOUNT_PATH, cookie);
+    const past = new Date(Date.now() - 3_600_000);
+    await db
+      .update(players)
+      .set({ erasesAt: past, erasureStartedAt: past })
+      .where(eq(players.id, playerId));
+
+    const response = await post(DELETE_ACCOUNT_CANCEL_PATH, cookie);
+    const body = await response.text();
+
+    expect(response.status).toBe(422);
+    expect(body).toMatch(/already started/i);
+    // Still pending, and no audit row claiming a cancellation that did not
+    // happen.
+    expect((await playerRowFor(playerId))!.erasesAt?.getTime()).toBe(past.getTime());
+    expect(await auditRows("player.erasure_cancelled")).toHaveLength(0);
+  });
+
+  /**
+   * The other side of the same line: an erasure that is merely *overdue* —
+   * blocked on a handover, or simply waiting for the next sweep — has written
+   * nothing, and cancelling it must stay as easy as it ever was. A refusal
+   * here would strand a blocked player with no way out at all.
+   */
+  it("still cancels an overdue erasure that has not begun", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await post(DELETE_ACCOUNT_PATH, cookie);
+    const gameId = await insertGame(db, { name: "Sole-Organised Game" });
+    await insertMembership(db, gameId, playerId, { role: "owner", active: true });
+    await db
+      .update(players)
+      .set({ erasesAt: new Date(Date.now() - 3_600_000) })
+      .where(eq(players.id, playerId));
+
+    const response = await post(DELETE_ACCOUNT_CANCEL_PATH, cookie);
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(DASHBOARD_PATH);
+    expect((await playerRowFor(playerId))!.erasesAt).toBeNull();
+  });
+
+  /**
+   * MINOR 3: a cancel racing the sweep. `erasePlayer` sets `erased_at` without
+   * touching `erases_at` — §2.1 keeps the latter as the record of what was
+   * promised — so an unscoped cancel landing just after it would leave
+   * `erased_at` set with `erases_at` null, a row that says it was erased with
+   * no trace of the request that erased it.
+   */
+  it("does not clear erases_at on a player who has already been erased", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await post(DELETE_ACCOUNT_PATH, cookie);
+    const erasesAt = (await playerRowFor(playerId))!.erasesAt!;
+    await db
+      .update(players)
+      .set({ erasedAt: new Date(Date.now()) })
+      .where(eq(players.id, playerId));
+
+    const response = await post(DELETE_ACCOUNT_CANCEL_PATH, cookie);
+
+    expect(response.status).toBe(303);
+    expect((await playerRowFor(playerId))!.erasesAt?.getTime()).toBe(erasesAt.getTime());
+  });
+});
+
+/**
+ * The fourth state (§6). Until the final review the page had three, and an
+ * erasure the sweep refused went on being rendered as `pending`: "due to be
+ * erased on <a Wednesday three weeks ago>" and "until then nothing has
+ * changed", with nothing naming the game that was actually holding it up.
+ */
+describe("GET /app/delete — the held-up state", () => {
+  /** An hour ago; the sweep is hourly, so this is genuinely overdue. */
+  const overdue = () => new Date(Date.now() - 3_600_000);
+
+  it("names and links the game holding an overdue erasure up", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const gameId = await insertGame(db, { name: "Sole-Organised Game" });
+    await insertMembership(db, gameId, playerId, { role: "owner", active: true });
+    await db.update(players).set({ erasesAt: overdue() }).where(eq(players.id, playerId));
+
+    const response = await get(cookie);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatch(/hasn't happened yet/);
+    expect(body).toContain("Sole-Organised Game");
+    expect(body).toContain(`href="/g/${gameId}"`);
+    // The stale promise is gone: no future-tense date, and none of the
+    // pending state's "nothing has changed".
+    expect(body).not.toMatch(/is due to be erased on/);
+    expect(body).not.toMatch(/still in your squads/);
+    // Nothing has been written yet, so the way out is still open.
+    expect(body).toContain("Keep my account");
+  });
+
+  /**
+   * Overdue is not the same as blocked. The sweep runs on the hour, so a
+   * deadline can be minutes past with nothing wrong at all — and the page must
+   * not invent a problem, or a game, that does not exist.
+   */
+  it("says an unblocked overdue erasure is simply still to run", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await db.update(players).set({ erasesAt: overdue() }).where(eq(players.id, playerId));
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toMatch(/hasn't happened yet/);
+    expect(body).toMatch(/should happen shortly/);
+    expect(body).toContain("Keep my account");
+  });
+
+  it("says a part-run erasure has begun, and offers no way to stop it", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const past = overdue();
+    await db
+      .update(players)
+      .set({ erasesAt: past, erasureStartedAt: past })
+      .where(eq(players.id, playerId));
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toMatch(/already begun/);
+    // The false sentence, in the place it mattered most: this player is *not*
+    // still in their squads.
+    expect(body).not.toMatch(/still in your squads/);
+    expect(body).not.toContain("Keep my account");
+    expect(body).not.toContain(`action="${DELETE_ACCOUNT_CANCEL_PATH}"`);
+  });
 });

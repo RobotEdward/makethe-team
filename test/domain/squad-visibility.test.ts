@@ -3,7 +3,7 @@ import { squadForViewer } from "../../src/domain/squad-visibility.js";
 import type { SquadMember } from "../../src/db/queries.js";
 
 const SQUAD: SquadMember[] = [
-  { playerId: "p-1", name: "Priya Raman", status: "in", waitlistRank: null,
+  { playerId: "p-1", name: "Priya Raman", erasedAt: null, status: "in", waitlistRank: null,
     setBy: null, source: "token", isGuest: false },
 ];
 

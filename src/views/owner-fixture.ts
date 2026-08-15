@@ -1,5 +1,6 @@
 import { gamePath, ownerFixturePath, ownerGuestPath, ownerGuestRemovePath, ownerResponsePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
+import { displayName } from "../domain/display-name.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
@@ -72,7 +73,8 @@ function renderSquadList(
       // The squad and everyone's state still render on a fixture that has
       // closed — only the controls go, because there is nothing left to change.
       const controls = showControls ? renderMemberControls(gameId, fixtureId, member) : "";
-      return `<li><span class="name">${escapeHtml(member.name)}${guest}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}${controls}</li>`;
+      // `displayName`, never `member.name` — see `src/views/fixture.ts` and §4.
+      return `<li><span class="name">${escapeHtml(displayName(member.name, member.erasedAt))}${guest}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}${controls}</li>`;
     })
     .join("");
 

@@ -43,7 +43,7 @@ describe("runDueErasures", () => {
 
     const result = await runDueErasures(db, NOW, noWithdraw);
 
-    expect(result).toEqual({ erased: 1, blocked: 0, failures: [], promotions: [] });
+    expect(result).toEqual({ erased: 1, blocked: 0, blockedPlayers: [], failures: [], promotions: [] });
     const row = await playerRowOf(playerId);
     expect(row?.name).toBe(ERASED_NAME);
     expect(row?.email).toBeNull();
@@ -59,7 +59,7 @@ describe("runDueErasures", () => {
 
     const result = await runDueErasures(db, NOW, noWithdraw);
 
-    expect(result).toEqual({ erased: 0, blocked: 0, failures: [], promotions: [] });
+    expect(result).toEqual({ erased: 0, blocked: 0, blockedPlayers: [], failures: [], promotions: [] });
     const row = await playerRowOf(playerId);
     expect(row?.name).toBe("Edward Cooper");
     expect(row?.erasedAt).toBeNull();
@@ -91,7 +91,7 @@ describe("runDueErasures", () => {
 
     const result = await runDueErasures(db, NOW, noWithdraw);
 
-    expect(result).toEqual({ erased: 0, blocked: 0, failures: [], promotions: [] });
+    expect(result).toEqual({ erased: 0, blocked: 0, blockedPlayers: [], failures: [], promotions: [] });
     const row = await playerRowOf(playerId);
     expect(row?.erasedAt?.getTime()).toBe(NOW.getTime() - HOUR_MS);
     const audit = await db.select().from(auditLog).where(eq(auditLog.entityId, playerId));
@@ -112,6 +112,11 @@ describe("runDueErasures", () => {
     expect(result.blocked).toBe(1);
     expect(result.erased).toBe(0);
     expect(result.failures).toEqual([]);
+    // Named as well as counted. A bare count told an operator that somebody
+    // was stuck and gave them no way to find out who, on the one path where
+    // being stuck is otherwise invisible to everyone but the person it
+    // happens to.
+    expect(result.blockedPlayers).toEqual([{ playerId, gameIds: [gameId] }]);
     const row = await playerRowOf(playerId);
     expect(row?.name).toBe("Edward Cooper");
     expect(row?.erasesAt?.getTime()).toBe(erasesAt.getTime());

@@ -108,7 +108,7 @@ export const AUDIT_ACTIONS = [
   "fixture.guest_added",
   "fixture.guest_removed",
   // M7b (BR-34). The subject and the actor are always the same player: these
-  // three are the only actions in this list nobody can perform on anyone else,
+  // four are the only actions in this list nobody can perform on anyone else,
   // because both routes act on the session's own player id and take no
   // parameter naming a player.
   //
@@ -116,8 +116,23 @@ export const AUDIT_ACTIONS = [
   // the routes; `player.erased` by the sweep when the window elapses. The
   // erased row survives (anonymised), so `actor_player_id`'s foreign key still
   // resolves afterwards.
+  //
+  // `player.erasure_blocked` is the exception to "the actor did it": nobody
+  // acted, the sweep found the invariant of §6 standing in the way. It is
+  // still attributed to the player, because the actor of the *request* it
+  // belongs to is the player and a null actor here would read as a cron doing
+  // something to them. `after_json` carries `{ gameIds }` — the games holding
+  // it up, which is the only fact an operator or a support answer needs.
+  //
+  // Written **once per transition into the blocked state**, not once per
+  // hourly retry: `players.erasure_blocked_at` is what bounds it, exactly as
+  // `recordCeilingDeferral`'s collapse window bounds the four
+  // `*_email_deferred` actions above, and for the same reason — a sweep-driven
+  // condition can persist for weeks, and one row an hour forever into a table
+  // nothing prunes is not a record, it is a leak.
   "player.erasure_requested",
   "player.erasure_cancelled",
+  "player.erasure_blocked",
   "player.erased",
 ] as const;
 

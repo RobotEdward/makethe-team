@@ -259,3 +259,60 @@ request, see the banner, cancel, see it gone.
    right number of players.
 7. BR-34 is added to the master spec and the GDPR decision row records that M7
    built both paths.
+
+---
+
+## 12. Amendment — what the final whole-branch review changed (15 August 2026)
+
+Recorded here rather than edited into the sections above, so the design as
+approved and the design as built are both readable.
+
+**§2.1 gains two columns, so the table there is four columns and five states.**
+`players.erasure_started_at` and `players.erasure_blocked_at`, both nullable
+timestamps, one migration (`0009`).
+
+- `erasure_started_at` is set immediately before the first destructive write.
+  Erasure is not atomic — D1 has no interactive transaction spanning Durable
+  Object calls and several `db.batch()`es — so a run can stop part-way, at the
+  late `blocked` return or at any throw inside the removal loop. In that state
+  `erased_at` is still null, which the approved design left indistinguishable
+  from an untouched pending request. The consequences were both real: the
+  pending page went on saying "you're still in your squads" to somebody whose
+  place had already been given to a waitlisted player and emailed about, and
+  `POST /app/delete/cancel` cleared `erases_at` unconditionally, stranding an
+  account out of its squads with nothing pending and no retry. Cancel now
+  refuses in exactly that case, on the page at 422, with the reason.
+- `erasure_blocked_at` exists to make §6's audit row a record of a *transition*
+  rather than one row an hour, forever, for as long as nobody hands the game
+  over. It is a separate column from the one above because cancel treats the
+  two oppositely: a blocked erasure has written nothing and its owner must
+  still be able to cancel, a started one has and must not. It is cleared by any
+  run that gets past the pre-check, so a genuine re-block is recorded again.
+
+**§6's three clauses are all implemented.** The approved text asked for three
+things on an execution-time refusal — stays pending, writes an audit row,
+surfaces on the dashboard naming the blocking game — and the branch as first
+built did only the first. Now: `player.erasure_blocked` (a fourth `player.`
+audit action, `after_json` carrying `{ gameIds }`), and a fourth state on
+`/app/delete` with a matching dashboard banner. Both are selected on the
+deadline having passed rather than on the blocked marker, deliberately: the
+`pending` copy asserts a future instant and "nothing has changed", and the
+instant passing is what makes it false whatever the cause. `runDueErasures`
+also returns `blockedPlayers` and the cron logs one line per stuck player, so
+an operator does not need an ad-hoc D1 query to find out who.
+
+**§4's renderer branch is implemented.** It was specified and then not built:
+`erased_at` was read only by the idempotency check and the sweep's filter, so
+the conspicuous `[erased player]` placeholder reached a played fixture's squad
+list and BR-27's "marked in by" line. `getFixtureWithSquad` now carries
+`erased_at` for the member and for the setter, and `displayName`
+(`src/domain/display-name.ts`, beside `redactName`) turns it into "a former
+player". `listSquad` deliberately does not need it: erasure ends every
+membership before it anonymises, so an erased player is never an active member.
+
+**N-8's outcome is inspected rather than discarded** (§7). A daily-ceiling
+refusal deletes the `notification_log` row so a retry stays possible, and
+nothing retries this one — so `deferred` and `failed` are now logged
+distinctly. A retry, or a `player.erasure_email_deferred` audit action beside
+the four the ceiling already has, is left to the milestone that builds the
+owner-visible ceiling UI.

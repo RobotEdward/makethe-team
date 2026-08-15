@@ -39,6 +39,40 @@ export const players = sqliteTable(
      * This column, not a name comparison, is what every renderer branches on.
      */
     erasedAt: integer("erased_at", { mode: "timestamp_ms" }),
+    /**
+     * When the sweep first got past `erasePlayer`'s pre-check and began
+     * *writing* — the first membership removal, the Better Auth deletes, the
+     * anonymising batch (§3).
+     *
+     * Erasure is not one atomic unit (D1 has no interactive transaction
+     * spanning Durable Object calls and several `db.batch()`es), so it can
+     * stop half-done: a late `blocked`, a D1 error, a subrequest budget. In
+     * that state `erased_at` is still null, so without this column the row is
+     * indistinguishable from an untouched pending request — and the product
+     * would go on telling the player "nothing has changed, you're still in
+     * your squads" while other people had already been promoted into the
+     * places they had lost, and would let them "cancel" into an account that
+     * is out of its squads with no erasure left to finish it.
+     *
+     * Kept, never cleared: what it records is that irreversible work happened.
+     */
+    erasureStartedAt: integer("erasure_started_at", { mode: "timestamp_ms" }),
+    /**
+     * When the erasure last entered the blocked state — the player is the last
+     * active organiser of a game, so it cannot run (§6).
+     *
+     * A *separate* column from `erasure_started_at`, and deliberately so: the
+     * two say different things and cancel treats them oppositely. A blocked
+     * erasure has usually written nothing, and its owner must still be able to
+     * cancel; a started one has, and must not. Conflating them would either
+     * strand a blocked player with no way out or let a half-erased one cancel.
+     *
+     * Its job is to make the `player.erasure_blocked` audit row a record of a
+     * *transition* rather than one row per hourly retry, forever. Cleared when
+     * a later run gets past the pre-check, so a second block after a handover
+     * and a re-block is recorded again.
+     */
+    erasureBlockedAt: integer("erasure_blocked_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [

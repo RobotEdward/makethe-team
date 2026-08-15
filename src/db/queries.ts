@@ -9,6 +9,17 @@ const setter = alias(players, "setter");
 export interface SquadMember {
   playerId: string;
   name: string;
+  /**
+   * `players.erased_at`, carried so the renderer can branch on it (§4, BR-34).
+   *
+   * Non-null means `name` is the `[erased player]` placeholder, which is
+   * deliberately not a plausible name and must never reach a screen: every
+   * read of it goes through `displayName` (`src/domain/display-name.ts`). A
+   * played fixture keeps its erased participants — that is what stops last
+   * month's ten-a-side becoming a nine-a-side — so this is a live case on any
+   * squad list, not a theoretical one.
+   */
+  erasedAt: Date | null;
   status: ResponseStatus;
   /** Rank among current waitlisted members, 1-based. Null unless waitlisted.
    *  Computed here, never the stored column — see spec amendment 5. */
@@ -17,7 +28,7 @@ export interface SquadMember {
    * Who set this response, when it was not the player themselves (BR-27).
    * Null for every self-response, which is the overwhelming majority.
    */
-  setBy: { playerId: string; name: string } | null;
+  setBy: { playerId: string; name: string; erasedAt: Date | null } | null;
   /** How the response came to be set. `owner` is what makes `setBy` worth showing. */
   source: ResponseSource;
   /** A one-off guest (J6b §5). Never emailed, occupies a slot. */
@@ -49,6 +60,11 @@ const SQUAD_ORDER: Record<ResponseStatus, number> = {
  * `withdrawn` — a withdrawn player is not a squad member any more, and
  * nothing downstream should ever see them (spec amendment 5).
  *
+ * `players.erased_at` is selected for both the member and BR-27's setter, and
+ * is the only reason those two columns are here: §4 requires renderers to
+ * branch on it rather than print `players.name`, and this is the query every
+ * squad list on the site is built from.
+ *
  * Reads only, straight to D1 — never touches the FixtureCapacity Durable
  * Object (TR-11).
  */
@@ -65,12 +81,19 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
     .select({
       playerId: responses.playerId,
       name: players.name,
+      // Both sides of the join: the squad member, and whoever set their
+      // response (BR-27). An organiser who has since erased themselves is
+      // exactly as capable of having marked somebody in as one who has not,
+      // and "marked in by [erased player]" is the placeholder reaching a
+      // screen.
+      erasedAt: players.erasedAt,
       status: responses.status,
       waitlistPosition: responses.waitlistPosition,
       source: responses.source,
       isGuest: players.isGuest,
       setByPlayerId: setter.id,
       setByName: setter.name,
+      setByErasedAt: setter.erasedAt,
     })
     .from(responses)
     .innerJoin(players, eq(responses.playerId, players.id))
@@ -94,12 +117,13 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
   const squad: SquadMember[] = rows.map((r) => ({
     playerId: r.playerId,
     name: r.name,
+    erasedAt: r.erasedAt,
     status: r.status,
     waitlistRank: waitlistRanks.get(r.playerId) ?? null,
     setBy:
       r.setByPlayerId === null || r.setByName === null
         ? null
-        : { playerId: r.setByPlayerId, name: r.setByName },
+        : { playerId: r.setByPlayerId, name: r.setByName, erasedAt: r.setByErasedAt },
     source: r.source,
     isGuest: r.isGuest,
   }));
@@ -228,6 +252,13 @@ export async function listActiveMemberships(
 
 /**
  * Active squad members, owners first then alphabetical.
+ *
+ * Deliberately does **not** carry `erased_at` the way `getFixtureWithSquad`
+ * does: erasure ends every one of a player's memberships before it anonymises
+ * them (`erasePlayer`), so an erased player is by construction never an active
+ * member and can never appear in this result. The same reasoning excuses
+ * `redactName`'s caller, the public invite page, which lists this set. If a
+ * future path ever anonymises without leaving, both need the branch.
  *
  * `role` is `text({ enum: ["player", "owner"] })`, so a plain `desc()`/`asc()`
  * over it sorts lexicographically — `desc()` would put `"player"` before

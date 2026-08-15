@@ -1,5 +1,6 @@
 import type { ResponseIntent } from "../capacity/types.js";
 import type { SquadMember } from "../db/queries.js";
+import { displayName } from "../domain/display-name.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import { escapeHtml, layout } from "./layout.js";
@@ -147,7 +148,11 @@ function renderSquadList(squad: readonly SquadMember[]): string {
   const items = squad
     .map(
       (member) =>
-        `<li><span class="name">${escapeHtml(member.name)}${member.isGuest ? " (guest)" : ""}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}</li>`,
+        // `displayName`, never `member.name` (§4, BR-34): an erased player
+        // stays in the squad of a fixture that has already been played, which
+        // is exactly what keeps its numbers honest — so this list is where the
+        // `[erased player]` placeholder would otherwise be seen.
+        `<li><span class="name">${escapeHtml(displayName(member.name, member.erasedAt))}${member.isGuest ? " (guest)" : ""}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}</li>`,
     )
     .join("");
 

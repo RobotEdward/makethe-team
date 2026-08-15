@@ -55,6 +55,17 @@ export interface DashboardPageOptions {
   problem?: string;
   /** Set when this player has an erasure pending — already formatted (M7b). */
   erasesAtLocal?: string;
+  /**
+   * Set instead of a plain pending banner when the date has arrived and the
+   * erasure has not run (§6). `erasesAtLocal` is still the promised instant;
+   * this says it is in the past and why.
+   */
+  erasureHeldUp?: {
+    /** The games holding it up, live. Empty means "the sweep is simply due". */
+    blockingGames: readonly { gameId: string; gameName: string }[];
+    /** Execution has begun and stopped part-way — no cancel button. */
+    started: boolean;
+  };
 }
 
 /**
@@ -155,6 +166,57 @@ function renderErasureBanner(erasesAtLocal: string): string {
 }
 
 /**
+ * The banner's other half: the date has passed and the erasure has not run
+ * (§6, added by the final review).
+ *
+ * The sole-organiser invariant is checked again at execution, and a player who
+ * has become the last organiser of a game since requesting erasure stays
+ * pending — possibly for weeks, because nothing but a handover clears it. The
+ * banner above went on saying "due to be erased on <a date in the past>" for
+ * the whole of that time, named nothing, and offered a cancel button as the
+ * only thing to press. This one says what is actually true, names each game,
+ * and links it: the handover is the way out, and the game page is where it is
+ * done.
+ *
+ * `started` is the harder case — execution began and stopped part-way, so the
+ * player is already out of some squads. The cancel button goes: cancelling
+ * would leave them out of those squads with no erasure left to finish, and the
+ * promotions their departure caused have already been emailed.
+ */
+function renderHeldUpErasureBanner(
+  erasesAtLocal: string,
+  blockingGames: readonly { gameId: string; gameName: string }[],
+  started: boolean,
+): string {
+  const games = blockingGames
+    .map(
+      (game) =>
+        `<li><a href="${escapeHtml(gamePath(game.gameId))}">${escapeHtml(game.gameName)}</a></li>`,
+    )
+    .join("");
+
+  const why =
+    blockingGames.length > 0
+      ? `<p>Each of these games needs an organiser, and you're the only one it has — make somebody else an organiser and it will go ahead by itself:</p>
+         <ul>${games}</ul>`
+      : `<p>It runs on the hour, so it should happen shortly. You don't need to do anything.</p>`;
+
+  const ending = started
+    ? `<p>It has already begun, so it can't be stopped now — you've been taken out of some of your squads and those places have gone to whoever was waiting.</p>`
+    : `<form method="post" action="${DELETE_ACCOUNT_CANCEL_PATH}">
+         <button type="submit" class="button">Keep my account</button>
+       </form>`;
+
+  return `
+    <div class="nudge">
+      <p>Your data was due to be erased on <strong>${escapeHtml(erasesAtLocal)}</strong>, and it hasn't happened yet.</p>
+      ${why}
+      ${ending}
+      <p><a href="${DELETE_ACCOUNT_PATH}">More about this</a></p>
+    </div>`;
+}
+
+/**
  * The player dashboard (J7, BR-25): every upcoming fixture across every game
  * the viewer is an active member of, with the response they can change.
  *
@@ -176,9 +238,19 @@ export function renderDashboardPage({
   ownedGames,
   problem,
   erasesAtLocal,
+  erasureHeldUp,
 }: DashboardPageOptions): string {
   const problemNotice = problem === undefined ? "" : `<p class="nudge">${escapeHtml(problem)}</p>`;
-  const erasureBanner = erasesAtLocal === undefined ? "" : renderErasureBanner(erasesAtLocal);
+  const erasureBanner =
+    erasesAtLocal === undefined
+      ? ""
+      : erasureHeldUp === undefined
+        ? renderErasureBanner(erasesAtLocal)
+        : renderHeldUpErasureBanner(
+            erasesAtLocal,
+            erasureHeldUp.blockingGames,
+            erasureHeldUp.started,
+          );
   const body = `
     <h1>Your games</h1>
     <p>Signed in as ${escapeHtml(playerName)}.</p>
