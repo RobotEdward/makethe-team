@@ -110,21 +110,35 @@ export const sessionMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   const now = new Date(Date.now());
   const db = getDb(c.env.DB);
 
-  const session = await resolveSession(c.env, db, now, c.req.raw.headers);
+  const { session, player } = await resolveSessionAndPlayer(c.env, db, now, c.req.raw.headers);
   c.set("session", session);
-  c.set("player", session === null ? null : await findPlayer(db, session.user.id));
+  c.set("player", player);
 
   await next();
 };
 
-async function resolveSession(
+/**
+ * The one resolution both the middleware and {@link resolveSessionPlayer} use,
+ * so the two cannot drift into disagreeing about what a signed-in request is.
+ *
+ * **Both lookups are inside the one `catch`, deliberately.** The Player lookup
+ * is as much a D1 round trip as the session lookup, and a fault in it is the
+ * same kind of event: a request whose identity could not be established. Left
+ * outside, it would throw past the middleware into `app.onError` and answer
+ * 500 — including on `/leave/:token`, a route whose entire promise is that it
+ * works without a session at all. Degrading the pair to "anonymous" keeps a
+ * transient database fault costing a visitor their personalisation rather than
+ * their page.
+ */
+async function resolveSessionAndPlayer(
   env: Bindings,
   db: Db,
   now: Date,
   headers: Headers,
-): Promise<AuthSession | null> {
+): Promise<{ session: AuthSession | null; player: Player | null }> {
   try {
-    return (await createAuth(env, db, now).api.getSession({ headers })) ?? null;
+    const session = (await createAuth(env, db, now).api.getSession({ headers })) ?? null;
+    return { session, player: session === null ? null : await findPlayer(db, session.user.id) };
   } catch (error) {
     // Anonymous, and loudly logged. Never the cookie or the token: this repo
     // is public and a session token in a log line is a live credential.
@@ -143,7 +157,7 @@ async function resolveSession(
         error instanceof Error ? (error.stack ?? error.message) : String(error)
       }`,
     );
-    return null;
+    return { session: null, player: null };
   }
 }
 
@@ -180,8 +194,7 @@ export async function resolveSessionPlayer(
   now: Date,
   headers: Headers,
 ): Promise<Player | null> {
-  const session = await resolveSession(env, db, now, headers);
-  return session === null ? null : await findPlayer(db, session.user.id);
+  return (await resolveSessionAndPlayer(env, db, now, headers)).player;
 }
 
 // ---------------------------------------------------------------------------
