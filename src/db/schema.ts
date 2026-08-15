@@ -23,6 +23,22 @@ export const players = sqliteTable(
     authUserId: text("auth_user_id"),
     notificationChannel: text("notification_channel", { enum: ["email"] }).notNull().default("email"),
     emailVerifiedAt: integer("email_verified_at", { mode: "timestamp_ms" }),
+    /**
+     * When a requested erasure becomes due (§2.1). Set by `POST /app/delete`,
+     * cleared by `POST /app/delete/cancel`, and read by the hourly sweep.
+     *
+     * Deliberately *kept* after erasure rather than cleared, so the row records
+     * what was promised as well as what happened.
+     */
+    erasesAt: integer("erases_at", { mode: "timestamp_ms" }),
+    /**
+     * When this player was erased (§3). Non-null means the row is no longer a
+     * person: `name` is the placeholder, and `email`, `auth_user_id` and
+     * `email_verified_at` are all null.
+     *
+     * This column, not a name comparison, is what every renderer branches on.
+     */
+    erasedAt: integer("erased_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [

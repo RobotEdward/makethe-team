@@ -23,7 +23,7 @@
  * a fixture. `entity_type` is a TypeScript-only narrowing — Drizzle's
  * `text({ enum })` emits no SQL CHECK on SQLite — so this needs no migration.
  */
-export const AUDIT_ENTITY_TYPES = ["fixture", "game", "membership"] as const;
+export const AUDIT_ENTITY_TYPES = ["fixture", "game", "membership", "player"] as const;
 
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
@@ -107,6 +107,18 @@ export const AUDIT_ACTIONS = [
   // carry a real actor: only an owner can do either.
   "fixture.guest_added",
   "fixture.guest_removed",
+  // M7b (BR-34). The subject and the actor are always the same player: these
+  // three are the only actions in this list nobody can perform on anyone else,
+  // because both routes act on the session's own player id and take no
+  // parameter naming a player.
+  //
+  // `player.erasure_requested` and `player.erasure_cancelled` are written by
+  // the routes; `player.erased` by the sweep when the window elapses. The
+  // erased row survives (anonymised), so `actor_player_id`'s foreign key still
+  // resolves afterwards.
+  "player.erasure_requested",
+  "player.erasure_cancelled",
+  "player.erased",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

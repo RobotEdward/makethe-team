@@ -57,6 +57,13 @@
       "when": 1786710640672,
       "tag": "0007_wet_moonstone",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786796466363,
+      "tag": "0008_demonic_pepper_potts",
+      "breakpoints": true
     }
   ]
 }
