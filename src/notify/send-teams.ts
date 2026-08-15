@@ -1,7 +1,7 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { getFixtureWithSquad } from "../db/queries.js";
-import { notificationLog, players } from "../db/schema.js";
+import { notificationLog, players, responses } from "../db/schema.js";
 import { displayName } from "../domain/display-name.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
@@ -89,7 +89,19 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
   }
   const { fixture, game, squad } = withSquad;
 
-  const inSquad = squad.filter((member) => member.status === "in" && member.team !== null);
+  const inStatusSquad = squad.filter((member) => member.status === "in");
+  const inSquad = inStatusSquad.filter((member) => member.team !== null);
+  const unassignedCount = inStatusSquad.length - inSquad.length;
+  if (unassignedCount > 0) {
+    // Should be unreachable: the publish route refuses to publish while
+    // `unassignedIn` (`src/domain/teams.ts`) is non-empty, so nothing here
+    // re-derives that rule. But if it is ever broken — a bug in the guard, or
+    // a later caller that bypasses it — the affected player would otherwise
+    // simply get no email with no trace anywhere. This turns that silent gap
+    // into a greppable one, the same way the `fixture-not-found` branch above
+    // is reported rather than swallowed.
+    console.error(`sendTeamsEmails: fixture ${fixtureId} has ${unassignedCount} in player(s) with no side`);
+  }
 
   const names = teamNames(game);
   const visibleSquad = squadForViewer(game, inSquad, { isOwner: false });
@@ -103,17 +115,24 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
             .map((member) => `${displayName(member.name, member.erasedAt)}${member.isGuest ? " (guest)" : ""}`),
         }));
 
-  // `SquadMember` carries no email — every other sender in this file's
-  // family re-queries `players` for it, and this one does the same, in one
-  // batch rather than once per recipient.
-  const emailRows =
-    inSquad.length === 0
-      ? []
-      : await db
-          .select({ id: players.id, email: players.email })
-          .from(players)
-          .where(inArray(players.id, inSquad.map((member) => member.playerId)));
-  const emailByPlayerId = new Map(emailRows.map((row) => [row.id, row.email]));
+  // `SquadMember` carries no email, so it is fetched separately — but as a
+  // join on `responses.fixture_id`, not as a second lookup keyed by an
+  // `IN (...)` list of player ids. `src/db/chunk.ts` documents D1's 100
+  // bound-parameter ceiling, and `MAX_PLAYERS_CEILING` in
+  // `src/domain/game-form.ts` allows a squad of up to 200, so an `IN` list
+  // built from `inSquad` can legitimately exceed it — a first version of this
+  // function did exactly that, and would have thrown before any row was
+  // written, inside `waitUntil`, for the largest games with the most people
+  // to disappoint. This mirrors `eligiblePlayers` in
+  // `src/sweep/open-and-remind.ts`, which solves the identical problem for
+  // N-1 the same way: join `responses` to `players` and read `email` off the
+  // join, so the query's parameter count is fixed regardless of squad size.
+  const emailRows = await db
+    .select({ playerId: responses.playerId, email: players.email })
+    .from(responses)
+    .innerJoin(players, eq(responses.playerId, players.id))
+    .where(and(eq(responses.fixtureId, fixtureId), eq(responses.status, "in")));
+  const emailByPlayerId = new Map(emailRows.map((row) => [row.playerId, row.email]));
 
   const whenLocal = formatLocalDateTime(fixture.kicksOffAt, game.timezone);
   const venueName = fixture.venueOverride ?? game.venueName;

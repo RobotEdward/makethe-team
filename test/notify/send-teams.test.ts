@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { chunk, INSERT_CHUNK_SIZE } from "../../src/db/chunk.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
@@ -282,5 +283,58 @@ describe("sendTeamsEmails (N-9)", () => {
     const rows = await logRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: "failed", error: "simulated-provider-failure" });
+  });
+
+  it("emails a squad past D1's 100-bound-parameter ceiling — the address lookup must not build an IN-list of player ids", async () => {
+    // MAX_PLAYERS_CEILING (src/domain/game-form.ts) allows up to 200. 110 is
+    // comfortably past the 100-bound-parameter limit `src/db/chunk.ts`
+    // documents, and small enough to keep the test fast. Seeded with
+    // chunked inserts, exactly as production code seeds any table this size
+    // (INSERT_CHUNK_SIZE, same module) — a single unchunked insert of 110
+    // rows would trip the very limit this test exists to prove the *read*
+    // path no longer trips.
+    const SQUAD_SIZE = 110;
+    const gameId = await insertGame(db, { name: "Big Thursday", venueName: "Oxford Sports Park" });
+    const fixtureId = crypto.randomUUID();
+    await db.insert(fixtures).values({
+      id: fixtureId,
+      gameId,
+      kicksOffAt: KICKOFF,
+      lifecycle: "open",
+      minPlayers: 2,
+      maxPlayers: 200,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      durationMinutes: 60,
+    });
+
+    const playerRows = [];
+    const membershipRows = [];
+    const responseRows = [];
+    for (let i = 0; i < SQUAD_SIZE; i++) {
+      const id = `p${i}`;
+      playerRows.push({ id, name: `Player ${i}`, email: `p${i}@example.com` });
+      membershipRows.push({ id: `m-${id}`, gameId, playerId: id, active: true });
+      responseRows.push({
+        id: `r-${id}`,
+        fixtureId,
+        playerId: id,
+        status: "in" as const,
+        source: "token" as const,
+        team: i % 2 === 0 ? ("a" as const) : ("b" as const),
+      });
+    }
+    for (const batch of chunk(playerRows, INSERT_CHUNK_SIZE)) await db.insert(players).values(batch);
+    for (const batch of chunk(membershipRows, INSERT_CHUNK_SIZE)) await db.insert(memberships).values(batch);
+    for (const batch of chunk(responseRows, INSERT_CHUNK_SIZE)) await db.insert(responses).values(batch);
+
+    const notifier = new RecordingNotifier();
+
+    const result = await send(fixtureId, notifier);
+
+    expect(result).toEqual({ sent: SQUAD_SIZE, failed: 0, deferred: 0, guestsSkipped: 0 });
+    expect(notifier.all).toHaveLength(SQUAD_SIZE);
+    const rows = await logRows();
+    expect(rows).toHaveLength(SQUAD_SIZE);
   });
 });
