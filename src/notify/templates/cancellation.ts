@@ -39,10 +39,10 @@ export interface CancellationEmailPayload {
    */
   reason?: string;
   /**
-   * A working leave-game/unsubscribe link (BR-22). Currently
-   * `/leave/:token`, which explains that leaving is not self-service yet;
-   * this module only ever embeds whatever URL it is given and never inspects
-   * it, so that change needs no edit here.
+   * A working leave-game/unsubscribe link (BR-22): `/leave/:token`, signed
+   * with a leave token scoped to the Game rather than to this Fixture. This
+   * module only ever embeds whatever URL it is given and never inspects it,
+   * so how that token is built needs no edit here.
    */
   leaveUrl: string;
 }

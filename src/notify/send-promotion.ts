@@ -3,7 +3,7 @@ import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog, players } from "../db/schema.js";
 import type { WaitlistPromotion } from "../capacity/types.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import { responseTokenExpiry, signResponseToken } from "../domain/token.js";
+import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
 import { promotionKey } from "./dedupe-key.js";
 import { applySendResult, insertQueuedLogRows, SITE_ORIGIN, type PendingNotification } from "./delivery.js";
 import type { Notifier } from "./notifier.js";
@@ -110,6 +110,14 @@ export async function sendPromotionEmail(params: SendPromotionEmailParams): Prom
     responseTokenSecret,
   );
 
+  // A leave token, not the response token above: leaving is scoped to the
+  // Game, not this one Fixture, and it must keep working long after this
+  // response token has expired (BR-22, §2.2).
+  const leaveToken = await signLeaveToken(
+    { gameId: game.id, playerId: promoted.playerId, expiresAt: leaveTokenExpiry(now).getTime() },
+    responseTokenSecret,
+  );
+
   const rendered = renderPromotionEmail({
     playerName: player.name,
     gameName: game.name,
@@ -120,7 +128,7 @@ export async function sendPromotionEmail(params: SendPromotionEmailParams): Prom
     // just signed — never from anything in the request that triggered it.
     respondInUrl: `${SITE_ORIGIN}/r/${token}?intent=in`,
     respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
-    leaveUrl: `${SITE_ORIGIN}/leave/${token}`,
+    leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
   });
 
   const dedupeKey = promotionKey(fixtureId, promoted.playerId, new Date(promoted.promotedAt).toISOString());

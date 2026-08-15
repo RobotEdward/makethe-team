@@ -127,9 +127,9 @@ export const CATALOGUE: CataloguePage[] = [
   {
     id: "leave",
     title: "Leave a game",
-    path: (w) => `/leave/${w.responseToken}`,
+    path: (world) => `/leave/${world.leaveToken}`,
     persona: "anonymous",
-    note: "Reached from the footer of every email (BR-22). Verifies the same response token as /r/.",
+    note: "The confirmation a player reaches from the leave link in any email.",
   },
   {
     id: "cancel",

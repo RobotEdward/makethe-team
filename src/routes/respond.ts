@@ -1,17 +1,26 @@
 import { Hono } from "hono";
-import { findMembershipInGame, getFixtureWithSquad } from "../db/queries.js";
+import { eq } from "drizzle-orm";
+import { countActiveOwners, findMembershipInGame, getFixtureWithSquad, listOtherActiveGames } from "../db/queries.js";
+import { games } from "../db/schema.js";
 import { getDb, type Db } from "../db/client.js";
+import { resolveSessionPlayer } from "../auth/session.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import { verifyResponseToken } from "../domain/token.js";
+import {
+  leaveTokenMintedAt,
+  verifyLeaveToken,
+  verifyResponseToken,
+  type LeaveTokenPayload,
+} from "../domain/token.js";
+import { removeMember } from "../domain/remove-member.js";
 import type { ResponseIntent, WaitlistPromotion } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendPromotionEmail } from "../notify/send-promotion.js";
-import { escapeHtml, layout } from "../views/layout.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
+import { renderLeavePage, type LeavePageParams } from "../views/leave.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 
 export const respond = new Hono<AppEnv>();
@@ -29,27 +38,6 @@ export const respond = new Hono<AppEnv>();
  */
 function parseIntent(value: string | undefined): "in" | "out" | null {
   return value === "in" || value === "out" ? value : null;
-}
-
-/**
- * The interim `/leave/:token` page (BR-22, task-15 fix round 1).
- *
- * Leaving a Game is not self-service yet — there is no write path here, on
- * purpose: this route is `GET`-only and renders, never mutates. It exists so
- * the reminder email's leave link is truthful rather than a 404: the token
- * verifies (proving it really was issued to this player for this fixture)
- * and the page says plainly what a player can and can't do here today,
- * rather than presenting buttons that quietly do nothing (or, worse, that
- * look like "I'm in" / "Can't make it" and get mistaken for a real opt-out).
- * The full self-service leave flow is a later milestone.
- */
-function renderLeavePage(gameName: string): string {
-  const body = `
-    <h1>Leaving ${escapeHtml(gameName)}</h1>
-    <p>You can't remove yourself from a Game here yet — that isn't self-service yet.</p>
-    <p>Ask whoever organises ${escapeHtml(gameName)} to take you off the squad, or get in touch with them directly.</p>
-  `;
-  return layout({ title: `Leaving ${gameName} — Make The Team`, body });
 }
 
 /**
@@ -347,28 +335,240 @@ export async function notifyPromotedPlayer(
 }
 
 /**
- * `GET /leave/:token` — see `renderLeavePage` for why this exists and why it
- * has no corresponding `POST`. Reuses the same signed response token and the
- * same "this link isn't working" page a bad or expired token gets on `/r/`,
- * so an attacker learns nothing new by trying this path instead.
+ * `GET /leave/:token` (BR-22) — the confirmation a player reaches from the
+ * leave link in every reminder and promotion email. `GET`-only, deliberately:
+ * it performs **no write on any path**, for the same reason `POST /sign-out`
+ * has no `GET` alias. Mail scanners and link-preview bots issue a `GET` on
+ * every URL in an incoming message before a person ever opens it; a `GET`
+ * that removed someone from their squad would unsubscribe people who never
+ * clicked anything.
+ *
+ * Every failure that is about the token itself — expired, tampered,
+ * malformed, or a response token presented here (the `kind` discriminator
+ * inside `verifyLeaveToken` rejects it as `malformed`) — renders the same
+ * `renderLinkProblemPage()` at 200 that `/r/:token` answers with, so trying
+ * one path against the other tells an attacker nothing.
  */
+/**
+ * The "other squads" a signed-in visitor may be shown on this page (M7a Task
+ * 4). `undefined` unless a session exists **and** its player id equals the
+ * token's own — this is the entire security property of this task (BR-25). A
+ * leave token names one player and one game; without this match, a forwarded
+ * link opened by a different signed-in person would show them somebody
+ * else's squads, and a leaked link would become a multi-game capability
+ * rather than a single-game one.
+ *
+ * Resolved by calling `resolveSessionPlayer` directly rather than by mounting
+ * `sessionMiddleware` on `/leave/*` — see that function's own doc comment for
+ * why a mount here would be the wrong trade.
+ */
+/*
+ * Never fatal, for the same reason `resolveSession` isn't. This is the one
+ * part of this page that needs a session, on a route whose entire promise is
+ * that it works without one — so a D1 fault in the session lookup or in the
+ * list query must cost the visitor the extra list, not the page. Degrading to
+ * `undefined` renders the sign-in offer a signed-out visitor already sees,
+ * which is the honest answer when we could not establish who is asking.
+ */
+async function resolveOtherGames(
+  env: AppEnv["Bindings"],
+  db: Db,
+  now: Date,
+  headers: Headers,
+  gameId: string,
+  tokenPlayerId: string,
+): Promise<LeavePageParams["otherGames"]> {
+  try {
+    const viewer = await resolveSessionPlayer(env, db, now, headers);
+    if (viewer === null || viewer.id !== tokenPlayerId) return undefined;
+    return await listOtherActiveGames(db, tokenPlayerId, gameId);
+  } catch (error) {
+    console.error(
+      `other-squads list failed, rendering the leave page without it: ${
+        error instanceof Error ? (error.stack ?? error.message) : String(error)
+      }`,
+    );
+    return undefined;
+  }
+}
+
+/**
+ * Whether this token belongs to a spell in the squad that has since ended.
+ *
+ * A leave token names a player and a game, and nothing about *which*
+ * membership it was minted against — so on its own it keeps working across a
+ * leave and a rejoin, and one copy of an old email becomes a repeatable
+ * eviction: tap, rejoin, tap again, for the ninety days the token lives. That
+ * matters more here than on any other link in a message, because this one is
+ * deliberately usable with no session and from any origin.
+ *
+ * The binding needs no new field. `joinSquad` rewrites `joined_at` every time
+ * it reactivates a membership, and a leave token's mint time comes out of its
+ * own expiry (`leaveTokenMintedAt`) — so a token minted *before* the current
+ * spell began is, by construction, from a previous one, and must not act.
+ * A token minted during the current spell is unaffected, which is the whole
+ * of the narrowing: ordinary links keep working.
+ *
+ * Applied on the `GET` as well as the `POST`. The `GET` writes nothing, so it
+ * is not where the harm is, but a stale token that renders a live "Leave this
+ * game" button which then refuses on submission is a worse answer than the
+ * link-problem page the token has earned — and it would confirm to the holder
+ * that the player is back in the squad, which is exactly what the silent
+ * refusal exists not to say.
+ */
+function isFromAPreviousSpell(payload: LeaveTokenPayload, joinedAt: Date): boolean {
+  return leaveTokenMintedAt(payload).getTime() < joinedAt.getTime();
+}
+
 respond.get("/leave/:token", async (c) => {
   const token = c.req.param("token");
   const now = new Date(Date.now());
-  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+  const verification = await verifyLeaveToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
 
   if (!verification.ok) {
     console.error(`leave link token rejected: ${verification.reason}`);
     return c.html(renderLinkProblemPage(), 200);
   }
 
-  const { fixtureId } = verification.payload;
+  const { gameId, playerId } = verification.payload;
   const db = getDb(c.env.DB);
-  const loaded = await getFixtureWithSquad(db, fixtureId);
-  if (!loaded) {
-    console.error(`leave link token verified for a fixture that no longer exists: ${fixtureId}`);
+
+  const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!game) {
+    console.error(`leave link token verified for a game that no longer exists: ${gameId}`);
     return c.html(renderLinkProblemPage(), 200);
   }
 
-  return c.html(renderLeavePage(loaded.game.name), 200);
+  const membership = await findMembershipInGame(db, gameId, playerId);
+
+  if (membership && isFromAPreviousSpell(verification.payload, membership.joinedAt)) {
+    // Silent on purpose: saying "you rejoined, so this link is finished" would
+    // tell whoever holds this copy of the email something about the player.
+    console.error(`leave link token predates the player's current membership: ${gameId}, ${playerId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const otherGames = await resolveOtherGames(c.env, db, now, c.req.raw.headers, gameId, playerId);
+
+  if (!membership || !membership.active) {
+    return c.html(
+      renderLeavePage({ token, gameId, gameName: game.name, state: "already-left", otherGames }),
+      200,
+    );
+  }
+
+  const isOrganiser = membership.role === "owner";
+  const state = isOrganiser && (await countActiveOwners(db, gameId)) === 1 ? "sole-organiser" : "confirm";
+
+  return c.html(
+    renderLeavePage({ token, gameId, gameName: game.name, state, otherGames, isOrganiser }),
+    200,
+  );
+});
+
+/**
+ * `POST /leave/:token` (BR-22) — the write the confirmation page above posts
+ * to. `removeMember` does the entire job (deactivate the membership, demote
+ * an organiser, write the `membership.removed` audit row, withdraw the
+ * leaver from every open fixture, and promote the longest-waiting
+ * replacement on each) with the leaver as their own actor: a
+ * `membership.removed` row whose actor equals its subject reads
+ * unambiguously as "they left" rather than "an organiser removed them", so no
+ * new audit action is needed.
+ *
+ * **Deliberately no `wrongOrigin` check.** Every other state-changing POST in
+ * this application has one; this route does not, and that is a decision, not
+ * an oversight. This form is reached from a link in an email and submitted
+ * from whatever renders that email — a mail client's own webview, or a
+ * browser opened from it — where `Origin` is frequently absent altogether or
+ * set to the webmail provider's own domain rather than this app's. Checking
+ * it here would refuse the unsubscribe for exactly the population BR-22
+ * exists to serve. The signed, expiring token is the entire authorisation,
+ * the same reasoning `POST /r/:token` above already applies for not checking
+ * it either.
+ *
+ * A token minted before this player's current spell in the squad began is
+ * refused before any write, with the same link-problem page — see
+ * `isFromAPreviousSpell` for why that binding is what stops this from being a
+ * repeatable eviction rather than a single one.
+ *
+ * `not-a-member` renders the same link-problem page a bad token does, rather
+ * than a 404 or an explanation: the token names a game this player was never
+ * in, which is indistinguishable from a broken link, and saying more would
+ * confirm or deny that the game exists.
+ *
+ * Sends no email to the leaver. §1.11's notification catalogue is closed —
+ * N-7 exists to tell someone something happened *to* them, and this person
+ * did it deliberately and is looking at the confirmation page right now. The
+ * only mail this route may cause is N-2, to any player promoted off a
+ * waitlist by the leaver's withdrawal, sent through the same
+ * `notifyPromotedPlayer` background path `POST /r/:token` uses.
+ */
+respond.post("/leave/:token", async (c) => {
+  const token = c.req.param("token");
+  const now = new Date(Date.now());
+  const verification = await verifyLeaveToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+
+  if (!verification.ok) {
+    console.error(`leave link token rejected: ${verification.reason}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const { gameId, playerId } = verification.payload;
+  const db = getDb(c.env.DB);
+
+  const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!game) {
+    console.error(`leave link token verified for a game that no longer exists: ${gameId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  // The binding this token is missing — see `isFromAPreviousSpell`. Read
+  // before the write, so a token from a previous spell never reaches
+  // `removeMember` at all.
+  const membership = await findMembershipInGame(db, gameId, playerId);
+  if (membership && isFromAPreviousSpell(verification.payload, membership.joinedAt)) {
+    console.error(`leave link token predates the player's current membership: ${gameId}, ${playerId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const otherGames = await resolveOtherGames(c.env, db, now, c.req.raw.headers, gameId, playerId);
+
+  const result = await removeMember({
+    db,
+    gameId,
+    playerId,
+    // The leaver is their own actor. See this handler's doc comment.
+    actorPlayerId: playerId,
+    now,
+    withdraw: (fixtureId) =>
+      c.env.FIXTURE_CAPACITY.getByName(fixtureId).withdrawMember({
+        playerId,
+        actorPlayerId: playerId,
+        now: now.getTime(),
+      }),
+  });
+
+  if (result.kind === "not-a-member") {
+    console.error(`leave link token verified for a game the player is not a member of: ${gameId}, ${playerId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  if (result.kind === "refused") {
+    return c.html(
+      renderLeavePage({ token, gameId, gameName: game.name, state: "sole-organiser", otherGames }),
+      422,
+    );
+  }
+
+  // `removed` and `resumed` are handled identically and deliberately so — see
+  // `removeMember`'s doc comment on why a resume reaches the same end state a
+  // first attempt does, and why a second submission of this same POST (which
+  // is what a reload does) is the documented recovery for a removal that
+  // failed partway through its fixture loop.
+  for (const { fixtureId, promoted } of result.promotions) {
+    c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, promoted, now));
+  }
+
+  return c.html(renderLeavePage({ token, gameId, gameName: game.name, state: "done", otherGames }), 200);
 });

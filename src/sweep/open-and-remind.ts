@@ -4,7 +4,7 @@ import { fixtures, games, notificationLog, players, responses } from "../db/sche
 import { openFixture } from "../domain/open-fixture.js";
 import { reminderInstant } from "../domain/reminder-time.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import { responseTokenExpiry, signResponseToken } from "../domain/token.js";
+import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
 import type { Notifier } from "../notify/notifier.js";
 import { reminderKey } from "../notify/dedupe-key.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
@@ -275,6 +275,7 @@ async function sendDueReminders(
         game: gameRow,
         candidates: toBuild,
         responseTokenSecret,
+        now,
       });
 
       const inserted = await insertQueuedLogRows(db, { fixtureId: fixture.id, notificationType: "n1" }, pending);
@@ -440,8 +441,9 @@ async function buildReminderMessages(params: {
   game: typeof games.$inferSelect;
   candidates: ReminderCandidate[];
   responseTokenSecret: string;
+  now: Date;
 }): Promise<PendingNotification[]> {
-  const { fixture, game, candidates, responseTokenSecret } = params;
+  const { fixture, game, candidates, responseTokenSecret, now } = params;
 
   const kicksOffAtLocal = formatLocalDateTime(fixture.kicksOffAt, game.timezone);
   const inCount = fixture.inCount;
@@ -460,6 +462,14 @@ async function buildReminderMessages(params: {
       responseTokenSecret,
     );
 
+    // A leave token, not the response token above: leaving is scoped to the
+    // Game, not this one Fixture, and it must keep working long after this
+    // reminder's response token has expired (BR-22, §2.2).
+    const leaveToken = await signLeaveToken(
+      { gameId: fixture.gameId, playerId: candidate.playerId, expiresAt: leaveTokenExpiry(now).getTime() },
+      responseTokenSecret,
+    );
+
     const rendered = renderReminderEmail({
       playerName: candidate.name,
       gameName: game.name,
@@ -469,13 +479,7 @@ async function buildReminderMessages(params: {
       spotsLeft,
       respondInUrl: `${SITE_ORIGIN}/r/${token}?intent=in`,
       respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
-      // `GET /leave/:token` (src/routes/respond.ts) exists as of task-15 fix
-      // round 1 — it is real and it works, but it is not yet self-service:
-      // it tells the player plainly that leaving isn't self-service yet and
-      // to contact whoever organises the Game. BR-22 will be fully satisfied
-      // once a later milestone adds the write path; this link is honest
-      // about the interim state rather than 404ing or pretending to act.
-      leaveUrl: `${SITE_ORIGIN}/leave/${token}`,
+      leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
     });
 
     pending.push({

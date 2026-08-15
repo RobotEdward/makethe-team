@@ -1,7 +1,7 @@
 import type { Db } from "../db/client.js";
 import type { CancellationRecipient } from "../domain/cancel-fixture.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import { responseTokenExpiry, signResponseToken } from "../domain/token.js";
+import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
 import { cancellationKey } from "./dedupe-key.js";
 import {
   applySendResult,
@@ -50,7 +50,7 @@ export interface SendCancellationEmailsParams {
   notifier: Notifier;
   /** Read by the caller, which needs the same row to render its page — never re-read here. */
   fixture: { id: string; kicksOffAt: Date; venueOverride: string | null };
-  game: { name: string; venueName: string; timezone: string };
+  game: { id: string; name: string; venueName: string; timezone: string };
   /** Exactly what `cancelFixture` handed back. */
   recipients: readonly CancellationRecipient[];
   /** Exactly what the owner typed, including empty — the template decides what an empty reason means. */
@@ -119,16 +119,12 @@ export async function sendCancellationEmails(
     }
 
     // The only action an N-3 offers is leaving the Game (BR-22) — there is
-    // nothing left to accept or decline — so this is a *response* token, for
-    // `/leave/:token`, and is signed with the response secret accordingly.
-    // It is emphatically not a cancel token: nothing in an email sent to the
-    // whole squad may carry the authority to cancel anything.
-    const token = await signResponseToken(
-      {
-        playerId: recipient.playerId,
-        fixtureId: fixture.id,
-        expiresAt: responseTokenExpiry(fixture.kicksOffAt).getTime(),
-      },
+    // nothing left to accept or decline. A leave token, scoped to the Game
+    // rather than this one Fixture, and signed with the response secret
+    // accordingly (it is emphatically not a cancel token: nothing in an email
+    // sent to the whole squad may carry the authority to cancel anything).
+    const leaveToken = await signLeaveToken(
+      { gameId: game.id, playerId: recipient.playerId, expiresAt: leaveTokenExpiry(now).getTime() },
       responseTokenSecret,
     );
 
@@ -138,7 +134,7 @@ export async function sendCancellationEmails(
       venueName,
       kicksOffAtLocal,
       reason,
-      leaveUrl: `${SITE_ORIGIN}/leave/${token}`,
+      leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
     });
 
     const dedupeKey = cancellationKey(fixture.id, recipient.playerId);

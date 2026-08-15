@@ -37,12 +37,11 @@ export interface ReminderEmailPayload {
   /**
    * A working leave-game/unsubscribe link (BR-22).
    *
-   * The sweep currently builds this as `/leave/:token`
-   * (`src/sweep/open-and-remind.ts`), which renders a page explaining that
-   * leaving is not self-service yet and pointing the player at whoever
-   * organises the Game; the write path arrives in a later milestone. This
-   * module only ever embeds whatever URL it is given and never inspects it,
-   * so that change needs no edit here.
+   * The sweep builds this as `/leave/:token` (`src/sweep/open-and-remind.ts`),
+   * signed with a leave token scoped to the Game rather than the Fixture this
+   * reminder is about — leaving works from here, the way the copy now says.
+   * This module only ever embeds whatever URL it is given and never inspects
+   * it, so how that token is built needs no edit here.
    */
   leaveUrl: string;
 }
@@ -133,7 +132,7 @@ ${escapeHtml(spots)}
 <p style="margin:0; font-size:12px; line-height:1.6; color:#928d84;">
 Make The Team — organising this Game for your squad.
 <br>
-Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">See how to leave this Game</a>.
+Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">Leave this game</a>.
 </p>
 
 </td>
@@ -166,7 +165,7 @@ Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84;">See how
     "",
     "---",
     "Make The Team — organising this Game for your squad.",
-    `Not playing any more? See how to leave this Game: ${leaveUrl}`,
+    `Not playing any more? Leave this game: ${leaveUrl}`,
     "",
   ].join("\n");
 

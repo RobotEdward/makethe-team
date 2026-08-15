@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players } from "../../src/db/schema.js";
+import { verifyLeaveToken } from "../../src/domain/token.js";
 import { welcomeKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
@@ -9,6 +10,7 @@ import { sendWelcomeEmail } from "../../src/notify/send-welcome.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
+const SECRET = env.RESPONSE_TOKEN_SECRET;
 const NOW = new Date("2026-08-12T09:00:00Z");
 const JOINED_AT = NOW;
 /** A week out, and deliberately later than the already-open fixture below. */
@@ -105,7 +107,15 @@ function send(joined: Joined, notifier: Notifier, joinedAt: Date = JOINED_AT) {
     membershipId: joined.membershipId,
     joinedAt,
     now: NOW,
+    responseTokenSecret: SECRET,
   });
+}
+
+/** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
+function leaveTokenFrom(message: Message | undefined): string {
+  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  if (!match?.[1]) throw new Error("no /leave/ link found in message html");
+  return match[1];
 }
 
 async function logRows() {
@@ -137,6 +147,18 @@ describe("sendWelcomeEmail (N-6)", () => {
       status: "sent",
       dedupeKey: welcomeKey(joined.membershipId, JOINED_AT.toISOString()),
     });
+  });
+
+  it("carries a leave link scoped to the game, not any fixture", async () => {
+    const joined = await seedJoin();
+    const notifier = new RecordingNotifier();
+
+    await send(joined, notifier);
+
+    const token = leaveTokenFrom(notifier.all[0]);
+    const verified = await verifyLeaveToken(token, SECRET, NOW);
+
+    expect(verified).toMatchObject({ ok: true, payload: { gameId: joined.gameId, playerId: joined.playerId } });
   });
 
   it("names the next *scheduled* fixture, not the one already open (BR-2)", async () => {

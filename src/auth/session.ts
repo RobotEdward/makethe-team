@@ -110,21 +110,35 @@ export const sessionMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   const now = new Date(Date.now());
   const db = getDb(c.env.DB);
 
-  const session = await resolveSession(c.env, db, now, c.req.raw.headers);
+  const { session, player } = await resolveSessionAndPlayer(c.env, db, now, c.req.raw.headers);
   c.set("session", session);
-  c.set("player", session === null ? null : await findPlayer(db, session.user.id));
+  c.set("player", player);
 
   await next();
 };
 
-async function resolveSession(
+/**
+ * The one resolution both the middleware and {@link resolveSessionPlayer} use,
+ * so the two cannot drift into disagreeing about what a signed-in request is.
+ *
+ * **Both lookups are inside the one `catch`, deliberately.** The Player lookup
+ * is as much a D1 round trip as the session lookup, and a fault in it is the
+ * same kind of event: a request whose identity could not be established. Left
+ * outside, it would throw past the middleware into `app.onError` and answer
+ * 500 — including on `/leave/:token`, a route whose entire promise is that it
+ * works without a session at all. Degrading the pair to "anonymous" keeps a
+ * transient database fault costing a visitor their personalisation rather than
+ * their page.
+ */
+async function resolveSessionAndPlayer(
   env: Bindings,
   db: Db,
   now: Date,
   headers: Headers,
-): Promise<AuthSession | null> {
+): Promise<{ session: AuthSession | null; player: Player | null }> {
   try {
-    return (await createAuth(env, db, now).api.getSession({ headers })) ?? null;
+    const session = (await createAuth(env, db, now).api.getSession({ headers })) ?? null;
+    return { session, player: session === null ? null : await findPlayer(db, session.user.id) };
   } catch (error) {
     // Anonymous, and loudly logged. Never the cookie or the token: this repo
     // is public and a session token in a log line is a live credential.
@@ -143,7 +157,7 @@ async function resolveSession(
         error instanceof Error ? (error.stack ?? error.message) : String(error)
       }`,
     );
-    return null;
+    return { session: null, player: null };
   }
 }
 
@@ -155,6 +169,32 @@ async function findPlayer(db: Db, authUserId: string): Promise<Player | null> {
     .where(eq(players.authUserId, authUserId))
     .limit(1);
   return player ?? null;
+}
+
+/**
+ * Resolves the caller's Player exactly as `sessionMiddleware` would, without
+ * mounting it — for a handler outside every session-mounted prefix that still
+ * wants to recognise a signed-in visitor.
+ *
+ * `GET /leave/:token` (M7a Task 4) is the one caller today. `/leave/*` sits
+ * outside `AUTHENTICATED_PREFIX`, `SIGN_IN_PREFIX` and `GAMES_PREFIX`
+ * deliberately (see `sessionMiddleware`'s own doc comment on why those three
+ * are the current list of mounts, not "everywhere a session is ever needed"):
+ * a fourth mount here would put session resolution — a cookie parse, an HMAC
+ * verification, and on a hit a D1 round trip — on a path strangers reach on
+ * every open of a mailed link, which is exactly the blast-radius argument
+ * that keeps `sessionMiddleware` off `/r/:token` too. Calling this function
+ * directly from the handler pays that cost only for a request that actually
+ * carries a session cookie, and changes nothing about who may reach the page
+ * without one.
+ */
+export async function resolveSessionPlayer(
+  env: Bindings,
+  db: Db,
+  now: Date,
+  headers: Headers,
+): Promise<Player | null> {
+  return (await resolveSessionAndPlayer(env, db, now, headers)).player;
 }
 
 // ---------------------------------------------------------------------------

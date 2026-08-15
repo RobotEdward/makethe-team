@@ -7,6 +7,7 @@ const BASE: WelcomeEmailPayload = {
   venueName: "Oxford Sports Park",
   whenLocal: "Thursday 20 August at 19:00",
   dashboardUrl: "https://makethe.team/app",
+  leaveUrl: "https://makethe.team/leave/tok123",
 };
 
 describe("renderWelcomeEmail", () => {
@@ -71,6 +72,15 @@ describe("renderWelcomeEmail", () => {
   it("offers a text alternative for every link in the HTML", () => {
     const { text } = renderWelcomeEmail(BASE);
     expect(text).toContain("https://makethe.team/app");
+    expect(text).toContain(BASE.leaveUrl);
+  });
+
+  it("carries a leave link, worded for someone who has just joined", () => {
+    const { html, text } = renderWelcomeEmail(BASE);
+    expect(html).toContain(BASE.leaveUrl);
+    for (const rendition of [html, text]) {
+      expect(rendition.toLowerCase()).toMatch(/leave this game/);
+    }
   });
 
   it("the text rendition contains no HTML tags", () => {

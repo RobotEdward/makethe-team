@@ -44,6 +44,8 @@ export interface DashboardPageOptions {
   rows: readonly DashboardRow[];
   /** Games this player is an active Owner of — `listOwnedGames` (J1/M6a). */
   ownedGames: readonly OwnedGame[];
+  /** The one refusal `POST /app/games/:gameId/leave` can produce (M7a Task 4). */
+  problem?: string;
 }
 
 /**
@@ -133,10 +135,12 @@ function renderOwnedGamesSection(games: readonly OwnedGame[]): string {
  * scriptless, and the enhancement is quarantined on the page that cannot
  * exist without it.
  */
-export function renderDashboardPage({ playerName, rows, ownedGames }: DashboardPageOptions): string {
+export function renderDashboardPage({ playerName, rows, ownedGames, problem }: DashboardPageOptions): string {
+  const problemNotice = problem === undefined ? "" : `<p class="nudge">${escapeHtml(problem)}</p>`;
   const body = `
     <h1>Your games</h1>
     <p>Signed in as ${escapeHtml(playerName)}.</p>
+    ${problemNotice}
     ${
       rows.length === 0
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`

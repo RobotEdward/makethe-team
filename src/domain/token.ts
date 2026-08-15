@@ -24,6 +24,26 @@ export interface CancelTokenPayload {
   expiresAt: number;
 }
 
+/**
+ * A leave token is scoped to one player and one **Game** — not one fixture,
+ * which is the whole reason it exists. The welcome email (N-6) is sent when
+ * somebody joins a squad, and at that moment no fixture may exist to scope a
+ * response token to, which is why N-6 has carried no leave link at all.
+ *
+ * Signed with `RESPONSE_TOKEN_SECRET` rather than a secret of its own. The
+ * separation of `CANCEL_TOKEN_SECRET` exists because a leaked response key
+ * must not be able to call a fixture off for a whole squad; that argument
+ * does not extend to leaving, because a response token already opens the
+ * leave page today. The `kind` discriminator, which is inside the signed
+ * bytes, is what stops one being presented as the other.
+ */
+export interface LeaveTokenPayload {
+  gameId: string;
+  playerId: string;
+  /** Epoch milliseconds. */
+  expiresAt: number;
+}
+
 export type TokenVerification<Payload> =
   | { ok: true; payload: Payload }
   | { ok: false; reason: "malformed" | "bad-signature" | "expired" };
@@ -39,7 +59,7 @@ export type TokenVerification<Payload> =
  * secrets differ (bad-signature) or, even where the same secret is reused for
  * both purposes, the embedded `kind` does not match (malformed).
  */
-type TokenKind = "response" | "cancel";
+type TokenKind = "response" | "cancel" | "leave";
 
 /**
  * The env binding each token kind's secret is expected to live under, used
@@ -49,6 +69,7 @@ type TokenKind = "response" | "cancel";
 const SECRET_BINDING_NAME: Record<TokenKind, string> = {
   response: "RESPONSE_TOKEN_SECRET",
   cancel: "CANCEL_TOKEN_SECRET",
+  leave: "RESPONSE_TOKEN_SECRET",
 };
 
 /**
@@ -316,4 +337,62 @@ function isCancelPayload(value: unknown): value is CancelTokenPayload {
  */
 export function cancelTokenExpiry(kicksOffAt: Date): Date {
   return new Date(kicksOffAt.getTime());
+}
+
+function isLeavePayload(value: unknown): value is LeaveTokenPayload {
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate["gameId"] === "string" &&
+    typeof candidate["playerId"] === "string" &&
+    typeof candidate["expiresAt"] === "number" &&
+    Number.isFinite(candidate["expiresAt"])
+  );
+}
+
+/** Ninety days, per the design's §2.2. */
+const LEAVE_TOKEN_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * A leave link stops working ninety days after it was minted.
+ *
+ * Not tied to a kickoff, because leaving is not about a fixture. Long enough
+ * that somebody unsubscribing three weeks after they stopped playing is not
+ * told their link is broken — the most annoying possible failure of an
+ * unsubscribe link — and short enough to bound a forwarded email.
+ */
+export function leaveTokenExpiry(now: Date): Date {
+  return new Date(now.getTime() + LEAVE_TOKEN_LIFETIME_MS);
+}
+
+export async function signLeaveToken(payload: LeaveTokenPayload, secret: string): Promise<string> {
+  return signToken("leave", payload, secret);
+}
+
+/**
+ * When a leave token was minted, derived from the only time it carries.
+ *
+ * Every leave token in existence gets its `expiresAt` from
+ * {@link leaveTokenExpiry}, which is `mintedAt + LEAVE_TOKEN_LIFETIME_MS` —
+ * so subtracting the same constant recovers the instant it was signed,
+ * without a second field, a second secret, or a stored record of the token.
+ *
+ * The one caller is `/leave/:token`, which refuses a token minted before the
+ * player's current spell in the squad began (`memberships.joined_at`). That
+ * is what stops a leave link from being a repeatable eviction: a copy of an
+ * old email would otherwise push the same player out again every time they
+ * rejoined, for the whole ninety days. Deriving the mint time here, beside
+ * the definition of the lifetime, keeps the arithmetic in one place — a
+ * route doing it for itself would be a lifetime constant maintained twice.
+ */
+export function leaveTokenMintedAt(payload: LeaveTokenPayload): Date {
+  return new Date(payload.expiresAt - LEAVE_TOKEN_LIFETIME_MS);
+}
+
+/** Verify and decode a leave token. See {@link verifyToken}. */
+export async function verifyLeaveToken(
+  token: string,
+  secret: string,
+  now: Date,
+): Promise<TokenVerification<LeaveTokenPayload>> {
+  return verifyToken("leave", token, secret, now, isLeavePayload);
 }

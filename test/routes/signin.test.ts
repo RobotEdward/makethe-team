@@ -1005,6 +1005,13 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "POST /app":
       "never returns HTML on any branch — every outcome is a redirect or a " +
       "plain-text 400/403/404 (src/routes/dashboard.ts).",
+    "POST /app/games/:gameId/leave":
+      "on its one HTML-returning branch (the sole-organiser refusal, 422) it " +
+      "renders through the same renderDashboardPage as GET /app — no template " +
+      "of its own that could carry an un-enumerated script — and its other " +
+      "branches are a plain-text 403 (wrong origin), a plain-text 404 " +
+      "(entitlement failure) or a 303 redirect (src/routes/dashboard.ts); its " +
+      "own status-code coverage lives in test/routes/dashboard.test.ts.",
     "POST /g/new":
       "renders through the same renderGameFormPage as GET /g/new on its only " +
       "HTML-returning branch (a rejected submission) — no template of its " +
@@ -1058,6 +1065,15 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "404 (entitlement failure, or a non-guest player) or a 303 redirect only " +
       "(src/routes/games.ts); its own status-code coverage lives in " +
       "test/routes/owner-fixture.test.ts.",
+    "POST /leave/:token":
+      "renders through the same renderLeavePage as GET /leave/:token on every " +
+      "HTML-returning branch (the \"done\" confirmation, the sole-organiser " +
+      "refusal at 422) or renderLinkProblemPage for a bad token or a token " +
+      "naming a game the player is not a member of — no template of its own " +
+      "that could carry an un-enumerated script; its own script/password " +
+      "assertion lives in test/routes/leave.test.ts. Deliberately excluded " +
+      "from the wrongOrigin check the other POSTs above carry — see the " +
+      "handler's own doc comment in src/routes/respond.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
