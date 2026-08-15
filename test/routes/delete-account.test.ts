@@ -8,7 +8,7 @@ import {
   SIGN_IN_PATH,
 } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
-import { auditLog, fixtures, memberships, players, responses } from "../../src/db/schema.js";
+import { auditLog, fixtures, memberships, players, responses, session } from "../../src/db/schema.js";
 import { ERASURE_WINDOW_MS } from "../../src/domain/erasure-window.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertFixture, insertGame, insertMembership, insertPlayer, resetDatabase } from "../support/factories.js";
@@ -130,6 +130,34 @@ describe("GET /app/delete", () => {
     expect(body).not.toContain("<button");
   });
 
+  /**
+   * The ordering inside the `GET`, pinned because it is a decision rather than
+   * an accident: a pending erasure is shown even to someone who has since
+   * become a game's only organiser.
+   *
+   * They arrived here from the confirmation email to check or cancel a date,
+   * and a refusal page that never mentions that date would answer a question
+   * they did not ask while hiding the one thing they came for — an erasure
+   * that is still counting down, because the block stops the sweep, not the
+   * clock. A refactor that moved the sole-organiser scan above the `erases_at`
+   * read would break exactly this and nothing else.
+   */
+  it("shows a pending erasure even to a sole organiser, rather than the refusal", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await post(DELETE_ACCOUNT_PATH, cookie);
+    const gameId = await insertGame(db, { name: "Sole-Organised Game" });
+    await insertMembership(db, gameId, playerId, { role: "owner", active: true });
+
+    const response = await get(cookie);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("Keep my account");
+    expect(body).toMatch(/due to be erased on/);
+    expect(body).not.toContain("Sole-Organised Game");
+  });
+
   it("offers the button to an owner who shares the game with another active organiser", async () => {
     const { cookie } = await signIn();
     const playerId = await viewerId();
@@ -180,6 +208,11 @@ describe("POST /app/delete", () => {
       .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, playerId)));
     const countsBefore = await fixtureCounts(fixtureId);
     expect(countsBefore.inCount).toBe(1);
+    // The session this request is made with. "No session is revoked" is part
+    // of the guarantee: a request must leave the person still signed in, still
+    // able to reach this page and cancel. Only the sweep destroys these rows.
+    const sessionsBefore = await db.select().from(session);
+    expect(sessionsBefore.length, "signing in must have left a session row").toBeGreaterThan(0);
 
     const response = await post(DELETE_ACCOUNT_PATH, cookie);
     expect(response.status).toBe(303);
@@ -199,6 +232,8 @@ describe("POST /app/delete", () => {
     // The denormalised counts the capacity object maintains: a freed place
     // would show up here even if the response row somehow did not.
     expect(await fixtureCounts(fixtureId)).toEqual(countsBefore);
+
+    expect(await db.select().from(session)).toEqual(sessionsBefore);
 
     // Nothing has been erased. Only the sweep (M7b Task 6) sets this.
     const player = await playerRowFor(playerId);

@@ -136,6 +136,15 @@ account.get(DELETE_ACCOUNT_PATH, requirePlayer, async (c) => renderDeleteAccount
  * another player has already been told they hold. `test/routes/
  * delete-account.test.ts` asserts this directly.
  *
+ * **Re-requesting while one is already pending is deliberate, not an
+ * oversight.** There is no guard against it and none is wanted: the deadline
+ * can only ever move *later*, the second audit row is a truthful record of a
+ * second request, and the N-8 dedupe key includes the new date, so the second
+ * email is accurate rather than a duplicate. It is unreachable from the UI
+ * anyway — the `pending` state renders no request button — so the only callers
+ * are a stale tab and a hand-crafted post, and neither is harmed by being
+ * given a fresh two days.
+ *
  * The origin check mirrors `POST /app`'s, for the same reason: this is a
  * same-origin form post on our own page, a browser always sends `Origin` on a
  * cross-site one, and a missing header is a non-browser client acting on its

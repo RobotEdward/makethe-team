@@ -1,5 +1,6 @@
 import {
   DASHBOARD_PATH,
+  DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
   PASSKEYS_PATH,
   SIGN_IN_PATH,
@@ -67,6 +68,18 @@ export const CATALOGUE: CataloguePage[] = [
     path: () => PASSKEYS_PATH,
     persona: "owner",
     note: "Register and manage passkeys. All of its behaviour is script.",
+  },
+  {
+    id: "delete-account",
+    title: "Delete my data",
+    // The `player` persona, not `owner`: the seeded owner is their game's only
+    // organiser, so they get the refusal state, which carries no form at all.
+    // The joined member reaches the `offer` state — the branch with the
+    // destructive button on it, and the one worth putting in front of a
+    // browser and a CSP.
+    path: () => DELETE_ACCOUNT_PATH,
+    persona: "player",
+    note: "Where a player schedules their own erasure, 48 hours out, and cancels it.",
   },
   {
     id: "new-game",

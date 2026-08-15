@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
   DASHBOARD_PATH,
+  DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
   PASSKEYS_PATH,
   SIGN_IN_COMPLETE_PATH,
@@ -19,6 +20,7 @@ const CONSTANTS: Record<string, string> = {
   SIGN_IN_COMPLETE_PATH,
   DASHBOARD_PATH,
   PASSKEYS_PATH,
+  DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
 };
 
@@ -28,6 +30,7 @@ const ROUTE_TO_ID = new Map<string, string>([
   [SIGN_IN_PATH, "sign-in"],
   [DASHBOARD_PATH, "dashboard"],
   [PASSKEYS_PATH, "passkeys"],
+  [DELETE_ACCOUNT_PATH, "delete-account"],
   [NEW_GAME_PATH, "new-game"],
   ["/g/:id", "game-overview"],
   ["/g/:id/edit", "edit-game"],
@@ -47,8 +50,9 @@ const ROUTE_TO_ID = new Map<string, string>([
  * `c.get("email")` all match a naive pattern and arrive here looking like
  * uncatalogued routes.
  */
-function registeredGetRoutes(): string[] {
+function registeredGetRoutes(): { routes: string[]; unresolved: string[] } {
   const routes = new Set<string>();
+  const unresolved = new Set<string>();
   for (const file of readdirSync("src/routes")) {
     if (!file.endsWith(".ts")) continue;
     const source = readFileSync(`src/routes/${file}`, "utf8");
@@ -56,19 +60,36 @@ function registeredGetRoutes(): string[] {
       const literal = match[1];
       const constant = match[2];
       if (literal !== undefined) routes.add(literal);
-      else if (constant !== undefined && CONSTANTS[constant] !== undefined) {
-        routes.add(CONSTANTS[constant]!);
+      else if (constant !== undefined) {
+        // Resolved, or *reported*. Silently dropping a constant this map has
+        // never heard of is how M7b's `/app/delete` got past this guard: the
+        // route matched the regex, missed the lookup, and vanished — so the
+        // test below passed while covering nothing for it, no console gate,
+        // no CSP check, no capture, and nothing anywhere complained. A guard
+        // whose failure mode is silence is not a guard.
+        if (CONSTANTS[constant] === undefined) unresolved.add(constant);
+        else routes.add(CONSTANTS[constant]!);
       }
     }
   }
-  return [...routes];
+  return { routes: [...routes], unresolved: [...unresolved] };
 }
+
+test("every route constant resolves to a path this scan can see", () => {
+  expect(
+    registeredGetRoutes().unresolved,
+    "These constants register a GET route but are absent from CONSTANTS, so " +
+      "the scan below cannot see the routes they name and would pass while " +
+      "covering nothing for them. Add each to CONSTANTS (and then to " +
+      "ROUTE_TO_ID and CATALOGUE, or to NOT_CATALOGUED with a reason).",
+  ).toEqual([]);
+});
 
 test("every GET route is catalogued or excluded with a stated reason", () => {
   const catalogued = new Set(CATALOGUE.map((page) => page.id));
   const uncovered: string[] = [];
 
-  for (const route of registeredGetRoutes()) {
+  for (const route of registeredGetRoutes().routes) {
     if (NOT_CATALOGUED.has(route)) continue;
     const id = ROUTE_TO_ID.get(route);
     if (id === undefined || !catalogued.has(id)) uncovered.push(route);
@@ -88,7 +109,7 @@ test("the scan actually finds the routes it claims to", () => {
   // Guards the regex itself. If `registeredGetRoutes` silently matched
   // nothing — a refactor to a different router API, a changed call shape —
   // the test above would pass trivially and cover nothing at all.
-  const routes = registeredGetRoutes();
+  const { routes } = registeredGetRoutes();
   expect(routes.length).toBeGreaterThan(8);
   expect(routes).toContain("/g/:id");
   expect(routes).toContain(SIGN_IN_PATH);
