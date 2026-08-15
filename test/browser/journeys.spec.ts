@@ -347,6 +347,77 @@ test("a player can leave a game from their own leave link, with JavaScript off",
   await visitor.close();
 });
 
+test("a player schedules their own erasure, sees it on the dashboard, and cancels it, with JavaScript off", async ({
+  page,
+  browser,
+}) => {
+  // `seedWorld` signs `page` in as the owner and puts Alex Morgan in the squad
+  // as an ordinary member. The journey below is Alex Morgan's, not the owner's,
+  // and that is not an arbitrary choice: the seeded owner is the only organiser
+  // their game has, so `/app/delete` answers *them* with the `sole-organiser`
+  // refusal, which renders no button at all. The joined member is the one who
+  // reaches the `offer` state — the branch with the destructive control on it.
+  // (`test/browser/catalogue.ts` picks the same persona, for the same reason.)
+  await seedWorld(page, browser);
+
+  // A context of its own, with JavaScript off. Its own, because the two
+  // identities must never share a cookie jar; JS off, because erasing your own
+  // data is something a person *must* be able to do — a control that needs
+  // script is a control some people cannot reach. Every step below is a plain
+  // link or a real form post, so a failure here is a product defect.
+  const player = await browser.newContext({ javaScriptEnabled: false });
+  const playerPage = await player.newPage();
+  const seen = observe(playerPage);
+  await signIn(playerPage, TEST_PLAYER);
+
+  // --- 1: reached from the dashboard, not by typing the URL ----------------
+  // The link is the only way in for a real person, so following it is part of
+  // what is under test: a page that works only when navigated to directly is
+  // a page nobody finds.
+  await playerPage.goto("/app");
+  await playerPage.getByRole("link", { name: "Delete my account and data" }).click();
+  await playerPage.waitForURL(/\/app\/delete$/);
+  await expect(playerPage.locator("h1")).toHaveText("Delete my data");
+  // Scoped to the button, not the page: "Delete my data" is also the heading
+  // and the browser tab's title, so a page-wide check would pass in the
+  // `sole-organiser` state too — the one state that deliberately offers
+  // nothing to press.
+  const request = playerPage.getByRole("button", { name: "Delete my data" });
+  await expect(request).toBeVisible();
+
+  // --- 2: request it, and land back on the same page, now pending ----------
+  await request.click();
+  await playerPage.waitForURL(/\/app\/delete$/);
+  await expect(playerPage.locator("main")).toContainText("due to be erased");
+  // The offer is gone: a page that still shows the button after a successful
+  // request would let the same person schedule it twice over.
+  await expect(playerPage.getByRole("button", { name: "Delete my data" })).toHaveCount(0);
+
+  // --- 3: the dashboard says so, and carries its own way out ---------------
+  // The banner is the whole reason a pending erasure is visible anywhere but
+  // the page that started it — see `renderErasureBanner`. Scoped to the
+  // banner, so the assertion cannot be satisfied by text elsewhere.
+  await playerPage.goto("/app");
+  const banner = playerPage.locator(".nudge").filter({ hasText: "due to be erased" });
+  await expect(banner).toHaveCount(1);
+
+  // --- 4: cancel from the banner, and see it gone --------------------------
+  await banner.getByRole("button", { name: "Keep my account" }).click();
+  await playerPage.waitForURL(/\/app$/);
+  await expect(playerPage.locator(".nudge").filter({ hasText: "due to be erased" })).toHaveCount(0);
+
+  // And the delete page is back to offering it, rather than merely hiding the
+  // banner while the deadline still stands.
+  await playerPage.goto("/app/delete");
+  await expect(playerPage.getByRole("button", { name: "Delete my data" })).toBeVisible();
+  await expect(playerPage.locator("main")).not.toContainText("due to be erased");
+
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+
+  await player.close();
+});
+
 test("the two identities never share a session", async ({ page, browser }) => {
   // Not parameterised: this is about cookie isolation, which JavaScript has
   // no bearing on. It guards the fixture setup every journey above relies on.

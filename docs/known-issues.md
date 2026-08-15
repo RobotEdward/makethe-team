@@ -134,14 +134,36 @@ M2's carry-forward note about nothing being able to produce an `open` fixture is
 — M3's hourly sweep now owns the `scheduled → open` transition — and has been removed from
 this list per the rule above.
 
-One structural note remains, not a defect but relevant to whichever milestone adds a second
-environment:
+Two notes remain. Neither is a defect: the first is relevant to whichever milestone adds a
+second environment, the second to the milestone that writes `/privacy`.
 
 1. **`triggers.crons` sits at the top level of `wrangler.jsonc`**, which is correct while
    production is the only environment — but it is inherited, so adding a staging
    environment would silently give it both cron schedules. TR-9 exists precisely to stop
    two environments running the reminder sweep against real people. The runbook documents
    the required move; the configuration does not yet enforce it.
+
+2. **Three things erasure (BR-34, M7b) cannot reach, which `/privacy` must say out loud.**
+   The privacy page is the next milestone, and it is the only place a person can be told
+   these before they rely on "delete my data" meaning all of it. Written down here so they
+   are read off a list rather than rediscovered:
+
+   - **A last active organiser cannot be erased.** `/app/delete` refuses the request while
+     the player is the only organiser any game has, and the sweep refuses it again at
+     execution — so a request that was honest when it was made, and becomes blocked before
+     the deadline, **stays pending indefinitely** rather than half-completing. That is the
+     safe direction (a game is never left without an organiser, and no squad is left
+     half-departed), but it means a scheduled erasure is not a promise of a date. The way
+     out is to make somebody else an organiser; nothing else clears it.
+   - **During the trial, `SIGNIN_ALLOWLIST` fails closed.** Erasure is reachable only from
+     a signed-in session, and a player whose address is not on the allowlist cannot get
+     one — so they cannot reach the page at all and must ask the author directly. This is
+     temporary by construction: it disappears when the allowlist is deleted at launch.
+   - **Free text another person wrote can still name someone.** A fixture's `notes`, a
+     `venue_override`, a game's name — all of it is typed by an organiser about whoever
+     they like, and none of it is structured, so no erasure can find a name inside it.
+     Erasure anonymises the erased player's own rows; it cannot rewrite somebody else's
+     prose. Removing such a mention is a request to the organiser who wrote it.
 
 ## Repository and deploy hardening — applied 11 August 2026
 

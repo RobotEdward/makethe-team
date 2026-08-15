@@ -44,7 +44,7 @@ This document is the single source of truth. The draft is retained at `docs/hist
 | 4. Chase non-responders | No automated chase in v1. Revisit with real data. |
 | 5. Recurrence complexity | Store RRULE; implement weekly and N-weekly only |
 | 6. Visitor visibility | Counts, plus **first name and surname initial** ("Edward C.") |
-| 7. GDPR | Deletion and leave paths built in M7; privacy-policy copy written by the author before public use |
+| 7. GDPR | Both paths built in M7 — leaving a game in M7a (BR-22), erasing your own data in M7b (BR-34); privacy-policy copy written by the author before public use |
 | 8. Phone numbers | Not collected. Column dropped. |
 
 ---
@@ -279,6 +279,7 @@ Numbered so tests can reference them.
 - **BR-26** A visitor holding an invite link sees only: game name, venue, date, time, counts, and members rendered as first name plus surname initial ("Edward C."). Never email addresses, never full surnames.
 - **BR-27** Every Owner override is recorded in `audit_log` with actor, timestamp and previous value, and is visibly attributed in the UI ("marked in by Edward").
 - **BR-33** A Game carries a squad-visibility setting, default on. When it is off, players see a fixture's counts and their own response but not other players' names or responses. Owners are unaffected.
+- **BR-34** A player may erase their own data from a signed-in session of their own. **Satisfied as of M7b** ("delete my data", the plan at `.superpowers/sdd/2026-08-15-delete-my-data/`). `GET /app/delete` states what erasure does; `POST /app/delete` schedules it 48 hours out and does nothing else, and `POST /app/delete/cancel` clears it. The request is cancellable for the whole of that window — from the page itself and from a banner on the dashboard — and nothing is undone by cancelling, because nothing was done: the wait exists so that a mis-tap costs nothing. When the window closes the hourly sweep leaves every squad (promoting and notifying whoever was waitlisted into each freed slot), hard-deletes the authentication rows, and **anonymises the `players` row in place** rather than deleting it, so a past fixture still counts the people who were there without naming this one. It is refused while the player is the last active organiser of any game — checked when the page renders, again when the request is made, and once more before the sweep acts, because a co-organiser can leave in between. Neither the request nor the cancellation can be performed by anyone else: both routes act on the session's own player and take no player id from a path, a query string or a form body, so there is no control anywhere that names somebody else.
 
 ## 1.11 Notification catalogue
 
@@ -292,6 +293,13 @@ The complete set for v1. Do not add others without a decision.
 | N-4 | Fixture short **or** uneven inside the warning window | Owners | 1 per fixture per owner, ever | Email |
 | N-5 | Sign-in magic link | The requesting player | Per request, rate-limited | Email |
 | N-6 | Welcome / squad joined | The new member | 1 per membership | Email |
+| N-7 | Removed from a squad | The removed member | 1 per spell in the squad | Email |
+| N-8 | Erasure scheduled | The requesting player | 1 per request | Email |
+
+**Amended, M7b.** N-7 shipped in M7a and was described in BR-22 but never
+added to this table, which calls itself the complete set — so the table said
+one thing and the code another for a milestone. It is listed above now,
+alongside N-8.
 
 ## 1.12 Future scope
 
@@ -516,6 +524,8 @@ Notes:
   | N-4 attention | `n4:<fixture_id>:<player_id>` | Once per owner per fixture, ever (BR-31) |
   | N-5 magic link | not logged | Better Auth owns issuance and rate limiting |
   | N-6 welcome | `n6:<membership_id>:<joined_at>` | Once per membership; rejoining sends again |
+  | N-7 removal | `n7:<membership_id>:<left_at>` | Once per spell in the squad; a rejoin and a second removal sends again |
+  | N-8 erasure scheduled | `n8:<player_id>:<erases_at>` | Once per request; a re-request moves the deadline, so its key differs and it is told again |
 
   **Amended, M6a.** The table above originally gave N-6's key as
   `n6:<membership_id>` alone, which contradicts its own "rejoining sends

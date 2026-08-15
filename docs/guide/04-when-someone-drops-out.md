@@ -44,4 +44,32 @@ Changed your mind afterwards? Nobody can put you back in for you — you rejoin
 the same way you joined the first time, with the invite link. If you don't
 have it any more, ask whoever organises the game to send it again.
 
+## Deleting your data
+
+Leaving gets you out of one game. If you want to be gone altogether — every
+game, and everything we hold about you — sign in and follow **Delete my
+account and data** at the bottom of your games page.
+
+That erases your name, your email address and every way of signing in, and
+takes you out of every squad you're in. It can't be undone.
+
+It doesn't happen straight away. It happens **two days later**, and nothing
+changes in between: you stay in your squads, your answers stand, and the
+reminders keep coming as usual. In those two days you can stop it — from the
+same page, or from the notice that sits at the top of your games page until
+the day arrives. That's what the wait is for. A tap you didn't mean costs you
+nothing if you notice it by Thursday.
+
+Games you've already played still count you. They show the same number of
+players they always did, with your name gone from the list — a ten-a-side
+game still reads as ten-a-side. That's not us holding on to something: it's
+what stops last month's fixture turning into a nine-a-side that never
+happened, for everyone else who was there.
+
+Two things worth knowing before you go looking for it. If you're the only
+organiser a game has, the page won't let you start: the game would be left
+with nobody running it, so make somebody else an organiser first and then come
+back. And nobody can do this for you — not another organiser, not us. There's
+no button anywhere with somebody else's name on it.
+
 Next: [running your squad](05-running-your-squad.md).
