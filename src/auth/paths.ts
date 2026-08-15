@@ -148,8 +148,8 @@ export function ownerFixturePath(gameId: string, fixtureId: string): string {
  * single form whose rows are radio groups, so an organiser working with
  * JavaScript off saves every side in one submission. A per-player endpoint
  * would need a button per row and would let a half-applied pick exist between
- * two requests — exactly the state `teamsPublishedAt` is meant to make
- * unambiguous.
+ * two requests — exactly the state the save/publish instants on `fixtures` are
+ * meant to make unambiguous.
  */
 export function ownerTeamsPath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}/teams`;

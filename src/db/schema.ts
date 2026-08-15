@@ -163,13 +163,27 @@ export const fixtures = sqliteTable(
     cancellationReason: text("cancellation_reason"),
     openedAt: integer("opened_at", { mode: "timestamp_ms" }),
     /**
-     * When the current pick was announced (BR-35, M9), or null.
+     * When the teams were last announced (BR-35, M9), or null if never.
      *
-     * Saving assignments clears it and publishing sets it, so "the organiser
-     * has changed the teams and not told anyone" is a state the data states
-     * outright rather than one that has to be inferred.
+     * Publishing sets it and **nothing ever clears it**, so it answers exactly
+     * one question — "has an announcement ever gone out?" — and keeps
+     * answering it after the pick moves on. Whether the announcement is still
+     * *current* is the separate question `teamsSavedAt` answers; an earlier
+     * version of this milestone overloaded this one column with both, which
+     * left a re-saved pick indistinguishable from one nobody had ever
+     * published.
      */
     teamsPublishedAt: integer("teams_published_at", { mode: "timestamp_ms" }),
+    /**
+     * When the pick was last saved (BR-35, M9), or null if never.
+     *
+     * Set on every save, including one that changes nothing: the save route
+     * cannot tell a re-save from a real change without comparing every row,
+     * and a pick wrongly believed to be still-announced is the failure that
+     * matters. `teamsSavedAt > teamsPublishedAt` is therefore the durable form
+     * of "the organiser has changed the teams and not told anyone".
+     */
+    teamsSavedAt: integer("teams_saved_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [
@@ -206,8 +220,12 @@ export const responses = sqliteTable(
      * **Deliberately not cleared when a player leaves.** A row whose `team` is
      * set but whose `status` is no longer `in` is the only signal that the
      * published teams no longer match the squad (spec §3.1). Clearing it here,
-     * or in `withdrawMember`, deletes that signal. It also means a player who
-     * drops out and comes back is back on their old side, with no special case.
+     * or in `withdrawMember`, deletes that signal.
+     *
+     * The one thing that does clear it is the organiser's next save, which
+     * nulls `team` on every row that is not currently `in` — the deliberate
+     * re-pick acknowledging the churn. Nothing else can: the picker never
+     * renders a departed player, so no submitted form ever names them.
      */
     team: text("team", { enum: ["a", "b"] }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),

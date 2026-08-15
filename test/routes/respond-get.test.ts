@@ -556,6 +556,48 @@ describe("GET /r/:token — published teams (BR-35 §5)", () => {
     expect(html).not.toContain("Player 1");
   });
 
+  /**
+   * Definition of Done #5 — *every* player can see their own side — and the
+   * one viewer for whom that used to be silently untrue: someone promoted off
+   * the waitlist after the announcement is `in` with no side, so the page gave
+   * them a Teams heading, both full line-ups, and not one word about
+   * themselves.
+   */
+  it("tells a player whose side is not picked yet that it is not picked yet", async () => {
+    const { fixtureId, playerId, token } = await seedRespondableFixture({
+      teams: "published",
+      squadVisibleToPlayers: true,
+    });
+    // What a promotion into a published fixture leaves behind: `in`, no side.
+    await db
+      .update(responses)
+      .set({ team: null })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, playerId)));
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).toContain("Your side hasn't been picked yet.");
+    // The rest of the pick is still theirs to read — this is a missing line,
+    // not a reason to hide the teams.
+    expect(html).toContain("<h3>Blues");
+  });
+
+  it("says nothing at all when the published squad has since emptied", async () => {
+    // Both picked players drop out after publication and a third member opens
+    // their link. "Reds 0 / Nobody. / Blues 0 / Nobody." under a Teams heading
+    // is an assertion about a pick, made to somebody it says nothing about.
+    const { fixtureId, token } = await seedRespondableFixture({
+      teams: "published",
+      squadVisibleToPlayers: true,
+    });
+    await db.update(responses).set({ status: "out" }).where(eq(responses.fixtureId, fixtureId));
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).not.toContain("<h2>Teams</h2>");
+    expect(html).not.toContain("Nobody.");
+  });
+
   it("does not publish a pick by hiding the squad — nothing shows before publication either way", async () => {
     const { token } = await seedRespondableFixture({ teams: "saved", squadVisibleToPlayers: false });
 

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
@@ -33,6 +33,7 @@ import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
 import {
+  announcementOutstanding,
   isTeamId,
   publishedTeamsFor,
   teamNames,
@@ -573,12 +574,17 @@ function ownerFixtureParams(
     ),
     squad,
     viewerPlayerId,
+    // Durable: set by the first publish and never cleared, so this stays true
+    // through every later save and the button never falls back to the
+    // "Publish teams" label a never-published fixture shows.
     teamsPublished: fixture.teamsPublishedAt !== null,
-    // From the *unfiltered* rows: `withSquad.squad` has `withdrawn` filtered
-    // out, and a withdrawn player still carrying a side is precisely one of
-    // the two staleness conditions (`src/domain/teams.ts`), so deriving this
-    // from the squad above would answer "no" to half the question.
+    // Both derived from the *unfiltered* rows: `withSquad.squad` has
+    // `withdrawn` filtered out, and a withdrawn player still carrying a side
+    // is precisely one of the two staleness conditions
+    // (`src/domain/teams.ts`), so deriving these from the squad above would
+    // answer "no" to half the question.
     teamsNeedAnotherLook: teamsNeedAnotherLook(assignments),
+    announcementOutstanding: announcementOutstanding(fixture, assignments),
     ...extras,
   };
 }
@@ -820,10 +826,20 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
  * An organiser saving a team pick (BR-35 §4).
  *
  * Saving, not publishing: nothing here emails anybody, and a saved pick stays
- * invisible to players until the publish route (a later task) announces it.
- * That is exactly why the write clears `teams_published_at` — once the sides
- * have moved, what was announced is no longer what is picked, and the null
- * says so outright rather than leaving it to be inferred.
+ * invisible to players until the publish route announces it. That is why the
+ * write stamps `teams_saved_at` — once the sides have moved, what was
+ * announced is no longer what is picked, and `teams_saved_at >
+ * teams_published_at` says so outright rather than leaving it to be inferred.
+ * `teams_published_at` itself is deliberately left alone: it is the durable
+ * record that an announcement went out, and clearing it here (as an earlier
+ * version did) made a re-saved pick indistinguishable from one nobody had
+ * ever published — same absent prompt, same "Publish teams" button.
+ *
+ * **This is also the only thing that clears a departed player's side.** Every
+ * row that is not currently `in` has its `team` nulled in the same batch. See
+ * `src/domain/teams.ts` for why that clearing belongs here and nowhere else:
+ * the orphaned value is the staleness signal, and a save is the organiser
+ * deliberately acknowledging the churn it signalled.
  *
  * This is the only owner control on a fixture that writes straight to D1
  * rather than through the FixtureCapacity Durable Object, and deliberately
@@ -856,13 +872,33 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
   const submitted = await c.req.parseBody();
   const assignments = readAssignments(submitted, withSquad.squad);
 
+  const before = teamsOf(withSquad.squad);
+  // Seeded from `before`, then overlaid with what was actually submitted, so
+  // the row records the pick as it now stands rather than only the keys this
+  // request happened to carry. A form rendered before a waitlist promotion —
+  // or any hand-built POST — otherwise filed `after: {}` against a populated
+  // `before`, and the trail read as "the organiser stripped everyone's side"
+  // for an act that changed nothing. §7 makes that accuracy the reason the
+  // row exists.
+  const after = { ...before, ...Object.fromEntries(assignments.map((a) => [a.playerId, a.team])) };
+
   await target.db.batch([
-    // Cleared unconditionally, including when the assignments turn out to be
+    // Stamped unconditionally, including when the assignments turn out to be
     // identical to what was published: this handler cannot tell a re-save
     // from a real change without comparing every row, and a pick wrongly
-    // marked "published" is the failure that matters — it would leave the
-    // publish guard believing everyone has been told when they may not have.
-    target.db.update(fixtures).set({ teamsPublishedAt: null }).where(eq(fixtures.id, target.fixture.id)),
+    // believed to be still-announced is the failure that matters — it would
+    // leave the page claiming everyone has been told when they may not have.
+    target.db.update(fixtures).set({ teamsSavedAt: now }).where(eq(fixtures.id, target.fixture.id)),
+    // The one place an orphaned side is cleared (see this route's doc comment
+    // and `src/domain/teams.ts`). It cannot be expressed as one of the
+    // per-player statements below: those are restricted to currently-`in`
+    // members, and a departed player is by definition not among them — which
+    // is exactly why nothing could clear their side before this statement
+    // existed.
+    target.db
+      .update(responses)
+      .set({ team: null })
+      .where(and(eq(responses.fixtureId, target.fixture.id), ne(responses.status, "in"))),
     buildAuditInsert(target.db, {
       actorPlayerId: c.get("player")!.id,
       entityType: "fixture",
@@ -870,8 +906,8 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
       action: "fixture.teams_saved",
       // BR-27's previous value: the whole pick before and after, because a
       // side is only meaningful against the rest of the pick it belongs to.
-      before: { teams: teamsOf(withSquad.squad) },
-      after: { teams: Object.fromEntries(assignments.map((a) => [a.playerId, a.team])) },
+      before: { teams: before },
+      after: { teams: after },
       now,
     }),
     // One statement per player rather than a CASE expression: a squad is

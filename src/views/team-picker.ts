@@ -42,10 +42,15 @@ export interface TeamPickerParams {
   uneven: boolean;
   /** Set when a publish was refused: the names with no side yet. */
   unassignedProblem?: readonly string[];
-  /** Whether a publish is on record for this fixture (`teams_published_at` is set). */
+  /**
+   * Whether an announcement has ever gone out for this fixture
+   * (`teams_published_at` is set, and nothing ever clears it).
+   */
   published: boolean;
   /** From `teamsNeedAnotherLook` — the squad has moved since the pick was made. */
   needsAnotherLook: boolean;
+  /** From `announcementOutstanding` — what was sent no longer describes the pick. */
+  announcementOutstanding: boolean;
 }
 
 /**
@@ -146,6 +151,13 @@ function renderRow(member: TeamPickerParams["members"][number], names: Record<Te
  * Shown only when there is something to publish — a pick has been started, or
  * one was published before. On a fixture nobody has picked, a Publish button
  * would offer to announce an empty pick that the route would then refuse.
+ *
+ * **The two states must never be indistinguishable.** "Publish teams" means
+ * nobody has ever been told; "Publish again" means somebody has. That is why
+ * `published` reads a column nothing clears — an earlier version cleared it on
+ * every save, so an organiser who published and then swapped two players got
+ * the never-published page verbatim, no prompt and all, while the squad held
+ * the previous email.
  */
 function renderPublish(params: TeamPickerParams): string {
   const { gameId, fixtureId, members, published, needsAnotherLook } = params;
@@ -153,16 +165,19 @@ function renderPublish(params: TeamPickerParams): string {
   const anyPick = published || needsAnotherLook || members.some((member) => member.team !== null);
   if (!anyPick) return "";
 
-  // `teamsNeedAnotherLook` is true in two different worlds (see
-  // `src/domain/teams.ts`), and only one of them has ever sent anything — so
-  // the prompt says which one it is rather than telling an organiser their
-  // teams "changed since they were sent out" when nobody has been sent
-  // anything at all.
-  const prompt = !needsAnotherLook
-    ? ""
-    : published
+  // Two different worlds, and only one of them has ever sent anything — so the
+  // prompt says which one it is rather than telling an organiser their teams
+  // "changed since they were sent out" when nobody has been sent anything at
+  // all. Published: the prompt is `announcementOutstanding`, which covers both
+  // a save made after the announcement and a roster that has moved under it.
+  // Not published: only the roster question can arise.
+  const prompt = published
+    ? params.announcementOutstanding
       ? `<p class="team-note">The teams have changed since they were last sent out. Send them again?</p>`
-      : `<p class="team-note">The squad has changed since you started picking. Worth another look before you publish.</p>`;
+      : ""
+    : needsAnotherLook
+      ? `<p class="team-note">The squad has changed since you started picking. Worth another look before you publish.</p>`
+      : "";
 
   return `${prompt}
           <form method="post" action="${escapeHtml(ownerTeamsPublishPath(gameId, fixtureId))}">

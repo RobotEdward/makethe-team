@@ -53,10 +53,12 @@ export interface FixturePageOptions {
   /**
    * From `publishedTeamsFor` — `null` whenever this fixture's teams have not
    * been published, which is the whole of the "a saved pick is invisible"
-   * rule as far as this page is concerned (BR-35). Optional so the dashboard
-   * and other callers of the shared renderers need not supply it.
+   * rule as far as this page is concerned (BR-35). Required, and `null` is the
+   * way to say "nothing to show": every caller of this page has a fixture in
+   * hand and so can answer the question, and an optional field would let a new
+   * one silently omit a published pick from a player's page.
    */
-  teams?: PublishedTeams | null;
+  teams: PublishedTeams | null;
   /** Set when there is nothing this viewer can do here: render read-only, no buttons. */
   readOnlyReason?: ReadOnlyReason;
 }
@@ -212,10 +214,17 @@ export function renderSquadSection(squad: readonly SquadMember[] | null, inCount
  * `team` on purpose (see `src/domain/teams.ts`), and naming them under a side
  * would claim they are playing.
  *
+ * A viewer who is `in` with no side yet — promoted off the waitlist after the
+ * announcement — gets a sentence of their own instead. Without it they read a
+ * Teams heading and both line-ups with nothing anywhere about themselves,
+ * which is the one thing Definition of Done #5 says must not happen.
+ *
  * Returns "" when there is neither an own side nor a visible line-up — a
- * pending player in a game that hides its squad. A bare "Teams" heading over
- * nothing tells them a pick exists without telling them anything about it,
- * which is worse than silence.
+ * pending player in a game that hides its squad, and equally a published pick
+ * whose squad has since emptied. A bare "Teams" heading over nothing (or over
+ * "Nobody." twice) tells them a pick exists without telling them anything
+ * about it, which is worse than silence. `renderTeamsReadOnly` drops out on
+ * the same emptiness for the same reason.
  */
 export function renderPublishedTeamsSection(
   teams: PublishedTeams | null,
@@ -224,11 +233,13 @@ export function renderPublishedTeamsSection(
   if (teams === null) return "";
 
   const yourSide =
-    teams.yourSide === null ? "" : `<p class="your-side">You're on ${escapeHtml(teams.names[teams.yourSide])}.</p>`;
-  const sides =
-    squad === null
-      ? ""
-      : renderTeamSides(teams.names, squad.filter((member) => member.status === "in" && member.team !== null));
+    teams.yourSide !== null
+      ? `<p class="your-side">You're on ${escapeHtml(teams.names[teams.yourSide])}.</p>`
+      : teams.awaitingSide
+        ? `<p class="your-side">Your side hasn't been picked yet.</p>`
+        : "";
+  const placed = squad === null ? [] : squad.filter((member) => member.status === "in" && member.team !== null);
+  const sides = placed.length === 0 ? "" : renderTeamSides(teams.names, placed);
 
   if (yourSide === "" && sides === "") return "";
   return `<h2>Teams</h2>${yourSide}${sides}`;

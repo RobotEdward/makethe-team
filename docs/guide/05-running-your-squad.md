@@ -182,7 +182,18 @@ again?**, and the button now reads **Publish again**.
 The same happens the other way round. If somebody comes off the waitlist into
 the free place, they turn up in the picker with no side and the same note
 appears. You can't publish again until they have one, which is the point:
-they're the person most in need of being told.
+they're the person most in need of being told. Until you've given them one,
+their own page says **Your side hasn't been picked yet.** rather than leaving
+them staring at two line-ups they aren't in.
+
+Sort the sides out and press **Publish again**, and the note goes: everyone
+playing is now holding an email that matches the pick. It comes back the
+moment they diverge again — including when *you* are the one who changed them.
+Move two people between sides after publishing, press **Save teams**, and the
+same note appears, because nine people are holding last week's version and
+nothing has told them otherwise. The button stays **Publish again** from the
+first time you publish onwards, so you can always tell a squad that has been
+told something from one that never has.
 
 Once the fixture has been played or called off, the teams stay on the page as
 a record of who was on which side. The controls go; the pick doesn't.

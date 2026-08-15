@@ -1,0 +1,1 @@
+ALTER TABLE `fixtures` ADD `teams_saved_at` integer;

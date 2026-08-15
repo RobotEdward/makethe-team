@@ -32,6 +32,10 @@ const BASE = {
   viewer: { playerId: "p2", status: "pending" as const },
   token: "tok",
   intent: null,
+  // The field is required on the page's options, and `null` is how a caller
+  // says "nothing published here" — which is what every case below except the
+  // teams tests wants.
+  teams: null,
 };
 
 function optionsWith(overrides: Partial<FixturePageOptions>): FixturePageOptions {
@@ -468,7 +472,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       squad: PICKED,
       inCount: 2,
       viewer: { playerId: "p1", status: "in" },
-      teams: { names: NAMES, yourSide: "a" },
+      teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
     expect(html).toContain("You're on Reds.");
@@ -480,7 +484,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       squad: PICKED,
       inCount: 2,
       viewer: { playerId: "p1", status: "in" },
-      teams: { names: NAMES, yourSide: "a" },
+      teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
     expect(html).toContain("Edward Cooper");
@@ -499,7 +503,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       squad: null,
       inCount: 2,
       viewer: { playerId: "p1", status: "in" },
-      teams: { names: NAMES, yourSide: "a" },
+      teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
     expect(html).toContain("You're on Reds.");
@@ -515,7 +519,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       squad: null,
       inCount: 2,
       viewer: { playerId: "p1", status: "in" },
-      teams: { names: NAMES, yourSide: "a" },
+      teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
     expect(html).not.toContain("Nobody.");
@@ -528,16 +532,16 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       squad: null,
       inCount: 2,
       viewer: { playerId: "p3", status: "pending" },
-      teams: { names: NAMES, yourSide: null },
+      teams: { names: NAMES, yourSide: null, awaitingSide: false },
     }));
 
     expect(html).not.toContain("<h2>Teams</h2>");
   });
 
   it("never lists a player who is no longer in, though they keep their side", () => {
-    // `responses.team` is deliberately never cleared (see
-    // `src/domain/teams.ts`), so this row is what the database really looks
-    // like after a dropout — and listing them would claim they are playing.
+    // A dropout keeps their side until the organiser's next save clears it
+    // (see `src/domain/teams.ts`), so this row is what the database really
+    // looks like in between — and listing them would claim they are playing.
     const html = renderFixturePage(optionsWith({
       squad: [
         PICKED[0]!,
@@ -545,7 +549,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       ],
       inCount: 1,
       viewer: { playerId: "p1", status: "in" },
-      teams: { names: NAMES, yourSide: "a" },
+      teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
     expect(html).toContain("<h3>Blues");
@@ -557,12 +561,39 @@ describe("fixture page — published teams (BR-35 §5)", () => {
     expect(html).toContain("Sam Okonjo");
   });
 
+  it("tells a player who is in with no side that theirs is not picked yet", () => {
+    const html = renderFixturePage(optionsWith({
+      squad: PICKED,
+      inCount: 2,
+      viewer: { playerId: "p3", status: "in" },
+      teams: { names: NAMES, yourSide: null, awaitingSide: true },
+    }));
+
+    expect(html).toContain("Your side hasn't been picked yet.");
+    expect(html).toContain("<h3>Reds");
+  });
+
+  it("says nothing when nobody on the published pick is still in", () => {
+    // The sibling `renderTeamsReadOnly` drops out on the same emptiness. A
+    // heading over "Nobody." twice is an assertion about a pick, made to
+    // somebody it says nothing about.
+    const html = renderFixturePage(optionsWith({
+      squad: PICKED.map((member) => ({ ...member, status: "out" as const })),
+      inCount: 0,
+      viewer: { playerId: "p3", status: "pending" },
+      teams: { names: NAMES, yourSide: null, awaitingSide: false },
+    }));
+
+    expect(html).not.toContain("<h2>Teams</h2>");
+    expect(html).not.toContain("Nobody.");
+  });
+
   it("escapes a side's name", () => {
     const html = renderFixturePage(optionsWith({
       squad: null,
       inCount: 1,
       viewer: { playerId: "p1", status: "in" },
-      teams: { names: { a: '<script>alert("x")</script>', b: "Blues" }, yourSide: "a" },
+      teams: { names: { a: '<script>alert("x")</script>', b: "Blues" }, yourSide: "a", awaitingSide: false },
     }));
 
     expect(html).not.toContain("<script>alert");
@@ -574,7 +605,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       squad: PICKED,
       inCount: 2,
       viewer: { playerId: "p1", status: "in" },
-      teams: { names: NAMES, yourSide: "a" },
+      teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
     expect(html).not.toContain("<script");

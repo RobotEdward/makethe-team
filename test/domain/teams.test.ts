@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  announcementOutstanding,
   assignedButNotIn,
   isTeamId,
   sideCounts,
@@ -46,6 +47,46 @@ describe("teamsNeedAnotherLook", () => {
 
   it("is false for a fixture nobody has picked at all", () => {
     expect(teamsNeedAnotherLook([row({ team: null }), row({ team: null })])).toBe(false);
+  });
+});
+
+describe("announcementOutstanding", () => {
+  const PICKED = [row({ team: "a" }), row({ team: "b" })];
+  const PUBLISHED = new Date("2026-08-13T09:00:00Z");
+  const LATER = new Date("2026-08-13T10:00:00Z");
+  const EARLIER = new Date("2026-08-13T08:00:00Z");
+
+  it("is false when nothing has ever been announced", () => {
+    // However stale the rows look, nobody is holding an email to contradict.
+    const stale = [row({ team: "a" }), row({ team: "b", status: "out" })];
+    expect(announcementOutstanding({ teamsPublishedAt: null, teamsSavedAt: LATER }, stale)).toBe(false);
+  });
+
+  it("is false for a pick published after it was last saved", () => {
+    expect(announcementOutstanding({ teamsPublishedAt: PUBLISHED, teamsSavedAt: EARLIER }, PICKED)).toBe(false);
+  });
+
+  it("is true when the pick was saved after it was announced", () => {
+    // The case a single `teams_published_at` column could not express: no
+    // status changed, so neither staleness condition fires — only the two
+    // instants know that what went out is not what is picked.
+    expect(announcementOutstanding({ teamsPublishedAt: PUBLISHED, teamsSavedAt: LATER }, PICKED)).toBe(true);
+  });
+
+  it("is true when the roster has moved under an announcement nobody has re-saved", () => {
+    const dropped = [row({ team: "a" }), row({ team: "b", status: "out" })];
+    expect(announcementOutstanding({ teamsPublishedAt: PUBLISHED, teamsSavedAt: EARLIER }, dropped)).toBe(true);
+  });
+
+  it("is true for a promotion that arrived after the announcement", () => {
+    const promoted = [row({ team: "a" }), row({ team: "b" }), row({ team: null })];
+    expect(announcementOutstanding({ teamsPublishedAt: PUBLISHED, teamsSavedAt: EARLIER }, promoted)).toBe(true);
+  });
+
+  it("is false for a fixture published without ever being saved through the route", () => {
+    // `teams_saved_at` is null on every fixture that predates the column, and
+    // a null must never read as "saved since".
+    expect(announcementOutstanding({ teamsPublishedAt: PUBLISHED, teamsSavedAt: null }, PICKED)).toBe(false);
   });
 });
 

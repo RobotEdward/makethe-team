@@ -485,13 +485,90 @@ describe("the publish control on GET /g/:id/f/:fixtureId", () => {
 
     expect(html).toContain("last sent out");
     expect(html).toContain("Publish again");
-    // The dropped-out player keeps his `team` on purpose, but he is not `in`,
-    // so he is not offered a side any more.
+    // The dropped-out player keeps his `team` until the organiser's next save
+    // clears it, but he is not `in`, so he is not offered a side any more.
     const [row] = await testDb()
       .select()
       .from(responses)
       .where(and(eq(responses.fixtureId, seed.fixtureId), eq(responses.playerId, seed.bram)));
     expect(row?.team).toBe("b");
+  });
+
+  /**
+   * The arc the final M9 review walked by hand, end to end, and the one the
+   * old single-column design got wrong: the prompt latched on permanently
+   * because nothing could ever clear a departed player's side, so the page
+   * said the teams had changed since they were last sent out *immediately
+   * after they were sent out*, describing exactly the squad that had been
+   * sent, for the life of the fixture.
+   */
+  it("stops asking once the organiser has re-picked and re-published", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const seed = await seedPublishableFixture(viewerId);
+
+    await savePick(seed, cookie, completePick(seed));
+    await publish(seed, cookie);
+    await settleNotifications(2);
+
+    // Ada answers "Can't make it" after the teams went out.
+    await env.FIXTURE_CAPACITY.getByName(seed.fixtureId).setResponse({
+      playerId: seed.ada,
+      intent: "out",
+      actorPlayerId: null,
+      source: "token",
+      whenFull: "waitlist",
+      now: NOW.getTime(),
+    });
+    expect(await page(seed, cookie), "the churn must surface while it is unacknowledged").toContain("last sent out");
+
+    // The organiser re-picks what is left and sends it round again. Ada is not
+    // in this body — the picker no longer renders her.
+    await savePick(seed, cookie, { [seed.bram]: "b", [seed.guest]: "a" });
+    const republished = await publish(seed, cookie);
+    expect(republished.status).toBe(303);
+
+    const html = await page(seed, cookie);
+
+    expect(html, "the squad now holds exactly what is picked").not.toContain("last sent out");
+    expect(html).not.toContain("Worth another look");
+    // Still distinguishable from a fixture nobody ever published.
+    expect(html).toContain("Publish again");
+    expect(html).not.toMatch(/<button[^>]*type="submit">Publish teams<\/button>/);
+  });
+
+  it("asks again when the organiser changes a published pick and saves it", async () => {
+    // The mirror image, and the one the "the button is itself the prompt"
+    // mitigation could not cover: saving used to clear `teams_published_at`,
+    // so this page came back with no prompt and a button reading "Publish
+    // teams" — identical to a fixture nobody had ever published, while
+    // everyone playing held the previous email.
+    const { cookie, viewerId } = await ownerSession();
+    const seed = await seedPublishableFixture(viewerId);
+    await savePick(seed, cookie, completePick(seed));
+    await publish(seed, cookie);
+    await settleNotifications(2);
+
+    // Two players swap sides. Nobody's status changes, so neither staleness
+    // condition fires — only the save instant knows.
+    await savePick(seed, cookie, { [seed.ada]: "b", [seed.bram]: "a", [seed.guest]: "a" });
+
+    const html = await page(seed, cookie);
+
+    expect(html).toContain("last sent out");
+    expect(html).toContain("Publish again");
+  });
+
+  it("says nothing about sending again on a pick that has only ever been saved", async () => {
+    // `announcementOutstanding` is false whenever nothing was announced: there
+    // is no email out there for a saved pick to contradict.
+    const { cookie, viewerId } = await ownerSession();
+    const seed = await seedPublishableFixture(viewerId);
+    await savePick(seed, cookie, completePick(seed));
+
+    const html = await page(seed, cookie);
+
+    expect(html).not.toContain("last sent out");
+    expect(html).toMatch(/<button[^>]*type="submit">Publish teams<\/button>/);
   });
 
   /**

@@ -42,12 +42,30 @@ a third, and `'a' | 'b'` makes an invalid state unrepresentable in a way
 
 ## 3. Published, and stale
 
-One column on `fixtures`: `teams_published_at`, nullable.
+Two columns on `fixtures`, both nullable, and the split between them is
+load-bearing:
 
-- **Saving assignments clears it.** The organiser has changed the teams and not
-  told anyone, and the data says so directly rather than leaving it to be
-  inferred.
-- **Publishing sets it**, and sends N-9.
+- **`teams_published_at`** — when an announcement last went out. **Publishing
+  sets it and nothing ever clears it**, so "has this fixture ever been
+  announced?" stays answerable for its whole life.
+- **`teams_saved_at`** — when the pick was last saved. **Every save stamps it**,
+  including a save that changes nothing: the route cannot tell a re-save from a
+  real change without comparing every row, and a pick wrongly believed to be
+  still-announced is the failure that matters.
+
+**An announcement is outstanding** — the prompt the organiser sees, and the
+"Publish again" label — when `teams_published_at` is non-null *and* either
+`teams_saved_at > teams_published_at` or §3.1's roster conditions hold. The
+publish button reads "Publish teams" only while `teams_published_at` is null,
+so a fixture whose squad is holding an email is never rendered identically to
+one nobody has ever published.
+
+*This replaced a single overloaded `teams_published_at` that saving cleared.*
+One column cannot answer both "was this announced?" and "is the announcement
+current?", and the whole-branch review found both halves of the resulting
+failure in the real app: an organiser who published and then swapped two
+players got the never-published page verbatim — no prompt, and a button
+reading "Publish teams" — while nine people held the previous email.
 
 ### 3.1 Roster churn is derived, never stored
 
@@ -58,10 +76,24 @@ rows:
    has arrived since the pick; or
 2. someone has a non-null `team` but is no longer `in` — they dropped out.
 
-**A departed player's `team` is deliberately not cleared.** The orphaned value
-*is* condition 2. Clearing it would destroy the only signal that the published
-teams no longer match the squad, and it buys a free property: a player who
-drops out and comes back is back on their old side, with no special case.
+**A departed player's `team` is not cleared by anything that changes their
+status.** The orphaned value *is* condition 2, and a drop-out, a removal or an
+erasure must leave it alone: clearing it there would destroy the only signal
+that the published teams no longer match the squad.
+
+**Exactly one thing clears it: the next save**, which nulls `team` on every row
+that is not currently `in`, in the batch that writes the new pick. That keeps
+the signal across precisely the window it is for — between the drop-out and the
+organiser's next deliberate re-pick — while making it clearable at all. Without
+that statement the signal could never be retired: the picker does not render a
+departed player, so no submitted body ever names them, and the fixture page
+went on saying the teams had changed since they were last sent out immediately
+after they had been sent out, for the life of the fixture.
+
+*An earlier draft claimed a free property here — a player who drops out and
+comes back lands on their old side. That is no longer true once the organiser
+has saved in between. It was a convenience, never a requirement, and the trade
+is deliberate: a prompt that lies permanently is worse than losing it.*
 
 Nothing about team picking writes to `FixtureCapacity`, `removeMember`,
 `setResponse` or `withdrawMember`. That is the main thing this design is
@@ -106,12 +138,19 @@ This is not the product's first script on an ordinary page — `COPY_INVITE_JS`
 already sits on the game overview — so the pattern is established rather than
 novel. §332 permits "a small client island" for the picker specifically.
 
-### 4.1 Where the `uneven` flag pays off
+### 4.1 Where `prefers_even_numbers` pays off
 
-The picker shows each side's count and says plainly when they are uneven. The
-game's existing `prefers_even_numbers` setting decides whether that reads as a
-warning or as a neutral statement, reusing `fixtureView`'s `uneven` flag rather
-than recomputing parity.
+The picker shows each side's count and says plainly when the two sides differ
+in size, gated on the game's existing `prefers_even_numbers` setting — a
+one-line `prefersEvenNumbers && counts.a !== counts.b` in the view.
+
+**Not `fixtureView`'s `uneven` flag**, which answers a different question: that
+flag means the *total* `in` count is odd, which is about whether the squad can
+be split at all, while the picker is asking whether the split the organiser has
+actually made is lopsided. Twelve players in, eight on one side, is even by the
+flag and lopsided by the picker. *An earlier version of this section and of
+BR-35 said the flag was reused; it never was, and describing it that way
+invited a "simplification" that would have swapped one question for the other.*
 
 ### 4.2 When it is available
 
@@ -163,9 +202,13 @@ question an audit trail exists to answer.
 ## 8. Testing
 
 **Server** — the two staleness conditions of §3.1, each independently and
-together; saving clearing `teams_published_at`; publishing setting it; a
-departed player's team surviving their departure (the property §3.1 depends
-on); assignment refused on a `scheduled`, `played` or `cancelled` fixture; a
+together; saving stamping `teams_saved_at` and leaving `teams_published_at`
+alone; publishing setting `teams_published_at`; a departed player's team
+surviving their departure and then being cleared by the next save (both halves
+of the property §3.1 depends on); the whole arc — save, publish, drop out,
+re-save, re-publish — ending with no prompt and a button that still reads
+"Publish again"; a player who is `in` with no side being told so rather than
+left out of a published pick; assignment refused on a `scheduled`, `played` or `cancelled` fixture; a
 partial pick saving but refusing to publish, naming who is unassigned; a
 waitlisted player never appearing in the picker; the
 N-9 dedupe key changing across two publishes; guests never receiving N-9;

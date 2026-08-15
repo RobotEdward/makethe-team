@@ -34,7 +34,12 @@ export interface OwnerFixtureParams {
   confirm?: { playerId: string | null; name: string; intent: "in" };
   /** A refused publish's list of names with no side yet, shown on the picker. */
   unassignedProblem?: readonly string[];
-  /** Whether this fixture's teams have been published (`teams_published_at` is set). */
+  /**
+   * Whether an announcement has *ever* gone out for this fixture
+   * (`teams_published_at` is set). Never cleared, so this stays true after a
+   * later save — which is what keeps a re-picked fixture distinguishable from
+   * one nobody has published.
+   */
   teamsPublished: boolean;
   /**
    * From `teamsNeedAnotherLook` over the *unfiltered* assignment rows — which
@@ -44,6 +49,13 @@ export interface OwnerFixtureParams {
    * stale (see `src/domain/teams.ts`).
    */
   teamsNeedAnotherLook: boolean;
+  /**
+   * From `announcementOutstanding` — the squad is holding an email that no
+   * longer describes the pick, either because the pick was saved after it went
+   * out or because the roster has moved since. Only ever true when
+   * `teamsPublished` is.
+   */
+  announcementOutstanding: boolean;
   /** A refusal to explain near the top, e.g. Task 6's guard. Escaped and shown. */
   problem?: string;
 }
@@ -179,6 +191,7 @@ function renderTeams(params: OwnerFixtureParams): string {
     unassignedProblem,
     published: params.teamsPublished,
     needsAnotherLook: params.teamsNeedAnotherLook,
+    announcementOutstanding: params.announcementOutstanding,
   });
 }
 

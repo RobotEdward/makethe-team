@@ -3,15 +3,30 @@
  * picker, the publish guard, the player-facing view and the notification
  * email cannot disagree about what "the teams" currently are.
  *
- * `responses.team` is set once, when an organiser picks sides, and is
- * **deliberately never cleared** when a player's status moves away from
- * `in` — not by a player leaving (M7a), not by an organiser removing them
- * (J6a), not by erasure (M7b). All three of those write `status =
- * "withdrawn"` and leave `team` exactly as it was. That orphaned value is
- * the only signal that a published side no longer matches who is actually
- * playing, so clearing it anywhere would destroy the evidence this module
- * exists to read. It also means a player who drops out and rejoins lands
- * back on their old side with no special case.
+ * `responses.team` is set when an organiser picks sides, and is
+ * **deliberately not cleared by anything that changes a player's status** —
+ * not by a player leaving (M7a), not by an organiser removing them (J6a),
+ * not by erasure (M7b). All three of those write `status = "withdrawn"` and
+ * leave `team` exactly as it was. That orphaned value is the only signal
+ * that a published side no longer matches who is actually playing, so
+ * clearing it on those paths would destroy the evidence this module exists
+ * to read.
+ *
+ * **Exactly one thing clears it: the next save.** The save route
+ * (`POST /g/:id/f/:fixtureId/teams`) nulls `team` on every row that is not
+ * currently `in`, in the same batch that writes the new pick. That keeps the
+ * orphan-as-signal property across precisely the window the signal is for —
+ * between the drop-out and the organiser's next deliberate re-pick — while
+ * making the signal clearable at all. Without it the prompt latched on
+ * permanently: nothing else could ever remove an orphaned side, because the
+ * picker never renders a departed player and so never posts a value for them,
+ * and the page went on saying the teams had changed since they were sent out
+ * immediately after they had been sent out, for the life of the fixture.
+ *
+ * The cost is a property an earlier draft of this module advertised: a player
+ * who drops out and comes back no longer lands on their old side if the
+ * organiser has saved in between. That was a convenience, never a
+ * requirement, and a prompt that lies permanently is worse than losing it.
  *
  * Consequently there are exactly two ways the published teams can go stale
  * relative to the current squad:
@@ -75,6 +90,36 @@ export function teamsNeedAnotherLook(rows: readonly TeamAssignment[]): boolean {
 }
 
 /**
+ * Whether the squad is holding an announcement that no longer describes the
+ * pick — the one question the owner's page turns its prompt on (BR-35 §3).
+ *
+ * Three parts, in this order:
+ *
+ *  1. **Nothing was ever announced ⇒ nothing is outstanding.** An unpublished
+ *     fixture cannot have a stale announcement; whatever the organiser has
+ *     saved, nobody is holding anything to contradict it.
+ *  2. **Saved after published ⇒ outstanding.** This is the case the single
+ *     `teams_published_at` column could not express. Saving used to null that
+ *     column, so an organiser who published and then swapped two players
+ *     landed on a page identical to one nobody had ever published — no
+ *     prompt, and a button reading "Publish teams" — while nine people held
+ *     the previous email.
+ *  3. **Otherwise, the roster itself may have moved** under an announcement
+ *     nobody has re-saved since: `teamsNeedAnotherLook`'s two conditions.
+ *
+ * Clock-free like everything else here: it compares two stored instants and
+ * reads rows.
+ */
+export function announcementOutstanding(
+  fixture: { teamsPublishedAt: Date | null; teamsSavedAt: Date | null },
+  rows: readonly TeamAssignment[],
+): boolean {
+  if (fixture.teamsPublishedAt === null) return false;
+  if (fixture.teamsSavedAt !== null && fixture.teamsSavedAt > fixture.teamsPublishedAt) return true;
+  return teamsNeedAnotherLook(rows);
+}
+
+/**
  * How many players are currently `in` on each side.
  *
  * Only `in` rows count. A withdrawn or dropped-out player keeps their
@@ -110,6 +155,18 @@ export interface PublishedTeams {
    * rest of the page, or `null` when they have none to be told about.
    */
   yourSide: TeamId | null;
+  /**
+   * True for the one viewer `yourSide: null` would otherwise leave with
+   * nothing said about them at all: somebody who *is* `in` — typically
+   * promoted off the waitlist after the pick was announced — but has not been
+   * given a side yet. They would otherwise read a Teams heading, both full
+   * line-ups, and no line of their own, on a page whose whole promise
+   * (Definition of Done #5) is that every player can see their own side.
+   *
+   * Distinct from a viewer who is simply not playing, who gets no own-side
+   * line because there is correctly nothing to tell them.
+   */
+  awaitingSide: boolean;
 }
 
 /**
@@ -145,8 +202,10 @@ export function publishedTeamsFor(
   viewerMember: { status: ResponseStatus; team: TeamId | null } | undefined,
 ): PublishedTeams | null {
   if (fixture.teamsPublishedAt === null) return null;
+  const playing = viewerMember?.status === "in";
   return {
     names: teamNames(game),
-    yourSide: viewerMember?.status === "in" ? viewerMember.team : null,
+    yourSide: playing ? viewerMember.team : null,
+    awaitingSide: playing && viewerMember.team === null,
   };
 }

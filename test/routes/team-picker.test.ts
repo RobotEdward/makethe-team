@@ -287,16 +287,50 @@ describe("POST /g/:id/f/:fixtureId/teams", () => {
     expect(await teamOf(fixtureId, ada)).toBeNull();
   });
 
-  it("clears teams_published_at, because the pick no longer matches what was announced", async () => {
+  it("stamps teams_saved_at and leaves teams_published_at alone", async () => {
+    // The split the final review of M9 forced. One column cannot answer both
+    // "was this announced?" and "is the announcement current?": clearing
+    // `teams_published_at` here made a re-saved pick byte-identical to one
+    // nobody had ever published, prompt and button label included.
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId, ada } = await seedPickableFixture(viewerId);
     const db = testDb();
-    await db.update(fixtures).set({ teamsPublishedAt: NOW }).where(eq(fixtures.id, fixtureId));
+    const published = new Date(NOW.getTime() - 60_000);
+    await db.update(fixtures).set({ teamsPublishedAt: published }).where(eq(fixtures.id, fixtureId));
 
     await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [ada]: "a" }, cookie);
 
     const [row] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
-    expect(row?.teamsPublishedAt).toBeNull();
+    expect(row?.teamsPublishedAt).toEqual(published);
+    expect(row?.teamsSavedAt, "a save must be dateable, or nothing can compare it to the publish").not.toBeNull();
+    expect(row!.teamsSavedAt!.getTime()).toBeGreaterThan(published.getTime());
+  });
+
+  it("clears the side of anyone who is no longer in", async () => {
+    // The only thing in the app that clears `responses.team`, and the fix for
+    // the prompt that used to latch on for the life of the fixture: the picker
+    // never renders a departed player, so their row is never in the submitted
+    // set and nothing else could ever reach it.
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, ada, bram } = await seedPickableFixture(viewerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [ada]: "a", [bram]: "b" }, cookie);
+
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId: ada,
+      intent: "out",
+      actorPlayerId: null,
+      source: "token",
+      whenFull: "waitlist",
+      now: NOW.getTime(),
+    });
+    expect(await teamOf(fixtureId, ada), "the orphaned side is the signal, until a save acknowledges it").toBe("a");
+
+    // The organiser re-saves what is left. Nothing in this body names Ada —
+    // it cannot, she has no row on the picker any more.
+    await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [bram]: "b" }, cookie);
+
+    expect(await teamOf(fixtureId, ada)).toBeNull();
+    expect(await teamOf(fixtureId, bram)).toBe("b");
   });
 
   it("writes exactly one audit row naming the actor and the pick", async () => {
@@ -310,6 +344,28 @@ describe("POST /g/:id/f/:fixtureId/teams", () => {
     expect(rows[0]).toMatchObject({ actorPlayerId: viewerId, entityType: "fixture", entityId: fixtureId });
     expect(JSON.parse(rows[0]!.beforeJson!)).toEqual({ teams: { [ada]: null, [bram]: null } });
     expect(JSON.parse(rows[0]!.afterJson!)).toEqual({ teams: { [ada]: "a", [bram]: "b" } });
+  });
+
+  it("records the pick as it stands, not only the keys the body carried", async () => {
+    // A form rendered before a waitlist promotion — or any hand-built POST —
+    // names a subset of the squad. Filing only those keys made the trail read
+    // as "the organiser stripped everyone else's side" for an act that
+    // changed nobody else. §7 of the design makes that accuracy the whole
+    // reason the row exists.
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, ada, bram } = await seedPickableFixture(viewerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [ada]: "a", [bram]: "b" }, cookie);
+
+    await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [bram]: "a" }, cookie);
+
+    const rows = await testDb().select().from(auditLog).where(eq(auditLog.action, "fixture.teams_saved"));
+    expect(rows).toHaveLength(2);
+    const latest = rows.sort((l, r) => l.createdAt.getTime() - r.createdAt.getTime()).at(-1)!;
+    expect(JSON.parse(latest.beforeJson!)).toEqual({ teams: { [ada]: "a", [bram]: "b" } });
+    // Ada keeps her side in the record because the request did not ask to
+    // change it, and the database agrees.
+    expect(JSON.parse(latest.afterJson!)).toEqual({ teams: { [ada]: "a", [bram]: "a" } });
+    expect(await teamOf(fixtureId, ada)).toBe("a");
   });
 
   it("never publishes anything", async () => {
