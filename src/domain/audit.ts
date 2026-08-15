@@ -134,6 +134,12 @@ export const AUDIT_ACTIONS = [
   "player.erasure_cancelled",
   "player.erasure_blocked",
   "player.erased",
+  // M9 (BR-35). Who put someone on which side is exactly the question an audit
+  // trail exists to answer, and both actions are organiser actions on a
+  // fixture (BR-27). Saving and publishing are separate because only one of
+  // them emails anybody.
+  "fixture.teams_saved",
+  "fixture.teams_published",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

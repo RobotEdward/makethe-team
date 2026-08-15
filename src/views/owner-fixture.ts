@@ -2,10 +2,12 @@ import { gamePath, ownerFixturePath, ownerGuestPath, ownerGuestRemovePath, owner
 import type { SquadMember } from "../db/queries.js";
 import { displayName } from "../domain/display-name.js";
 import type { FixtureView } from "../domain/fixture-view.js";
+import { sideCounts, type TeamId } from "../domain/teams.js";
 import { escapeHtml, layout } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
-import { FORM_CSS, SQUAD_STYLES_CSS } from "./styles.js";
+import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
+import { FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface OwnerFixtureParams {
   gameId: string;
@@ -20,8 +22,17 @@ export interface OwnerFixtureParams {
   squad: readonly SquadMember[];
   /** The owner viewing this page, so their own row (if any) could be marked. */
   viewerPlayerId: string;
+  /** From `teamNames(game)` — what this game calls each side (BR-35). */
+  teamNames: Record<TeamId, string>;
+  /**
+   * The game's own parity preference, carried so the picker can say when the
+   * two sides are uneven. Advisory only — BR-29 never refuses a pick over it.
+   */
+  prefersEvenNumbers: boolean;
   /** Task 5's confirmation banner, after a mark-in that waitlisted or exceeded capacity. */
   confirm?: { playerId: string | null; name: string; intent: "in" };
+  /** A refused publish's list of names with no side yet, shown on the picker. */
+  unassignedProblem?: readonly string[];
   /** A refusal to explain near the top, e.g. Task 6's guard. Escaped and shown. */
   problem?: string;
 }
@@ -43,8 +54,13 @@ function renderOverCapacity(view: FixtureView, inCount: number, maxPlayers: numb
  * fixture is history, and a merely scheduled one is not yet asking anybody
  * anything; in all three cases there is no capacity write for a control to
  * make, and the Durable Object would refuse it.
+ *
+ * Exported for the team-picker route (BR-35), which is the one owner control
+ * that writes straight to D1 instead of going through the Durable Object —
+ * so nothing else would refuse a pick on a cancelled fixture, and it has to
+ * ask the same question this page asks before rendering the form.
  */
-function takingChanges(view: FixtureView): boolean {
+export function takingChanges(view: FixtureView): boolean {
   return view.status !== "cancelled" && view.status !== "played" && view.status !== "scheduled";
 }
 
@@ -135,6 +151,39 @@ function renderGuestForm(gameId: string, fixtureId: string, params: OwnerFixture
           </form>`;
 }
 
+/**
+ * The teams section (BR-35): the picker while the fixture is still taking
+ * changes, the pick read-only once it is not, and nothing at all when no pick
+ * was ever made on a fixture that has closed.
+ *
+ * Gated on the same `takingChanges` predicate the squad's controls and the
+ * guest form use, so the three cannot disagree about when an organiser can
+ * still act. `sideCounts` and the `in` filter both come from the domain
+ * rather than being recounted here — a count on this page that disagreed
+ * with the one the publish guard reads would be worse than no count.
+ */
+function renderTeams(params: OwnerFixtureParams): string {
+  const { gameId, fixtureId, squad, view, teamNames, prefersEvenNumbers, unassignedProblem } = params;
+  const playing = squad.filter((member) => member.status === "in");
+  const counts = sideCounts(squad);
+
+  if (!takingChanges(view)) {
+    // Only players who are both `in` and placed: a dropout keeps their side
+    // on purpose, and showing them here would claim they played.
+    return renderTeamsReadOnly({ names: teamNames, members: playing.filter((member) => member.team !== null) });
+  }
+
+  return renderTeamPicker({
+    gameId,
+    fixtureId,
+    names: teamNames,
+    members: playing,
+    counts,
+    uneven: prefersEvenNumbers && counts.a !== counts.b,
+    unassignedProblem,
+  });
+}
+
 export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   const { gameId, fixtureId, gameName, kicksOffAtLocal, venueName, inCount, maxPlayers, view, squad } = params;
 
@@ -152,6 +201,8 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     <h2>Squad</h2>
     ${renderSquadList(gameId, fixtureId, squad, takingChanges(view))}
 
+    ${renderTeams(params)}
+
     ${renderGuestForm(gameId, fixtureId, params)}
 
     <p><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
@@ -160,6 +211,6 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   return layout({
     title: `${gameName} — Make The Team`,
     body,
-    pageStyles: [FORM_CSS, SQUAD_STYLES_CSS],
+    pageStyles: [FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
   });
 }

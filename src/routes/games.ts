@@ -1,7 +1,13 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { DASHBOARD_PATH, NEW_GAME_PATH, gameEditPath, gamePath, ownerFixturePath } from "../auth/paths.js";
+import {
+  DASHBOARD_PATH,
+  NEW_GAME_PATH,
+  gameEditPath,
+  gamePath,
+  ownerFixturePath,
+} from "../auth/paths.js";
 import { requirePlayer } from "../auth/session.js";
 import { buildAuditInsert, recordAudit } from "../db/audit.js";
 import { getDb } from "../db/client.js";
@@ -15,8 +21,9 @@ import {
   listSquad,
   listUpcomingFixtures,
   type FixtureWithSquad,
+  type SquadMember,
 } from "../db/queries.js";
-import { fixtures, games } from "../db/schema.js";
+import { fixtures, games, responses } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
 import { fixtureView } from "../domain/fixture-view.js";
@@ -24,6 +31,7 @@ import { parseGameForm } from "../domain/game-form.js";
 import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
+import { isTeamId, teamNames, type TeamId } from "../domain/teams.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
@@ -32,7 +40,7 @@ import { createNotifier } from "../notify/factory.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
-import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
+import { renderOwnerFixturePage, takingChanges, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
 import { notifyPromotedPlayer } from "./respond.js";
@@ -512,6 +520,8 @@ function ownerFixtureParams(
   const { fixture, game, squad } = withSquad;
   return {
     gameId: game.id,
+    teamNames: teamNames(game),
+    prefersEvenNumbers: fixture.prefersEvenNumbers,
     gameName: game.name,
     fixtureId: fixture.id,
     kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
@@ -764,6 +774,115 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
 
   return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
 });
+
+/**
+ * An organiser saving a team pick (BR-35 §4).
+ *
+ * Saving, not publishing: nothing here emails anybody, and a saved pick stays
+ * invisible to players until the publish route (a later task) announces it.
+ * That is exactly why the write clears `teams_published_at` — once the sides
+ * have moved, what was announced is no longer what is picked, and the null
+ * says so outright rather than leaving it to be inferred.
+ *
+ * This is the only owner control on a fixture that writes straight to D1
+ * rather than through the FixtureCapacity Durable Object, and deliberately
+ * so: a team assignment changes nobody's `status` and takes nobody's slot, so
+ * routing it through the capacity actor would put a write in the critical
+ * section that cannot affect the thing that section protects. It also means
+ * nothing else would refuse a pick on a closed fixture, which is why
+ * `takingChanges` is checked here explicitly.
+ *
+ * **A partial pick is allowed.** An organiser interrupted halfway keeps what
+ * they have done; refusing to *publish* an incomplete pick is the publish
+ * guard's job, not this one's.
+ */
+gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
+  const withSquad = await getFixtureWithSquad(target.db, target.fixture.id);
+  if (withSquad === null) return c.text("Not found", 404);
+
+  // The same predicate the picker renders behind, so a form that was on
+  // screen when the fixture closed cannot save through the back of it.
+  if (!takingChanges(ownerFixtureParams(withSquad, c.get("player")!.id, now).view)) {
+    return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
+  }
+
+  const submitted = await c.req.parseBody();
+  const assignments = readAssignments(submitted, withSquad.squad);
+
+  await target.db.batch([
+    // Cleared unconditionally, including when the assignments turn out to be
+    // identical to what was published: this handler cannot tell a re-save
+    // from a real change without comparing every row, and a pick wrongly
+    // marked "published" is the failure that matters — it would leave the
+    // publish guard believing everyone has been told when they may not have.
+    target.db.update(fixtures).set({ teamsPublishedAt: null }).where(eq(fixtures.id, target.fixture.id)),
+    buildAuditInsert(target.db, {
+      actorPlayerId: c.get("player")!.id,
+      entityType: "fixture",
+      entityId: target.fixture.id,
+      action: "fixture.teams_saved",
+      // BR-27's previous value: the whole pick before and after, because a
+      // side is only meaningful against the rest of the pick it belongs to.
+      before: { teams: teamsOf(withSquad.squad) },
+      after: { teams: Object.fromEntries(assignments.map((a) => [a.playerId, a.team])) },
+      now,
+    }),
+    // One statement per player rather than a CASE expression: a squad is
+    // tens of rows, D1's per-statement parameter ceiling is nowhere near in
+    // play, and a batch is atomic either way.
+    ...assignments.map((assignment) =>
+      target.db
+        .update(responses)
+        .set({ team: assignment.team })
+        .where(and(eq(responses.fixtureId, target.fixture.id), eq(responses.playerId, assignment.playerId))),
+    ),
+  ]);
+
+  return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
+});
+
+/** The current pick, keyed by player id, for the audit row's `before`. */
+function teamsOf(squad: readonly SquadMember[]): Record<string, TeamId | null> {
+  return Object.fromEntries(squad.filter((m) => m.status === "in").map((m) => [m.playerId, m.team]));
+}
+
+/**
+ * The assignments a submitted picker form actually asks for.
+ *
+ * Deliberately forgiving, and that is a robustness requirement rather than a
+ * nicety: the squad can change under a picker that is already on screen — a
+ * player drops out, a guest is removed, a waitlisted player is promoted — and
+ * the stale form that organiser then submits must save what still makes sense
+ * instead of failing. So a key that is not a currently-`in` member of *this*
+ * fixture is ignored, and so is a value that is not `a`, `b` or empty.
+ * Neither is an error; there is no attacker-supplied case here that a 400
+ * would serve better than simply not doing it.
+ *
+ * Restricting to `in` members is also what stops the picker being a second
+ * way to touch a waitlisted player's row: they are not offered a side (BR-35
+ * §4), and a hand-built body naming one gets nowhere.
+ */
+function readAssignments(
+  submitted: Record<string, unknown>,
+  squad: readonly SquadMember[],
+): readonly { playerId: string; team: TeamId | null }[] {
+  const playing = new Set(squad.filter((m) => m.status === "in").map((m) => m.playerId));
+  const assignments: { playerId: string; team: TeamId | null }[] = [];
+
+  for (const [playerId, value] of Object.entries(submitted)) {
+    if (!playing.has(playerId)) continue;
+    if (value === "") assignments.push({ playerId, team: null });
+    else if (isTeamId(value)) assignments.push({ playerId, team: value });
+  }
+
+  return assignments;
+}
 
 /**
  * The one refusal J6a's invariant produces, rendered as the game page again at

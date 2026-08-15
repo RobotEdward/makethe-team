@@ -141,6 +141,20 @@ export function ownerFixturePath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}`;
 }
 
+/**
+ * Where the team picker's Save posts (BR-35 §4).
+ *
+ * One path for the whole pick rather than one per player: the picker is a
+ * single form whose rows are radio groups, so an organiser working with
+ * JavaScript off saves every side in one submission. A per-player endpoint
+ * would need a button per row and would let a half-applied pick exist between
+ * two requests — exactly the state `teamsPublishedAt` is meant to make
+ * unambiguous.
+ */
+export function ownerTeamsPath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/teams`;
+}
+
 /** Where an owner's mark-in/mark-out for one player posts (J6b §4). */
 export function ownerResponsePath(gameId: string, fixtureId: string, playerId: string): string {
   return `/g/${gameId}/f/${fixtureId}/response/${playerId}`;

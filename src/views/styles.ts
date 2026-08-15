@@ -284,8 +284,44 @@ export const FORM_CSS = `
   .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left; }
 `;
 
+/**
+ * The team picker on the owner's fixture page (BR-35, M9).
+ *
+ * Every row is a radio group, and the whole picker is one form, because the
+ * page must work with JavaScript off — so this block only has to make a
+ * stack of radios readable, never to fake a drag-and-drop affordance. Task
+ * 7's enhancement layers on top of exactly this markup and must not need the
+ * layout to change underneath it.
+ *
+ * `fieldset`/`legend` are reset to nothing visual: the fieldset is here so
+ * that a screen reader announces the player's name before the two side
+ * choices, not for the browser's default box, which would put a border round
+ * every member of the squad.
+ */
+export const TEAM_PICKER_CSS = `
+  .teams { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .teams li { border-bottom: 1px solid var(--line); }
+  .teams fieldset { margin: 0; padding: 0.4rem 0.1rem; border: 0; }
+  /* Floated so the name sits on the text flow above the choices rather than
+     in the fieldset's default notched border position, which several
+     browsers place inconsistently once the border is removed. */
+  .teams legend { float: left; width: 100%; padding: 0; font-weight: 600; }
+  .teams .sides { clear: both; display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; }
+  /* A 44px-tall hit area for each choice, so a side can be picked on a phone
+     without hitting the radio dot itself. */
+  .teams .sides label {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    min-height: 44px; font-size: 0.95rem; color: var(--mut);
+  }
+  .teams .sides input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+  .team-counts { display: flex; gap: 1.25rem; margin: 0.75rem 0; font-weight: 600; }
+  .team-counts .count { color: var(--mut); font-weight: 400; }
+  .team-note { margin: 0.5rem 0; color: var(--mut); font-size: 0.95rem; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
+  TEAM_PICKER_CSS,
   SQUAD_STYLES_CSS,
   DASHBOARD_STYLES_CSS,
   SIGNIN_STYLES_CSS,
