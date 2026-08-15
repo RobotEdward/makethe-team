@@ -280,6 +280,8 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
         maxPlayers: String(game.maxPlayers),
         prefersEvenNumbers: game.prefersEvenNumbers ? "on" : "",
         squadVisibleToPlayers: game.squadVisibleToPlayers ? "on" : "",
+        teamAName: game.teamAName,
+        teamBName: game.teamBName,
         reminderDaysBefore: String(game.reminderDaysBefore),
         reminderLocalTime: game.reminderLocalTime,
         shortWarningOffsetHours: String(game.shortWarningOffsetHours),

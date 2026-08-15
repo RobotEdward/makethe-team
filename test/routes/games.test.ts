@@ -462,6 +462,29 @@ describe("editing a game", () => {
     expect(html).toContain("<summary>Advanced</summary>");
   });
 
+  /**
+   * Regression test for a data-loss bug: this handler used to build `values`
+   * field-by-field from the saved game row and omit teamAName/teamBName, so
+   * the inputs rendered blank on every edit-form load. Blank is a valid
+   * submission that `parseGameForm` defaults to "Team A"/"Team B" (by
+   * design, so a genuinely new game can leave the fields empty) — so an
+   * owner who edited anything else on the form, without retyping names they
+   * had already set, would silently overwrite them back to the defaults.
+   * Asserting the *edit form* carries the saved names is the assertion that
+   * catches this; asserting only that a round-trip through the update path
+   * preserves them would not, because that path never goes blank in the
+   * first place.
+   */
+  it("prefills the edit form with custom team names rather than defaulting them", async () => {
+    const { cookie } = await signIn();
+    const response = await post("/g/new", cookie, { ...VALID, teamAName: "Bibs", teamBName: "Skins" });
+    const gameId = response.headers.get("location")!.replace("/g/", "");
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+    expect(html).toContain('value="Bibs"');
+    expect(html).toContain('value="Skins"');
+  });
+
   it("states how many fixtures the change will affect", async () => {
     const { cookie, gameId } = await ownedGame();
     const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
