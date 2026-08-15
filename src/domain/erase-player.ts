@@ -76,7 +76,17 @@ function escapeLike(value: string): string {
  * discovering that on the third game after leaving the first two would leave
  * the person half-erased with no way to finish and no way to undo. So the
  * whole set is checked first and the operation either runs or reports
- * `blocked`, having written nothing.
+ * `blocked`, having written nothing — except that a *concurrent* change
+ * between the check and the removal loop can still produce a late `blocked`;
+ * see the comment inside the loop.
+ *
+ * Past that pre-check, the rest of the function — the removal loop, the
+ * Better Auth deletes, and the final anonymising `db.batch()` — is not one
+ * atomic unit either: D1 has no interactive transaction spanning Durable
+ * Object calls and multiple `db.batch()`s, so a failure partway through
+ * leaves real, resumable partial progress rather than a rollback. That is
+ * accepted rather than fixed here, the same way `removeMember` accepts it
+ * for its own two writes.
  *
  * It sends nothing. Promotions are returned for the caller to notify, exactly
  * as `removeMember` returns them.
@@ -119,6 +129,21 @@ export async function erasePlayer(params: ErasePlayerParams): Promise<ErasePlaye
     if (result.kind === "removed" || result.kind === "resumed") {
       promotions.push(...result.promotions);
     }
+    // The pre-check above and this loop are two separate reads with nothing
+    // atomic between them (D1 has no interactive transaction spanning the
+    // membership rows checked and the ones this loop then removes), so a
+    // concurrent change to a *different* membership of the same game — the
+    // other active owner being removed or demoted in that window — can make
+    // `removeMember` refuse here even though the pre-check passed. Falling
+    // through would anonymise a player who is still that game's sole active
+    // owner: a permanently locked game, and an "erased" person still running
+    // it. So this reports `blocked` instead, exactly as the pre-check would
+    // have. Earlier memberships in this loop may already be gone by this
+    // point, but that is a resumable state, not a corrupted one: `erased_at`
+    // is still null, so nothing has claimed the player is erased, and
+    // `removeMember` is idempotent on a membership already left — a retry
+    // (the next sweep run, or the player trying again) finishes cleanly.
+    if (result.kind === "refused") return { kind: "blocked", gameIds: [membership.gameId] };
   }
 
   // Better Auth's own rows. Hard-deleted, unlike everything above: nothing

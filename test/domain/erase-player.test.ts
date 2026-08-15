@@ -1,11 +1,24 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { erasePlayer, ERASED_NAME } from "../../src/domain/erase-player.js";
-import { auditLog, notificationLog, players, verification } from "../../src/db/schema.js";
 import {
+  account,
+  auditLog,
+  memberships,
+  notificationLog,
+  passkey,
+  players,
+  responses,
+  session,
+  user,
+  verification,
+} from "../../src/db/schema.js";
+import {
+  insertFixture,
   insertGame,
   insertMembership,
   insertPlayer,
+  insertResponse,
   resetDatabase,
   testDb,
 } from "../support/factories.js";
@@ -102,8 +115,25 @@ describe("erasePlayer", () => {
     const [row] = await db.select().from(players).where(eq(players.id, playerId));
     expect(row?.name).toBe("Edward Cooper");
     expect(row?.erasedAt).toBeNull();
-    const memberships = await db.select().from(auditLog).where(eq(auditLog.entityId, playerId));
-    expect(memberships).toHaveLength(0);
+
+    // "Nothing has been written" means every membership too, not just the
+    // player row and the audit rows keyed to the player: an interleaved
+    // implementation that checks-then-removes game by game would deactivate
+    // `ordinary`'s membership (writing a `membership.removed` row keyed to
+    // the *membership* id, not the player id) before ever reaching the game
+    // that blocks it, and a query filtered to `entityId = playerId` alone
+    // would not catch that.
+    const memberRows = await db
+      .select()
+      .from(memberships)
+      .where(eq(memberships.playerId, playerId));
+    expect(memberRows).toHaveLength(2);
+    for (const member of memberRows) {
+      expect(member.active).toBe(true);
+      expect(member.leftAt).toBeNull();
+    }
+    const allAudit = await db.select().from(auditLog);
+    expect(allAudit).toHaveLength(0);
   });
 
   it("proceeds when the game has another active organiser", async () => {
@@ -183,5 +213,76 @@ describe("erasePlayer", () => {
     const rows = await db.select().from(verification);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.identifier).toBe("axb@example.test");
+  });
+
+  // The branch that never runs for a guest or a never-signed-in player, and
+  // is the one place a surviving row is a live way back into a deleted
+  // account: a `session` or `passkey` left behind would still authenticate as
+  // someone whose player row now says `[erased player]`.
+  it("hard-deletes the linked Better Auth user, session, account and passkey", async () => {
+    const db = testDb();
+    const authUserId = crypto.randomUUID();
+    const playerId = await insertPlayer(db, { email: "edward@example.test", authUserId });
+
+    await db.insert(user).values({
+      id: authUserId,
+      name: "Edward Cooper",
+      email: "edward@example.test",
+      emailVerified: true,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await db.insert(session).values({
+      id: crypto.randomUUID(),
+      expiresAt: new Date(NOW.getTime() + 60_000),
+      token: crypto.randomUUID(),
+      createdAt: NOW,
+      updatedAt: NOW,
+      userId: authUserId,
+    });
+    await db.insert(account).values({
+      id: crypto.randomUUID(),
+      accountId: authUserId,
+      providerId: "magic-link",
+      userId: authUserId,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await db.insert(passkey).values({
+      id: crypto.randomUUID(),
+      publicKey: "public-key",
+      userId: authUserId,
+      credentialID: "credential-id",
+      counter: 0,
+      deviceType: "singleDevice",
+      backedUp: false,
+      createdAt: NOW,
+    });
+
+    const result = await erasePlayer({ db, playerId, now: NOW, withdraw: noWithdraw });
+    expect(result.kind).toBe("erased");
+
+    expect(await db.select().from(user).where(eq(user.id, authUserId))).toHaveLength(0);
+    expect(await db.select().from(session).where(eq(session.userId, authUserId))).toHaveLength(0);
+    expect(await db.select().from(account).where(eq(account.userId, authUserId))).toHaveLength(0);
+    expect(await db.select().from(passkey).where(eq(passkey.userId, authUserId))).toHaveLength(0);
+  });
+
+  // The milestone's headline invariant: erasure anonymises the player, but a
+  // past fixture must still read as ten-a-side. `responses` is what makes
+  // that true, so this proves erasure never touches it.
+  it("leaves the player's response rows untouched", async () => {
+    const db = testDb();
+    const playerId = await insertPlayer(db, { email: "edward@example.test" });
+    const gameId = await insertGame(db);
+    const fixtureId = await insertFixture(db, gameId);
+    await insertResponse(db, fixtureId, playerId, { status: "in" });
+
+    await erasePlayer({ db, playerId, now: NOW, withdraw: noWithdraw });
+
+    const rows = await db.select().from(responses).where(eq(responses.playerId, playerId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("in");
+    expect(rows[0]?.fixtureId).toBe(fixtureId);
   });
 });
