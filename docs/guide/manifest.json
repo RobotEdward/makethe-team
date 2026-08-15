@@ -161,6 +161,14 @@
       "shows": "A guest in the squad list, marked as a guest, occupying a slot."
     },
     {
+      "id": "team-picker",
+      "chapter": "05-running-your-squad",
+      "title": "Picking the teams",
+      "route": "/g/:id/f/:fixtureId",
+      "image": "images/team-picker.png",
+      "shows": "The team picker below the squad on the same fixture page: the two sides named, and every player who is in with three choices beside their name."
+    },
+    {
       "id": "cancel",
       "chapter": "06-calling-a-fixture-off",
       "title": "Calling it off",

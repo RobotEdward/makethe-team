@@ -250,6 +250,27 @@ export const SHOTS: Shot[] = [
     element: 'ul.squad li:has-text("Jono Fielding")',
   },
   {
+    id: "team-picker",
+    chapter: "05-running-your-squad",
+    title: "Picking the teams",
+    route: "/g/:id/f/:fixtureId",
+    shows:
+      "The team picker below the squad on the same fixture page: the two sides " +
+      "named, and every player who is in with three choices beside their name.",
+    // The same fixture page as `owner-fixture` above, scoped to the picker
+    // itself — an unscoped shot here would be a second photograph of a page
+    // this chapter already shows, for the same reason `invite`/`invite-qr`
+    // are each scoped to their own part of `/g/:id`.
+    //
+    // Nobody in this world has been given a side, which is deliberate: it is
+    // the state an organiser actually opens the picker in, and it keeps this
+    // shot from depending on a pick that would have to be driven — and kept
+    // in step with the prose — on every regeneration.
+    path: (w) => `/g/${w.demoGameId}/f/${w.demoFixtureId}`,
+    persona: "organiser",
+    element: "#team-picker",
+  },
+  {
     id: "cancel",
     chapter: "06-calling-a-fixture-off",
     title: "Calling it off",

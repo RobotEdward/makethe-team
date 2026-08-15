@@ -23,11 +23,12 @@ This guide walks through it in the order you'll meet it.
    and what a player sees when they follow it.
 3. [Answering a reminder](03-answering-a-reminder.md) — what a player does with
    the email, from the tap in the inbox to the answer being saved, including
-   the waitlist.
+   the waitlist and finding out which side you're on.
 4. [When someone drops out](04-when-someone-drops-out.md) — changing your
    answer, and how the waitlist moves.
 5. [Running your squad](05-running-your-squad.md) — organisers, removing
-   someone, changing the details, and replacing the invite link.
+   someone, changing the details, picking the teams, and replacing the invite
+   link.
 6. [Calling a fixture off](06-calling-a-fixture-off.md) — cancelling one week
    and telling everyone why.
 7. [Your own fixtures](07-your-own-fixtures.md) — the signed-in view of what's

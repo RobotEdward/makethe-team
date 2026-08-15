@@ -280,6 +280,7 @@ Numbered so tests can reference them.
 - **BR-27** Every Owner override is recorded in `audit_log` with actor, timestamp and previous value, and is visibly attributed in the UI ("marked in by Edward").
 - **BR-33** A Game carries a squad-visibility setting, default on. When it is off, players see a fixture's counts and their own response but not other players' names or responses. Owners are unaffected.
 - **BR-34** A player may erase their own data from a signed-in session of their own. **Satisfied as of M7b** ("delete my data", the plan at `.superpowers/sdd/2026-08-15-delete-my-data/`). `GET /app/delete` states what erasure does; `POST /app/delete` schedules it 48 hours out and does nothing else, and `POST /app/delete/cancel` clears it. The request is cancellable for the whole of that window — from the page itself and from a banner on the dashboard — and nothing is undone by cancelling, because nothing was done: the wait exists so that a mis-tap costs nothing. When the window closes the hourly sweep leaves every squad (promoting and notifying whoever was waitlisted into each freed slot), hard-deletes the authentication rows, and **anonymises the `players` row in place** rather than deleting it, so a past fixture still counts the people who were there without naming this one. It is refused while the player is the last active organiser of any game — checked when the page renders, again when the request is made, and once more before the sweep acts, because a co-organiser can leave in between. A refusal at that last check leaves the erasure pending and visible rather than silent: it writes one `player.erasure_blocked` audit row per transition into the blocked state, names the blocking game on the delete page *and* on the dashboard banner with a link to hand over, and names the stuck player in the sweep's log. The page never goes on promising a date that has passed — once the deadline is behind it, both surfaces say it is held up and why. Erasure is not atomic (D1 has no interactive transaction spanning Durable Object calls), so a run that stops part-way is recorded in `players.erasure_started_at`, and from that point cancelling is refused with an explanation: the squads left and the waitlist promotions already emailed cannot be restored, and clearing the request would strand the account half-erased with nothing left to finish it. Every renderer an erased player can reach branches on `players.erased_at` and shows "a former player" rather than the stored placeholder, in a squad list and in BR-27's "marked in by" line alike — `listSquad`'s renderers and the N-4 attention email do not branch, and do not need to: erasure deactivates every membership before anonymising, so neither one is ever reached by an erased player's row. Neither the request nor the cancellation can be performed by anyone else: both routes act on the session's own player and take no player id from a path, a query string or a form body, so there is no control anywhere that names somebody else.
+- **BR-35** An Owner may assign each `in` player of an `open` fixture to one of two sides. **Satisfied as of M9** ("team picking", the spec at `docs/superpowers/specs/2026-08-15-team-picking-design.md`). The sides are named per **Game** — `games.team_a_name` / `team_b_name`, defaulting to `Team A` and `Team B`, edited on the game form, blank falling back to the default — and an assignment is a nullable `responses.team` (`'a'`/`'b'`), which is already the (fixture, player) pair the assignment hangs off and so covers guests and dies with the response row. Only `in` players are offered a side: a waitlisted player has no place in the fixture yet, and the save route ignores any assignment naming one. **Saving and publishing are separate acts.** `POST /g/:id/f/:fixtureId/teams` writes the sides, clears `fixtures.teams_published_at` unconditionally, and tells nobody — a partial pick saves, because an Owner interrupted halfway must keep their work. `POST /g/:id/f/:fixtureId/teams/publish` sets `teams_published_at` and sends N-9; it is refused, as the fixture page at 422 with the unassigned **named**, while anyone `in` has no side, and refused when nobody is `in` at all. Both routes are refused unless the fixture is still taking changes (the `takingChanges` predicate the row controls and the guest form already use), and both write `audit_log` rows (`fixture.teams_saved`, `fixture.teams_published`) per BR-27. The picker is a form of one radio group per player — three choices, the third being "not picked yet" — so it works with scripting off; the drag-and-drop enhancement only sets those same radios and never becomes required. **A player always sees their own side**, on `/r/:token`, on the player's game page and in the email, read from their own response row and never through `squadForViewer`; the other side's names follow BR-33, and a Game that hides its squad renders no line-ups rather than empty ones. **Nothing rebalances or re-sends itself.** `responses.team` is never cleared when a player stops being `in`, so the orphaned value is the signal that the published sides no longer match the squad: a late drop-out or a waitlist promotion moves nobody, sends nothing, and surfaces to the Owner as teams needing another look, which only a further publish acts on. Per-player ratings and algorithmic balancing remain future work (§308).
 
 ## 1.11 Notification catalogue
 
@@ -295,6 +296,13 @@ The complete set for v1. Do not add others without a decision.
 | N-6 | Welcome / squad joined | The new member | 1 per membership | Email |
 | N-7 | Removed from a squad | The removed member | 1 per spell in the squad | Email |
 | N-8 | Erasure scheduled | The requesting player | 1 per request | Email |
+| N-9 | Teams published | Players who are `in`, never guests (BR-32) | 1 per player per publish | Email |
+
+**Amended, M9.** N-9 is added by BR-35 — the decision this table asks for
+before anything joins it. Nothing but the publish button sends it: no sweep
+evaluates it and no roster change triggers it, so an Owner who wants the squad
+told again after a late drop-out publishes again, and each publish is a
+separate send (see the dedupe key in §2.8).
 
 **Amended, M7b.** N-7 shipped in M7a and was described in BR-22 but never
 added to this table, which calls itself the complete set — so the table said
@@ -303,9 +311,11 @@ alongside N-8.
 
 ## 1.12 Future scope
 
-Design the data model to accommodate these; build none of them now.
+Design the data model to accommodate these; build none of them now. The first
+of them has since been built — team picking, in M9 — and its entry below now
+records what shipped rather than what was imagined. The rest stand.
 
-- **Team picking** — split accepted players into two sides, manually via drag-and-drop, later algorithmically. Implies a `team` concept attached to a fixture, and eventually a per-player rating. This is where the `uneven` flag pays off.
+- **Team picking** — **built in M9** (BR-35; `docs/superpowers/specs/2026-08-15-team-picking-design.md`). An Owner splits an `open` fixture's `in` players across two Game-named sides, saves privately, and publishes to send N-9. What shipped, against what this entry anticipated: the `team` concept landed as a nullable `responses.team` rather than anything attached to the fixture, since `responses` is already the (fixture, player) pair; the manual pick is a radio group per player that works with scripting off, with drag-and-drop as an enhancement over those same radios rather than the mechanism; and the `uneven` flag does pay off, reused to say when the two sides are lopsided in a game that prefers even numbers. **Deliberately left:** per-player ratings and algorithmic balancing — "later algorithmically" stays later, and a rating system is its own product decision — along with more than two sides, per-fixture names, and any form of auto-rebalancing or auto-publishing.
 - **Score recording** — after a fixture is `played`, any player can record the result. Implies a `result` on the fixture.
 - **WhatsApp and SMS** — additional notification channels. Implies a per-player channel preference (present from day one) and a delivery abstraction (§2.7). Both carry per-message cost and, for WhatsApp, template pre-approval. A `phone` column is added then, not now.
 - **Community funding** — public cost transparency page and a contribution mechanism.
@@ -526,6 +536,7 @@ Notes:
   | N-6 welcome | `n6:<membership_id>:<joined_at>` | Once per membership; rejoining sends again |
   | N-7 removal | `n7:<membership_id>:<left_at>` | Once per spell in the squad; a rejoin and a second removal sends again |
   | N-8 erasure scheduled | `n8:<player_id>:<erases_at>` | Once per request; a re-request moves the deadline, so its key differs and it is told again |
+  | N-9 teams published | `n9:<fixture_id>:<player_id>:<published_at>` | Once per publish per player; re-publishing after a late change mints a new key and genuinely tells everyone again |
 
   **Amended, M6a.** The table above originally gave N-6's key as
   `n6:<membership_id>` alone, which contradicts its own "rejoining sends
@@ -645,8 +656,9 @@ Each milestone is independently deployable and demonstrable.
 | **M6** | Owner UI — create/edit game, manage squad, overrides, guests, invite link and QR | J1 and J6 work end to end with no seed data |
 | **M7** | Polish — empty states, error pages, accessibility pass, unsubscribe and leave-game flows, delete-my-data, `/privacy` stub | Usable by a stranger with no explanation, and a player can remove themselves and their data |
 | **M8** | Squad visibility — an owner-controlled setting, and a player's view of a game | A player can see who else is playing, and an owner can turn that off |
+| **M9** | Team picking (BR-35) — two named sides per game, a picker on the owner's fixture page, and N-9 | An owner can split an open fixture's players into two sides with JavaScript off, publish them, and everyone playing is emailed their side |
 
-M1–M4 are the product. M5–M7 make it shareable. Team picking, score recording, and the funding page come after, as separate specs.
+M1–M4 are the product. M5–M7 make it shareable. Score recording and the funding page come after, as separate specs — as team picking did, delivered as M9.
 
 **Status:** M0 and M1 delivered by `docs/superpowers/plans/2026-08-10-m0-m1-foundation.md`. M2 and M3 delivered by `docs/superpowers/plans/2026-08-10-m2-m3-responses-and-email.md`. M4 delivered by `docs/superpowers/plans/2026-08-11-m4-waitlist-cancellation-attention.md`. M5 delivered by `docs/superpowers/plans/2026-08-11-m5-auth-and-dashboard.md`.
 

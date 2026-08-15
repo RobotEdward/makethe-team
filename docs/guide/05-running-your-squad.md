@@ -124,6 +124,69 @@ fixture page sees the same thing, worded for them, so nobody wonders why the
 squad looks bigger than the game allows. It's a call you made on purpose, not
 a mistake the app happened to let through.
 
+## Picking the teams
+
+Under the squad on the same fixture page is **Teams**, where you split the
+people who are playing into two sides.
+
+![The team picker, with two empty sides above every player who is in](images/team-picker.png)
+
+Only players marked **In** are offered a side. Anybody on the waitlist isn't:
+they haven't got a place yet, and putting them on a side would suggest they
+had. A guest counts as playing like anyone else — Jono Fielding is in this
+list.
+
+Every name starts on **Not picked yet**, and has the two sides beside it. Work
+down the list, tap a side for each person, and press **Save teams**. If you'd
+rather drag, you can: the two sides are the columns above the list, and on a
+phone or computer that allows it you can drag a name straight into one.
+Dragging ticks the same button you would have tapped, so it's the same pick
+either way, and on a device that won't drag, tapping is all there ever was.
+
+The sides are called **Team A** and **Team B** until you say otherwise.
+**First team's name** and **Second team's name**, on the **Edit this game**
+form a little below the setting above, rename them for every week the game
+plays — Bibs and Skins, Reds and Blues, whatever your lot call them.
+
+## Saving, and then telling people
+
+Saving and telling the squad are two separate things, and the page says so:
+**Only players who are in can be given a side. Nobody is told anything until
+you publish.**
+
+So a half-finished pick is fine. Save six of twelve, go and cook dinner, come
+back and finish it. Nobody has seen anything, and nothing has been sent.
+
+**Publish teams**, which appears once you've saved a pick, is what tells
+everyone. Every player who is in and has an email address gets a message
+saying which side they're on. Guests don't — they never get email from us, so
+they're the one group you still tell yourself.
+
+What you can't do is publish half a pick. If anybody who's in still has no
+side, the page comes back and names them — **Everyone who's in needs a side
+before you can publish. Still to pick: Freya Lindqvist.** — so you can finish
+those few rather than hunt down which they were.
+
+If the sides end up uneven and your game prefers even numbers, the picker
+mentions it and leaves it there: **The sides are uneven at the moment. That's
+fine if you meant it.** It's a note, not a refusal.
+
+## When the squad changes afterwards
+
+Somebody always drops out. When they do, nobody is moved between sides for
+you, and nothing is sent to anybody a second time — the app doesn't decide
+whether eleven people need another email. It tells you instead, above the
+button: **The teams have changed since they were last sent out. Send them
+again?**, and the button now reads **Publish again**.
+
+The same happens the other way round. If somebody comes off the waitlist into
+the free place, they turn up in the picker with no side and the same note
+appears. You can't publish again until they have one, which is the point:
+they're the person most in need of being told.
+
+Once the fixture has been played or called off, the teams stay on the page as
+a record of who was on which side. The controls go; the pick doesn't.
+
 ## Replacing the invite link
 
 If the link ends up somewhere you'd rather it hadn't — a public group, a work

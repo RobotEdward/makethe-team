@@ -67,4 +67,22 @@ players marked **In**, then Mika Toivonen first on the waitlist and Grace
 Abara second, in the order they answered. Anyone who has not answered yet —
 Ade Sowande here — shows as **Not yet responded**.
 
+## When the teams go up
+
+Some organisers pick the sides before the night. If yours does, one more email
+arrives, with the game's name and **teams are up** in the subject line. It
+opens with the single thing you need — **You're on Team A.**, or whatever your
+organiser has called the sides — and, if your game shows the squad, both
+line-ups underneath it.
+
+You don't have to keep that email. Go back to the same page you answered on
+and your side is there too, above the squad, worded exactly the same way. It
+is always your own side, even in a game with the names turned off: that page
+still tells you which side you're on, just not who is on it with you.
+
+Nothing about the teams changes how you answer. If you can't make it after all,
+tap **Can't make it** as usual. Nobody is shuffled between sides automatically
+— your organiser is told the teams need another look, and it's up to them
+whether to send them round again.
+
 Next: [when someone drops out](04-when-someone-drops-out.md).

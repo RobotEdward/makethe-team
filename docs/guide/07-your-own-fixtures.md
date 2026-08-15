@@ -18,7 +18,7 @@ in** is your own answer.
 
 The game's name at the top of the card is a link. Tap it to see that game on
 its own — where it's played, who else is playing if the organiser shows that,
-and the dates coming up.
+which side you're on once the teams have gone up, and the dates coming up.
 
 **I'm in** and **Can't make it** sit on the card, and you can use them whether
 or not you've answered already. There's no email in the way here, so it's one
