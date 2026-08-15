@@ -826,7 +826,9 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
  * An organiser saving a team pick (BR-35 §4).
  *
  * Saving, not publishing: nothing here emails anybody, and a saved pick stays
- * invisible to players until the publish route announces it. That is why the
+ * invisible to players until the fixture is first published; after that,
+ * every save is live on players' pages straight away, while the email they
+ * already hold is unchanged. That is why the
  * write stamps `teams_saved_at` — once the sides have moved, what was
  * announced is no longer what is picked, and `teams_saved_at >
  * teams_published_at` says so outright rather than leaving it to be inferred.
