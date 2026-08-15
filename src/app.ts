@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { GAMES_PREFIX } from "./auth/paths.js";
 import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
+import { account } from "./routes/account.js";
 import { cancel } from "./routes/cancel.js";
 import { dashboard } from "./routes/dashboard.js";
 import { gamesRoutes } from "./routes/games.js";
@@ -114,6 +115,10 @@ export function createApp(): Hono<AppEnv> {
   app.route("/", dashboard);
   // `/app/passkeys`, behind the same prefix and the same `requirePlayer`.
   app.route("/", passkeys);
+  // `/app/delete` and its cancel (M7b). Same prefix, same `requirePlayer`, and
+  // no middleware of its own: the session mount and `private, no-store` above
+  // are exactly what a page naming a pending erasure needs.
+  app.route("/", account);
   // `/g/*`, behind the game-management session mount above.
   app.route("/", gamesRoutes);
 

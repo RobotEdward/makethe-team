@@ -74,6 +74,18 @@ export const AUTHENTICATED_PREFIX = `${DASHBOARD_PATH}/*`;
 export const PASSKEYS_PATH = `${DASHBOARD_PATH}/passkeys`;
 
 /**
+ * Where a signed-in player erases themselves (BR-34, M7b).
+ *
+ * Under `DASHBOARD_PATH` so it sits behind the session mount and the
+ * `private, no-store` header `AUTHENTICATED_PREFIX` carries. There is
+ * deliberately no token-reached equivalent: leaving one game works from an
+ * emailed link (M7a), but erasure is global and irreversible, and BR-25 draws
+ * the line at cross-game actions needing a session.
+ */
+export const DELETE_ACCOUNT_PATH = `${DASHBOARD_PATH}/delete`;
+export const DELETE_ACCOUNT_CANCEL_PATH = `${DELETE_ACCOUNT_PATH}/cancel`;
+
+/**
  * Better Auth's own mount point: every endpoint it owns (`/sign-in/magic-link`,
  * `/magic-link/verify`, `/sign-out`, …) hangs off this. It is the framework's
  * default `basePath`, restated here because this project's own code builds

@@ -13,6 +13,9 @@ import {
   requirePlayer,
   sessionMiddleware,
 } from "../../src/auth/session.js";
+// Not re-exported by `session.ts` — that re-export is the sign-in flow's own
+// paths, and this page is not part of it (`src/auth/paths.ts`).
+import { DELETE_ACCOUNT_PATH } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
@@ -703,6 +706,17 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}${PASSKEYS_PATH}`, { headers: { cookie } }),
       );
 
+      // The delete-my-data page (M7b Task 4). Captured *before* the membership
+      // below is promoted to `owner`: an ordinary member reaches the `offer`
+      // state, which is the branch that carries the form, while a sole
+      // organiser would be refused and this would capture a page with no
+      // button on it while believing the offer had been covered.
+      await capture(
+        "delete my data",
+        /Delete my data/,
+        new Request(`${ORIGIN}${DELETE_ACCOUNT_PATH}`, { headers: { cookie } }),
+      );
+
       // M4's owner-cancellation pages. Both render HTML, so both are captured
       // rather than excused — the confirmation page in particular is the one
       // that takes free text from an owner, which is why the CSP this suite
@@ -889,6 +903,7 @@ describe("no password field anywhere (TR-16)", () => {
         "no player (403)",
         "dashboard",
         "passkeys",
+        "delete my data",
         "link conflict (409)",
         "ambiguous email (500)",
         "email held by a guest (500)",
@@ -1012,6 +1027,17 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "branches are a plain-text 403 (wrong origin), a plain-text 404 " +
       "(entitlement failure) or a 303 redirect (src/routes/dashboard.ts); its " +
       "own status-code coverage lives in test/routes/dashboard.test.ts.",
+    "POST /app/delete":
+      "renders through the same renderDeleteAccountPage as GET /app/delete on " +
+      "its one HTML-returning branch (the sole-organiser refusal, 422) — no " +
+      "template of its own that could carry an un-enumerated script — and its " +
+      "other branches are a plain-text 403 (wrong origin) or a 303 redirect " +
+      "(src/routes/account.ts); its own status-code coverage lives in " +
+      "test/routes/delete-account.test.ts.",
+    "POST /app/delete/cancel":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin) or a " +
+      "303 redirect only (src/routes/account.ts); its own status-code coverage " +
+      "lives in test/routes/delete-account.test.ts.",
     "POST /g/new":
       "renders through the same renderGameFormPage as GET /g/new on its only " +
       "HTML-returning branch (a rejected submission) — no template of its " +
@@ -1088,6 +1114,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /sign-in/complete": "link conflict (409)",
     "GET /app": "dashboard",
     "GET /app/passkeys": "passkeys",
+    "GET /app/delete": "delete my data",
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",
