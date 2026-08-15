@@ -165,6 +165,7 @@ describe("getFixtureWithSquad against openFixture output", () => {
         name: "Eligible Player",
         erasedAt: null,
         status: "pending",
+        team: null,
         waitlistRank: null,
         setBy: null,
         source: "system",

@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { ResponseSource, ResponseStatus } from "../domain/response-status.js";
+import type { TeamAssignment, TeamId } from "../domain/teams.js";
 import type { Db } from "./client.js";
 import { fixtures, games, memberships, players, responses } from "./schema.js";
 
@@ -21,6 +22,13 @@ export interface SquadMember {
    */
   erasedAt: Date | null;
   status: ResponseStatus;
+  /**
+   * Which side this player is on (BR-35, M9). Null until an organiser picks
+   * teams. Carried through unchanged when `status` moves away from `in` —
+   * see `responses.team` in the schema and `src/domain/teams.ts`, which
+   * reads that orphaned value as its staleness signal.
+   */
+  team: TeamId | null;
   /** Rank among current waitlisted members, 1-based. Null unless waitlisted.
    *  Computed here, never the stored column — see spec amendment 5. */
   waitlistRank: number | null;
@@ -88,6 +96,7 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
       // screen.
       erasedAt: players.erasedAt,
       status: responses.status,
+      team: responses.team,
       waitlistPosition: responses.waitlistPosition,
       source: responses.source,
       isGuest: players.isGuest,
@@ -119,6 +128,7 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
     name: r.name,
     erasedAt: r.erasedAt,
     status: r.status,
+    team: r.team,
     waitlistRank: waitlistRanks.get(r.playerId) ?? null,
     setBy:
       r.setByPlayerId === null || r.setByName === null
@@ -138,6 +148,28 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
   });
 
   return { fixture: row.fixture, game: row.game, squad };
+}
+
+/**
+ * Every response row's team assignment for one fixture, **including
+ * `withdrawn` ones** (BR-35, M9).
+ *
+ * That inclusion is the whole reason this exists rather than reusing
+ * `getFixtureWithSquad`, which filters `withdrawn` out. Leaving a game (M7a),
+ * being removed by an organiser (J6a) and being erased (M7b) all write
+ * `withdrawn` — so a staleness check built on the filtered set would miss the
+ * most common way published teams stop matching the squad, and would look
+ * correct in any test that only drops players to `out`. Feed the result to
+ * `src/domain/teams.ts`.
+ *
+ * Reads only, straight to D1 — never touches the FixtureCapacity Durable
+ * Object (TR-11).
+ */
+export async function listTeamAssignments(db: Db, fixtureId: string): Promise<TeamAssignment[]> {
+  return db
+    .select({ playerId: responses.playerId, status: responses.status, team: responses.team })
+    .from(responses)
+    .where(eq(responses.fixtureId, fixtureId));
 }
 
 /**
