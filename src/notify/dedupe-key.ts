@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9"] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -107,4 +107,17 @@ export function removalKey(membershipId: string, leftAt: string): string {
  */
 export function erasureScheduledKey(playerId: string, erasesAt: string): string {
   return `n8:${playerId}:${erasesAt}`;
+}
+
+/**
+ * N-9 teams published: once per player per publish (BR-35, M9).
+ *
+ * `publishedAt` is load-bearing, as in N-2 and N-8. Re-publishing after a late
+ * drop-out has to genuinely re-send — that is the entire point of the organiser
+ * being asked to publish again — and a key without the timestamp would be
+ * swallowed by the unique index on `notification_log.dedupe_key`, leaving the
+ * squad holding an email describing teams that have since changed.
+ */
+export function teamsKey(fixtureId: string, playerId: string, publishedAt: string): string {
+  return `n9:${fixtureId}:${playerId}:${publishedAt}`;
 }
