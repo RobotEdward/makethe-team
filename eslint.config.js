@@ -17,6 +17,17 @@ export default tseslint.config(
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  // Node scripts, not Worker code. `no-undef` is off for TypeScript files —
+  // typescript-eslint disables it, because the compiler already does that job
+  // better — so this only bites the plain-JS tooling under `scripts/`, which
+  // legitimately runs on Node and uses its globals. Listed explicitly rather
+  // than pulling in the `globals` package for two names.
+  {
+    files: ["scripts/**/*.{js,mjs}"],
+    languageOptions: {
+      globals: { process: "readonly", console: "readonly" },
+    },
+  },
   {
     rules: {
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],

@@ -81,7 +81,17 @@ export default defineConfig({
   grepInvert: process.env.CAPTURE ? undefined : /@capture|@guide/,
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `npx wrangler dev ${WRANGLER_FLAGS.join(" ")}`,
+    // The reset is chained into this command rather than run from
+    // `globalSetup` because the ordering matters and this makes it a fact
+    // rather than a hook-sequencing assumption: the state must be gone before
+    // `wrangler dev` opens the D1, and a `&&` guarantees that where a
+    // separate hook only promises it.
+    //
+    // It also means the reset cannot be skipped by any entry point that starts
+    // this suite — `npm run test:browser`, `--ui`, `guide:capture`, or a bare
+    // `npx playwright test` all go through here. `scripts/reset-local-state.mjs`
+    // explains what accumulates and what it costs.
+    command: `node scripts/reset-local-state.mjs && npx wrangler dev ${WRANGLER_FLAGS.join(" ")}`,
     url: `${BASE_URL}/sign-in`,
     // Never reuse a server this config did not start.
     //
