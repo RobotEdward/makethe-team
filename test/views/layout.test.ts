@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { escapeHtml } from "../../src/views/layout.js";
+import { escapeHtml, layout, STYLES } from "../../src/views/layout.js";
+import { PAGE_STYLE_BLOCKS } from "../../src/views/styles.js";
 
 describe("escapeHtml", () => {
   // Direct unit coverage for the shared escaping function used by six
@@ -36,5 +37,32 @@ describe("escapeHtml", () => {
     expect(escapeHtml("Thursday 7-a-side at Oxford Sports Park")).toBe(
       "Thursday 7-a-side at Oxford Sports Park",
     );
+  });
+});
+
+describe("layout", () => {
+  it("defaults to left alignment and offers centring as an opt-in", () => {
+    const left = layout({ title: "T", body: "<p>x</p>" });
+    expect(left).toContain("<main>");
+    const centred = layout({ title: "T", body: "<p>x</p>", centred: true });
+    expect(centred).toContain(`<main class="centred">`);
+  });
+
+  it("defines a danger colour in both themes", () => {
+    // A token defined only in the light block leaves every danger button
+    // invisible-to-unreadable for a dark-mode viewer, and no server-side test
+    // renders a theme. This is the only thing that catches it.
+    const dark = STYLES.slice(STYLES.indexOf("prefers-color-scheme: dark"));
+    expect(dark).toContain("--danger:");
+    expect(dark).toContain("--danger-bg:");
+    expect(dark).toContain("--danger-fg:");
+  });
+
+  it("puts every font size on the four-step scale", () => {
+    // Guards §2.2. A fifteenth size can still be added — but not silently.
+    const sizes = [...`${STYLES}${PAGE_STYLE_BLOCKS.join("")}`.matchAll(/font-size:\s*([^;]+);/g)]
+      .map((m) => (m[1] ?? "").trim())
+      .filter((v) => !v.startsWith("var(--t-"));
+    expect(sizes).toEqual([]);
   });
 });

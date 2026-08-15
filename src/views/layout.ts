@@ -31,6 +31,16 @@ export interface LayoutOptions {
    * drops. Passing anything not enumerated fails to compile.
    */
   pageScripts?: readonly PageScriptBlock[];
+  /**
+   * Centre this page's content. The default is left (see `main` in `STYLES`).
+   *
+   * True only for pages that say one thing and offer nothing to scan: the
+   * holding page, a link problem, and the terminal cancellation pages. A page
+   * with a form, a list, or more than about three sentences is left-aligned,
+   * because centred prose wraps ragged and centred controls have no shared
+   * edge to follow.
+   */
+  centred?: boolean;
 }
 
 /**
@@ -52,12 +62,19 @@ export const STYLES = `
     --fg: #1c1b19; --bg: #fbfaf8; --mut: #6b6862; --line: #e3ded4;
     --accent: #1f6f4a; --accent-fg: #fbfaf8; --accent-mut: #e3efe7;
     --warn: #8a5a10; --warn-bg: #f7ecd8;
+    /* Irreversible actions only — call off, remove, leave, erase. Never used
+       for anything a person can undo. --warn used to carry both this and
+       "unsettled", which is why the three genuinely irreversible buttons in
+       the product were styled as neither. See the M10 spec §2.1. */
+    --danger: #a4321f; --danger-bg: #fbe9e5; --danger-fg: #fbfaf8;
+    --t-title: 2rem; --t-lead: 1.25rem; --t-body: 1rem; --t-support: 0.875rem;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --fg: #e6e3de; --bg: #16181a; --mut: #9b968e; --line: #2c2f30;
       --accent: #3fae7c; --accent-fg: #08170f; --accent-mut: #17251d;
       --warn: #d9a441; --warn-bg: #2b230f;
+      --danger: #e8705a; --danger-bg: #2e1613; --danger-fg: #1a0d0a;
     }
   }
   * { box-sizing: border-box; }
@@ -69,17 +86,22 @@ export const STYLES = `
   body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
     padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
-    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: var(--t-body)/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  main { max-width: 30rem; width: 100%; text-align: center; }
-  h1 { font-size: 2rem; letter-spacing: -0.02em; margin: 0 0 0.5rem; }
-  h2 { font-size: 1.05rem; margin: 2rem 0 0.6rem; text-align: left; }
+  /* Left by default. Centring is opt-in via centred on layout(), for pages
+     that are a single statement and nothing else. Until M10 the default was
+     centre and FORM_CSS overrode it back, so the product ran in two
+     alignments at once — the design review's finding 6. */
+  main { max-width: 30rem; width: 100%; text-align: left; }
+  main.centred { text-align: center; }
+  h1 { font-size: var(--t-title); letter-spacing: -0.02em; margin: 0 0 0.5rem; }
+  h2 { font-size: var(--t-lead); margin: 2rem 0 0.6rem; }
   p { color: var(--mut); margin: 0; }
   a { color: var(--accent); }
 
   .nudge {
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
-    background: var(--warn-bg); color: var(--warn); font-size: 0.92rem; text-align: left;
+    background: var(--warn-bg); color: var(--warn); font-size: var(--t-support); text-align: left;
   }
 
   .button {
@@ -87,7 +109,7 @@ export const STYLES = `
     min-height: 52px; padding: 0.85rem 1.25rem;
     border-radius: 0.65rem; border: 2px solid var(--line);
     background: var(--bg); color: var(--fg);
-    font: inherit; font-size: 1.05rem; font-weight: 700;
+    font: inherit; font-size: var(--t-lead); font-weight: 700;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
   .button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -97,6 +119,14 @@ export const STYLES = `
   .button.primary {
     background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
   }
+  /* Filled, like .primary, because a destructive action is still the primary
+     thing on the page it appears on — the fill says "this is the action", the
+     colour says "and it cannot be undone". Four pages use it, which is why it
+     is here and not in CANCEL_STYLES_CSS where it started. */
+  .button.danger {
+    background: var(--danger); border-color: var(--danger); color: var(--danger-fg);
+  }
+  .button.danger:focus-visible { outline: 3px solid var(--danger); outline-offset: 2px; }
 
   /* Sign-out is a real action but never the point of the page it sits on, so
      it gets the outlined button rather than the filled one. */
@@ -126,7 +156,7 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function layout({ title, body, pageStyles, pageScripts }: LayoutOptions): string {
+export function layout({ title, body, pageStyles, pageScripts, centred }: LayoutOptions): string {
   const styleTags = [STYLES, ...(pageStyles ?? [])].map((css) => `<style>${css}</style>`).join("\n");
   // No attributes on the tag — not `src`, not `type`, not `nonce`. A bare
   // inline `<script>` is what a CSP SHA-256 hash of the block's exact text
@@ -141,7 +171,7 @@ export function layout({ title, body, pageStyles, pageScripts }: LayoutOptions):
 <title>${escapeHtml(title)}</title>
 ${styleTags}
 </head>
-<body><main>${body}</main>${scriptTags}</body>
+<body><main${centred ? ` class="centred"` : ""}>${body}</main>${scriptTags}</body>
 </html>
 `;
 }

@@ -94,6 +94,7 @@ export function renderCheckInboxPage(): string {
       <p>If that address can sign in, a link is on its way. It works once, and it expires after a few minutes.</p>
       <p>Nothing arrived? Check your spam folder, then <a href="${SIGN_IN_PATH}">try again</a>.</p>
     `,
+    centred: true,
   });
 }
 
@@ -130,6 +131,7 @@ export function renderLinkRefusalPage(refusal: LinkRefusal): { html: string; sta
             ${signOutForm("Sign out and try a different address")}
             <p><a href="/">Back to Make The Team</a></p>
           `,
+          centred: true,
         }),
       };
 
@@ -145,6 +147,7 @@ export function renderLinkRefusalPage(refusal: LinkRefusal): { html: string; sta
             ${signOutForm("Sign out and try a different address")}
             <p><a href="/">Back to Make The Team</a></p>
           `,
+          centred: true,
         }),
       };
 
@@ -160,6 +163,7 @@ export function renderLinkRefusalPage(refusal: LinkRefusal): { html: string; sta
             ${signOutForm("Sign out and try a different address")}
             <p><a href="/">Back to Make The Team</a></p>
           `,
+          centred: true,
         }),
       };
 
@@ -174,6 +178,7 @@ export function renderLinkRefusalPage(refusal: LinkRefusal): { html: string; sta
             <p><a href="${SIGN_IN_COMPLETE_PATH}">Try again</a> — it should go through this time.</p>
             ${signOutForm()}
           `,
+          centred: true,
         }),
       };
   }

@@ -38,20 +38,20 @@ import { STYLES } from "./layout.js";
  * second copy that could drift from it.
  */
 export const FIXTURE_STYLES_CSS = `
-  .venue, .kickoff { font-size: 0.95rem; }
+  .venue, .kickoff { font-size: var(--t-body); }
   .kickoff { margin-bottom: 0.75rem; }
 
   .status-badge {
     display: inline-block; margin-top: 0.5rem;
     padding: 0.3rem 0.85rem; border-radius: 999px; border: 1px solid var(--line);
-    font-weight: 600; font-size: 0.9rem; color: var(--fg);
+    font-weight: 600; font-size: var(--t-support); color: var(--fg);
   }
   .status-badge.status-confirmed { border-color: var(--accent); color: var(--accent); }
   .status-badge.status-short, .status-badge.status-cancelled { border-color: var(--warn); color: var(--warn); }
-  .spots { margin-top: 0.4rem; font-size: 0.9rem; }
+  .spots { margin-top: 0.4rem; font-size: var(--t-support); }
 
   .viewer-headline {
-    margin-top: 1.5rem; font-size: 1.4rem; font-weight: 700; color: var(--fg); line-height: 1.3;
+    margin-top: 1.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--fg); line-height: 1.3;
   }
   /* A waitlisted viewer must never read as confirmed (BR-5): same warn
      colour the squad list already uses for a waitlisted row, so it is
@@ -61,7 +61,7 @@ export const FIXTURE_STYLES_CSS = `
 
   .read-only {
     margin-top: 1.25rem; padding: 0.85rem 1rem; border-radius: 0.6rem;
-    border: 1px dashed var(--line); color: var(--mut); font-size: 0.95rem; text-align: left;
+    border: 1px dashed var(--line); color: var(--mut); font-size: var(--t-body); text-align: left;
   }
 
   /* Two big, unmistakable tap targets: stacked on a phone, side by side once
@@ -99,10 +99,10 @@ export const SQUAD_STYLES_CSS = `
     padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line);
   }
   .squad .name { color: var(--fg); }
-  .squad .status { font-size: 0.85rem; color: var(--mut); white-space: nowrap; }
+  .squad .status { font-size: var(--t-support); color: var(--mut); white-space: nowrap; }
   .squad .status-in { color: var(--accent); font-weight: 600; }
   .squad .status-waitlisted { color: var(--warn); font-weight: 600; }
-  .squad .set-by { display: block; font-size: 0.85rem; color: var(--mut); }
+  .squad .set-by { display: block; font-size: var(--t-support); color: var(--mut); }
 `;
 
 /**
@@ -125,8 +125,8 @@ export const DASHBOARD_STYLES_CSS = `
     padding: 1.1rem 1rem 1.25rem; margin-bottom: 1rem;
     border: 1px solid var(--line); border-radius: 0.75rem;
   }
-  .fixture-card h2 { margin: 0 0 0.25rem; font-size: 1.25rem; text-align: center; }
-  .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: 1.1rem; }
+  .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); text-align: center; }
+  .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: var(--t-lead); }
   .fixture-card .responses { margin-bottom: 0; }
 `;
 
@@ -142,11 +142,11 @@ export const DASHBOARD_STYLES_CSS = `
  */
 export const SIGNIN_STYLES_CSS = `
   .signin { display: flex; flex-direction: column; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
-  .signin label { text-align: left; font-size: 0.95rem; color: var(--mut); }
+  .signin label { text-align: left; font-size: var(--t-body); color: var(--mut); }
   .signin input {
     width: 100%; min-height: 52px; padding: 0.85rem 1rem;
     border-radius: 0.65rem; border: 2px solid var(--line);
-    background: var(--bg); color: var(--fg); font: inherit; font-size: 1.05rem;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: var(--t-lead);
   }
   .signin input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .signin .button { margin-top: 0.25rem; }
@@ -171,7 +171,7 @@ export const SIGNIN_STYLES_CSS = `
  */
 export const PASSKEY_STYLES_CSS = `
   .passkey { display: flex; flex-direction: column; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
-  .passkey p { font-size: 0.95rem; }
+  .passkey p { font-size: var(--t-body); }
 
   .passkey-list {
     list-style: none; margin: 1.25rem 0 0; padding: 0; text-align: left;
@@ -201,17 +201,17 @@ export const CANCEL_STYLES_CSS = `
   .cancel-form textarea {
     width: 100%; min-height: 6rem; padding: 0.7rem 0.85rem;
     border-radius: 0.6rem; border: 1px solid var(--line);
-    background: var(--bg); color: var(--fg); font: inherit; font-size: 1rem;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: var(--t-body);
   }
   .cancel-form textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-  .cancel-form .hint { margin-top: 0.4rem; font-size: 0.85rem; }
+  .cancel-form .hint { margin-top: 0.4rem; font-size: var(--t-support); }
   .cancel-form .button.danger {
     margin-top: 1.25rem; width: 100%;
     background: var(--warn-bg); border-color: var(--warn); color: var(--warn);
   }
   .form-error {
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
-    background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left;
+    background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left;
   }
   .cancel-heading { text-align: center; margin-top: 0; color: var(--warn); }
 `;
@@ -220,14 +220,11 @@ export const CANCEL_STYLES_CSS = `
  * Forms and owner pages: left-aligned, wider than the shared 30rem column,
  * with real labels above real inputs.
  *
- * The shared `STYLES` block centres `main` and sets `text-align: center`,
- * which is right for the single-purpose pages it was written for and wrong
- * for anything with more than three fields. This overrides both rather than
- * loosening the shared block, so no existing page moves.
+ * Wider column only. The left alignment that used to be here is the default
+ * now (M10 §2.3) and repeating it would hide the fact that it moved.
  */
 export const FORM_CSS = `
-  main { max-width: 40rem; text-align: left; }
-  h1 { text-align: left; }
+  main { max-width: 40rem; }
   .field { margin: 1.1rem 0; }
   .field label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
   .field input, .field select {
@@ -238,7 +235,7 @@ export const FORM_CSS = `
   .field input:focus-visible, .field select:focus-visible {
     outline: 3px solid var(--accent); outline-offset: 1px;
   }
-  .field .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: 0.9rem; }
+  .field .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
   .field-invalid input, .field-invalid select { border-color: var(--warn); }
   .row { display: flex; gap: 1rem; }
   .row .field { flex: 1; }
@@ -247,7 +244,7 @@ export const FORM_CSS = `
   .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
   .qr { margin: 1rem 0; max-width: 240px; }
   .invite-link { display: flex; gap: 0.5rem; align-items: center; }
-  .invite-link input { flex: 1; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .invite-link input { flex: 1; font-family: ui-monospace, monospace; font-size: var(--t-support); }
   .squad { list-style: none; padding: 0; }
   .squad li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
   /* A squad row is a name plus two controls, one of which is a block-level
@@ -272,7 +269,7 @@ export const FORM_CSS = `
   .squad li form { margin: 0; }
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */
-  .squad li .button { width: auto; font-size: 0.95rem; padding: 0.6rem 1rem; }
+  .squad li .button { width: auto; font-size: var(--t-body); padding: 0.6rem 1rem; }
   /* Below this width the name and a button like "Make an ordinary member"
      cannot share a line without squeezing one of them. Rather than let that
      happen per-name, the name takes the whole first line for every member and
@@ -281,7 +278,7 @@ export const FORM_CSS = `
     .squad li { grid-template-columns: 1fr auto; }
     .squad li .member { grid-column: 1 / -1; }
   }
-  .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: 0.95rem; text-align: left; }
+  .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
 `;
 
 /**
@@ -311,7 +308,7 @@ export const TEAM_PICKER_CSS = `
      without hitting the radio dot itself. */
   .teams .sides label {
     display: inline-flex; align-items: center; gap: 0.35rem;
-    min-height: 44px; font-size: 0.95rem; color: var(--mut);
+    min-height: 44px; font-size: var(--t-body); color: var(--mut);
   }
   .teams .sides input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
   /* The drag-and-drop columns (Task 7). They ship hidden and only
@@ -322,7 +319,7 @@ export const TEAM_PICKER_CSS = `
   .team-columns { display: none; }
   .team-columns:not([hidden]) { display: flex; gap: 1rem; margin: 0.75rem 0; }
   .team-column { flex: 1 1 0; min-width: 0; }
-  .team-column h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+  .team-column h3 { margin: 0 0 0.25rem; font-size: var(--t-body); }
   /* Tall enough to be a target while empty — a drop area with no height is a
      side an organiser cannot pick until somebody is already on it. On the
      pool as well as the two columns: with every name dragged onto a side the
@@ -332,12 +329,12 @@ export const TEAM_PICKER_CSS = `
   .teams.over { outline: 2px dashed var(--accent); outline-offset: 2px; }
   .team-counts { display: flex; gap: 1.25rem; margin: 0.75rem 0; font-weight: 600; }
   .team-counts .count { color: var(--mut); font-weight: 400; }
-  .team-note { margin: 0.5rem 0; color: var(--mut); font-size: 0.95rem; }
+  .team-note { margin: 0.5rem 0; color: var(--mut); font-size: var(--t-body); }
   /* The one line a player must not be able to miss: which side they are on
      (BR-35 §5). Given the accent colour and the weight the response headline
      uses, because it is the same kind of statement — what is true of you —
      and it has to survive being read next to two full line-ups. */
-  .your-side { margin: 1rem 0 0.5rem; font-size: 1.2rem; font-weight: 700; color: var(--accent); }
+  .your-side { margin: 1rem 0 0.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--accent); }
 `;
 
 export const PAGE_STYLE_BLOCKS = [

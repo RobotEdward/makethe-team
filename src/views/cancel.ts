@@ -136,7 +136,7 @@ export function renderCancelledPage(options: CancelledPageOptions): string {
         : ""
     }
   `;
-  return layout({ title: `${options.gameName} cancelled — Make The Team`, body });
+  return layout({ title: `${options.gameName} cancelled — Make The Team`, body, centred: true });
 }
 
 /**
@@ -155,7 +155,7 @@ export function renderAlreadyCancelledPage(gameName: string): string {
     <h1>${escapeHtml(gameName)} is already cancelled</h1>
     <p>Nothing more has happened — everyone who needed telling was emailed when it was cancelled, and nobody has been emailed again.</p>
   `;
-  return layout({ title: `${gameName} already cancelled — Make The Team`, body });
+  return layout({ title: `${gameName} already cancelled — Make The Team`, body, centred: true });
 }
 
 /** A fixture that has been played: there is nothing left to cancel. */
@@ -164,5 +164,5 @@ export function renderAlreadyPlayedPage(gameName: string): string {
     <h1>${escapeHtml(gameName)} can't be cancelled</h1>
     <p>This game has already been played, so there's nothing to cancel and nobody to tell.</p>
   `;
-  return layout({ title: `${gameName} — Make The Team`, body });
+  return layout({ title: `${gameName} — Make The Team`, body, centred: true });
 }

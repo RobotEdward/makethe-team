@@ -10,6 +10,7 @@ home.get("/", (c) =>
       title: "Make The Team",
       body: `<h1>Make The Team</h1>
              <p>Getting a regular game on, without the group chat.</p>`,
+      centred: true,
     }),
   ),
 );

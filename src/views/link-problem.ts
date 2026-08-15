@@ -32,5 +32,5 @@ export function renderLinkProblemPage(): string {
     <p>It may have expired, already been used for a fixture that's since finished, or been copied incorrectly.</p>
     <p>Ask whoever organises your game to send you a fresh link, or get in touch with them directly.</p>
   `;
-  return layout({ title: "This link isn't working — Make The Team", body });
+  return layout({ title: "This link isn't working — Make The Team", body, centred: true });
 }
