@@ -210,6 +210,23 @@ export async function listOwnedGames(
 }
 
 /**
+ * Every game this player is an *active* member of, with the role they hold
+ * there (M7b). Erasure needs both halves at once: the list to leave, and the
+ * roles to pre-check the last-organiser invariant against before it leaves
+ * anything.
+ */
+export async function listActiveMemberships(
+  db: Db,
+  playerId: string,
+): Promise<Array<{ gameId: string; role: "player" | "owner" }>> {
+  return db
+    .select({ gameId: memberships.gameId, role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.playerId, playerId), eq(memberships.active, true)))
+    .orderBy(asc(memberships.gameId));
+}
+
+/**
  * Active squad members, owners first then alphabetical.
  *
  * `role` is `text({ enum: ["player", "owner"] })`, so a plain `desc()`/`asc()`
