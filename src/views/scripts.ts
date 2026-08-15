@@ -235,10 +235,194 @@ export const COPY_INVITE_JS = `
 `;
 
 /**
+ * Drag a name onto a side, on the owner's fixture page (BR-35 §4).
+ *
+ * # The radios stay the source of truth
+ *
+ * This is the whole reason the block is allowed to exist. `renderTeamPicker`
+ * is a plain form of radio groups, one per player, and a save posts those
+ * radios — so this script **never posts anything, never disables the form and
+ * never becomes required**. A drop does exactly two things: it sets the
+ * corresponding radio's `checked`, and it moves the row into that side's
+ * column. Everything downstream — the save route, the publish guard, the
+ * emails — reads the same radios it read before this block existed, which is
+ * what makes "picked by dragging" and "picked by clicking" provably the same
+ * act rather than two code paths that agree by inspection.
+ *
+ * The corollary is the `change` listener: an organiser who ignores the
+ * columns and clicks a radio must not be left with a name sitting under a
+ * side its radio contradicts. Moving the row on `change` keeps the one state
+ * this page has looking like one state.
+ *
+ * # What happens when it does not run
+ *
+ * The columns ship `hidden` and this reveals them, so scripting off, an old
+ * browser, or a CSP that drops this block all leave the page exactly as it
+ * was in Tasks 1-6: a list of named radio groups and a Save button. Every
+ * guard below returns before touching anything, and the early returns are
+ * *why* there is no error message anywhere in here — unlike the copy-invite
+ * button there is no user-visible action that can begin and then fail. There
+ * is no promise, no callback and therefore no `catch` to swallow: the
+ * diagnosability defect `docs/known-issues.md` records for the passkey blocks
+ * has no shape to take here.
+ *
+ * No `fetch`, so `connect-src` is untouched. If that ever changes, read the
+ * "a hash lets a script run" section at the top of this file first.
+ */
+export const TEAM_PICKER_JS = `
+(function () {
+  var form = document.getElementById("team-picker");
+  var columns = document.getElementById("team-columns");
+  if (!form || !columns) return;
+
+  // Drag and drop is the one capability this block cannot do without, so it
+  // is detected the way the passkey blocks detect WebAuthn: on the element
+  // and the API, before anything on the page is touched.
+  var probe = document.createElement("li");
+  if (!("draggable" in probe)) return;
+  if (typeof probe.closest !== "function") return;
+  if (!probe.classList) return;
+  if (typeof window.DataTransfer !== "function") return;
+
+  // Every drop target carries the value it stands for, including the pool of
+  // players nobody has placed yet (\`data-team=""\`, the "Not picked yet"
+  // radio). One attribute for all three means dragging a name back out of a
+  // side is the same code as dragging it in, rather than a case that has to
+  // be remembered.
+  var lists = form.querySelectorAll("ul[data-team]");
+  var rows = form.querySelectorAll("li[data-player]");
+  if (lists.length === 0 || rows.length === 0) return;
+
+  // The radios are found by walking the row rather than by building a
+  // selector from the player id: the id is the radio group's \`name\`, and a
+  // selector assembled from data is a class of bug this page has no need to
+  // be exposed to.
+  function radioFor(row, team) {
+    var inputs = row.getElementsByTagName("input");
+    for (var i = 0; i < inputs.length; i++) {
+      if (inputs[i].type === "radio" && inputs[i].value === team) return inputs[i];
+    }
+    return null;
+  }
+
+  function checkedValue(row) {
+    var inputs = row.getElementsByTagName("input");
+    for (var i = 0; i < inputs.length; i++) {
+      if (inputs[i].type === "radio" && inputs[i].checked) return inputs[i].value;
+    }
+    return null;
+  }
+
+  function listFor(team) {
+    for (var i = 0; i < lists.length; i++) {
+      if (lists[i].getAttribute("data-team") === team) return lists[i];
+    }
+    return null;
+  }
+
+  // Counted off the radios, never off how many rows sit in a column: the
+  // radios are what the save posts, so a head count taken from anything else
+  // could disagree with the pick the organiser is about to store.
+  function recount() {
+    var counts = form.querySelectorAll("[data-count]");
+    for (var i = 0; i < counts.length; i++) {
+      var team = counts[i].getAttribute("data-count");
+      var total = 0;
+      for (var j = 0; j < rows.length; j++) {
+        var radio = radioFor(rows[j], team);
+        if (radio && radio.checked) total++;
+      }
+      counts[i].textContent = String(total);
+    }
+  }
+
+  function place(row, team) {
+    var radio = radioFor(row, team);
+    var list = listFor(team);
+    // A row with no radio for this side, or a side with no column, is left
+    // exactly where it is: half a move would put the picture and the form out
+    // of step, which is the one thing this block must never do.
+    if (!radio || !list) return;
+    radio.checked = true;
+    list.appendChild(row);
+    recount();
+  }
+
+  var dragging = null;
+
+  for (var r = 0; r < rows.length; r++) {
+    (function (row) {
+      row.draggable = true;
+      row.addEventListener("dragstart", function (event) {
+        dragging = row;
+        row.classList.add("dragging");
+        if (event.dataTransfer) {
+          // Some browsers start no drag at all unless data is set, even when
+          // the drop handler never reads it.
+          event.dataTransfer.setData("text/plain", row.getAttribute("data-player") || "");
+          event.dataTransfer.effectAllowed = "move";
+        }
+      });
+      row.addEventListener("dragend", function () {
+        dragging = null;
+        row.classList.remove("dragging");
+      });
+    })(rows[r]);
+  }
+
+  for (var l = 0; l < lists.length; l++) {
+    (function (list) {
+      list.addEventListener("dragover", function (event) {
+        // Preventing the default is what makes an element a drop target at
+        // all; without it the drop event never fires and the name springs
+        // back with no explanation.
+        if (!dragging) return;
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+        list.classList.add("over");
+      });
+      list.addEventListener("dragleave", function () {
+        list.classList.remove("over");
+      });
+      list.addEventListener("drop", function (event) {
+        event.preventDefault();
+        list.classList.remove("over");
+        if (!dragging) return;
+        place(dragging, list.getAttribute("data-team") || "");
+      });
+    })(lists[l]);
+  }
+
+  form.addEventListener("change", function (event) {
+    var input = event.target;
+    if (!input || input.type !== "radio") return;
+    var row = input.closest("li[data-player]");
+    if (row) place(row, input.value);
+  });
+
+  columns.hidden = false;
+  // Sort what the server already rendered into the columns, so the two
+  // pictures start out agreeing. A pick saved earlier arrives with its radios
+  // checked and its rows in the flat list; leaving them there would show an
+  // organiser two empty sides above a completed pick.
+  for (var s = 0; s < rows.length; s++) {
+    var value = checkedValue(rows[s]);
+    if (value !== null) place(rows[s], value);
+  }
+  recount();
+})();
+`;
+
+/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
  */
-export const PAGE_SCRIPT_BLOCKS = [PASSKEY_SIGN_IN_JS, PASSKEY_REGISTER_JS, COPY_INVITE_JS] as const;
+export const PAGE_SCRIPT_BLOCKS = [
+  PASSKEY_SIGN_IN_JS,
+  PASSKEY_REGISTER_JS,
+  COPY_INVITE_JS,
+  TEAM_PICKER_JS,
+] as const;
 
 export type PageScriptBlock = (typeof PAGE_SCRIPT_BLOCKS)[number];
 

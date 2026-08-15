@@ -314,6 +314,20 @@ export const TEAM_PICKER_CSS = `
     min-height: 44px; font-size: 0.95rem; color: var(--mut);
   }
   .teams .sides input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
+  /* The drag-and-drop columns (Task 7). They ship hidden and only
+     TEAM_PICKER_JS reveals them, so the default here must be display: none.
+     An unconditional display: flex would beat the user-agent rule that makes
+     the hidden attribute mean anything, and every scripting-off visitor would
+     be shown two empty boxes they cannot put a name into. */
+  .team-columns { display: none; }
+  .team-columns:not([hidden]) { display: flex; gap: 1rem; margin: 0.75rem 0; }
+  .team-column { flex: 1 1 0; min-width: 0; }
+  .team-column h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+  /* Tall enough to be a target while empty — a drop area with no height is a
+     side an organiser cannot pick until somebody is already on it. */
+  .team-drop { min-height: 3.5rem; }
+  .teams li.dragging { opacity: 0.5; }
+  .teams.over { outline: 2px dashed var(--accent); outline-offset: 2px; }
   .team-counts { display: flex; gap: 1.25rem; margin: 0.75rem 0; font-weight: 600; }
   .team-counts .count { color: var(--mut); font-weight: 400; }
   .team-note { margin: 0.5rem 0; color: var(--mut); font-size: 0.95rem; }

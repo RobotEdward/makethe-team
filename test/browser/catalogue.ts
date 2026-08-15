@@ -107,7 +107,14 @@ export const CATALOGUE: CataloguePage[] = [
     title: "Fixture (organiser)",
     path: (world) => `/g/${world.gameId}/f/${world.fixtureId}`,
     persona: "owner",
-    note: "One fixture as its organiser sees it: everyone's state, and the controls to change it.",
+    // Extended rather than joined by a second entry: the team picker (BR-35)
+    // is a fragment of *this* page, not a page of its own, and a second
+    // catalogue row for the same route would run the same console/CSP gate
+    // twice while `catalogue.spec.ts`'s ROUTE_TO_ID still mapped the route to
+    // one of them.
+    note:
+      "One fixture as its organiser sees it: everyone's state, the controls to change it, " +
+      "and the team picker — the only owner page carrying script (TEAM_PICKER_JS).",
   },
   {
     id: "edit-game",

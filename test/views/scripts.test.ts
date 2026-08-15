@@ -52,7 +52,10 @@ describe("the script enumeration", () => {
       // two WebAuthn scripts detect `PublicKeyCredential`; `COPY_INVITE_JS`
       // (M6a Task 7) is not a WebAuthn affordance at all and instead detects
       // `navigator.clipboard`, so this checks for either rather than only the
-      // one every block used to share.
+      // one every block used to share. `TEAM_PICKER_JS` (M9 Task 7) is a third
+      // kind again: it needs drag and drop, so it detects `window.DataTransfer`
+      // before it makes a single row draggable or reveals a single column, and
+      // a browser without it keeps the picker's radio form exactly as served.
       //
       // Deliberately not a bare substring match on the guard token: a script
       // that called `navigator.clipboard.writeText(...)` with no guard at all
@@ -62,7 +65,7 @@ describe("the script enumeration", () => {
       // token to sit inside an `if (...) return;` guard clause, which is what
       // every block below actually does before it touches the API.
       expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
-        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;/,
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;/,
       );
     }
   });

@@ -7,6 +7,7 @@ import { escapeHtml, layout } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
+import { TEAM_PICKER_JS } from "./scripts.js";
 import { FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface OwnerFixtureParams {
@@ -125,8 +126,10 @@ function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixturePa
  *
  * Reuses `renderStatusLine` from `src/views/fixture.ts` rather than restating
  * its wording, so the status badge reads identically on the player's page and
- * the organiser's. No `<script>` anywhere — every control here is a plain
- * form, so the page works with JavaScript off.
+ * the organiser's. Every control here is a plain form, so the page works with
+ * JavaScript off — including the team picker, whose one script
+ * (`TEAM_PICKER_JS`, Task 7) only sets radios this page would have posted
+ * anyway. Nothing an organiser must be able to do depends on it.
  */
 /**
  * The add-a-guest form (§5), shown only while the fixture is still open —
@@ -207,5 +210,10 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     title: `${gameName} — Make The Team`,
     body,
     pageStyles: [FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
+    // Gated on the same predicate `renderTeams` picks the picker with, so the
+    // enhancement ships exactly where the thing it enhances does. A closed
+    // fixture renders the read-only line-ups, which have no form to move a
+    // name in and nothing for this block to find.
+    pageScripts: takingChanges(view) ? [TEAM_PICKER_JS] : [],
   });
 }

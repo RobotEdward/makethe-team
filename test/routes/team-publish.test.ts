@@ -494,14 +494,28 @@ describe("the publish control on GET /g/:id/f/:fixtureId", () => {
     expect(row?.team).toBe("b");
   });
 
-  it("carries no script and no inline handler", async () => {
+  /**
+   * Publishing is the act this file is about, and it must not depend on
+   * script. M9 Task 7 put the picker's drag-and-drop enhancement on this
+   * page, so "no script at all" stopped being true — but the publish form is
+   * a form of its own, below the picker's and never inside it, and the claim
+   * that matters is that it is still there and still pressable once every
+   * script block is deleted. (`test/routes/team-picker.test.ts` checks the
+   * other half: that the one block shipped is a bare, enumerated tag.)
+   */
+  it("keeps the publish control usable with every script removed", async () => {
     const { cookie, viewerId } = await ownerSession();
     const seed = await seedPublishableFixture(viewerId);
     await savePick(seed, cookie, completePick(seed));
 
-    const html = await page(seed, cookie);
+    const withoutScript = (await page(seed, cookie)).replace(/<script[\s\S]*?<\/script>/g, "");
 
-    expect(html).not.toContain("<script");
-    expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+    expect(withoutScript, "removing the scripts must remove all script").not.toContain("<script");
+    expect(withoutScript).not.toMatch(/\son[a-z]+\s*=/i);
+    expect(withoutScript).not.toMatch(/javascript:/i);
+    // The publish form itself, read out of the reduced page: its own `action`,
+    // a real POST, and a submit button.
+    expect(withoutScript).toContain(`action="/g/${seed.gameId}/f/${seed.fixtureId}/teams/publish"`);
+    expect(withoutScript).toMatch(/<button[^>]*type="submit">Publish teams<\/button>/);
   });
 });

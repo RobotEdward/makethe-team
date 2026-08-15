@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { auditLog, fixtures, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
+import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
@@ -194,17 +195,56 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     expect(html).not.toContain("<h2>Teams</h2>");
   });
 
-  it("carries no script and no inline handler", async () => {
+  /**
+   * Was `not.toContain("<script")` until M9 Task 7 added the drag-and-drop
+   * enhancement, and this is the replacement rather than a deletion: the
+   * property being pinned was never "there is no script" but **"the pick can
+   * be made without one"**, which is the same reduction
+   * `test/routes/signin.test.ts` performs on the sign-in page.
+   *
+   * The enumeration in that file cannot stand in for this. It captures the
+   * owner fixture page *after* the fixture has been cancelled — deliberately,
+   * for the cancel-token pages above it — so the picker is not on it and the
+   * script is correctly absent. This is the only test that sees this page in
+   * the state that carries the enhancement, so it also has to make the
+   * enumeration's other check here: a bare tag whose text is in
+   * `SCRIPT_BLOCKS`, because anything else is script the CSP will not hash.
+   */
+  it("ships one enumerated script, and the whole pick survives its removal", async () => {
     const { cookie, viewerId } = await ownerSession();
-    const { gameId, fixtureId } = await seedPickableFixture(viewerId);
+    const { gameId, fixtureId, ada, bram } = await seedPickableFixture(viewerId);
 
-    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+    const served = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
 
-    // The picker must work with JavaScript off: the later drag-and-drop
-    // enhancement is added separately and must be able to assume the radios
-    // are the source of truth.
-    expect(html).not.toContain("<script");
-    expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+    const scripts = [...served.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+    expect(scripts, "the picker page carries exactly the one enhancement").toHaveLength(1);
+    // No `src`, no `type`, no `nonce`: only a bare inline tag is covered by a
+    // SHA-256 hash of its own text.
+    expect(scripts[0]![1], "the script tag must carry no attributes").toBe("");
+    expect(
+      SCRIPT_BLOCKS as readonly string[],
+      "the picker ships script that is not in SCRIPT_BLOCKS, so the CSP will not hash it",
+    ).toContain(scripts[0]![2]);
+
+    // What a browser with scripting off is left holding. Behaviour lives only
+    // in the blocks — no inline handler, no `javascript:` URL — so deleting
+    // them deletes all of it.
+    const withoutScript = served.replace(/<script[\s\S]*?<\/script>/g, "");
+    expect(withoutScript, "removing the scripts must remove all script").not.toContain("<script");
+    expect(withoutScript).not.toMatch(/\son[a-z]+\s*=/i);
+    expect(withoutScript).not.toMatch(/javascript:/i);
+
+    // And the pick is still expressible from that reduced page: a radio for
+    // every player and every side, plus the Save button they post through.
+    for (const playerId of [ada, bram]) {
+      for (const value of ["a", "b", ""]) {
+        expect(
+          withoutScript,
+          `${playerId} must still be placeable on "${value || "no side"}" with scripting off`,
+        ).toContain(`<input type="radio" name="${playerId}" value="${value}"`);
+      }
+    }
+    expect(withoutScript).toContain("Save teams");
   });
 });
 

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 import { BASE_URL } from "../../playwright.config.js";
 import { observe } from "./observe.js";
 import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
@@ -416,6 +416,153 @@ test("a player schedules their own erasure, sees it on the dashboard, and cancel
   expect(seen.errors()).toEqual([]);
 
   await player.close();
+});
+
+/** The guest added to both picker journeys, so there are two players to split. */
+const GUEST_NAME = "Sam Whitlock";
+
+/**
+ * The team picker (BR-35), the two ways it can be driven.
+ *
+ * Both journeys need the same starting position — a fixture with two players
+ * `in` and nobody on a side — so it is built once here rather than twice.
+ * `page` arrives from `seedWorld` already signed in as the owner; the guest
+ * is the second player because a guest is `in` the moment they are added,
+ * which the joined member is not.
+ */
+async function seedTwoPlayersIn(page: Page, browser: Browser, javaScriptEnabled: boolean) {
+  const world = await seedWorld(page, browser, { javaScriptEnabled });
+  const fixturePath = `/g/${world.gameId}/f/${world.fixtureId}`;
+
+  await page.goto(fixturePath);
+  await squadRow(page, JOINER_NAME).getByRole("button", { name: "Mark in" }).click();
+  await expect(squadRow(page, JOINER_NAME).locator(".status")).toHaveText("In");
+
+  await page.fill("#guest-name", GUEST_NAME);
+  await page.getByRole("button", { name: "Add guest" }).click();
+  await expect(squadRow(page, GUEST_NAME)).toHaveCount(1);
+
+  return { world, fixturePath };
+}
+
+/**
+ * One player's row in the picker, wherever it currently sits.
+ *
+ * By `data-player` rather than by which list contains it: the drag-and-drop
+ * script moves rows between the pool and the two columns, and a locator tied
+ * to one of those would stop matching exactly when the row moved — the moment
+ * the assertion is about.
+ */
+function pickerRow(page: Page, name: string) {
+  return page.locator("li[data-player]").filter({ hasText: name });
+}
+
+/** The radio for one side on one player's row — the thing a save actually posts. */
+function sideRadio(page: Page, name: string, side: string) {
+  return pickerRow(page, name).getByLabel(side, { exact: true });
+}
+
+test.describe("the team picker, javascript off", () => {
+  test.use({ javaScriptEnabled: false });
+
+  /**
+   * The guarantee. Picking sides, saving and publishing is something an
+   * organiser *must* be able to do, so every step of it is a radio and a real
+   * form post — and this runs with scripting disabled to prove that rather
+   * than assert it. If the drag-and-drop journey below ever has to be
+   * deleted, this is the one that keeps the feature honest.
+   */
+  test("an organiser picks both sides with the radios, saves, and publishes", async ({ page, browser }) => {
+    const seen = observe(page);
+    const { world, fixturePath } = await seedTwoPlayersIn(page, browser, false);
+
+    // The columns the script would reveal must stay hidden here: an empty
+    // drop target nobody can drop into is worse than no drop target at all.
+    await expect(page.locator("#team-columns")).toBeHidden();
+
+    await sideRadio(page, JOINER_NAME, "Team A").check();
+    await sideRadio(page, GUEST_NAME, "Team B").check();
+    await page.getByRole("button", { name: "Save teams" }).click();
+    await page.waitForURL(new RegExp(`${fixturePath}$`));
+
+    // Read back off the re-rendered page, not off the form that was just
+    // submitted: this is the assertion that the pick was *stored*.
+    await expect(sideRadio(page, JOINER_NAME, "Team A")).toBeChecked();
+    await expect(sideRadio(page, GUEST_NAME, "Team B")).toBeChecked();
+
+    await page.getByRole("button", { name: "Publish teams" }).click();
+    await page.waitForURL(new RegExp(`${fixturePath}$`));
+    // Publishing is on record: the control now offers to do it *again*, which
+    // is the state `teams_published_at` renders.
+    await expect(page.getByRole("button", { name: "Publish again" })).toBeVisible();
+
+    // And it reached a player. `/r/:token` is the page a squad member reads,
+    // and an unpublished pick renders nothing there at all — so this is the
+    // difference between "saved" and "announced".
+    await page.goto(`/r/${world.responseToken}`);
+    await expect(page.locator(".your-side")).toContainText("Team A");
+
+    expect(await seen.violations()).toEqual([]);
+    expect(seen.errors()).toEqual([]);
+  });
+});
+
+/**
+ * **The only JavaScript-on journey in this suite, and deliberately so.**
+ *
+ * Every other test here runs with scripting disabled, because that is this
+ * project's stated policy and the second projection above is what proves it.
+ * This one is the exception because the team picker is the only place where a
+ * *gesture* is offered as an alternative to a control, and a gesture cannot be
+ * exercised with the script that implements it turned off. Without this test
+ * the drag-and-drop enhancement would ship with no coverage whatsoever.
+ *
+ * It asserts the underlying radio's `checked` state and never anything
+ * visual. The radios are what a save posts, so "the radio followed the drag"
+ * is precisely the claim that makes this journey and the JS-off journey above
+ * two ways of performing one act, rather than two features that happen to
+ * agree today. A test that asserted where the name appeared would pass for a
+ * script that moved the name and forgot the form — which is the exact defect
+ * worth catching.
+ */
+test("dragging a name onto a side moves the radio that the save posts", async ({ page, browser }) => {
+  const seen = observe(page);
+  const { fixturePath } = await seedTwoPlayersIn(page, browser, true);
+
+  // The script ran: it is what reveals the columns. Asserted before the drag,
+  // so a block that never executed fails here with its own cause rather than
+  // as a mysteriously ineffective drag.
+  await expect(page.locator("#team-columns")).toBeVisible();
+  await expect(sideRadio(page, JOINER_NAME, "Team A")).not.toBeChecked();
+
+  await pickerRow(page, JOINER_NAME).dragTo(page.locator('ul[data-team="a"]'));
+  await expect(sideRadio(page, JOINER_NAME, "Team A")).toBeChecked();
+
+  await pickerRow(page, GUEST_NAME).dragTo(page.locator('ul[data-team="b"]'));
+  await expect(sideRadio(page, GUEST_NAME, "Team B")).toBeChecked();
+
+  // Secondary, and only ever secondary: the row is where it was dropped. The
+  // radio assertions above are the load-bearing ones — this only catches a
+  // script that set the form and left the name behind.
+  await expect(page.locator('ul[data-team="a"] li[data-player]')).toHaveCount(1);
+  await expect(page.locator('ul[data-team="b"] li[data-player]')).toHaveCount(1);
+
+  // The same Save button, the same form, the same POST as the journey above:
+  // nothing about the drag changes what is submitted or how.
+  await page.getByRole("button", { name: "Save teams" }).click();
+  await page.waitForURL(new RegExp(`${fixturePath}$`));
+
+  // What was stored, read back off the re-rendered page. This is where the
+  // two journeys meet: the same two assertions hold after either one.
+  await expect(sideRadio(page, JOINER_NAME, "Team A")).toBeChecked();
+  await expect(sideRadio(page, GUEST_NAME, "Team B")).toBeChecked();
+
+  // The CSP gate matters more here than anywhere else in this file: this is
+  // the first script this project has put on an owner page, and a hash that
+  // did not cover it would leave the block silently unexecuted — the failure
+  // class `docs/known-issues.md` records for `connect-src`.
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
 });
 
 test("the two identities never share a session", async ({ page, browser }) => {

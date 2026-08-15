@@ -14,11 +14,18 @@ import { escapeHtml } from "./layout.js";
  *
  * **No `<script>` and no inline event handlers anywhere in here.** Every row
  * is a radio group inside one form, so the picker works with JavaScript
- * disabled, and the drag-and-drop enhancement added later can assume the
- * radios are the source of truth rather than a fallback it has to keep in
- * step with some other state. `test/routes/signin.test.ts` enforces the rule
- * across every page the app serves; this comment records why it matters
- * *here* specifically.
+ * disabled, and the drag-and-drop enhancement (`TEAM_PICKER_JS`, Task 7)
+ * assumes the radios are the source of truth rather than a fallback it has to
+ * keep in step with some other state. `test/routes/signin.test.ts` enforces
+ * the rule across every page the app serves; this comment records why it
+ * matters *here* specifically.
+ *
+ * What this file gives that script is markup it can find and nothing else: an
+ * id on the form, a `data-player` on each row, a `data-team` on each drop
+ * list, and two side columns that ship `hidden`. Every one of those is inert
+ * with scripting off — a hidden empty column is not an affordance, and an
+ * attribute is not behaviour — so the page a person without JavaScript reads
+ * is byte-for-byte the page Tasks 1-6 shipped, minus nothing.
  *
  * Only `in` players are offered a side. A waitlisted player has no place in
  * the fixture yet, and putting them on a team would promise one.
@@ -58,12 +65,38 @@ export function rowName(member: { name: string; erasedAt: Date | null; isGuest: 
   return `${displayName(member.name, member.erasedAt)}${member.isGuest ? " (guest)" : ""}`;
 }
 
-/** Both sides' names with their current head count, above the rows. */
+/**
+ * Both sides' names with their current head count, above the rows.
+ *
+ * `data-count` is the drag-and-drop script's handle on these numbers, and the
+ * only place a head count appears on the picker — the columns below carry a
+ * name and no number on purpose. Two counts would be two things to keep in
+ * step, and the one that went stale would be the one an organiser happened to
+ * be looking at.
+ */
 function renderCounts(names: Record<TeamId, string>, counts: { a: number; b: number }): string {
   const sides = TEAM_IDS.map(
-    (id) => `<span>${escapeHtml(names[id])} <span class="count">${counts[id]}</span></span>`,
+    (id) => `<span>${escapeHtml(names[id])} <span class="count" data-count="${id}">${counts[id]}</span></span>`,
   ).join("");
   return `<p class="team-counts">${sides}</p>`;
+}
+
+/**
+ * The two side columns the script drops names into, shipped `hidden`.
+ *
+ * Empty and hidden is the whole point: with scripting off they are never
+ * revealed and never filled, so nobody is shown a pair of empty boxes with no
+ * way to put anything in them. `TEAM_PICKER_JS` reveals them and moves the
+ * rows — the rows themselves, radios and all — so a placed player's controls
+ * travel with their name and the form's contents never change.
+ */
+function renderColumns(names: Record<TeamId, string>): string {
+  const column = (id: TeamId) =>
+    `<div class="team-column">
+               <h3>${escapeHtml(names[id])}</h3>
+               <ul class="teams team-drop" data-team="${id}"></ul>
+             </div>`;
+  return `<div class="team-columns" id="team-columns" hidden>${TEAM_IDS.map(column).join("")}</div>`;
 }
 
 /**
@@ -84,7 +117,10 @@ function renderRow(member: TeamPickerParams["members"][number], names: Record<Te
       (member.team ?? "") === value ? " checked" : ""
     }>${escapeHtml(label)}</label>`;
 
-  return `<li>
+  // `data-player` is what the drag-and-drop script identifies a row by. Not
+  // `draggable`: that attribute is set by the script, so a browser that never
+  // runs it is never offered a gesture that would do nothing.
+  return `<li data-player="${group}">
             <fieldset>
               <legend>${escapeHtml(rowName(member))}</legend>
               <span class="sides">
@@ -141,6 +177,12 @@ function renderPublish(params: TeamPickerParams): string {
  * form below — so there is no confirmation step on the save and no warning
  * about interrupting anyone. A saved pick stays invisible to players until it
  * is published.
+ *
+ * The list of rows carries `data-team=""` because it is the third drop target
+ * once the script runs: the players nobody has placed. That is the same value
+ * as the "Not picked yet" radio, so a name dragged out of a side and a name
+ * whose radio was cleared end up in the same state — there is no placement
+ * the gesture can reach and the form cannot undo.
  */
 export function renderTeamPicker(params: TeamPickerParams): string {
   const { gameId, fixtureId, names, members, counts, uneven, unassignedProblem } = params;
@@ -167,10 +209,11 @@ export function renderTeamPicker(params: TeamPickerParams): string {
   return `<h2>Teams</h2>
           <p class="team-note">Only players who are in can be given a side. Nobody is told anything until you publish.</p>
           ${problem}
-          <form method="post" action="${escapeHtml(ownerTeamsPath(gameId, fixtureId))}">
+          <form method="post" action="${escapeHtml(ownerTeamsPath(gameId, fixtureId))}" id="team-picker">
             ${renderCounts(names, counts)}
             ${unevenNote}
-            <ul class="teams">${members.map((member) => renderRow(member, names)).join("")}</ul>
+            ${renderColumns(names)}
+            <ul class="teams" id="team-pool" data-team="">${members.map((member) => renderRow(member, names)).join("")}</ul>
             <button class="button primary" type="submit">Save teams</button>
           </form>
           ${renderPublish(params)}`;
