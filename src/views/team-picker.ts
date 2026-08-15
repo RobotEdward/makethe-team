@@ -192,7 +192,27 @@ export function renderTeamsReadOnly(params: {
 }): string {
   const { names, members } = params;
   if (members.length === 0) return "";
+  return `<h2>Teams</h2>${renderTeamSides(names, members)}`;
+}
 
+/**
+ * Both sides, named and counted, with no heading of their own.
+ *
+ * Split out of `renderTeamsReadOnly` above so the player-facing pages
+ * (`renderPublishedTeamsSection` in `src/views/fixture.ts`) can put the
+ * viewer's own side *between* the heading and the line-ups without owning a
+ * second copy of how a line-up looks. One renderer means an organiser
+ * reviewing a finished pick and a player reading the same pick see the same
+ * markup — which is the point, since the player is checking it against an
+ * email built from the same rows.
+ *
+ * `members` is expected to be already filtered to the players who should
+ * appear (`in`, with a side); this function only groups them.
+ */
+export function renderTeamSides(
+  names: Record<TeamId, string>,
+  members: TeamPickerParams["members"],
+): string {
   const side = (id: TeamId) => {
     const onIt = members.filter((member) => member.team === id);
     const list =
@@ -204,5 +224,5 @@ export function renderTeamsReadOnly(params: {
     return `<h3>${escapeHtml(names[id])} <span class="count">${onIt.length}</span></h3>${list}`;
   };
 
-  return `<h2>Teams</h2>${TEAM_IDS.map(side).join("")}`;
+  return TEAM_IDS.map(side).join("");
 }

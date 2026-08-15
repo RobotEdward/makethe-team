@@ -35,10 +35,22 @@ async function seedRespondableFixture(
     /** The viewer's own membership of the game. Defaults to an active player. */
     viewerRole?: "player" | "owner";
     viewerActive?: boolean;
+    /**
+     * A team pick over this squad (BR-35): the viewer on "Reds", Player 1 on
+     * "Blues", both `in`.
+     *
+     * `"saved"` writes the assignments and nothing else — the state an
+     * organiser is in while they are still trying an arrangement out.
+     * `"published"` additionally stamps `teams_published_at`, which is the
+     * only thing that may make any of it visible to a player.
+     */
+    teams?: "saved" | "published";
   } = {},
 ): Promise<SeedResult> {
   const gameId = await insertGame(db, {
     maxPlayers: 14,
+    teamAName: "Reds",
+    teamBName: "Blues",
     ...(overrides.squadVisibleToPlayers === undefined ? {} : { squadVisibleToPlayers: overrides.squadVisibleToPlayers }),
   });
   const fixtureId = crypto.randomUUID();
@@ -76,6 +88,20 @@ async function seedRespondableFixture(
     .update(responses)
     .set({ status: "in", respondedAt: NOW })
     .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, otherPlayerId)));
+
+  if (overrides.teams) {
+    await db
+      .update(responses)
+      .set({ status: "in", respondedAt: NOW, team: "a" })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, playerId)));
+    await db
+      .update(responses)
+      .set({ team: "b" })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, otherPlayerId)));
+    if (overrides.teams === "published") {
+      await db.update(fixtures).set({ teamsPublishedAt: NOW }).where(eq(fixtures.id, fixtureId));
+    }
+  }
 
   if (overrides.viewerActive === false) {
     // Deactivated *after* the fixture opened, which is the only way a removed
@@ -478,6 +504,65 @@ describe("GET /r/:token — squad visibility (BR-33)", () => {
     const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
 
     expect(html).not.toContain("Player 1");
+  });
+});
+
+/**
+ * The player's half of BR-35 §5, end to end through the route that reads the
+ * fixture — the same rule `test/notify/send-teams.test.ts` asserts of the
+ * N-9 email, because a player holding that email and looking at this page
+ * must not be able to find a contradiction between them.
+ */
+describe("GET /r/:token — published teams (BR-35 §5)", () => {
+  /**
+   * The case most likely to be got wrong, and the one that matters most: an
+   * organiser must be able to try an arrangement without announcing it. The
+   * assignments exist in the database throughout this test.
+   */
+  it("shows nothing at all when a pick has been saved but not published", async () => {
+    const { token } = await seedRespondableFixture({ teams: "saved", squadVisibleToPlayers: true });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).not.toContain("Reds");
+    expect(html).not.toContain("Blues");
+    expect(html).not.toContain("<h2>Teams</h2>");
+  });
+
+  it("tells a player their own side once the teams are published", async () => {
+    const { token } = await seedRespondableFixture({ teams: "published", squadVisibleToPlayers: true });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).toContain("You're on Reds.");
+  });
+
+  it("shows both line-ups when the game shows players to each other", async () => {
+    const { token } = await seedRespondableFixture({ teams: "published", squadVisibleToPlayers: true });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    const teamsSection = html.slice(html.indexOf("<h2>Teams</h2>"), html.indexOf("<h2>Squad</h2>"));
+    expect(teamsSection).toContain("Edward Cooper");
+    expect(teamsSection).toContain("Player 1");
+  });
+
+  it("keeps a player's own side when the squad is hidden, without naming anyone else", async () => {
+    const { token } = await seedRespondableFixture({ teams: "published", squadVisibleToPlayers: false });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).toContain("You're on Reds.");
+    expect(html).not.toContain("Player 1");
+  });
+
+  it("does not publish a pick by hiding the squad — nothing shows before publication either way", async () => {
+    const { token } = await seedRespondableFixture({ teams: "saved", squadVisibleToPlayers: false });
+
+    const html = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(html).not.toContain("You're on");
+    expect(html).not.toContain("Reds");
   });
 });
 

@@ -3,9 +3,11 @@ import type { SquadMember } from "../db/queries.js";
 import { displayName } from "../domain/display-name.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
+import type { PublishedTeams } from "../domain/teams.js";
 import { escapeHtml, layout } from "./layout.js";
 import { attribution, ordinal, squadStatusLabel } from "./squad-row.js";
-import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "./styles.js";
+import { renderTeamSides } from "./team-picker.js";
+import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 /**
  * Why this page is read-only, if it is.
@@ -48,6 +50,13 @@ export interface FixturePageOptions {
   token: string;
   /** From `?intent=`. Emphasises one button with CSS. Never records anything. */
   intent: ResponseIntent | null;
+  /**
+   * From `publishedTeamsFor` — `null` whenever this fixture's teams have not
+   * been published, which is the whole of the "a saved pick is invisible"
+   * rule as far as this page is concerned (BR-35). Optional so the dashboard
+   * and other callers of the shared renderers need not supply it.
+   */
+  teams?: PublishedTeams | null;
   /** Set when there is nothing this viewer can do here: render read-only, no buttons. */
   readOnlyReason?: ReadOnlyReason;
 }
@@ -177,6 +186,54 @@ export function renderSquadSection(squad: readonly SquadMember[] | null, inCount
   return renderSquadList(squad);
 }
 
+/**
+ * The published teams, as a player sees them (BR-35 §5).
+ *
+ * Nothing at all unless `teams` is non-null — `publishedTeamsFor`
+ * (`src/domain/teams.ts`) has already applied the only gate there is,
+ * `teams_published_at`, and no page re-decides it. A saved-but-unpublished
+ * pick is invisible here for the same reason it sends no email: an organiser
+ * must be able to try an arrangement without announcing one.
+ *
+ * The two halves, in the order the N-9 email states them:
+ *
+ *  1. **Your own side, first and plainly** — the same "You're on X." sentence
+ *     the email leads with, deliberately worded identically, because a player
+ *     holding the email and looking at this page must not have to work out
+ *     whether the two agree.
+ *  2. **The line-ups, if this game shows players to each other.** `squad` is
+ *     whatever `squadForViewer` handed the page — the same list the squad
+ *     section above renders, so there is no second visibility rule here and
+ *     nothing this section can leak that the section above would not. `null`
+ *     means hidden, and hidden renders *nothing*, never an empty line-up,
+ *     which would read as "nobody else is playing".
+ *
+ * Only players who are both `in` and placed are listed: a dropout keeps their
+ * `team` on purpose (see `src/domain/teams.ts`), and naming them under a side
+ * would claim they are playing.
+ *
+ * Returns "" when there is neither an own side nor a visible line-up — a
+ * pending player in a game that hides its squad. A bare "Teams" heading over
+ * nothing tells them a pick exists without telling them anything about it,
+ * which is worse than silence.
+ */
+export function renderPublishedTeamsSection(
+  teams: PublishedTeams | null,
+  squad: readonly SquadMember[] | null,
+): string {
+  if (teams === null) return "";
+
+  const yourSide =
+    teams.yourSide === null ? "" : `<p class="your-side">You're on ${escapeHtml(teams.names[teams.yourSide])}.</p>`;
+  const sides =
+    squad === null
+      ? ""
+      : renderTeamSides(teams.names, squad.filter((member) => member.status === "in" && member.team !== null));
+
+  if (yourSide === "" && sides === "") return "";
+  return `<h2>Teams</h2>${yourSide}${sides}`;
+}
+
 function renderNudge(view: FixtureView): string {
   if (!view.flags.includes("uneven")) return "";
   return `<p class="nudge">The squad has an odd number of players in — one more would even it up.</p>`;
@@ -250,6 +307,7 @@ function renderReadOnlyNotice(reason: ReadOnlyReason): string {
  */
 export function renderFixturePage(options: FixturePageOptions): string {
   const { gameName, venueName, kicksOffAtLocal, view, squad, inCount, viewer, readOnlyReason } = options;
+  const teams = options.teams ?? null;
 
   const headline = viewerHeadline(viewer, readOnlyReason);
   // A waitlisted viewer's headline gets the same warn treatment the roster
@@ -268,6 +326,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${renderNudge(view)}
     ${renderOverCapacity(view)}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options)}
+    ${renderPublishedTeamsSection(teams, squad)}
     <h2>Squad</h2>
     ${renderSquadSection(squad, inCount)}
   `;
@@ -275,6 +334,13 @@ export function renderFixturePage(options: FixturePageOptions): string {
   return layout({
     title: `${gameName} — Make The Team`,
     body,
-    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS],
+    // `TEAM_PICKER_CSS` is the owner picker's block, reused here because the
+    // line-ups a player reads are rendered by the same `renderTeamSides` the
+    // owner's read-only view uses — a second block styling the same markup is
+    // how the two pages start looking like different products. Included
+    // unconditionally: a stylesheet that appeared and disappeared with the
+    // fixture's publish state is a harder thing to reason about than a few
+    // unused rules.
+    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
   });
 }

@@ -2,9 +2,10 @@ import { DASHBOARD_PATH } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
-import { renderSquadSection, renderStatusLine } from "./fixture.js";
+import type { PublishedTeams } from "../domain/teams.js";
+import { renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
-import { FORM_CSS, SQUAD_STYLES_CSS } from "./styles.js";
+import { FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface PlayerGameParams {
   gameName: string;
@@ -17,6 +18,14 @@ export interface PlayerGameParams {
     view: FixtureView;
     inCount: number;
     squad: readonly SquadMember[] | null;
+    /**
+     * From `publishedTeamsFor` — `null` until the organiser publishes, which
+     * is what keeps a saved pick invisible here as well as on `/r/:token`
+     * (BR-35). This page and that one are the two surfaces a player can reach,
+     * and a pick that showed on one but not the other would be a feature
+     * half the squad never sees.
+     */
+    teams: PublishedTeams | null;
   } | null;
   upcoming: readonly { kicksOffAt: Date; lifecycle: string }[];
   viewerPlayerId: string;
@@ -48,6 +57,7 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
         <p class="kickoff">${escapeHtml(openFixture.kicksOffAtLocal)}</p>
         ${renderStatusLine(openFixture.view)}
         ${renderSquadSection(openFixture.squad, openFixture.inCount)}
+        ${renderPublishedTeamsSection(openFixture.teams, openFixture.squad)}
       `;
 
   const upcomingItems = upcoming
@@ -73,6 +83,9 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
   return layout({
     title: `${gameName} — Make The Team`,
     body,
-    pageStyles: [FORM_CSS, SQUAD_STYLES_CSS],
+    // `TEAM_PICKER_CSS` for the published line-ups — see the same import on
+    // the `/r/:token` page for why the owner's block is the right one to
+    // reuse rather than a second block styling identical markup.
+    pageStyles: [FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
   });
 }

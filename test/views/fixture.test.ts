@@ -436,3 +436,147 @@ describe("fixture page", () => {
     expect(html).toContain("1 in so far");
   });
 });
+
+/**
+ * BR-35 §5, on the page half of it. The email half is covered by
+ * `test/notify/send-teams.test.ts`; these two must keep agreeing, so the
+ * wording asserted here ("You're on X.") is deliberately the email's own
+ * lead sentence.
+ */
+describe("fixture page — published teams (BR-35 §5)", () => {
+  const NAMES = { a: "Reds", b: "Blues" };
+
+  const PICKED = [
+    { playerId: "p1", name: "Edward Cooper", erasedAt: null, status: "in" as const, team: "a" as const,
+      waitlistRank: null, setBy: null, source: "token" as const, isGuest: false },
+    { playerId: "p2", name: "Sam Okonjo", erasedAt: null, status: "in" as const, team: "b" as const,
+      waitlistRank: null, setBy: null, source: "token" as const, isGuest: false },
+  ];
+
+  it("says nothing about teams when nothing has been published", () => {
+    // The assignments are right there on the squad rows; the absent
+    // `teams` is the only thing keeping them off the page.
+    const html = renderFixturePage(optionsWith({ squad: PICKED, inCount: 2, teams: null }));
+
+    expect(html).not.toContain("<h2>Teams</h2>");
+    expect(html).not.toContain("Reds");
+    expect(html).not.toContain("Blues");
+  });
+
+  it("tells the viewer their own side, first", () => {
+    const html = renderFixturePage(optionsWith({
+      squad: PICKED,
+      inCount: 2,
+      viewer: { playerId: "p1", status: "in" },
+      teams: { names: NAMES, yourSide: "a" },
+    }));
+
+    expect(html).toContain("You're on Reds.");
+    expect(html.indexOf("You're on Reds.")).toBeLessThan(html.indexOf("<h3>Reds"));
+  });
+
+  it("lists both sides when the game shows players to each other", () => {
+    const html = renderFixturePage(optionsWith({
+      squad: PICKED,
+      inCount: 2,
+      viewer: { playerId: "p1", status: "in" },
+      teams: { names: NAMES, yourSide: "a" },
+    }));
+
+    expect(html).toContain("Edward Cooper");
+    expect(html).toContain("Sam Okonjo");
+    expect(html).toContain("<h3>Reds");
+    expect(html).toContain("<h3>Blues");
+  });
+
+  /**
+   * The refinement of BR-33 this whole task turns on: a hidden squad hides
+   * the other side's *people*, never the viewer's own assignment — which
+   * they are holding an email about.
+   */
+  it("keeps the viewer's own side when the squad is hidden, and names nobody else", () => {
+    const html = renderFixturePage(optionsWith({
+      squad: null,
+      inCount: 2,
+      viewer: { playerId: "p1", status: "in" },
+      teams: { names: NAMES, yourSide: "a" },
+    }));
+
+    expect(html).toContain("You're on Reds.");
+    expect(html).not.toContain("Sam Okonjo");
+    expect(html).not.toContain("<h3>Blues");
+  });
+
+  it("renders no empty line-up for a hidden squad", () => {
+    // `null` means "not shown", and an empty list would read as "nobody
+    // else is playing" — a different and false statement (M8's reason for
+    // `squadForViewer` returning `null` rather than `[]`).
+    const html = renderFixturePage(optionsWith({
+      squad: null,
+      inCount: 2,
+      viewer: { playerId: "p1", status: "in" },
+      teams: { names: NAMES, yourSide: "a" },
+    }));
+
+    expect(html).not.toContain("Nobody.");
+  });
+
+  it("says nothing at all to a viewer with no side and no visible squad", () => {
+    // A bare "Teams" heading over nothing would tell a pending player a pick
+    // exists while telling them nothing about it.
+    const html = renderFixturePage(optionsWith({
+      squad: null,
+      inCount: 2,
+      viewer: { playerId: "p3", status: "pending" },
+      teams: { names: NAMES, yourSide: null },
+    }));
+
+    expect(html).not.toContain("<h2>Teams</h2>");
+  });
+
+  it("never lists a player who is no longer in, though they keep their side", () => {
+    // `responses.team` is deliberately never cleared (see
+    // `src/domain/teams.ts`), so this row is what the database really looks
+    // like after a dropout — and listing them would claim they are playing.
+    const html = renderFixturePage(optionsWith({
+      squad: [
+        PICKED[0]!,
+        { ...PICKED[1]!, status: "out" as const },
+      ],
+      inCount: 1,
+      viewer: { playerId: "p1", status: "in" },
+      teams: { names: NAMES, yourSide: "a" },
+    }));
+
+    expect(html).toContain("<h3>Blues");
+    // Still named in the squad list below, which is the honest record of who
+    // answered what — but nowhere inside the teams section.
+    const teamsSection = html.slice(html.indexOf("<h2>Teams</h2>"), html.indexOf("<h2>Squad</h2>"));
+    expect(teamsSection).toContain("Edward Cooper");
+    expect(teamsSection).not.toContain("Sam Okonjo");
+    expect(html).toContain("Sam Okonjo");
+  });
+
+  it("escapes a side's name", () => {
+    const html = renderFixturePage(optionsWith({
+      squad: null,
+      inCount: 1,
+      viewer: { playerId: "p1", status: "in" },
+      teams: { names: { a: '<script>alert("x")</script>', b: "Blues" }, yourSide: "a" },
+    }));
+
+    expect(html).not.toContain("<script>alert");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("still contains no JavaScript with teams on the page (TR-4)", () => {
+    const html = renderFixturePage(optionsWith({
+      squad: PICKED,
+      inCount: 2,
+      viewer: { playerId: "p1", status: "in" },
+      teams: { names: NAMES, yourSide: "a" },
+    }));
+
+    expect(html).not.toContain("<script");
+  });
+});

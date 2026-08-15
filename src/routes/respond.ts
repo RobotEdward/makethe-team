@@ -22,6 +22,7 @@ import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
 import { renderLeavePage, type LeavePageParams } from "../views/leave.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
+import { publishedTeamsFor } from "../domain/teams.js";
 
 export const respond = new Hono<AppEnv>();
 
@@ -132,6 +133,12 @@ async function renderFixtureForViewer(params: {
     token,
     intent,
     readOnlyReason,
+    // The viewer's own row, not the visibility-filtered list above: their own
+    // side is theirs to know whatever BR-33 does to everybody else's names
+    // (see `publishedTeamsFor`), and reading it from a list that can be
+    // `null` would hide it from exactly the players whose game keeps its
+    // squad private — the ones already holding an email that names their side.
+    teams: publishedTeamsFor(fixture, game, viewerMember),
   });
 }
 

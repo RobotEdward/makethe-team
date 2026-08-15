@@ -317,6 +317,11 @@ export const TEAM_PICKER_CSS = `
   .team-counts { display: flex; gap: 1.25rem; margin: 0.75rem 0; font-weight: 600; }
   .team-counts .count { color: var(--mut); font-weight: 400; }
   .team-note { margin: 0.5rem 0; color: var(--mut); font-size: 0.95rem; }
+  /* The one line a player must not be able to miss: which side they are on
+     (BR-35 §5). Given the accent colour and the weight the response headline
+     uses, because it is the same kind of statement — what is true of you —
+     and it has to survive being read next to two full line-ups. */
+  .your-side { margin: 1rem 0 0.5rem; font-size: 1.2rem; font-weight: 700; color: var(--accent); }
 `;
 
 export const PAGE_STYLE_BLOCKS = [

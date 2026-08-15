@@ -93,3 +93,60 @@ export function sideCounts(rows: readonly TeamAssignment[]): { a: number; b: num
 export function teamNames(game: { teamAName: string; teamBName: string }): Record<TeamId, string> {
   return { a: game.teamAName, b: game.teamBName };
 }
+
+/**
+ * What a player-facing page may say about the teams, or `null` for "say
+ * nothing at all".
+ *
+ * `null` is the unpublished case and it is deliberately not "an empty pick":
+ * a page that rendered a Teams heading with nothing under it would tell a
+ * player a pick exists, which is exactly what an unpublished pick must not do.
+ */
+export interface PublishedTeams {
+  /** From `teamNames(game)` — what this game calls each side. */
+  names: Record<TeamId, string>;
+  /**
+   * The viewer's own side, always shown to them whatever BR-33 does to the
+   * rest of the page, or `null` when they have none to be told about.
+   */
+  yourSide: TeamId | null;
+}
+
+/**
+ * The two halves of what a player is told about a published pick, decided
+ * once, here, for every player-facing surface (BR-35 §5).
+ *
+ * **Half one: published or nothing.** `teams_published_at` is the only gate.
+ * A saved pick is an organiser trying an arrangement out, and the whole point
+ * of a separate publish step is that trying one announces nothing — so an
+ * unpublished fixture answers `null` even though `responses.team` is sitting
+ * right there in the same row set.
+ *
+ * **Half two: the viewer's own side is theirs.** It is read from their own
+ * response row and never routed through `squadForViewer`, exactly as
+ * `src/notify/send-teams.ts` reads it for the N-9 email. BR-33 governs seeing
+ * *other people*; a player's own assignment is not somebody else's data, and
+ * hiding it would leave the page contradicting an email that cannot be
+ * un-sent. The *other* side's names are still `squadForViewer`'s decision, and
+ * this function deliberately does not touch them — callers pass it the squad
+ * that function already returned.
+ *
+ * Only an `in` player is told a side. A dropout keeps their `team` value on
+ * purpose (see the module comment), so reading it unconditionally would tell
+ * someone who has said they can't make it that they are playing for the Reds.
+ *
+ * Called with the viewer's *unfiltered* squad row — `undefined` when they have
+ * none, which is an ordinary case on `/r/:token` for a player removed after
+ * their link was sent.
+ */
+export function publishedTeamsFor(
+  fixture: { teamsPublishedAt: Date | null },
+  game: { teamAName: string; teamBName: string },
+  viewerMember: { status: ResponseStatus; team: TeamId | null } | undefined,
+): PublishedTeams | null {
+  if (fixture.teamsPublishedAt === null) return null;
+  return {
+    names: teamNames(game),
+    yourSide: viewerMember?.status === "in" ? viewerMember.team : null,
+  };
+}

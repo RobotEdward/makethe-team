@@ -34,6 +34,7 @@ import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
 import {
   isTeamId,
+  publishedTeamsFor,
   teamNames,
   teamsNeedAnotherLook,
   unassignedIn,
@@ -226,6 +227,16 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
         ),
         inCount: withSquad.fixture.inCount,
         squad: squadForViewer(game, withSquad.squad, { isOwner: false }),
+        // Read off the viewer's own squad row, taken from the *unfiltered*
+        // list — `squadForViewer` above may have returned `null`, and a
+        // player's own side survives that (BR-35 §5, `publishedTeamsFor`).
+        // `undefined` when they have no response row for this fixture, which
+        // is what a member who joined after it opened looks like.
+        teams: publishedTeamsFor(
+          withSquad.fixture,
+          game,
+          withSquad.squad.find((member) => member.playerId === viewerPlayerId),
+        ),
       };
     }
   }

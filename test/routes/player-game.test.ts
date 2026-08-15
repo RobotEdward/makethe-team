@@ -1,8 +1,8 @@
 import { SELF } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DASHBOARD_PATH } from "../../src/auth/paths.js";
-import { fixtures, players } from "../../src/db/schema.js";
+import { fixtures, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, insertMembership, insertPlayer, playerRow, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
@@ -46,11 +46,23 @@ async function ensurePlayer(db: ReturnType<typeof testDb>, id: string, name: str
 async function seedGameWithOpenFixture(options: {
   viewerRole: "owner" | "player" | "removed" | "none";
   squadVisibleToPlayers: boolean;
+  /**
+   * A team pick over this squad (BR-35): the viewer on "Reds", Player 0 on
+   * "Blues", both `in`. `"saved"` writes the assignments only — an organiser
+   * still trying an arrangement out; `"published"` also stamps
+   * `teams_published_at`, the only thing that may show any of it to a player.
+   */
+  teams?: "saved" | "published";
 }): Promise<{ gameId: string; fixtureId: string; cookie: string }> {
   const db = testDb();
   const { cookie, viewerId } = await ownerSession();
 
-  const gameId = await insertGame(db, { maxPlayers: 14, squadVisibleToPlayers: options.squadVisibleToPlayers });
+  const gameId = await insertGame(db, {
+    maxPlayers: 14,
+    squadVisibleToPlayers: options.squadVisibleToPlayers,
+    teamAName: "Reds",
+    teamBName: "Blues",
+  });
 
   // Someone else always owns the game, so the viewer's own role can be set
   // independently — an "owner"-role viewer gets a *second* owner membership.
@@ -81,6 +93,20 @@ async function seedGameWithOpenFixture(options: {
     durationMinutes: 60,
   });
   await openFixture(db, fixtureId, NOW);
+
+  if (options.teams) {
+    await db
+      .update(responses)
+      .set({ status: "in", respondedAt: NOW, team: "a" })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, viewerId)));
+    await db
+      .update(responses)
+      .set({ status: "in", respondedAt: NOW, team: "b" })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, memberPlayerId)));
+    if (options.teams === "published") {
+      await db.update(fixtures).set({ teamsPublishedAt: NOW }).where(eq(fixtures.id, fixtureId));
+    }
+  }
 
   return { gameId, fixtureId, cookie };
 }
@@ -178,6 +204,55 @@ describe("GET /g/:id as a member", () => {
     const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
 
     expect(html).toContain("Nothing open yet");
+    expect(html).not.toContain("Player 0");
+  });
+});
+
+/**
+ * The signed-in player's view of a game is the *second* surface a player can
+ * reach a published pick on — `/r/:token` is the other. A feature that shows
+ * on one and not the other is a feature half the squad never finds.
+ */
+describe("GET /g/:id as a member — published teams (BR-35 §5)", () => {
+  beforeEach(resetDatabase);
+
+  it("shows nothing when a pick has been saved but not published", async () => {
+    const { gameId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+      teams: "saved",
+    });
+
+    const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
+
+    expect(html).not.toContain("<h2>Teams</h2>");
+    expect(html).not.toContain("Reds");
+    expect(html).not.toContain("Blues");
+  });
+
+  it("tells a member their own side once the teams are published", async () => {
+    const { gameId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+      teams: "published",
+    });
+
+    const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
+
+    expect(html).toContain("You're on Reds.");
+    expect(html).toContain("Player 0");
+  });
+
+  it("keeps a member's own side when the squad is hidden, without naming anyone else", async () => {
+    const { gameId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: false,
+      teams: "published",
+    });
+
+    const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
+
+    expect(html).toContain("You're on Reds.");
     expect(html).not.toContain("Player 0");
   });
 });
