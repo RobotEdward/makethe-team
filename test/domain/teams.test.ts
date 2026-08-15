@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assignedButNotIn,
+  isTeamId,
   sideCounts,
   teamNames,
   teamsNeedAnotherLook,
@@ -79,5 +80,23 @@ describe("sideCounts", () => {
 describe("teamNames", () => {
   it("maps each side to the game's name for it", () => {
     expect(teamNames({ teamAName: "Bibs", teamBName: "Skins" })).toEqual({ a: "Bibs", b: "Skins" });
+  });
+});
+
+// This guards an organiser-submitted form value (Task 3) before it reaches a
+// database write, so it must reject everything that is not exactly "a" or "b".
+describe("isTeamId", () => {
+  it("accepts the two valid sides", () => {
+    expect(isTeamId("a")).toBe(true);
+    expect(isTeamId("b")).toBe(true);
+  });
+
+  it("rejects other strings, non-strings, null and undefined", () => {
+    expect(isTeamId("c")).toBe(false);
+    expect(isTeamId("")).toBe(false);
+    expect(isTeamId("A")).toBe(false);
+    expect(isTeamId(1)).toBe(false);
+    expect(isTeamId(null)).toBe(false);
+    expect(isTeamId(undefined)).toBe(false);
   });
 });

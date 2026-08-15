@@ -1,21 +1,3 @@
-import type { ResponseStatus } from "./response-status.js";
-
-/** The two sides a player can be placed on (BR-35, M9). */
-export const TEAM_IDS = ["a", "b"] as const;
-
-export type TeamId = (typeof TEAM_IDS)[number];
-
-export function isTeamId(value: unknown): value is TeamId {
-  return typeof value === "string" && (TEAM_IDS as readonly string[]).includes(value);
-}
-
-/** The minimum a staleness or counting question needs about one response row. */
-export interface TeamAssignment {
-  playerId: string;
-  status: ResponseStatus;
-  team: TeamId | null;
-}
-
 /**
  * Every question about a fixture's teams, answered in one place, so the
  * picker, the publish guard, the player-facing view and the notification
@@ -47,10 +29,30 @@ export interface TeamAssignment {
  * `src/db/queries.ts`, never from `getFixtureWithSquad`, which filters
  * `withdrawn` out and so cannot answer condition 2 correctly.
  */
+import type { ResponseStatus } from "./response-status.js";
+
+/** The two sides a player can be placed on (BR-35, M9). */
+export const TEAM_IDS = ["a", "b"] as const;
+
+export type TeamId = (typeof TEAM_IDS)[number];
+
+export function isTeamId(value: unknown): value is TeamId {
+  return typeof value === "string" && (TEAM_IDS as readonly string[]).includes(value);
+}
+
+/** The minimum a staleness or counting question needs about one response row. */
+export interface TeamAssignment {
+  playerId: string;
+  status: ResponseStatus;
+  team: TeamId | null;
+}
+
+/** Condition 1: players who are `in` but have not been placed on a side. */
 export function unassignedIn(rows: readonly TeamAssignment[]): readonly TeamAssignment[] {
   return rows.filter((r) => r.status === "in" && r.team === null);
 }
 
+/** Condition 2: players who still carry a side but are no longer `in`. */
 export function assignedButNotIn(rows: readonly TeamAssignment[]): readonly TeamAssignment[] {
   return rows.filter((r) => r.team !== null && r.status !== "in");
 }

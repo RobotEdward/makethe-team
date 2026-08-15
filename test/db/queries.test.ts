@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
-import { getFixtureWithSquad, findMembershipInGame, countActiveOwners, listOpenFixtureIds, countCommitments } from "../../src/db/queries.js";
+import { getFixtureWithSquad, listTeamAssignments, findMembershipInGame, countActiveOwners, listOpenFixtureIds, countCommitments } from "../../src/db/queries.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, resetDatabase, testDb, insertPlayer as insertPlayerFactory, insertMembership, insertFixture, insertResponse } from "../support/factories.js";
 
@@ -259,6 +259,33 @@ describe("getFixtureWithSquad — attribution and guests", () => {
     const guest = result!.squad.find((m) => m.name === "Sam Whitlock")!;
 
     expect(guest.isGuest).toBe(true);
+  });
+});
+
+describe("listTeamAssignments", () => {
+  // Pins the one property that gives this query a reason to exist: unlike
+  // `getFixtureWithSquad`, it must NOT filter out `withdrawn` rows. Leaving a
+  // game (M7a), being removed by an organiser (J6a) and being erased (M7b)
+  // all write `withdrawn` while leaving `team` untouched, and
+  // `teamsNeedAnotherLook` (src/domain/teams.ts) depends on seeing that row
+  // to detect the most common way published teams go stale. If someone later
+  // "tidied up" this query to match the `ne(responses.status, "withdrawn")`
+  // filter that sits a few dozen lines above it in this same file, the whole
+  // suite would still pass and staleness detection would silently break —
+  // this test is what would catch that.
+  it("includes a withdrawn player's team, unlike getFixtureWithSquad", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db);
+    const fixtureId = await insertFixture(db, gameId);
+    const playerId = await insertPlayerFactory(db);
+    await insertMembership(db, gameId, playerId);
+    await insertResponse(db, fixtureId, playerId, { status: "withdrawn", team: "a" });
+
+    const assignments = await listTeamAssignments(db, fixtureId);
+    expect(assignments).toEqual([{ playerId, status: "withdrawn", team: "a" }]);
+
+    const squad = await getFixtureWithSquad(db, fixtureId);
+    expect(squad?.squad.find((m) => m.playerId === playerId)).toBeUndefined();
   });
 });
 
