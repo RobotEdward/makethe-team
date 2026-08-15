@@ -23,6 +23,17 @@ export interface TeamsSendResult {
   sent: number;
   failed: number;
   deferred: number;
+  /**
+   * Exactly who those deferrals were for, carried out of here rather than
+   * left as a bare count — the same shape `CancellationSendSummary` uses, for
+   * the same reason. A ceiling refusal *deletes* its `notification_log` row
+   * (`applySendResult`), so these player ids are the only remaining evidence
+   * that somebody was never told which side they are on, and the publish
+   * route writes them into `audit_log`
+   * (`fixture.teams_email_deferred`). "How many" does not answer "which of my
+   * squad turns up not knowing".
+   */
+  deferredPlayerIds: string[];
   /** BR-32: guests, and anyone with no usable address. Not a log row (see the guard below). */
   guestsSkipped: number;
 }
@@ -85,7 +96,7 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
     // `c.executionCtx.waitUntil`, after the organiser's own response has
     // already been sent, so there is no caller left to hand a rejection to.
     console.error(`sendTeamsEmails: fixture ${fixtureId} not found`);
-    return { sent: 0, failed: 0, deferred: 0, guestsSkipped: 0 };
+    return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 };
   }
   const { fixture, game, squad } = withSquad;
 
@@ -190,10 +201,10 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
     });
   }
 
-  if (pending.length === 0) return { sent: 0, failed: 0, deferred: 0, guestsSkipped };
+  if (pending.length === 0) return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped };
 
   const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n9" }, pending);
-  if (inserted.length === 0) return { sent: 0, failed: 0, deferred: 0, guestsSkipped };
+  if (inserted.length === 0) return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped };
 
   let results;
   try {
@@ -211,7 +222,7 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
         .set({ status: "failed", error: reason })
         .where(eq(notificationLog.id, entry.logId));
     }
-    return { sent: 0, failed: inserted.length, deferred: 0, guestsSkipped };
+    return { sent: 0, failed: inserted.length, deferred: 0, deferredPlayerIds: [], guestsSkipped };
   }
 
   // `results` and `inserted` are the same length, in the same order — the
@@ -222,6 +233,7 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
   let sent = 0;
   let failed = 0;
   let deferred = 0;
+  const deferredPlayerIds: string[] = [];
   let applied = 0;
   try {
     for (; applied < inserted.length; applied++) {
@@ -230,7 +242,10 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
       if (!entry) continue;
       const outcome = await applySendResult(db, entry, result, now);
       if (outcome.kind === "sent") sent++;
-      else if (outcome.kind === "deferred") deferred++;
+      else if (outcome.kind === "deferred") {
+        deferred++;
+        deferredPlayerIds.push(entry.playerId);
+      }
       else failed++;
     }
   } catch (error) {
@@ -240,5 +255,5 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
     await markOrphanedRowsFailed(db, orphaned, `abandoned mid-apply: ${message}`);
   }
 
-  return { sent, failed, deferred, guestsSkipped };
+  return { sent, failed, deferred, deferredPlayerIds, guestsSkipped };
 }

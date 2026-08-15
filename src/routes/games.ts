@@ -27,7 +27,6 @@ import {
 import { fixtures, games, responses } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
-import { displayName } from "../domain/display-name.js";
 import { fixtureView, takingChanges } from "../domain/fixture-view.js";
 import { parseGameForm } from "../domain/game-form.js";
 import { parseGuestName } from "../domain/guest-name.js";
@@ -45,6 +44,7 @@ import { formatLocalDateTime } from "../domain/time/zone.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv, Bindings } from "../env.js";
+import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { sendTeamsEmails } from "../notify/send-teams.js";
@@ -53,6 +53,7 @@ import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
+import { rowName } from "../views/team-picker.js";
 import { notifyPromotedPlayer } from "./respond.js";
 
 /**
@@ -898,6 +899,14 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
  * as the fixture page itself at 422 with the names on it, the same shape
  * `renderDashboard(c, problem)` uses, because the fix is on that page.
  *
+ * A fixture with *nobody* `in` is refused by the same check, because
+ * `unassignedIn` is empty when there is nobody to be unassigned and zero
+ * players satisfy "everyone who is in has a side" only trivially. Publishing
+ * it would stamp `teams_published_at`, email nobody, and leave the page
+ * claiming the squad had been told. Unreachable from the UI — the picker
+ * offers no Publish button there — but a stale form is not, which is the whole
+ * reason this route re-asks every question the page already asked.
+ *
  * `unassignedIn` reads `listTeamAssignments`, which deliberately includes
  * `withdrawn` rows — they cannot be `in`, so they cannot block a publish, but
  * asking the same query the staleness predicate asks keeps one source of truth
@@ -917,18 +926,25 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
     return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
   }
 
-  // Check 3: everyone who is in has a side.
+  // Check 3: everyone who is in has a side, and there is somebody to tell.
   const assignments = await listTeamAssignments(target.db, target.fixture.id);
   const unassigned = unassignedIn(assignments);
-  if (unassigned.length > 0) {
+  const playing = assignments.filter((row) => row.status === "in");
+  if (unassigned.length > 0 || playing.length === 0) {
     const withSquad = await getFixtureWithSquad(target.db, target.fixture.id);
-    const nameOf = new Map(withSquad?.squad.map((m) => [m.playerId, displayName(m.name, m.erasedAt)]) ?? []);
+    // The same name a picker row carries, `(guest)` suffix included, so the
+    // refusal and the row it points at read identically — "Still to pick: Gus
+    // Guest." above a row labelled "Gus Guest (guest)" is one more thing for
+    // an organiser to reconcile at exactly the wrong moment.
+    const nameOf = new Map(withSquad?.squad.map((m) => [m.playerId, rowName(m)]) ?? []);
     return renderOwnerFixture(
       c,
       target,
       now,
       // The names, not the count: "3 players still need a side" sends an
-      // organiser back to count fourteen radio groups by hand.
+      // organiser back to count fourteen radio groups by hand. An empty squad
+      // has no names to give, and gets the sentence the picker already renders
+      // in that case instead.
       { unassignedProblem: unassigned.map((row) => nameOf.get(row.playerId) ?? "someone who has since left") },
       422,
     );
@@ -993,12 +1009,30 @@ async function publishTeams(env: AppEnv["Bindings"], fixtureId: string, publishe
     });
     if (result.failed > 0) console.error(`teams email (N-9) failed for ${result.failed} player(s) on ${who}`);
     if (result.deferred > 0) {
-      // No `recordCeilingDeferral` here, unlike N-2 and N-3: those record a
-      // message nothing can ever retry, whereas an organiser can simply
-      // publish again tomorrow and every recipient gets a fresh dedupe key
-      // (`teamsKey` includes the publish instant), so the deferral is
-      // recoverable by the person who caused it.
-      console.error(`teams email (N-9) refused by the daily send ceiling for ${result.deferred} player(s) on ${who}`);
+      // The same durable record N-2 and N-3 write, and this milestone's review
+      // was right to insist on it. A first version of this branch logged and
+      // moved on, reasoning that a publish is retryable — the organiser can
+      // publish again, and `teamsKey`'s publish instant mints a fresh dedupe
+      // key. But *nothing retries it*: no sweep re-evaluates a publish, and no
+      // later message corrects the silence. Worse, the ceiling refusal
+      // *deletes* the `notification_log` row (`applySendResult`), the
+      // organiser has already been redirected to a 303, and the page they land
+      // on reads "Publish again" — the UI positively asserting the squad was
+      // told. That leaves a player turning up not knowing which side they are
+      // on, with nothing anywhere naming them once the log line ages out.
+      // No `collapseWindowMs`: publishing is an act of a person, so the row
+      // count is bounded by user action already (as with N-2 and N-3, unlike
+      // the sweep-driven N-1 and N-4).
+      await recordCeilingDeferral(db, {
+        action: "fixture.teams_email_deferred",
+        notificationType: "n9",
+        fixtureId,
+        playerIds: result.deferredPlayerIds,
+        now: publishedAt,
+      });
+      console.error(
+        `teams email (N-9) refused by the daily send ceiling for ${result.deferred} player(s) and NOTHING WILL RETRY IT (audit_log row written): ${who}`,
+      );
     }
     // `console.log`, not `error`: a guest has no address, and BR-32 says so —
     // an error line per guest would file a fault for working correctly.

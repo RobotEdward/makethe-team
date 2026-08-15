@@ -28,7 +28,7 @@ export const AUDIT_ENTITY_TYPES = ["fixture", "game", "membership", "player"] as
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 /**
- * The three `*_email_deferred` actions record a message the daily send
+ * The `*_email_deferred` actions record a message the daily send
  * ceiling (TR-31) refused — the durable half of TR-31's owner-visible
  * warning, and the answer to a gap this milestone's reviews raised three
  * separate times.
@@ -38,7 +38,7 @@ export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
  * possible. That asymmetry is right, and is deliberately not being changed —
  * but its side effect is that the deletion also erases the only trace that
  * the message was ever owed to anyone. Without a row here, "was this player
- * ever told?" becomes unanswerable, and for two of the four cases nothing
+ * ever told?" becomes unanswerable, and for three of the five cases nothing
  * retries:
  *
  * - `fixture.reminder_email_deferred` (N-1) — the highest-volume
@@ -54,19 +54,27 @@ export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
  * - `fixture.cancellation_email_deferred` (N-3) — materially worse: the
  *   fixture is terminal, so no reminder or any other message follows, and the
  *   players turn up to a game that is off.
- * - `fixture.attention_email_deferred` (N-4) — the mildest of the four,
+ * - `fixture.attention_email_deferred` (N-4) — the mildest of the five,
  *   because the sweep re-evaluates every run and *will* retry it once the
  *   ceiling lifts. Recorded anyway, because it is the case that proves the
  *   ceiling is biting on the very channel TR-31's warning was supposed to
  *   travel down.
+ * - `fixture.teams_email_deferred` (N-9, M9) — N-2-shaped, not N-4-shaped,
+ *   and it was nearly filed as the latter: publishing *is* retryable in
+ *   principle (a second publish mints a fresh dedupe key from a fresh
+ *   instant), but nothing retries it — not the sweep, not any later message
+ *   — and the organiser has been redirected to a page that now reads
+ *   "Publish again", positively asserting the squad was told. A player who
+ *   never learns which side they are on, on a fixture whose organiser has
+ *   been shown success, is exactly the silence this row exists to break.
  *
  * N-1 and N-4 fire from the sweep, not from a one-shot route call, so a
  * sustained ceiling would otherwise write one row per sweep tick, forever,
  * into a table nothing prunes; `recordCeilingDeferral`'s `collapseWindowMs`
- * bounds that (see `src/notify/ceiling-audit.ts`). N-2 and N-3 fire from
+ * bounds that (see `src/notify/ceiling-audit.ts`). N-2, N-3 and N-9 fire from
  * routes and are naturally bounded by user action, so they do not pass it.
  *
- * They are four actions rather than one with a type field because their
+ * They are five actions rather than one with a type field because their
  * severities differ that much: an operator wants to alert on the N-3 one
  * immediately and merely count the N-1 and N-4 ones.
  */
@@ -76,6 +84,7 @@ export const AUDIT_ACTIONS = [
   "fixture.promotion_email_deferred",
   "fixture.cancellation_email_deferred",
   "fixture.attention_email_deferred",
+  "fixture.teams_email_deferred",
   // M6a. `game.updated` carries before/after of the changed columns only,
   // not the whole row — an owner reading this wants to see what moved.
   "game.created",
@@ -126,7 +135,7 @@ export const AUDIT_ACTIONS = [
   //
   // Written **once per transition into the blocked state**, not once per
   // hourly retry: `players.erasure_blocked_at` is what bounds it, exactly as
-  // `recordCeilingDeferral`'s collapse window bounds the four
+  // `recordCeilingDeferral`'s collapse window bounds the sweep-driven
   // `*_email_deferred` actions above, and for the same reason — a sweep-driven
   // condition can persist for weeks, and one row an hour forever into a table
   // nothing prunes is not a record, it is a leak.

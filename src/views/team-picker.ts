@@ -48,8 +48,13 @@ export interface TeamPickerParams {
  * participants, so "a former player" on a squad list is a live case, not a
  * theoretical one (BR-34 §4). The guest suffix matches the squad list above
  * it, so the same person reads the same way twice on one page.
+ *
+ * Exported for the publish route, which lists the players still without a
+ * side when it refuses: that list is read *against* these rows, and a refusal
+ * naming "Gus Guest" above a row labelled "Gus Guest (guest)" makes an
+ * organiser stop and work out whether those are two people.
  */
-function rowName(member: { name: string; erasedAt: Date | null; isGuest: boolean }): string {
+export function rowName(member: { name: string; erasedAt: Date | null; isGuest: boolean }): string {
   return `${displayName(member.name, member.erasedAt)}${member.isGuest ? " (guest)" : ""}`;
 }
 

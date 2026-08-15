@@ -1,7 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditLog, fixtures, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, emailQuota, fixtures, notificationLog, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
@@ -45,6 +45,25 @@ async function settleNotifications(atLeast: number, timeoutMs = 3000): Promise<A
   while (!settled(rows) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 10));
     rows = await db.select().from(notificationLog);
+  }
+  return rows;
+}
+
+/**
+ * The `waitUntil` equivalent of `settleNotifications` for the one outcome that
+ * leaves *no* `notification_log` row behind: a ceiling deferral deletes its
+ * row and writes an `audit_log` row instead, so that is what there is to wait
+ * for.
+ */
+async function settleDeferrals(atLeast: number, timeoutMs = 3000): Promise<Array<typeof auditLog.$inferSelect>> {
+  const db = testDb();
+  const deadline = Date.now() + timeoutMs;
+  const read = () => db.select().from(auditLog).where(eq(auditLog.action, "fixture.teams_email_deferred"));
+
+  let rows = await read();
+  while (rows.length < atLeast && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    rows = await read();
   }
   return rows;
 }
@@ -209,7 +228,9 @@ describe("POST /g/:id/f/:fixtureId/teams/publish", () => {
     // Asserted on the whole sentence, because every one of these names also
     // appears in the squad list above it: a substring match on "Bram Stoker"
     // alone would pass with no refusal message on the page at all.
-    expect(body).toContain("Still to pick: Bram Stoker, Gus Guest.");
+    // `(guest)` included: the refusal is read against the picker rows below
+    // it, which label the same person "Gus Guest (guest)".
+    expect(body).toContain("Still to pick: Bram Stoker, Gus Guest (guest).");
     expect(body).toContain("Save teams");
     expect(await publishedAt(seed.fixtureId)).toBeNull();
     await expectNothingSent();
@@ -233,19 +254,113 @@ describe("POST /g/:id/f/:fixtureId/teams/publish", () => {
 
     await publish(seed, cookie);
     await settleNotifications(2);
+    const first = await publishedAt(seed.fixtureId);
+
     // The organiser swaps the two sides over and publishes again. This must
     // genuinely re-send: the squad is holding an email describing teams that
     // have since changed.
+    //
+    // The wait is not padding. `teamsKey` is built from the publish instant at
+    // millisecond resolution, so two publishes landing inside one millisecond
+    // would mint identical keys, the unique index on `dedupe_key` would
+    // swallow the second round, and this test would fail on its own length
+    // assertion for a reason that has nothing to do with the behaviour under
+    // test. Sleeping forces the wall clock past a millisecond boundary, and
+    // the assertion below pins that it actually moved — so a future change
+    // that makes the two instants collide fails *there*, naming the cause,
+    // rather than intermittently here.
+    await new Promise((resolve) => setTimeout(resolve, 20));
     await savePick(seed, cookie, { [seed.ada]: "b", [seed.bram]: "a", [seed.guest]: "b" });
     await publish(seed, cookie);
     const rows = await settleNotifications(4);
+    const second = await publishedAt(seed.fixtureId);
 
+    expect(second!.getTime()).toBeGreaterThan(first!.getTime());
     expect(rows).toHaveLength(4);
     const adasKeys = rows.filter((row) => row.playerId === seed.ada).map((row) => row.dedupeKey);
     expect(adasKeys).toHaveLength(2);
     // The publish instant is part of the key (`teamsKey`), so a second publish
     // is a second key rather than being swallowed by the unique index.
     expect(adasKeys[0]).not.toBe(adasKeys[1]);
+  });
+
+  it("refuses a fixture nobody is in, rather than announcing teams to nobody", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const seed = await seedPublishableFixture(viewerId);
+    await savePick(seed, cookie, completePick(seed));
+    // Everyone drops out after the pick was made. `unassignedIn` is now empty
+    // — there is nobody left to be unassigned — so a guard phrased only as
+    // "nobody is missing a side" would let this through, stamp the fixture,
+    // email nobody, and leave the page asserting the squad had been told.
+    for (const playerId of [seed.ada, seed.bram, seed.guest]) {
+      await env.FIXTURE_CAPACITY.getByName(seed.fixtureId).setResponse({
+        playerId,
+        intent: "out",
+        actorPlayerId: null,
+        source: "token",
+        whenFull: "waitlist",
+        now: NOW.getTime(),
+      });
+    }
+
+    const response = await publish(seed, cookie);
+
+    expect(response.status).toBe(422);
+    expect(await publishedAt(seed.fixtureId)).toBeNull();
+    await expectNothingSent();
+  });
+
+  it("records an audit row naming everyone the daily send ceiling stopped being told (TR-31)", async () => {
+    // `MAX_EMAILS_PER_DAY` is "50" (wrangler.jsonc); pre-filling today's quota
+    // to the ceiling makes QuotaNotifier refuse every N-9 this publish would
+    // send. The refusal deletes each `notification_log` row so a retry stays
+    // possible — but nothing retries a publish, and the organiser has already
+    // been redirected to a page that now offers "Publish again", asserting the
+    // squad was told. This row is the only durable record that they were not.
+    const { cookie, viewerId } = await ownerSession();
+    const seed = await seedPublishableFixture(viewerId);
+    await savePick(seed, cookie, completePick(seed));
+    const db = testDb();
+    // Upserted, not inserted: signing in above already sent a magic link, so
+    // today's quota row exists by the time this test gets here.
+    const today = new Date(Date.now()).toISOString().slice(0, 10);
+    await db
+      .insert(emailQuota)
+      .values({ day: today, sentCount: 50 })
+      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 50 } });
+
+    const response = await publish(seed, cookie);
+    const deferrals = await settleDeferrals(1);
+
+    // The publish itself still stands: the teams *are* picked and published,
+    // it is only the telling that failed.
+    expect(response.status).toBe(303);
+    expect(await publishedAt(seed.fixtureId)).toBeInstanceOf(Date);
+    // Deleted, exactly as `applySendResult` does everywhere else — the
+    // retryability asymmetry is unchanged.
+    expect(await db.select().from(notificationLog)).toEqual([]);
+
+    expect(deferrals).toHaveLength(1);
+    expect(deferrals[0]).toMatchObject({ entityId: seed.fixtureId, actorPlayerId: null });
+    const after = JSON.parse(deferrals[0]!.afterJson!) as { notificationType: string; playerIds: string[] };
+    expect(after.notificationType).toBe("n9");
+    // The guest is not in it: BR-32 never had an address to refuse.
+    expect(after.playerIds.sort()).toEqual([seed.ada, seed.bram].sort());
+  });
+
+  it("writes no deferral row when every teams email went out", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const seed = await seedPublishableFixture(viewerId);
+    await savePick(seed, cookie, completePick(seed));
+
+    await publish(seed, cookie);
+    await settleNotifications(2);
+
+    const deferrals = await testDb()
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "fixture.teams_email_deferred"));
+    expect(deferrals).toEqual([]);
   });
 
   it.each(["scheduled", "played", "cancelled"] as const)("refuses a %s fixture", async (lifecycle) => {
