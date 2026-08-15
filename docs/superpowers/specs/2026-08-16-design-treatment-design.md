@@ -154,10 +154,17 @@ what "in" looks like.
 §2.1. Four buttons move to `--danger`: the three named there plus
 `.button.danger` on the cancel page, which moves off amber onto red.
 
-`delete-account.ts` needs care beyond a class swap: it currently renders
-"Delete my data" and "Keep my account" both as `button primary`, so the
-destructive and the safe action are the same colour on the same flow. "Keep my
-account" becomes the plain outlined button.
+**"Keep my account" stays green.** `delete-account.ts` renders it as
+`button primary` on both the pending and the held-up states, which looks at
+first like the same defect — two `primary` buttons in one file, one of them
+beside "Delete my data". It is not. They are different states of the page and a
+viewer never sees both: the offer is shown only when no erasure is pending, the
+keep button only when one is. Cancelling a pending erasure is a safe,
+restorative action and it is the primary thing to do on that page, so green is
+exactly right for it under §2.1. Only `offerBody`'s button moves.
+
+This is written down because "swap every `primary` on a page that mentions
+deletion" is the obvious reading of this finding and it would be wrong.
 
 ### 3.3 Two stacked buttons per squad member on the organiser fixture *(Medium)*
 
@@ -309,7 +316,9 @@ the ones that break are the point rather than an obstacle: "Cancel this game
 and tell everyone" appears in tests because it appeared on the page.
 
 New assertions: the four `--danger` buttons carry the danger class and not
-`primary`; "Keep my account" does not carry `primary`; the response buttons'
+`primary`; "Keep my account" **does** still carry `primary`, asserted
+deliberately so a later sweep for green-near-deletion cannot quietly take it
+(§3.2); the response buttons'
 emphasis follows `viewer.status` and not `intent`, including that a
 `waitlisted` viewer's "I'm in" is never the green filled state (BR-5, and the
 one assertion in this milestone that protects a business rule rather than an
