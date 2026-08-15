@@ -202,13 +202,14 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
    * be made without one"**, which is the same reduction
    * `test/routes/signin.test.ts` performs on the sign-in page.
    *
-   * The enumeration in that file cannot stand in for this. It captures the
-   * owner fixture page *after* the fixture has been cancelled — deliberately,
-   * for the cancel-token pages above it — so the picker is not on it and the
-   * script is correctly absent. This is the only test that sees this page in
-   * the state that carries the enhancement, so it also has to make the
-   * enumeration's other check here: a bare tag whose text is in
-   * `SCRIPT_BLOCKS`, because anything else is script the CSP will not hash.
+   * That file's site-wide sweep now covers this page in its *open* state too
+   * — its capture used to run after the `cancel done` POST cancelled the
+   * fixture, which left the sweep looking at the one rendering that carries
+   * no script, and M9 Task 7 moved it earlier. The two are complementary
+   * rather than redundant: the sweep asks "is every script on every reachable
+   * page a bare, enumerated tag", and this asks the question only a test that
+   * knows what this page is *for* can ask — that the pick itself is still
+   * expressible once all of it is deleted.
    */
   it("ships one enumerated script, and the whole pick survives its removal", async () => {
     const { cookie, viewerId } = await ownerSession();

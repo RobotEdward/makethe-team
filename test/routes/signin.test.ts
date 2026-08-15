@@ -728,6 +728,24 @@ describe("no password field anywhere (TR-16)", () => {
         .update(memberships)
         .set({ role: "owner" })
         .where(eq(memberships.playerId, player!.id));
+      // The owner's one-fixture page (J6b Task 4), captured **here** — after
+      // the membership becomes `owner`, and before the cancellation POST
+      // below — rather than further down with the other `/g/*` pages.
+      //
+      // The order is load-bearing and was found by execution (M9 Task 7). The
+      // `cancel done` capture is a real POST that cancels this very fixture,
+      // and `takingChanges` is false for a cancelled fixture — so a capture
+      // taken after it renders the read-only teams and no picker, and the
+      // sweep below then covered only the state that carries no script at
+      // all. If a future task ever puts a second, un-enumerated `<script>` on
+      // the *open* fixture page, this is the capture that has to be looking
+      // at it.
+      await capture(
+        "owner fixture",
+        /Back to the game/,
+        new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } }),
+      );
+
       const cancelToken = await signCancelToken(
         {
           ownerPlayerId: player!.id,
@@ -773,14 +791,6 @@ describe("no password field anywhere (TR-16)", () => {
         "game edit",
         /Edit Thursday 7-a-side/,
         new Request(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } }),
-      );
-
-      // The owner's one-fixture page (J6b Task 4). Same owner membership and
-      // fixture as the captures above.
-      await capture(
-        "owner fixture",
-        /Back to the game/,
-        new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } }),
       );
 
       // The squad-removal confirmation (Task 9, J6a). A second member is added
@@ -921,8 +931,8 @@ describe("no password field anywhere (TR-16)", () => {
     );
 
     /**
-     * The three pages that are *allowed* a `<script>`, and why the assertion
-     * below is not simply "no page has one" any more.
+     * The pages that are *allowed* a `<script>`, and why the assertion below
+     * is not simply "no page has one" any more.
      *
      * Until M5 Task 8 this loop asserted `not.toContain("<script")` on every
      * page, which was the strongest available statement while the codebase
@@ -934,7 +944,7 @@ describe("no password field anywhere (TR-16)", () => {
      * split three ways instead:
      *
      * - every page *not* named here must still contain no `<script` at all —
-     *   the original assertion, unweakened, over eleven of the fourteen pages;
+     *   the original assertion, unweakened, over the large majority of pages;
      * - every page named here must actually carry one (an enhancement that
      *   silently stopped shipping would otherwise pass);
      * - and every script that does ship must be a bare `<script>` tag whose
@@ -949,7 +959,18 @@ describe("no password field anywhere (TR-16)", () => {
      * anywhere attaches behaviour through an inline handler attribute or a
      * `javascript:` URL, so removing the script blocks removes *all* of it.
      */
-    const mayCarryScript = new Set(["sign-in", "sign-in error", "passkeys", "game overview"]);
+    // "owner fixture" joined this set in M9 Task 7, for the team picker's
+    // drag-and-drop enhancement — which is why that page is now captured
+    // while its fixture is still open (see the capture's own note). A
+    // cancelled fixture renders no picker and would fail the "must carry"
+    // assertion below, correctly.
+    const mayCarryScript = new Set([
+      "sign-in",
+      "sign-in error",
+      "passkeys",
+      "game overview",
+      "owner fixture",
+    ]);
 
     for (const { name, body, distinctive } of pages) {
       expect(body, `${name} must actually be that page`).toMatch(distinctive);
@@ -962,7 +983,7 @@ describe("no password field anywhere (TR-16)", () => {
         continue;
       }
 
-      expect(scripts.length, `${name} must carry the passkey enhancement`).toBeGreaterThan(0);
+      expect(scripts.length, `${name} must carry the enhancement it is listed for`).toBeGreaterThan(0);
       for (const [, attributes, js] of scripts) {
         // No `src` (unreachable under M4's `default-src 'none'`), no `type`,
         // no `nonce`: only a bare inline tag is covered by a SHA-256 hash of

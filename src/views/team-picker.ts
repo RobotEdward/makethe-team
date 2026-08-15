@@ -181,8 +181,14 @@ function renderPublish(params: TeamPickerParams): string {
  * The list of rows carries `data-team=""` because it is the third drop target
  * once the script runs: the players nobody has placed. That is the same value
  * as the "Not picked yet" radio, so a name dragged out of a side and a name
- * whose radio was cleared end up in the same state — there is no placement
- * the gesture can reach and the form cannot undo.
+ * whose radio was cleared end up in the same state — the gesture can reach
+ * every placement the form can, in both directions.
+ *
+ * It carries `team-drop` for the same reason the columns do, and that class is
+ * load-bearing rather than decorative: it is what gives an emptied list a
+ * height. Without it, dragging the last name into a column collapsed the pool
+ * to nothing and left no target to drag anybody back onto — the undo existed
+ * in the markup and not on the screen.
  */
 export function renderTeamPicker(params: TeamPickerParams): string {
   const { gameId, fixtureId, names, members, counts, uneven, unassignedProblem } = params;
@@ -213,7 +219,7 @@ export function renderTeamPicker(params: TeamPickerParams): string {
             ${renderCounts(names, counts)}
             ${unevenNote}
             ${renderColumns(names)}
-            <ul class="teams" id="team-pool" data-team="">${members.map((member) => renderRow(member, names)).join("")}</ul>
+            <ul class="teams team-drop" id="team-pool" data-team="">${members.map((member) => renderRow(member, names)).join("")}</ul>
             <button class="button primary" type="submit">Save teams</button>
           </form>
           ${renderPublish(params)}`;

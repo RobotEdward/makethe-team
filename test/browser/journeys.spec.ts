@@ -508,14 +508,17 @@ test.describe("the team picker, javascript off", () => {
 });
 
 /**
- * **The only JavaScript-on journey in this suite, and deliberately so.**
+ * **The only journey in this suite that *requires* JavaScript, and
+ * deliberately so.**
  *
- * Every other test here runs with scripting disabled, because that is this
- * project's stated policy and the second projection above is what proves it.
- * This one is the exception because the team picker is the only place where a
- * *gesture* is offered as an alternative to a control, and a gesture cannot be
- * exercised with the script that implements it turned off. Without this test
- * the drag-and-drop enhancement would ship with no coverage whatsoever.
+ * Plenty of tests above run with scripting on — the loop at the top of this
+ * file runs every journey both ways — but every one of them would still pass
+ * with it off, because that is this project's stated policy and the JS-off
+ * projection is what proves it. This one is the exception: the team picker is
+ * the only place where a *gesture* is offered as an alternative to a control,
+ * and a gesture cannot be exercised with the script that implements it turned
+ * off. Without this test the drag-and-drop enhancement would ship with no
+ * coverage whatsoever.
  *
  * It asserts the underlying radio's `checked` state and never anything
  * visual. The radios are what a save posts, so "the radio followed the drag"
@@ -547,6 +550,13 @@ test("dragging a name onto a side moves the radio that the save posts", async ({
   await expect(page.locator('ul[data-team="a"] li[data-player]')).toHaveCount(1);
   await expect(page.locator('ul[data-team="b"] li[data-player]')).toHaveCount(1);
 
+  // The head counts followed. They are rendered from the server's count and
+  // then maintained by the script, so a block that moved names and left the
+  // numbers at 0 would tell an organiser their sides were empty while they
+  // looked at two full columns.
+  await expect(page.locator('[data-count="a"]')).toHaveText("1");
+  await expect(page.locator('[data-count="b"]')).toHaveText("1");
+
   // The same Save button, the same form, the same POST as the journey above:
   // nothing about the drag changes what is submitted or how.
   await page.getByRole("button", { name: "Save teams" }).click();
@@ -557,10 +567,106 @@ test("dragging a name onto a side moves the radio that the save posts", async ({
   await expect(sideRadio(page, JOINER_NAME, "Team A")).toBeChecked();
   await expect(sideRadio(page, GUEST_NAME, "Team B")).toBeChecked();
 
+  // And the reloaded page sorts the stored pick back into the columns. The
+  // server renders every row in the flat pool with its radios checked, so
+  // without that pass an organiser would come back to a finished pick sitting
+  // under two empty sides.
+  await expect(page.locator('ul[data-team="a"] li[data-player]')).toContainText(JOINER_NAME);
+  await expect(page.locator('ul[data-team="b"] li[data-player]')).toContainText(GUEST_NAME);
+
   // The CSP gate matters more here than anywhere else in this file: this is
   // the first script this project has put on an owner page, and a hash that
   // did not cover it would leave the block silently unexecuted — the failure
   // class `docs/known-issues.md` records for `connect-src`.
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+});
+
+/**
+ * Picking with the keyboard, with the script running.
+ *
+ * This exists because the enhancement can only ever be an enhancement. Moving
+ * a row means detaching it, and detaching blurs the radio inside it — so
+ * before `place` carried focus across the move, Space checked a radio and
+ * then threw the keyboard user out of the group entirely, leaving them worse
+ * off than if the script had never loaded. On a project whose no-JavaScript
+ * path is a first-class path, that is the one outcome the script must not
+ * produce, and it is invisible to every other test here: the radios end up
+ * correct either way.
+ *
+ * Arrow traversal is the assertion that really pins it. One `ArrowRight` is
+ * the second interaction in a row, so it can only pass if the first left
+ * focus where a keyboard user could keep working from.
+ */
+test("picking with the keyboard keeps focus in the radio group as the row moves", async ({ page, browser }) => {
+  const seen = observe(page);
+  const { fixturePath } = await seedTwoPlayersIn(page, browser, true);
+  await expect(page.locator("#team-columns")).toBeVisible();
+
+  // --- Space, on a focused radio -----------------------------------------
+  const onA = sideRadio(page, JOINER_NAME, "Team A");
+  await onA.focus();
+  await page.keyboard.press("Space");
+
+  await expect(onA).toBeChecked();
+  await expect(page.locator('ul[data-team="a"] li[data-player]')).toContainText(JOINER_NAME);
+  await expect(onA, "the row moved and took the focused radio with it").toBeFocused();
+
+  // --- and the group is still arrowable ----------------------------------
+  await page.keyboard.press("ArrowRight");
+
+  const onB = sideRadio(page, JOINER_NAME, "Team B");
+  await expect(onB).toBeChecked();
+  await expect(onA).not.toBeChecked();
+  await expect(onB, "arrowing again must still be possible").toBeFocused();
+  // The columns followed the radios rather than contradicting them.
+  await expect(page.locator('ul[data-team="a"] li[data-player]')).toHaveCount(0);
+  await expect(page.locator('ul[data-team="b"] li[data-player]')).toContainText(JOINER_NAME);
+  await expect(page.locator('[data-count="a"]')).toHaveText("0");
+  await expect(page.locator('[data-count="b"]')).toHaveText("1");
+
+  // A keyboard pick posts through the same form as every other pick.
+  await page.getByRole("button", { name: "Save teams" }).click();
+  await page.waitForURL(new RegExp(`${fixturePath}$`));
+  await expect(sideRadio(page, JOINER_NAME, "Team B")).toBeChecked();
+
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+});
+
+/**
+ * Dragging a name back off a side.
+ *
+ * The pool is the third drop target, carrying `data-team=""` — the same value
+ * as the "Not picked yet" radio — so undoing a placement is a gesture and not
+ * only a radio click. Worth its own test because the pool is the one drop
+ * target that can be *empty*, and an empty list with no height is a target
+ * nobody can hit: this fails if `.team-drop` is ever taken off it.
+ */
+test("dragging a name back to the unpicked list clears the side it had", async ({ page, browser }) => {
+  const seen = observe(page);
+  const { fixturePath } = await seedTwoPlayersIn(page, browser, true);
+  await expect(page.locator("#team-columns")).toBeVisible();
+
+  // Both names onto sides first, which is what empties the pool.
+  await pickerRow(page, JOINER_NAME).dragTo(page.locator('ul[data-team="a"]'));
+  await pickerRow(page, GUEST_NAME).dragTo(page.locator('ul[data-team="b"]'));
+  await expect(page.locator("#team-pool li[data-player]")).toHaveCount(0);
+
+  await pickerRow(page, JOINER_NAME).dragTo(page.locator("#team-pool"));
+
+  await expect(sideRadio(page, JOINER_NAME, "Not picked yet")).toBeChecked();
+  await expect(sideRadio(page, JOINER_NAME, "Team A")).not.toBeChecked();
+  await expect(page.locator('[data-count="a"]')).toHaveText("0");
+  await expect(page.locator('[data-count="b"]')).toHaveText("1");
+
+  // And the clearing is what gets stored — the save posts `""` for that
+  // player, which the route reads as "clear this player's side".
+  await page.getByRole("button", { name: "Save teams" }).click();
+  await page.waitForURL(new RegExp(`${fixturePath}$`));
+  await expect(sideRadio(page, JOINER_NAME, "Not picked yet")).toBeChecked();
+  await expect(sideRadio(page, GUEST_NAME, "Team B")).toBeChecked();
+
   expect(await seen.violations()).toEqual([]);
   expect(seen.errors()).toEqual([]);
 });

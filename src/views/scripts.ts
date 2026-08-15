@@ -252,7 +252,9 @@ export const COPY_INVITE_JS = `
  * The corollary is the `change` listener: an organiser who ignores the
  * columns and clicks a radio must not be left with a name sitting under a
  * side its radio contradicts. Moving the row on `change` keeps the one state
- * this page has looking like one state.
+ * this page has looking like one state. **It is also the one place this block
+ * can make a person worse off than no block at all**, which is why `place`
+ * carries focus across the move — see the note there.
  *
  * # What happens when it does not run
  *
@@ -281,6 +283,7 @@ export const TEAM_PICKER_JS = `
   var probe = document.createElement("li");
   if (!("draggable" in probe)) return;
   if (typeof probe.closest !== "function") return;
+  if (typeof probe.contains !== "function") return;
   if (!probe.classList) return;
   if (typeof window.DataTransfer !== "function") return;
 
@@ -344,7 +347,16 @@ export const TEAM_PICKER_JS = `
     // of step, which is the one thing this block must never do.
     if (!radio || !list) return;
     radio.checked = true;
+    // \`appendChild\` detaches the row, and detaching blurs whatever inside it
+    // held focus. Left alone that makes this block *worse than absent* for
+    // anyone picking with a keyboard: Space checks the radio, the row moves,
+    // focus lands on <body>, and arrowing to the next side is impossible —
+    // an interaction that is perfectly ordinary with scripting off. So the
+    // focus is carried across the move. Read before, restored after; a drop
+    // leaves focus on <body>, so this is a no-op for the mouse.
+    var focused = row.contains(document.activeElement) ? document.activeElement : null;
     list.appendChild(row);
+    if (focused && typeof focused.focus === "function") focused.focus();
     recount();
   }
 

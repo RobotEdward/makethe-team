@@ -324,7 +324,9 @@ export const TEAM_PICKER_CSS = `
   .team-column { flex: 1 1 0; min-width: 0; }
   .team-column h3 { margin: 0 0 0.25rem; font-size: 1rem; }
   /* Tall enough to be a target while empty — a drop area with no height is a
-     side an organiser cannot pick until somebody is already on it. */
+     side an organiser cannot pick until somebody is already on it. On the
+     pool as well as the two columns: with every name dragged onto a side the
+     pool is the empty one, and it is the only way to drag somebody back off. */
   .team-drop { min-height: 3.5rem; }
   .teams li.dragging { opacity: 0.5; }
   .teams.over { outline: 2px dashed var(--accent); outline-offset: 2px; }
