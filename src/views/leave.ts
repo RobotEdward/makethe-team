@@ -46,7 +46,7 @@ function alreadyLeftBody(gameName: string): string {
 function doneBody(gameName: string): string {
   return `
     <p>You're out of ${gameName}. You won't get any more email about it.</p>
-    <p>If you change your mind, an organiser can add you back.</p>
+    <p>An organiser can't add you back — you'd need to rejoin with the invite link.</p>
   `;
 }
 
