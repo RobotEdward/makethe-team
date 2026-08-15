@@ -134,8 +134,9 @@ M2's carry-forward note about nothing being able to produce an `open` fixture is
 — M3's hourly sweep now owns the `scheduled → open` transition — and has been removed from
 this list per the rule above.
 
-Two notes remain. Neither is a defect: the first is relevant to whichever milestone adds a
-second environment, the second to the milestone that writes `/privacy`.
+Three notes remain. None is a defect: the first is relevant to whichever milestone adds a
+second environment, the second to the milestone that writes `/privacy`, and the third to
+the milestone that records results.
 
 1. **`triggers.crons` sits at the top level of `wrangler.jsonc`**, which is correct while
    production is the only environment — but it is inherited, so adding a staging
@@ -171,6 +172,29 @@ second environment, the second to the milestone that writes `/privacy`.
      they like, and none of it is structured, so no erasure can find a name inside it.
      Erasure anonymises the erased player's own rows; it cannot rewrite somebody else's
      prose. Removing such a mention is a request to the organiser who wrote it.
+
+3. **`responses.team` (BR-35, M9) records the teams as *published*, not as *played* —
+   which matters to results recording and to anything trained on it.**
+
+   Team picking stores each player's side on their response row, so a results table joined
+   on `fixture_id` yields the full history — roster A, roster B, outcome — with no backfill
+   needed. That is the point of building it in this order, and it is sound.
+
+   The gap is accuracy at kickoff. Teams published on Wednesday describe Wednesday's squad.
+   If someone drops out on Thursday and the organiser does not re-pick and re-publish, the
+   stored rosters describe a match that did not happen. Nothing is wrong with the data
+   model; the fixture simply went stale and nobody acted on the prompt.
+
+   **For a ratings or balanced-picker dataset this is silent noise, which is the dangerous
+   kind** — a model would learn from line-ups that never took the pitch, and nothing in the
+   rows would say so. The remedy is available and cheap, and belongs to the results
+   milestone rather than to M9: the two staleness conditions in the team-picking spec's
+   §3.1 are computable at any moment, including at kickoff, so a result can record whether
+   its fixture's teams were still accurate when it started. Reliable fixtures can then be
+   distinguished from unreliable ones rather than averaged together.
+
+   Decide this when results are designed, not after a season of data has accumulated
+   without it.
 
 ## Repository and deploy hardening — applied 11 August 2026
 
