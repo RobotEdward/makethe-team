@@ -169,7 +169,7 @@ function heldUpBody(
     <p>Each of these games needs an organiser, and you're the only one it has:</p>
     <ul>${items}</ul>
     <p>Make someone else an organiser and it will go ahead by itself, within the hour. Nothing else will start it.</p>`
-      : `<p>It runs on the hour, so it should happen shortly on its own. Nothing has gone wrong and you don't need to do anything.</p>`;
+      : `<p>It runs on the hour, so it should happen shortly on its own. You don't need to do anything.</p>`;
 
   const ending = started
     ? `<p>It has already begun. You've been taken out of some or all of your squads, and the places you'd given up have gone to whoever was waiting for them — that part can't be undone, so this can't be stopped now. It will finish once the way is clear.</p>`

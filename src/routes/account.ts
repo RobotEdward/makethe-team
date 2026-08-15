@@ -172,7 +172,14 @@ account.post(DELETE_ACCOUNT_PATH, requirePlayer, async (c) => {
   }
 
   const erasesAt = erasureDeadline(now);
-  await db.update(players).set({ erasesAt }).where(eq(players.id, player.id));
+  // `erasure_blocked_at` is cleared here too: it marks a block belonging to
+  // the request being superseded, and leaving it set would make a fresh
+  // request that is blocked again silently skip its own `player.erasure_blocked`
+  // audit row, because `recordBlocked`'s guard would read it as already told.
+  await db
+    .update(players)
+    .set({ erasesAt, erasureBlockedAt: null })
+    .where(eq(players.id, player.id));
   await recordAudit(db, {
     actorPlayerId: player.id,
     entityType: "player",
@@ -277,10 +284,27 @@ account.post(DELETE_ACCOUNT_CANCEL_PATH, requirePlayer, async (c) => {
   // null: a row that says it was erased with no trace of the request that
   // erased it. The `where` makes the loser of that race a no-op, and the
   // redirect below is unchanged, which is right — the account really is gone.
+  //
+  // Also scoped by `erasure_started_at is null`: the read above and this
+  // write are not one transaction, so the sweep can set that column in
+  // between. Without this guard such a cancel still clears `erases_at` —
+  // exactly the stranded, half-erased, never-retried state the 422 refusal
+  // above exists to prevent, reached through the race instead of the UI.
+  //
+  // `erasure_blocked_at` is cleared here too, for the same reason as the
+  // request handler: it marks a block belonging to *this* request, and a
+  // later request that is blocked again must get its own audit row rather
+  // than being silently treated as already-told.
   await db
     .update(players)
-    .set({ erasesAt: null })
-    .where(and(eq(players.id, player.id), isNull(players.erasedAt)));
+    .set({ erasesAt: null, erasureBlockedAt: null })
+    .where(
+      and(
+        eq(players.id, player.id),
+        isNull(players.erasedAt),
+        isNull(players.erasureStartedAt),
+      ),
+    );
   await recordAudit(db, {
     actorPlayerId: player.id,
     entityType: "player",

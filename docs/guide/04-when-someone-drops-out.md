@@ -78,8 +78,9 @@ The organiser check runs again on the day. If somebody made you the only
 organiser of a game in the meantime — a co-organiser left, say — the erasure
 waits rather than leaving that game with nobody running it, and your games page
 says so and names the game. Make somebody else an organiser there and it goes
-ahead by itself within the hour. It's the one case where a date you were given
-can pass without the erasure happening, and it's the safe direction: nothing is
-half-done while it waits.
+ahead by itself within the hour. That's one reason a date you were given can
+pass without the erasure happening; the other is simply that it hasn't been
+picked up yet, since the check only runs once an hour. Either way it's the
+safe direction: nothing is half-done while it waits.
 
 Next: [running your squad](05-running-your-squad.md).

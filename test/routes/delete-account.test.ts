@@ -1,5 +1,5 @@
 import { SELF, env } from "cloudflare:test";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   DASHBOARD_PATH,
@@ -9,6 +9,7 @@ import {
 } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import { auditLog, fixtures, memberships, players, responses, session } from "../../src/db/schema.js";
+import { erasePlayer } from "../../src/domain/erase-player.js";
 import { ERASURE_WINDOW_MS } from "../../src/domain/erasure-window.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertFixture, insertGame, insertMembership, insertPlayer, resetDatabase } from "../support/factories.js";
@@ -433,6 +434,108 @@ describe("POST /app/delete/cancel", () => {
 
     expect(response.status).toBe(303);
     expect((await playerRowFor(playerId))!.erasesAt?.getTime()).toBe(erasesAt.getTime());
+  });
+
+  /**
+   * The race the 422 refusal above exists to prevent, reached a different
+   * way: the read that decides whether to refuse and the write that clears
+   * `erases_at` are two separate D1 statements, not one transaction, so the
+   * sweep can set `erasure_started_at` in the gap between them — a cancel
+   * whose read lands just before that happens must not still clear
+   * `erases_at`, or the 422 refusal above is only a UI-level guard rather
+   * than a real one.
+   *
+   * That interleaving is not reproducible on demand through two competing
+   * `fetch`es (nothing in this harness controls which of two concurrent D1
+   * round trips lands first), so this drives the exact query the cancel
+   * handler now runs — `and(eq(id), isNull(erasedAt), isNull(erasureStartedAt))`
+   * — directly, against a row already in the state that race produces: a
+   * pending erasure whose execution has started. It is what `isNull(players.
+   * erasureStartedAt)` was added to `account.ts`'s update `where` to do, one
+   * `where` clause exercised at a time. The `it` above already covers the
+   * ordinary, non-racing path — a read that itself sees `erasure_started_at`
+   * set — with the handler's real 422.
+   */
+  it("the guarded update leaves erases_at untouched once execution has started", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await post(DELETE_ACCOUNT_PATH, cookie);
+    const erasesAt = (await playerRowFor(playerId))!.erasesAt!;
+
+    // What the sweep commits the instant it begins irreversible work,
+    // landing here — after a hypothetical read that saw it still null, and
+    // before this handler's own write — is the race in question.
+    await db.update(players).set({ erasureStartedAt: new Date(Date.now()) }).where(eq(players.id, playerId));
+
+    await db
+      .update(players)
+      .set({ erasesAt: null, erasureBlockedAt: null })
+      .where(and(eq(players.id, playerId), isNull(players.erasedAt), isNull(players.erasureStartedAt)));
+
+    const after = await playerRowFor(playerId);
+    expect(after?.erasesAt?.getTime()).toBe(erasesAt.getTime());
+    expect(after?.erasureStartedAt).not.toBeNull();
+  });
+
+  /**
+   * The blocked marker exists to stop a retried block from writing an audit
+   * row every hour, but it is scoped to the request it belongs to: nulling it
+   * only on the run that gets past the pre-check (inside `erasePlayer`)
+   * leaves it set across a cancel, so a *later* request that hits the same
+   * kind of block again is silently treated as "already told" and gets no
+   * second `player.erasure_blocked` row. Cancelling — and requesting again —
+   * must each clear it.
+   */
+  it("clearing erasure_blocked_at on cancel lets a later request be blocked and audited again", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const gameId = await insertGame(db, { name: "Handover Game" });
+    await insertMembership(db, gameId, playerId, { role: "owner", active: true });
+    const coOwnerId = await insertPlayer(db, { name: "Co Organiser" });
+    const coMembershipId = await insertMembership(db, gameId, coOwnerId, { role: "owner", active: true });
+
+    // Unblocked: schedule the first erasure.
+    expect((await post(DELETE_ACCOUNT_PATH, cookie)).status).toBe(303);
+
+    // The co-organiser leaves, making the sweep's run block on this game.
+    await db.update(memberships).set({ active: false }).where(eq(memberships.id, coMembershipId));
+    const firstBlock = await erasePlayer({
+      db,
+      playerId,
+      now: new Date(Date.now()),
+      withdraw: async () => {
+        throw new Error("blocked before any membership is touched — withdraw should not run");
+      },
+    });
+    expect(firstBlock.kind).toBe("blocked");
+    expect((await playerRowFor(playerId))!.erasureBlockedAt).not.toBeNull();
+    expect(await auditRows("player.erasure_blocked")).toHaveLength(1);
+
+    // Cancel: not yet started (only blocked), so this succeeds and, with the
+    // fix, clears the blocked marker along with erases_at.
+    const cancelResponse = await post(DELETE_ACCOUNT_CANCEL_PATH, cookie);
+    expect(cancelResponse.status).toBe(303);
+    expect((await playerRowFor(playerId))!.erasureBlockedAt).toBeNull();
+
+    // Hand the game back so a fresh request is not immediately refused, then
+    // request again.
+    await db.update(memberships).set({ active: true }).where(eq(memberships.id, coMembershipId));
+    expect((await post(DELETE_ACCOUNT_PATH, cookie)).status).toBe(303);
+
+    // The co-organiser leaves again — a second, distinct block.
+    await db.update(memberships).set({ active: false }).where(eq(memberships.id, coMembershipId));
+    const secondBlock = await erasePlayer({
+      db,
+      playerId,
+      now: new Date(Date.now()),
+      withdraw: async () => {
+        throw new Error("blocked before any membership is touched — withdraw should not run");
+      },
+    });
+    expect(secondBlock.kind).toBe("blocked");
+
+    const blockedAudits = await auditRows("player.erasure_blocked");
+    expect(blockedAudits).toHaveLength(2);
   });
 });
 
