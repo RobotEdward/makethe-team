@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -94,4 +94,17 @@ export function welcomeKey(membershipId: string, joinedAt: string): string {
  */
 export function removalKey(membershipId: string, leftAt: string): string {
   return `n7:${membershipId}:${leftAt}`;
+}
+
+/**
+ * N-8 erasure scheduled: once per request (M7b, BR-34).
+ *
+ * Includes `erasesAt` deliberately, like N-2 and unlike N-4: someone who
+ * requests erasure, cancels, and requests again has genuinely new information
+ * both times, and each request has its own deadline. Keyed on the player
+ * alone, the unique index on `dedupe_key` would silently drop the second
+ * email and leave them with no record of the second, still-live request.
+ */
+export function erasureScheduledKey(playerId: string, erasesAt: string): string {
+  return `n8:${playerId}:${erasesAt}`;
 }
