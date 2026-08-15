@@ -4,7 +4,7 @@ import type { ResponseStatus } from "../domain/response-status.js";
 import { renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
-import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
+import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
 
 /**
  * One fixture as the dashboard shows it: the game, when and where, the derived
@@ -136,7 +136,7 @@ function renderOwnedGamesSection(games: readonly OwnedGame[]): string {
  * exist without it.
  */
 export function renderDashboardPage({ playerName, rows, ownedGames, problem }: DashboardPageOptions): string {
-  const problemNotice = problem === undefined ? "" : `<p class="problem">${escapeHtml(problem)}</p>`;
+  const problemNotice = problem === undefined ? "" : `<p class="nudge">${escapeHtml(problem)}</p>`;
   const body = `
     <h1>Your games</h1>
     <p>Signed in as ${escapeHtml(playerName)}.</p>
@@ -154,10 +154,6 @@ export function renderDashboardPage({ playerName, rows, ownedGames, problem }: D
   return layout({
     title: "Your games — Make The Team",
     body,
-    // `FORM_CSS` is here for one rule: `.problem`, which `problemNotice`
-    // above emits when a leave from this page is refused. Without it that
-    // refusal renders as unstyled body text, which is the one message on this
-    // page that must not look like ordinary prose.
-    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FORM_CSS],
+    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS],
   });
 }
