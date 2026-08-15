@@ -189,6 +189,29 @@ describe("parseGameForm", () => {
     // c.req.parseBody() can hand back a File for a multipart field.
     expect(errorsFor({ name: { not: "a string" } })).toContain("name");
   });
+
+  it("defaults the team names when the form omits them", () => {
+    const result = parseGameForm(body({ teamAName: "", teamBName: "" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.values.teamAName).toBe("Team A");
+    expect(result.values.teamBName).toBe("Team B");
+  });
+
+  it("keeps the names an organiser chose", () => {
+    const result = parseGameForm(body({ teamAName: "Bibs", teamBName: "Skins" }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.values.teamAName).toBe("Bibs");
+    expect(result.values.teamBName).toBe("Skins");
+  });
+
+  // Names reach an email subject line and a page heading, so an unbounded
+  // string is a layout problem as well as a storage one.
+  it("rejects a team name longer than 40 characters", () => {
+    const result = parseGameForm(body({ teamAName: "x".repeat(41) }));
+    expect(result.ok).toBe(false);
+  });
 });
 
 describe("localDateToday", () => {

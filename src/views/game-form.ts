@@ -166,6 +166,10 @@ export function renderGameFormPage(params: GameFormPageParams): string {
           Let players see who else is playing
         </label>
       </div>
+      <div class="row">
+        ${field("teamAName", "First team's name", textInput("teamAName"))}
+        ${field("teamBName", "Second team's name", textInput("teamBName"))}
+      </div>
       ${advanced}
       <div class="actions">
         <button class="button primary" type="submit">${escapeHtml(submitLabel)}</button>

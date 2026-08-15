@@ -111,6 +111,13 @@ export const games = sqliteTable("games", {
   squadVisibleToPlayers: integer("squad_visible_to_players", { mode: "boolean" })
     .notNull()
     .default(true),
+  /**
+   * What this game calls its two sides (BR-35, M9). Game-level, not
+   * per-fixture: a game that plays Bibs against Skins plays it every week, and
+   * a per-fixture override is a field nobody would use twice.
+   */
+  teamAName: text("team_a_name").notNull().default("Team A"),
+  teamBName: text("team_b_name").notNull().default("Team B"),
   reminderDaysBefore: integer("reminder_days_before").notNull().default(1),
   reminderLocalTime: text("reminder_local_time").notNull().default("09:00"),
   shortWarningOffsetHours: integer("short_warning_offset_hours").notNull().default(12),
@@ -155,6 +162,14 @@ export const fixtures = sqliteTable(
     cancelledAt: integer("cancelled_at", { mode: "timestamp_ms" }),
     cancellationReason: text("cancellation_reason"),
     openedAt: integer("opened_at", { mode: "timestamp_ms" }),
+    /**
+     * When the current pick was announced (BR-35, M9), or null.
+     *
+     * Saving assignments clears it and publishing sets it, so "the organiser
+     * has changed the teams and not told anyone" is a state the data states
+     * outright rather than one that has to be inferred.
+     */
+    teamsPublishedAt: integer("teams_published_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [
@@ -179,6 +194,22 @@ export const responses = sqliteTable(
     // Null when the player set it themselves; the owner's id for an override (BR-27).
     setByPlayerId: text("set_by_player_id").references(() => players.id),
     source: text("source", { enum: RESPONSE_SOURCES }).notNull(),
+    /**
+     * Which side this player is on for this fixture (BR-35, M9). Null until an
+     * organiser picks teams.
+     *
+     * On `responses` rather than a table of its own because this row already
+     * *is* the (fixture, player) pair an assignment hangs off — guests
+     * included, since `addGuest` writes one — and an assignment should die
+     * with the response it belongs to.
+     *
+     * **Deliberately not cleared when a player leaves.** A row whose `team` is
+     * set but whose `status` is no longer `in` is the only signal that the
+     * published teams no longer match the squad (spec §3.1). Clearing it here,
+     * or in `withdrawMember`, deletes that signal. It also means a player who
+     * drops out and comes back is back on their old side, with no special case.
+     */
+    team: text("team", { enum: ["a", "b"] }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [

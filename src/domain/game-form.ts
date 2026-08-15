@@ -32,8 +32,11 @@ const MAX_DURATION_MINUTES = 1440;
 const MAX_PLAYERS_CEILING = 200;
 const MAX_WARNING_OFFSET_HOURS = 168;
 const MAX_REMINDER_DAYS_BEFORE = 7;
+const MAX_TEAM_NAME_LENGTH = 40;
 
 export const DEFAULT_TIMEZONE = "Europe/London";
+export const DEFAULT_TEAM_A_NAME = "Team A";
+export const DEFAULT_TEAM_B_NAME = "Team B";
 export const DEFAULT_REMINDER_DAYS_BEFORE = 1;
 export const DEFAULT_REMINDER_LOCAL_TIME = "09:00";
 export const DEFAULT_SHORT_WARNING_OFFSET_HOURS = 12;
@@ -51,6 +54,8 @@ export interface GameFormValues {
   maxPlayers: number;
   prefersEvenNumbers: boolean;
   squadVisibleToPlayers: boolean;
+  teamAName: string;
+  teamBName: string;
   reminderDaysBefore: number;
   reminderLocalTime: string;
   shortWarningOffsetHours: number;
@@ -204,6 +209,19 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
   const prefersEvenNumbers = typeof body["prefersEvenNumbers"] === "string";
   const squadVisibleToPlayers = typeof body["squadVisibleToPlayers"] === "string";
 
+  // Blank or absent falls back to the default rather than being rejected,
+  // unlike `timezone`: there is no meaningful "explicitly blank" team name to
+  // preserve, so an empty submission is just the owner not naming their sides.
+  const teamAName = optionalText(body["teamAName"]) ?? DEFAULT_TEAM_A_NAME;
+  if (teamAName.length > MAX_TEAM_NAME_LENGTH) {
+    fail("teamAName", `Keep the team name under ${MAX_TEAM_NAME_LENGTH} characters.`);
+  }
+
+  const teamBName = optionalText(body["teamBName"]) ?? DEFAULT_TEAM_B_NAME;
+  if (teamBName.length > MAX_TEAM_NAME_LENGTH) {
+    fail("teamBName", `Keep the team name under ${MAX_TEAM_NAME_LENGTH} characters.`);
+  }
+
   // Advisory, per BR-29 and spec Part 3 item 6: a full fixture at an odd max
   // can never satisfy parity, so it carries the `uneven` flag permanently.
   // Worth saying out loud; not worth refusing.
@@ -265,6 +283,8 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
       maxPlayers: maxPlayers!,
       prefersEvenNumbers,
       squadVisibleToPlayers,
+      teamAName,
+      teamBName,
       reminderDaysBefore: reminderDaysBefore!,
       reminderLocalTime,
       shortWarningOffsetHours: shortWarningOffsetHours!,
