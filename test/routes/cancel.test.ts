@@ -614,7 +614,17 @@ describe("renderCancelConfirmPage copy", () => {
     expect(html).toContain("Call it off and email 12 people");
   });
 
-  it("offers backing out as the thing called cancel", () => {
-    expect(renderCancelConfirmPage(preview({}))).toContain("Keep the game on");
+  // No second "back out" button: CancelConfirmPageOptions carries no
+  // gameId/fixtureId (this page is reached by a signed token, not a
+  // session), and a link to nowhere real is worse than no link at all.
+  it("offers no back-out button, since there is nowhere honest to send it", () => {
+    expect(renderCancelConfirmPage(preview({}))).not.toContain("Keep the game on");
+  });
+
+  it("names the game and the single date in the page title, not just the game", () => {
+    const html = renderCancelConfirmPage(
+      preview({ gameName: "Thursday 7-a-side", kicksOffAtLocal: "Sunday 16 August, 19:00" }),
+    );
+    expect(html).toContain("<title>Call off Thursday 7-a-side on Sunday 16 August, 19:00 — Make The Team</title>");
   });
 });

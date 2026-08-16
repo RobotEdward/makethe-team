@@ -113,11 +113,10 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
       <p class="hint">Up to ${MAX_REASON_LENGTH} characters. Leave it blank if you'd rather not say.</p>
       <button class="button danger" type="submit">Call it off and email ${reachable} ${plural(reachable, "person", "people")}</button>
     </form>
-    <a class="button keep-on" href="/cancel/${escapeHtml(token)}">Keep the game on</a>
     <p class="read-only">This can't be undone. Once it's cancelled, everyone who was in or on the waitlist gets an email, and nobody can respond to this fixture again.</p>
   `;
 
-  return layout({ title: `Cancel ${options.gameName} — Make The Team`, body });
+  return layout({ title: `Call off ${options.gameName} on ${options.kicksOffAtLocal} — Make The Team`, body });
 }
 
 export interface CancelledPageOptions {
