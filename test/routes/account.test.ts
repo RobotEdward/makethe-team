@@ -91,7 +91,18 @@ describe("GET /app/account", () => {
     // not just their count. `week` 0 is the most recent kickoff and `week` 21
     // the oldest; the two oldest (`week` 20 and 21) must not show, and the
     // twenty that do must render most-recent-first.
-    for (let week = 0; week < 22; week++) {
+    //
+    // Inserted **oldest first** (`week` descending) rather than in the order
+    // `week` counts, so insertion order is the exact *reverse* of the correct
+    // rendered order (kickoff descending). If the route's query ever lost its
+    // `ORDER BY` and fell back to returning rows in insertion/rowid order, the
+    // set and the order asserted below would both come out wrong and this
+    // test would catch it. Seeding in `week`-ascending order would insert
+    // fixtures kickoff-descending — the same sequence as the correct answer —
+    // so a missing `ORDER BY` would accidentally render correctly and this
+    // test would pass regardless of whether the route sorts anything. Do not
+    // "tidy" this back to an ascending loop.
+    for (let week = 21; week >= 0; week--) {
       const kicksOffAt = new Date(LAST_WEEK.getTime() - week * 7 * 24 * 3600_000);
       const fixtureId = await insertFixture(db, gameId, {
         lifecycle: "played",
