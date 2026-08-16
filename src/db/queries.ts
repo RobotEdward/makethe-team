@@ -402,6 +402,15 @@ export interface MembershipInGame {
   role: "player" | "owner";
   active: boolean;
   /**
+   * When this player's data was erased, or `null`. Selected so a caller that
+   * renders `name` can pass this straight to `displayName` instead of a
+   * literal `null` — this row's own `active` guard makes the erased case
+   * genuinely unreachable through most callers (erasure deactivates every
+   * membership), but a renderer that says it handles erasure should actually
+   * be able to, not rely on a caller-side guarantee it cannot see.
+   */
+  erasedAt: Date | null;
+  /**
    * When they left, or `null` while they are still in the squad. Read by
    * `removeMember`'s resume path, which must reuse the *original* `left_at` so
    * N-7's dedupe key (`n7:<membershipId>:<leftAt>`) is unchanged and a retry
@@ -445,6 +454,7 @@ export async function findMembershipInGame(
       isGuest: players.isGuest,
       role: memberships.role,
       active: memberships.active,
+      erasedAt: players.erasedAt,
       leftAt: memberships.leftAt,
       joinedAt: memberships.joinedAt,
     })

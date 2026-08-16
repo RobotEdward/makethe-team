@@ -64,6 +64,14 @@ export const FIXTURE_STYLES_CSS = `
     border: 1px dashed var(--line); color: var(--mut); font-size: var(--t-body); text-align: left;
   }
 
+  /* Paragraphs get zero margin by default (the layout's base rule), so a
+     closing paragraph that follows a .read-only box — which carries no
+     bottom margin of its own — would otherwise butt straight up against it
+     and read as one run of text. Spacing is opt-in per paragraph, the same
+     way .viewer-headline and .kickoff already are above, rather than a
+     change to the base rule that would ripple through every other page. */
+  .back-link { margin-top: 1.5rem; }
+
   /* Two big, unmistakable tap targets: stacked on a phone, side by side once
      there is room for both without cramping. */
   .responses {

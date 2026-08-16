@@ -199,6 +199,10 @@ export async function findActionableFixture(
  *    showing exactly what the dashboard already shows.
  * 2. **`desc` and a `limit`.** Most recent first, so an upcoming fixture sorts
  *    above a played one and the list is a timeline rather than a to-do list.
+ *    `fixtures.id` is a tiebreaker on `kicksOffAt`: two fixtures across
+ *    different squads can share a kickoff instant, and without a second sort
+ *    key SQLite is free to order them however it likes, which would also make
+ *    the twenty-row cut arbitrary whenever a tied pair straddles it.
  *
  * Everything that keeps one player out of another's rows is untouched: this
  * goes through `selectEntitledFixtures`, whose join is rooted at
@@ -211,7 +215,7 @@ export async function listPlayerFixtureHistory(
   limit: number,
 ): Promise<DashboardFixture[]> {
   const rows = await selectEntitledFixtures(db, playerId)
-    .orderBy(desc(fixtures.kicksOffAt))
+    .orderBy(desc(fixtures.kicksOffAt), asc(fixtures.id))
     .limit(limit);
   return rows.map(toDashboardFixture);
 }

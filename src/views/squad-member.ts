@@ -1,6 +1,6 @@
 import { gamePath } from "../auth/paths.js";
 import { escapeHtml, layout } from "./layout.js";
-import { FORM_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
 
 export interface SquadMemberPageOptions {
   gameId: string;
@@ -56,12 +56,12 @@ export function renderSquadMemberPage({
     <h2>In this squad</h2>
     <p class="read-only">${role === "owner" ? "Organiser" : "Player"}, since ${escapeHtml(joinedAtLocal)}.</p>
 
-    <p><a href="${escapeHtml(gamePath(gameId))}">Back to ${escapeHtml(gameName)}</a>, where you can change their role or take them out of the squad.</p>
+    <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to ${escapeHtml(gameName)}</a>, where you can change their role or take them out of the squad.</p>
   `;
 
   return layout({
     title: `${memberName} — ${gameName} — Make The Team`,
     body,
-    pageStyles: [FORM_CSS],
+    pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS],
   });
 }

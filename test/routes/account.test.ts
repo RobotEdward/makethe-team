@@ -60,7 +60,16 @@ describe("GET /app/account", () => {
     const { cookie } = await signIn();
     const body = await (await get(cookie)).text();
 
-    expect(body).toContain(ALLOWED);
+    const me = await viewerId();
+    const [player] = await db.select().from(players).where(eq(players.id, me));
+
+    expect(body).toContain(`value="${player!.name}"`);
+    // Read-only text, not an input: §5.3 spends a whole section on why the
+    // email can't be an editable field, and this is the property that pins
+    // it — a regression that turned the email into an `<input>` would still
+    // contain the address, so `toContain(ALLOWED)` alone would not catch it.
+    expect(body).toContain(`<p class="read-only">${ALLOWED}</p>`);
+    expect(body).not.toContain(`value="${ALLOWED}"`);
     expect(body).toContain(`href="${PASSKEYS_PATH}"`);
     expect(body).toContain(`href="${DELETE_ACCOUNT_PATH}"`);
   });
@@ -138,6 +147,59 @@ describe("GET /app/account", () => {
     expect(body).not.toContain("Sunday league");
   });
 
+  it("words the viewer's own status in the present tense on a fixture that hasn't happened, and the past tense on one that has", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    await insertMembership(db, gameId, me);
+
+    // Upcoming and still open — the case the review found reading "You were
+    // in" and "You didn't answer" on a fixture the player can still act on.
+    const upcomingIn = await insertFixture(db, gameId, {
+      lifecycle: "open",
+      kicksOffAt: NEXT_WEEK,
+      venueOverride: "Upcoming in",
+    });
+    await insertResponse(db, upcomingIn, me, { status: "in" });
+
+    const upcomingPending = await insertFixture(db, gameId, {
+      lifecycle: "open",
+      kicksOffAt: new Date(NEXT_WEEK.getTime() + 7 * 24 * 3600_000),
+      venueOverride: "Upcoming pending",
+    });
+    await insertResponse(db, upcomingPending, me, { status: "pending" });
+
+    // Terminal — the tense that was already correct and must stay so.
+    const playedIn = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: LAST_WEEK,
+      venueOverride: "Played in",
+    });
+    await insertResponse(db, playedIn, me, { status: "in" });
+
+    const body = await (await get(cookie)).text();
+
+    // Scoped to each fixture's own card, so this pins the *pairing* of
+    // lifecycle and tense rather than merely the presence of both phrases
+    // somewhere on the page.
+    const rowFor = (marker: string): string => {
+      const start = body.indexOf(marker);
+      expect(start, `expected to find a row for "${marker}"`).toBeGreaterThan(-1);
+      return body.slice(start, body.indexOf("</li>", start));
+    };
+
+    expect(rowFor("Upcoming in")).toContain("You&#39;re in");
+    expect(rowFor("Upcoming in")).not.toContain("You were in");
+
+    expect(rowFor("Upcoming pending")).toContain("You haven&#39;t answered yet");
+    expect(rowFor("Upcoming pending")).not.toContain("You didn&#39;t answer");
+
+    // The played fixture keeps the past tense — proves this isn't a
+    // status-keyed lookup that dropped the past tense everywhere.
+    expect(rowFor("Played in")).toContain("You were in");
+    expect(rowFor("Played in")).not.toContain("You&#39;re in");
+  });
+
   it("never lists another player's fixture", async () => {
     const { cookie } = await signIn();
     const me = await viewerId();
@@ -152,6 +214,18 @@ describe("GET /app/account", () => {
     const body = await (await get(cookie)).text();
     expect(body).not.toContain("Somebody else's game");
     expect(body).not.toContain("Sam Okafor");
+  });
+
+  it("shows the pending-erasure banner and its link when one is due", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const erasesAt = new Date("2030-06-24T09:00:00Z");
+    await db.update(players).set({ erasesAt }).where(eq(players.id, me));
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("due to be erased on");
+    expect(body).toContain(`href="${DELETE_ACCOUNT_PATH}"`);
   });
 });
 

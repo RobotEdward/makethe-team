@@ -1,4 +1,11 @@
-import { ACCOUNT_PATH, DELETE_ACCOUNT_PATH, PASSKEYS_PATH, PRIVACY_PATH, gamePath } from "../auth/paths.js";
+import {
+  ACCOUNT_PATH,
+  DASHBOARD_PATH,
+  DELETE_ACCOUNT_PATH,
+  PASSKEYS_PATH,
+  PRIVACY_PATH,
+  gamePath,
+} from "../auth/paths.js";
 import { escapeHtml, layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
@@ -63,6 +70,16 @@ function renderFixture(row: AccountFixtureRow): string {
  * address is fixed is honest; a field that silently half-works is not.
  *
  * Server-rendered, no `<script>`, no `type="password"` (TR-4, TR-15, TR-16).
+ *
+ * **The erasure banner and the rename form both render when an erasure is
+ * pending.** §5.1 says the page must not offer a rename "as though nothing
+ * were happening" — read here as a requirement that the banner be visible,
+ * not as a requirement that the form be hidden. An erasure is cancellable
+ * within its window (`POST /app/delete/cancel`), so renaming yourself while
+ * one is pending is not absurd: the account may still be here in two days,
+ * and there is no reason to make somebody cancel first just to fix a typo in
+ * their own name. This was a decision, not an oversight left over from
+ * before the banner existed.
  */
 export function renderAccountPage({
   playerName,
@@ -97,8 +114,10 @@ export function renderAccountPage({
     <h2>Your name</h2>
     <p>This is what your squads see, on every fixture and in every email.</p>
     <form method="post" action="${ACCOUNT_PATH}">
-      <label for="name">Name</label>
-      <input id="name" name="name" type="text" value="${escapeHtml(playerName)}" maxlength="200" required>
+      <div class="field">
+        <label for="name">Name</label>
+        <input id="name" name="name" type="text" value="${escapeHtml(playerName)}" maxlength="200" required>
+      </div>
       <button class="button primary" type="submit">Save</button>
     </form>
 
@@ -117,6 +136,7 @@ export function renderAccountPage({
     }
 
     <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
+    <p><a href="${DASHBOARD_PATH}">Back to your games</a></p>
     ${signOutForm("Sign out")}
   `;
 

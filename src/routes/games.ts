@@ -428,10 +428,15 @@ gamesRoutes.get("/g/:id/squad/:playerId", requirePlayer, async (c) => {
     renderSquadMemberPage({
       gameId: target.game.id,
       gameName: target.game.name,
-      // Never the raw column. An organiser who has since erased themselves, or
-      // a member erased between two page loads, must not render as a
-      // placeholder name — every renderer of a player's name goes through this.
-      memberName: displayName(target.member.name, null),
+      // Never the raw column, and never a literal `null` for the second
+      // argument: this page is genuinely unreachable for an erased member
+      // (erasure deactivates every membership, and `loadSquadTarget` refuses
+      // an inactive one), but that guarantee lives in `erasePlayer` and
+      // `loadSquadTarget`, not here — a renderer that claims to route a name
+      // through `displayName` should actually pass the column it depends on,
+      // not a value that makes the call a no-op regardless of what the
+      // database says.
+      memberName: displayName(target.member.name, target.member.erasedAt),
       email: target.member.email,
       isGuest: target.member.isGuest,
       role: target.member.role,

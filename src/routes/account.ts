@@ -15,6 +15,7 @@ import { players } from "../db/schema.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { erasureDeadline } from "../domain/erasure-window.js";
 import { fixtureView, type FixtureStatus } from "../domain/fixture-view.js";
+import { isTerminalLifecycle } from "../domain/lifecycle.js";
 import { parsePlayerName } from "../domain/player-name.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
@@ -356,7 +357,7 @@ async function renderAccount(c: Context<AppEnv>, problem?: string) {
         // module, in the fixture's own game's zone (TR-5).
         kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, fixture.timezone),
         statusLabel: fixtureStatusLabel(fixtureView(fixture, now).status),
-        myStatusLabel: historyStatusLabel(fixture.myStatus),
+        myStatusLabel: historyStatusLabel(fixture.myStatus, isTerminalLifecycle(fixture.lifecycle)),
       })),
       problem,
       // `player` already carries `erasesAt` — `sessionMiddleware` selects the
@@ -395,17 +396,28 @@ function fixtureStatusLabel(status: FixtureStatus): string {
   }
 }
 
-/** What the viewer answered, worded for a list that is mostly history. */
-function historyStatusLabel(status: ResponseStatus): string {
+/**
+ * What the viewer answered, worded for a list that is mostly — but not
+ * purely — history (§6: "last 20 by kickoff" puts an upcoming fixture above
+ * a played one).
+ *
+ * `isFinished` is the fixture's *own* lifecycle (`isTerminalLifecycle`), not
+ * a fact about the response: an open fixture with a `pending` response is
+ * something the player can still go and answer, and telling them "you didn't
+ * answer" reads as a completed failure rather than as the open invitation it
+ * still is. Terminal lifecycles (`played`, `cancelled`) get the past tense
+ * that was here before this fix; everything else gets the present.
+ */
+function historyStatusLabel(status: ResponseStatus, isFinished: boolean): string {
   switch (status) {
     case "in":
-      return "You were in";
+      return isFinished ? "You were in" : "You're in";
     case "out":
-      return "You couldn't make it";
+      return isFinished ? "You couldn't make it" : "You can't make it";
     case "waitlisted":
-      return "You were on the waitlist";
+      return isFinished ? "You were on the waitlist" : "You're on the waitlist";
     case "pending":
-      return "You didn't answer";
+      return isFinished ? "You didn't answer" : "You haven't answered yet";
     case "withdrawn":
       // Unreachable: `entitledTo` excludes withdrawn rows. Here so the switch
       // is exhaustive and a new status becomes a typecheck failure.
