@@ -142,7 +142,7 @@
       "title": "One fixture, as its organiser sees it",
       "route": "/g/:id/f/:fixtureId",
       "image": "images/owner-fixture.png",
-      "shows": "Everyone's answer for one fixture, with an In/Out segment beside each squad member and a Remove button beside the guest."
+      "shows": "Everyone's answer for one fixture, with an In/Out segment beside each name."
     },
     {
       "id": "owner-marked-in",
