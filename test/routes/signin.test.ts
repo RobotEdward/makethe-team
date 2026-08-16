@@ -15,7 +15,7 @@ import {
 } from "../../src/auth/session.js";
 // Not re-exported by `session.ts` — that re-export is the sign-in flow's own
 // paths, and this page is not part of it (`src/auth/paths.ts`).
-import { DELETE_ACCOUNT_PATH, PRIVACY_PATH } from "../../src/auth/paths.js";
+import { ACCOUNT_PATH, DELETE_ACCOUNT_PATH, PRIVACY_PATH } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
@@ -718,6 +718,15 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}${DELETE_ACCOUNT_PATH}`, { headers: { cookie } }),
       );
 
+      // The player's own account page (M11 Task 4), captured with the fixture
+      // seeded above already in the player's history — the history list
+      // rendering with rows, not just its empty state.
+      await capture(
+        "account",
+        /Your account/,
+        new Request(`${ORIGIN}${ACCOUNT_PATH}`, { headers: { cookie } }),
+      );
+
       // M4's owner-cancellation pages. Both render HTML, so both are captured
       // rather than excused — the confirmation page in particular is the one
       // that takes free text from an owner, which is why the CSP this suite
@@ -804,6 +813,14 @@ describe("no password field anywhere (TR-16)", () => {
         "squad remove confirm",
         /Remove Sam Okafor\?/,
         new Request(`${ORIGIN}/g/${gameId}/squad/${removableId}/remove`, { headers: { cookie } }),
+      );
+
+      // The squad member page (M11 Task 6), the same removable member as
+      // above — an organiser's read-only view of one squad member.
+      await capture(
+        "squad member",
+        /Sam Okafor/,
+        new Request(`${ORIGIN}/g/${gameId}/squad/${removableId}`, { headers: { cookie } }),
       );
 
       // The public invite page and the page a join lands on (Task 11, J1).
@@ -916,6 +933,7 @@ describe("no password field anywhere (TR-16)", () => {
         "dashboard",
         "passkeys",
         "delete my data",
+        "account",
         "link conflict (409)",
         "ambiguous email (500)",
         "email held by a guest (500)",
@@ -927,6 +945,7 @@ describe("no password field anywhere (TR-16)", () => {
         "game edit",
         "owner fixture",
         "squad remove confirm",
+        "squad member",
         "invite",
         "join outcome",
       ].sort(),
@@ -1057,6 +1076,12 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "other branches are a plain-text 403 (wrong origin) or a 303 redirect " +
       "(src/routes/account.ts); its own status-code coverage lives in " +
       "test/routes/delete-account.test.ts.",
+    "POST /app/account":
+      "renders through the same renderAccount as GET /app/account on its one " +
+      "HTML-returning branch (a rejected name, 422) — no template of its own " +
+      "that could carry an un-enumerated script — and its other branches are " +
+      "a plain-text 403 (wrong origin) or a 303 redirect (src/routes/account.ts); " +
+      "its own status-code coverage lives in test/routes/account.test.ts.",
     "POST /app/delete/cancel":
       "never returns HTML on any branch — a plain-text 403 (wrong origin) or a " +
       "303 redirect only (src/routes/account.ts); its own status-code coverage " +
@@ -1153,10 +1178,12 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /app": "dashboard",
     "GET /app/passkeys": "passkeys",
     "GET /app/delete": "delete my data",
+    "GET /app/account": "account",
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",
     "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
+    "GET /g/:id/squad/:playerId": "squad member",
     "GET /g/:id/f/:fixtureId": "owner fixture",
     "GET /j/:token": "invite",
     "POST /j/:token": "join outcome",

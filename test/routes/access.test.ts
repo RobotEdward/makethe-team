@@ -2,7 +2,7 @@ import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 
 describe("holding page", () => {
-  it("serves the product name and nothing operational", async () => {
+  it("serves the product name and no signed-in surface", async () => {
     const response = await SELF.fetch("https://makethe.team/");
     const body = await response.text();
 

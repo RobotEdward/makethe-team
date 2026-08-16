@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
+  ACCOUNT_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
@@ -22,6 +23,7 @@ const CONSTANTS: Record<string, string> = {
   DASHBOARD_PATH,
   PASSKEYS_PATH,
   DELETE_ACCOUNT_PATH,
+  ACCOUNT_PATH,
   NEW_GAME_PATH,
   PRIVACY_PATH,
 };
@@ -34,11 +36,13 @@ const ROUTE_TO_ID = new Map<string, string>([
   [DASHBOARD_PATH, "dashboard"],
   [PASSKEYS_PATH, "passkeys"],
   [DELETE_ACCOUNT_PATH, "delete-account"],
+  [ACCOUNT_PATH, "account"],
   [NEW_GAME_PATH, "new-game"],
   ["/g/:id", "game-overview"],
   ["/g/:id/edit", "edit-game"],
   ["/g/:id/f/:fixtureId", "owner-fixture"],
   ["/g/:id/squad/:playerId/remove", "remove-member"],
+  ["/g/:id/squad/:playerId", "squad-member"],
   ["/j/:token", "join"],
   ["/r/:token", "respond"],
   ["/leave/:token", "leave"],

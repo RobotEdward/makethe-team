@@ -1,4 +1,5 @@
 import {
+  ACCOUNT_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
@@ -90,6 +91,16 @@ export const CATALOGUE: CataloguePage[] = [
     note: "Where a player schedules their own erasure, 48 hours out, and cancels it.",
   },
   {
+    id: "account",
+    title: "Your account",
+    path: () => ACCOUNT_PATH,
+    // The `owner` persona: the seeded owner has fixtures, so the history list
+    // renders with rows rather than as its empty state, which is the version
+    // worth putting in front of a browser and a CSP.
+    persona: "owner",
+    note: "A player's own record: their name (editable), their email (not), how they sign in, and their last 20 fixtures across every game.",
+  },
+  {
     id: "new-game",
     title: "Set up a game",
     path: () => NEW_GAME_PATH,
@@ -137,6 +148,13 @@ export const CATALOGUE: CataloguePage[] = [
     path: (w) => `/g/${w.gameId}/squad/${w.memberPlayerId}/remove`,
     persona: "owner",
     note: "J6a's confirmation page, stating the consequences from live rows.",
+  },
+  {
+    id: "squad-member",
+    title: "Squad member",
+    path: (w) => `/g/${w.gameId}/squad/${w.memberPlayerId}`,
+    persona: "owner",
+    note: "One squad member as their organiser sees them — name, email, role, joined date, and deliberately no history.",
   },
   {
     id: "join",
