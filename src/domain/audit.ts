@@ -143,6 +143,12 @@ export const AUDIT_ACTIONS = [
   "player.erasure_cancelled",
   "player.erasure_blocked",
   "player.erased",
+  // M11. A player renaming themselves on `/app/account`. Subject and actor are
+  // always the same player, like the erasure actions above and for the same
+  // reason — the route acts on the session's own player id and takes no
+  // parameter naming a player. `before`/`after` carry `{ name }`, because what
+  // the row is *for* is what the name used to be.
+  "player.renamed",
   // M9 (BR-35). Who put someone on which side is exactly the question an audit
   // trail exists to answer, and both actions are organiser actions on a
   // fixture (BR-27). Saving and publishing are separate because only one of

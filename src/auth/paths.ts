@@ -93,6 +93,21 @@ export const DELETE_ACCOUNT_PATH = `${DASHBOARD_PATH}/delete`;
 export const DELETE_ACCOUNT_CANCEL_PATH = `${DELETE_ACCOUNT_PATH}/cancel`;
 
 /**
+ * Where a player sees and edits their own record (M11).
+ *
+ * Under `DASHBOARD_PATH` so it sits behind the session mount and the
+ * `private, no-store` header `AUTHENTICATED_PREFIX` carries — this page
+ * renders an email address and a fixture history, and neither belongs in a
+ * shared cache.
+ *
+ * **No player id in the path, and that is the entitlement design.** The
+ * subject is always `c.get("player")`, so unlike `memberDetailPath` below
+ * there is no id here for a handler to forget to check or for a stranger to
+ * probe.
+ */
+export const ACCOUNT_PATH = `${DASHBOARD_PATH}/account`;
+
+/**
  * Better Auth's own mount point: every endpoint it owns (`/sign-in/magic-link`,
  * `/magic-link/verify`, `/sign-out`, …) hangs off this. It is the framework's
  * default `basePath`, restated here because this project's own code builds
@@ -135,6 +150,18 @@ export function memberRolePath(gameId: string, playerId: string): string {
 
 export function memberRemovePath(gameId: string, playerId: string): string {
   return `/g/${gameId}/squad/${playerId}/remove`;
+}
+
+/**
+ * One squad member as their organiser sees them (M11).
+ *
+ * Takes the *player* id like its two siblings above, and is entitled the same
+ * way: `loadSquadTarget` in `src/routes/games.ts` scopes the lookup by game id
+ * as well, so a player id here can neither be probed nor used against another
+ * squad (TR-18).
+ */
+export function memberDetailPath(gameId: string, playerId: string): string {
+  return `/g/${gameId}/squad/${playerId}`;
 }
 
 /**
