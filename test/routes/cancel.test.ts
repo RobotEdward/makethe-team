@@ -598,6 +598,8 @@ function preview(overrides: Partial<CancelConfirmPageOptions>): CancelConfirmPag
     recipientCount: 12,
     unreachableCount: 0,
     token: "a-token",
+    gameId: "game-1",
+    fixtureId: "fixture-1",
     ...overrides,
   };
 }
@@ -614,11 +616,14 @@ describe("renderCancelConfirmPage copy", () => {
     expect(html).toContain("Call it off and email 12 people");
   });
 
-  // No second "back out" button: CancelConfirmPageOptions carries no
-  // gameId/fixtureId (this page is reached by a signed token, not a
-  // session), and a link to nowhere real is worse than no link at all.
-  it("offers no back-out button, since there is nowhere honest to send it", () => {
-    expect(renderCancelConfirmPage(preview({}))).not.toContain("Keep the game on");
+  // Restored by the whole-branch review's Important 3: 23e271d dropped this
+  // link for want of a real destination, but the fixture's gameId/fixtureId
+  // are available at the route (loadCancelContext reads both), so
+  // CancelConfirmPageOptions now carries them and the page has a real exit.
+  it("offers a way back out, to the fixture the owner would manage it from", () => {
+    const html = renderCancelConfirmPage(preview({ gameId: "g-42", fixtureId: "f-99" }));
+    expect(html).toContain("Keep the game on");
+    expect(html).toContain('href="/g/g-42/f/f-99"');
   });
 
   it("names the game and the single date in the page title, not just the game", () => {

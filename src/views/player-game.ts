@@ -56,8 +56,9 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
       : `
         <p class="kickoff">${escapeHtml(openFixture.kicksOffAtLocal)}</p>
         ${renderStatusLine(openFixture.view)}
-        ${renderSquadSection(openFixture.squad, openFixture.inCount, viewerPlayerId)}
         ${renderPublishedTeamsSection(openFixture.teams, openFixture.squad)}
+        <h2>Squad</h2>
+        ${renderSquadSection(openFixture.squad, openFixture.inCount, viewerPlayerId)}
       `;
 
   const upcomingItems = upcoming

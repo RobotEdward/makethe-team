@@ -97,6 +97,7 @@ function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
     kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, fixture.timezone),
     view: fixtureView(fixture, now),
     myStatus: fixture.myStatus,
+    waitlistCount: fixture.waitlistCount,
   };
 }
 

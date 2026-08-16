@@ -522,6 +522,52 @@ describe("GET /app", () => {
     expect(body).toContain("already begun");
     expect(body).not.toContain(`action="${DELETE_ACCOUNT_CANCEL_PATH}"`);
   });
+
+  /**
+   * M10 §3.4, extended to the dashboard by the whole-branch review's
+   * Important 2: a card shows the same "0 spots left" line and the same live
+   * "I'm in" button as `/r/:token`, so it owes the viewer the identical
+   * warning about what tapping it would do. Mirrors
+   * `test/views/fixture.test.ts`'s "full fixture — states what a yes would
+   * do, before the tap" — `renderFullWarning` is the same function, called
+   * from `renderRow` instead of `renderFixturePage`.
+   */
+  describe("full fixture — states what a yes would do (M10 §3.4)", () => {
+    it("warns a pending viewer that answering yes joins the waitlist", async () => {
+      const { cookie } = await signIn();
+      const playerId = await viewerId();
+      const { fixtureId, otherPlayerIds } = await seedFixtureFor(playerId, {
+        maxPlayers: 1,
+        others: ["Other Player"],
+      });
+      await setResponse(fixtureId, otherPlayerIds[0]!, "in");
+
+      const body = await (await get(cookie)).text();
+
+      expect(body).toContain("The squad is full — answering yes puts you 1st on the waitlist.");
+    });
+
+    it("does not warn a viewer who is already in", async () => {
+      const { cookie } = await signIn();
+      const playerId = await viewerId();
+      const { fixtureId } = await seedFixtureFor(playerId, { maxPlayers: 1 });
+      await setResponse(fixtureId, playerId, "in");
+
+      const body = await (await get(cookie)).text();
+
+      expect(body).not.toContain("on the waitlist.");
+    });
+
+    it("says nothing when there is still room", async () => {
+      const { cookie } = await signIn();
+      const playerId = await viewerId();
+      await seedFixtureFor(playerId, { maxPlayers: 14 });
+
+      const body = await (await get(cookie)).text();
+
+      expect(body).not.toContain("The squad is full");
+    });
+  });
 });
 
 describe("POST /app", () => {

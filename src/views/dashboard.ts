@@ -8,7 +8,7 @@ import {
 } from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
-import { renderResponseButtons, renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
+import { renderFullWarning, renderResponseButtons, renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
@@ -38,6 +38,15 @@ export interface DashboardRow {
   kicksOffAtLocal: string;
   view: FixtureView;
   myStatus: ResponseStatus;
+  /**
+   * How many are on the waitlist right now — `fixtures.waitlistCount`, read by
+   * `listDashboardFixtures`/`findActionableFixture` alongside every other
+   * column those queries already select. Needed for the identical reason
+   * `FixturePageOptions.waitlistCount` is (M10 §3.4): a card that shows "0
+   * spots left" above a live "I'm in" button owes the viewer the same warning
+   * about what tapping it will do (M10 whole-branch review, Important 2).
+   */
+  waitlistCount: number;
 }
 
 /** One game the viewer owns, as the "your games" list needs it — nothing else. */
@@ -109,6 +118,7 @@ function renderRow(row: DashboardRow): string {
       ${renderStatusLine(row.view)}
       <p class="${headlineClass}">${escapeHtml(headline)}</p>
       ${renderActions(row)}
+      ${renderFullWarning(row.view, { status: row.myStatus }, row.waitlistCount)}
     </li>`;
 }
 

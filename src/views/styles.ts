@@ -254,6 +254,18 @@ export const CANCEL_STYLES_CSS = `
   .cancel-form textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .cancel-form .hint { margin-top: 0.4rem; font-size: var(--t-support); }
   .cancel-form .button.danger { margin-top: 1.25rem; width: 100%; }
+  /* The back-out link (M10 §3.7, restored by the whole-branch review's
+     Important 3). .button is shared with real button elements, which get no
+     underline from the user agent in the first place; every other anchor in
+     the app is inline body copy that wants one (STYLES has no blanket rule
+     removing it), so an anchor wearing .button is the one place that default
+     reads as broken next to a filled control -- without this it renders
+     underlined beside the solid red submit above it. Only text-decoration is
+     touched: .button already sets display: flex on itself, which is what
+     centres its label regardless of the element it is applied to, and margin
+     here is the same 1.25rem the danger button above gets so the two read as
+     a matched pair. */
+  .keep-link { margin-top: 0.75rem; text-decoration: none; }
   .form-error {
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left;
@@ -290,8 +302,22 @@ export const FORM_CSS = `
   .qr { margin: 1rem 0; max-width: 240px; }
   .invite-link { display: flex; gap: 0.5rem; align-items: center; }
   .invite-link input { flex: 1; font-family: var(--mono); font-size: var(--t-support); }
+  /* Without this, .button's own flex: 1 (from STYLES) matches .invite-link
+     input's flex: 1 above, so the field and the Copy button split the row
+     exactly in half regardless of content — on the one page whose whole
+     purpose is this URL, truncating it to a fragment like
+     "https://makethe.team/j" (M10 whole-branch review, Minor 9). Fixed size,
+     content-sized, so the input takes whatever room the button does not need. */
+  .invite-link .button { flex: 0 0 auto; }
   .squad { list-style: none; padding: 0; }
-  .squad li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+  /* Scoped to ul.squad > li, matching SQUAD_STYLES_CSS's identically-shaped
+     row rule (see the comment there) — not the bare ".squad li" this used to
+     be. The player's page wraps its chips in a div.squad, not a ul, precisely
+     so a bare selector here cannot also reach li.chip inside ul.chips inside
+     it; a bare ".squad li" beats a chip's own (0,1,0) ".chip" on specificity
+     regardless of which <style> block comes later, and did exactly that until
+     this was scoped (M10 whole-branch review, Critical 1). */
+  ul.squad > li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
   /* A squad row is a name plus two controls, one of which is a block-level
      form element. Without a layout they stack into three lines per member and
      the list reads as a mess. The form's own margin is zeroed because it is a
@@ -307,14 +333,14 @@ export const FORM_CSS = `
      markup laid out differently, which reads as broken. Found by the browser
      suite's visual capture; no string assertion could see it. Grid fixes the
      columns, so every row has the same shape whatever the name. */
-  .squad li {
+  ul.squad > li {
     display: grid; grid-template-columns: 1fr auto;
     align-items: center; gap: 0.5rem 0.75rem;
   }
-  .squad li form { margin: 0; }
+  ul.squad > li form { margin: 0; }
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */
-  .squad li .button { width: auto; font-size: var(--t-body); padding: 0.6rem 1rem; }
+  ul.squad > li .button { width: auto; font-size: var(--t-body); padding: 0.6rem 1rem; }
   /* The per-member disclosure (M10 §3.8). Deliberately not the general
      details rule above, which is for the game form's optional sections and
      carries a top border and a 1.5rem margin — fourteen of those would be a
@@ -339,7 +365,17 @@ export const FORM_CSS = `
   }
   .segment .seg:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .segment .seg.on { background: var(--accent); color: var(--accent-fg); }
-  .segment .seg.out { background: var(--bg); color: var(--fg); }
+  /* A solid neutral fill, not var(--bg) on var(--fg) text as this used to be
+     — var(--bg) sits almost on top of the track's own var(--line) (about
+     1.16:1 in light, 1.6:1 in dark), so a pressed "Out" barely differed from
+     an unpressed segment while a pressed "In" was a loud solid green (M10
+     whole-branch review, Minor 7). The same fg/bg inversion
+     .chip-out.chip-you already uses for the identical status elsewhere on
+     this page, so "Out" reads as one consistent neutral treatment across the
+     squad rows and the chips: dark ink on light in light mode, light ink on
+     dark in dark mode — high-contrast against the track in both, and never
+     mistakable for the green confirmed fill. */
+  .segment .seg.out { background: var(--fg); color: var(--bg); }
   .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
 `;
 

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { seedWorld } from "./world.js";
+import { signIn, TEST_PLAYER } from "./sign-in.js";
 
 /**
  * A textual pin on `SQUAD_STYLES_CSS`'s selector (see
@@ -10,23 +11,35 @@ import { seedWorld } from "./world.js";
  * cascade resolves that, so this belongs here rather than in the view test:
  * load the player's real response page and read the *computed* style off a
  * real chip, not its markup.
+ *
+ * Reads the same three properties off a real chip on **both** pages that
+ * render one: `/r/:token` (`FIXTURE_STYLES_CSS` + `SQUAD_STYLES_CSS` +
+ * `TEAM_PICKER_CSS`) and `/g/:id` (`FORM_CSS` + `SQUAD_STYLES_CSS` +
+ * `TEAM_PICKER_CSS`). Only `FORM_CSS` ever carried the unscoped `.squad li`
+ * hazard (M10 whole-branch review, Critical 1) — `/r/:token` never loaded
+ * that block, so pinning this assertion there alone proved nothing about the
+ * page that actually broke. Before the fix, `/g/:id`'s `borderBottomWidth`
+ * assertion failed (measured "1px", not "0px"); it is asserted here too so a
+ * future page that adds `FORM_CSS` back onto a chip-rendering page cannot
+ * reopen this without a red test.
  */
-test("a player's squad chip does not pick up the organiser row's layout", async ({ page, browser }) => {
-  const world = await seedWorld(page, browser);
-  await page.goto(`/r/${world.responseToken}`);
-
-  const chip = page.locator("ul.chips li.chip").first();
-  await expect(chip).toBeVisible();
-
-  // Reached via `globalThis` because this project is typed against the
-  // Workers runtime and has no DOM lib — see `console-gate.spec.ts`.
-  const computed = await chip.evaluate((el) => {
+function assertChipUnaffectedByRowLayout(chip: ReturnType<import("@playwright/test").Page["locator"]>) {
+  return chip.evaluate((el) => {
     const { getComputedStyle } = globalThis as unknown as {
       getComputedStyle: (element: unknown) => { display: string; justifyContent: string; borderBottomWidth: string };
     };
     const style = getComputedStyle(el);
     return { display: style.display, justifyContent: style.justifyContent, borderBottomWidth: style.borderBottomWidth };
   });
+}
+
+test("a player's squad chip does not pick up the organiser row's layout (/r/:token)", async ({ page, browser }) => {
+  const world = await seedWorld(page, browser);
+  await page.goto(`/r/${world.responseToken}`);
+
+  const chip = page.locator("ul.chips li.chip").first();
+  await expect(chip).toBeVisible();
+  const computed = await assertChipUnaffectedByRowLayout(chip);
 
   // `ul.squad > li`'s row rule sets `display: flex; justify-content:
   // space-between` and a bottom border on the organiser's rows. None of that
@@ -35,6 +48,30 @@ test("a player's squad chip does not pick up the organiser row's layout", async 
   expect(computed.display).not.toBe("flex");
   expect(computed.justifyContent).not.toBe("space-between");
   expect(computed.borderBottomWidth).toBe("0px");
+});
+
+test("a player's squad chip does not pick up the organiser row's layout (/g/:id)", async ({ page, browser }) => {
+  // `page` (signed in as the owner by `seedWorld`) hits `renderGameOverviewPage`
+  // at `/g/:id`, not `renderPlayerGamePage` — the owner-vs-member branch in
+  // `gamesRoutes.get("/g/:id", ...)`. The joined member (Alex Morgan, signed in
+  // as `TEST_PLAYER`) is the one who reaches the chip-rendering branch, so this
+  // needs its own context and session, exactly as the erasure journey in
+  // `journeys.spec.ts` does for the same reason.
+  const world = await seedWorld(page, browser);
+  const member = await browser.newContext();
+  const memberPage = await member.newPage();
+  await signIn(memberPage, TEST_PLAYER);
+  await memberPage.goto(`/g/${world.gameId}`);
+
+  const chip = memberPage.locator("ul.chips li.chip").first();
+  await expect(chip).toBeVisible();
+  const computed = await assertChipUnaffectedByRowLayout(chip);
+
+  expect(computed.display).not.toBe("flex");
+  expect(computed.justifyContent).not.toBe("space-between");
+  expect(computed.borderBottomWidth).toBe("0px");
+
+  await member.close();
 });
 
 /**

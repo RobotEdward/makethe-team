@@ -29,6 +29,14 @@ export interface DashboardFixture {
   kicksOffAt: Date;
   lifecycle: Lifecycle;
   inCount: number;
+  /**
+   * How many are on the waitlist right now (M10 §3.4/whole-branch review
+   * Important 2) — `fixtures.waitlist_count`, selected here for the same
+   * reason `inCount` already is: the page needs it whether or not it also
+   * shows names, and a required field on `DashboardRow` cannot be quietly
+   * omitted by a future caller the way an optional one could.
+   */
+  waitlistCount: number;
   minPlayers: number;
   maxPlayers: number;
   prefersEvenNumbers: boolean;
@@ -111,6 +119,7 @@ function selectEntitledFixtures(db: Db, playerId: string, extra?: SQL) {
       kicksOffAt: fixtures.kicksOffAt,
       lifecycle: fixtures.lifecycle,
       inCount: fixtures.inCount,
+      waitlistCount: fixtures.waitlistCount,
       minPlayers: fixtures.minPlayers,
       maxPlayers: fixtures.maxPlayers,
       prefersEvenNumbers: fixtures.prefersEvenNumbers,

@@ -175,7 +175,10 @@ cancel.get("/cancel/:token", async (c) => {
   if (terminal) return c.html(terminal, 200);
 
   const info = await cancellationInfo(db, fixtureId);
-  return c.html(renderCancelConfirmPage({ ...previewOf(context, info), token }), 200);
+  return c.html(
+    renderCancelConfirmPage({ ...previewOf(context, info), token, gameId: context.fixture.gameId, fixtureId: context.fixture.id }),
+    200,
+  );
 });
 
 cancel.post("/cancel/:token", async (c) => {
@@ -225,6 +228,8 @@ cancel.post("/cancel/:token", async (c) => {
       renderCancelConfirmPage({
         ...previewOf(context, info),
         token,
+        gameId: context.fixture.gameId,
+        fixtureId: context.fixture.id,
         // Truncated on the way back into the box, so the page the owner gets
         // is one they can actually submit: re-rendering the full over-long
         // value would hand back a form that fails again on every attempt.

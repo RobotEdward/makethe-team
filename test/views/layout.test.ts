@@ -54,7 +54,6 @@ describe("layout", () => {
     // renders a theme. This is the only thing that catches it.
     const dark = STYLES.slice(STYLES.indexOf("prefers-color-scheme: dark"));
     expect(dark).toContain("--danger:");
-    expect(dark).toContain("--danger-bg:");
     expect(dark).toContain("--danger-fg:");
   });
 

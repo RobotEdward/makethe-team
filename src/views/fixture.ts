@@ -423,8 +423,21 @@ function renderButtons(options: FixturePageOptions): string {
  * waitlist, and someone already `waitlisted` has a headline saying precisely
  * where they are — offering to put them on it would read as though they were
  * not on it.
+ *
+ * Exported and called from `renderRow` in `src/views/dashboard.ts` (M10 whole-
+ * branch review, Important 2), for the same reason `renderResponseButtons` is
+ * shared rather than copied: the dashboard's card already shows
+ * `renderStatusLine`'s "0 spots left" directly above the same live "I'm in"
+ * button, so it is exactly as capable of the §3.4 misreading as this page —
+ * §3.1's whole premise is that the two pages must not be able to disagree
+ * about what "in" looks like, and a warning that existed on only one of them
+ * would be that disagreement in a different shape.
  */
-function renderFullWarning(view: FixtureView, viewer: FixturePageOptions["viewer"], waitlistCount: number): string {
+export function renderFullWarning(
+  view: FixtureView,
+  viewer: Pick<FixturePageOptions["viewer"], "status">,
+  waitlistCount: number,
+): string {
   if (view.spotsLeft > 0) return "";
   if (viewer.status !== "pending" && viewer.status !== "out") return "";
   return `<p class="full-warning">The squad is full — answering yes puts you ${ordinal(waitlistCount + 1)} on the waitlist.</p>`;
