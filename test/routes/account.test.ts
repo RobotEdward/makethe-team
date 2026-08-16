@@ -86,16 +86,30 @@ describe("GET /app/account", () => {
     const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
     await insertMembership(db, gameId, me);
 
-    // 22 fixtures, one per week going backwards. The two oldest must not show.
+    // 22 fixtures, one per week going backwards, each with its own venue
+    // marker so the rendered order and the rendered set are both provable —
+    // not just their count. `week` 0 is the most recent kickoff and `week` 21
+    // the oldest; the two oldest (`week` 20 and 21) must not show, and the
+    // twenty that do must render most-recent-first.
     for (let week = 0; week < 22; week++) {
       const kicksOffAt = new Date(LAST_WEEK.getTime() - week * 7 * 24 * 3600_000);
-      const fixtureId = await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt });
+      const fixtureId = await insertFixture(db, gameId, {
+        lifecycle: "played",
+        kicksOffAt,
+        venueOverride: `Ground ${week}`,
+      });
       await insertResponse(db, fixtureId, me, { status: "in" });
     }
 
     const body = await (await get(cookie)).text();
-    const rows = body.match(/class="fixture-card"/g) ?? [];
-    expect(rows).toHaveLength(20);
+    const venues = [...body.matchAll(/<p class="venue">Ground (\d+)<\/p>/g)].map((match) =>
+      Number(match[1]),
+    );
+
+    // The 20 most recent, in kickoff-descending order, is exactly `week` 0..19
+    // in ascending numeric order — `week` counts backwards from the most
+    // recent kickoff, so ascending `week` numbers are descending kickoffs.
+    expect(venues).toEqual(Array.from({ length: 20 }, (_, i) => i));
   });
 
   it("does not list fixtures from a game the viewer has left", async () => {
