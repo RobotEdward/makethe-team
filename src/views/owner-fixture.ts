@@ -97,6 +97,29 @@ function renderMemberControls(gameId: string, fixtureId: string, member: SquadMe
            </form>`;
 }
 
+/**
+ * The status span beside a member's name — or nothing, when the segment
+ * (`renderMemberControls`) already states the same fact (M10 §3.3: "this
+ * makes the control display it instead of repeating it beside the control").
+ *
+ * Three deliberate exceptions keep the span alive rather than dropping it for
+ * everyone:
+ *  - `waitlisted`: the segment shows In as pressed (correctly — the organiser
+ *    marked them in and capacity queued them), but "In, pressed" and "In, but
+ *    2nd on the waitlist" are different facts, and only this label carries
+ *    the rank. Not an oversight — leave it.
+ *  - a guest: `renderMemberControls` gives a guest a Remove button, never a
+ *    segment, so nothing else on the row ever states a guest's status.
+ *  - a closed fixture (`!showControls`): no control of any kind renders —
+ *    segment or Remove — so this is the only place left that states anyone's
+ *    status, guest or member, at any status.
+ */
+function renderStatusSpan(member: SquadMember, showControls: boolean): string {
+  const segmentAlreadySaysIt = showControls && !member.isGuest && member.status !== "waitlisted";
+  if (segmentAlreadySaysIt) return "";
+  return `<span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>`;
+}
+
 function renderSquadList(
   gameId: string,
   fixtureId: string,
@@ -111,8 +134,9 @@ function renderSquadList(
       // The squad and everyone's state still render on a fixture that has
       // closed — only the controls go, because there is nothing left to change.
       const controls = showControls ? renderMemberControls(gameId, fixtureId, member) : "";
+      const status = renderStatusSpan(member, showControls);
       // `displayName`, never `member.name` — see `src/views/fixture.ts` and §4.
-      return `<li><span class="name">${escapeHtml(displayName(member.name, member.erasedAt))}${guest}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}${controls}</li>`;
+      return `<li><span class="name">${escapeHtml(displayName(member.name, member.erasedAt))}${guest}</span>${status}${attribution(member)}${controls}</li>`;
     })
     .join("");
 

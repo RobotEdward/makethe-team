@@ -379,6 +379,49 @@ describe("GET /g/:id/f/:fixtureId", () => {
 
     expect(html).not.toContain(`aria-pressed="true"`);
   });
+
+  it("does not repeat a pending member's status beside their segment", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    // The segment's neither half pressed already reads as "no answer yet" —
+    // nothing is lost by dropping the label the segment would otherwise repeat.
+    expect(html).not.toContain(`<span class="status`);
+    expect(html).not.toContain("Not yet responded");
+  });
+
+  it("does not repeat an in member's status beside their segment", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/response/p-0`, { intent: "in" }, cookie);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    // The segment's pressed In half plus aria-pressed already state this —
+    // repeating it as a status span beside the control would be pure
+    // duplication (M10 §3.3).
+    expect(html).not.toContain(`<span class="status`);
+  });
+
+  it("still states a waitlisted member's rank beside their segment", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFullFixtureWithWaitlist(viewerId);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    // The segment shows the waitlisted member's In half as pressed — correct,
+    // they were marked in — but "In, pressed" and "In, but on the waitlist"
+    // are different facts, and only this label carries which. A deliberate
+    // exception to the "segment already says it" rule above, not an
+    // oversight left over from before this task.
+    expect(html).toContain(`class="status status-waitlisted"`);
+    expect(html).toContain("Waitlisted");
+    // Scoped to the waitlisted member's own name, so a passing test cannot be
+    // the label having landed on the wrong row.
+    expect(html).toMatch(/Waiting Player[\s\S]*?class="status status-waitlisted"/);
+  });
 });
 
 describe("POST /g/:id/f/:fixtureId/response/:playerId", () => {

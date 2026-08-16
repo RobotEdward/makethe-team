@@ -457,7 +457,15 @@ async function seedTwoPlayersIn(page: Page, browser: Browser, javaScriptEnabled:
 
   await page.goto(fixturePath);
   await squadRow(page, JOINER_NAME).getByRole("button", { name: "In" }).click();
-  await expect(squadRow(page, JOINER_NAME).locator(".status")).toHaveText("In");
+  // This is a postcondition check, not an appearance check: the picker
+  // journeys below need the joiner genuinely `in`, and a silently failed
+  // click would otherwise surface several tests later, far from its cause.
+  // `.status` no longer renders for an `in` member (M10 §3.3 — the segment
+  // states it instead), so `aria-pressed` on the segment itself is now the
+  // authoritative place to read this fact back.
+  await expect(
+    squadRow(page, JOINER_NAME).locator('button[name="intent"][value="in"]'),
+  ).toHaveAttribute("aria-pressed", "true");
 
   await page.fill("#guest-name", GUEST_NAME);
   await page.getByRole("button", { name: "Add guest" }).click();
