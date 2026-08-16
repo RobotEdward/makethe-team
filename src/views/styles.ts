@@ -283,6 +283,23 @@ export const FORM_CSS = `
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */
   .squad li .button { width: auto; font-size: var(--t-body); padding: 0.6rem 1rem; }
+  /* The segmented mark-in/mark-out (M10 §3.3). A shared rounded track with two
+     halves, sized to content — the .button primitive is a 52px full-width tap
+     target and two of them per row is what made a fourteen-person squad
+     unreadable. 44px keeps each half a legitimate phone target.
+     Here, in FORM_CSS, rather than in SQUAD_STYLES_CSS just above: that block
+     is shared with the player's own fixture page, which has no controls at
+     all (it only ever reads squad state) and must not carry rules for a
+     control it can never render. */
+  .segment { display: flex; margin: 0; padding: 3px; gap: 3px; border-radius: 0.7rem; background: var(--line); }
+  .segment .seg {
+    min-height: 44px; padding: 0.5rem 0.9rem; border: 0; border-radius: 0.55rem;
+    background: transparent; color: var(--mut);
+    font: inherit; font-size: var(--t-support); font-weight: 600; cursor: pointer;
+  }
+  .segment .seg:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .segment .seg.on { background: var(--accent); color: var(--accent-fg); }
+  .segment .seg.out { background: var(--bg); color: var(--fg); }
   /* Below this width the name and a button like "Make an ordinary member"
      cannot share a line without squeezing one of them. Rather than let that
      happen per-name, the name takes the whole first line for every member and

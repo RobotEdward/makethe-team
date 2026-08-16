@@ -356,6 +356,29 @@ describe("GET /g/:id/f/:fixtureId", () => {
 
     expect(html).toContain("Over capacity");
   });
+
+  it("shows a member's current answer in the segment that changes it", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/response/p-0`, { intent: "in" }, cookie);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    // The visual state must not be the only statement of it: a screen reader
+    // user gets the same fact from aria-pressed, and a viewer who cannot see
+    // colour gets it from the pressed styling plus the label.
+    expect(html).toContain(`aria-pressed="true"`);
+    expect(html).toMatch(/name="intent" value="in"[^>]*aria-pressed="true"/);
+  });
+
+  it("does not mark a control pressed for a member who has not answered", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    expect(html).not.toContain(`aria-pressed="true"`);
+  });
 });
 
 describe("POST /g/:id/f/:fixtureId/response/:playerId", () => {

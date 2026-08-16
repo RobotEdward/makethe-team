@@ -428,7 +428,7 @@ async function buildOverrideDemo(
   // full, so this refuses with BR-8's over-capacity confirmation (§4.2)
   // rather than silently waitlisting.
   const neverAnswersRow = page.locator("ul.squad li", { hasText: neverAnswers.name });
-  await neverAnswersRow.getByRole("button", { name: "Mark in" }).click();
+  await neverAnswersRow.getByRole("button", { name: "In" }).click();
   await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: "Add them anyway" }).click();
   await page.waitForLoadState("networkidle");

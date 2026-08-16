@@ -218,7 +218,7 @@ export const SHOTS: Shot[] = [
     chapter: "05-running-your-squad",
     title: "One fixture, as its organiser sees it",
     route: "/g/:id/f/:fixtureId",
-    shows: "Everyone's answer for one fixture, with Mark in and Mark out beside each name.",
+    shows: "Everyone's answer for one fixture, with an In/Out segment beside each name.",
     path: (w) => `/g/${w.demoGameId}/f/${w.demoFixtureId}`,
     persona: "organiser",
   },

@@ -225,14 +225,19 @@ test("the organiser's squad-visibility setting hides and reveals names on the re
 });
 
 /**
- * Tier 2, but not run twice with JavaScript off: nothing on this page is
- * script-only, and BR-27's attribution and the guest form are both plain
- * form posts already covered end to end by the JS-off projection above for
- * every other page in the catalogue. The point of this pair is the console
- * gate over a page Tasks 4-6 never drove in a real browser (see this file's
- * header for why that gap matters), and the two-step over-capacity
+ * Tier 2, but not run twice through the whole-file loop above: nothing on
+ * this page is script-only, and BR-27's attribution and the guest form are
+ * both plain form posts already covered end to end by the JS-off projection
+ * above for every other page in the catalogue. The point of this pair is the
+ * console gate over a page Tasks 4-6 never drove in a real browser (see this
+ * file's header for why that gap matters), and the two-step over-capacity
  * confirmation neither server tests nor the loop above can distinguish from
  * a page that lies and proceeds anyway.
+ *
+ * The mark-in step below still gets its own JS-off pass, inline: Task 6's
+ * segmented control is new enough, and different enough in kind from a plain
+ * button, that its no-JS guarantee deserves a real check rather than an
+ * inference from the loop above having covered "some button on some page".
  */
 test("an organiser answers for a player, adds a guest, and goes over capacity", async ({ page, browser }) => {
   const seen = observe(page);
@@ -242,14 +247,30 @@ test("an organiser answers for a player, adds a guest, and goes over capacity", 
   // email form) and hang waiting for an input that was never going to render.
   const world = await seedWorld(page, browser);
 
-  await page.goto(`/g/${world.gameId}/f/${world.fixtureId}`);
+  // A separate, JS-off context, signed in as the same owner, for the mark-in
+  // itself: the segmented control (M10 §3.3) is still two plain
+  // `<button type="submit">` elements in one form, and this proves it — the
+  // click reaches the server and the *reloaded* page shows the member's new
+  // answer back through `aria-pressed`, with no script anywhere in the loop.
+  // A control that only *displayed* state via a script, or that needed one to
+  // submit, would fail here even though the JS-on run above never would.
+  const noScript = await browser.newContext({ javaScriptEnabled: false });
+  const noScriptPage = await noScript.newPage();
+  await signIn(noScriptPage, TEST_OWNER);
+  await noScriptPage.goto(`/g/${world.gameId}/f/${world.fixtureId}`);
 
-  // Mark the joined member in on their behalf, and see BR-27's attribution
-  // appear on their row specifically — scoped so a stray "marked in by"
-  // anywhere on the page cannot pass this.
-  const row = squadRow(page, JOINER_NAME);
-  await row.getByRole("button", { name: "Mark in" }).click();
-  await expect(squadRow(page, JOINER_NAME).locator(".set-by")).toContainText("marked in by");
+  await squadRow(noScriptPage, JOINER_NAME).getByRole("button", { name: "In" }).click();
+
+  const joinerRow = squadRow(noScriptPage, JOINER_NAME);
+  // BR-27's attribution, on the joiner's row specifically — scoped so a stray
+  // "marked in by" anywhere on the page cannot pass this.
+  await expect(joinerRow.locator(".set-by")).toContainText("marked in by");
+  // The control's own state, carried to a screen reader as well as by the
+  // fill — not just "a change happened", but "In is now the pressed half".
+  await expect(joinerRow.locator('button[name="intent"][value="in"]')).toHaveAttribute("aria-pressed", "true");
+  await noScript.close();
+
+  await page.goto(`/g/${world.gameId}/f/${world.fixtureId}`);
 
   // Add a guest, who occupies a slot of their own.
   await page.fill("#guest-name", "Sam Whitlock");
@@ -435,7 +456,7 @@ async function seedTwoPlayersIn(page: Page, browser: Browser, javaScriptEnabled:
   const fixturePath = `/g/${world.gameId}/f/${world.fixtureId}`;
 
   await page.goto(fixturePath);
-  await squadRow(page, JOINER_NAME).getByRole("button", { name: "Mark in" }).click();
+  await squadRow(page, JOINER_NAME).getByRole("button", { name: "In" }).click();
   await expect(squadRow(page, JOINER_NAME).locator(".status")).toHaveText("In");
 
   await page.fill("#guest-name", GUEST_NAME);

@@ -70,14 +70,30 @@ function renderOverCapacity(view: FixtureView, inCount: number, maxPlayers: numb
   return `<p class="problem">Over capacity — ${inCount} in, ${maxPlayers} places.</p>`;
 }
 
-/** One squad row's controls: remove, for a guest; mark in or out, for a member. */
+/**
+ * One squad row's controls: remove, for a guest; a segmented mark-in/mark-out
+ * for a member.
+ *
+ * The segment displays the member's current answer as well as setting it
+ * (M10 §3.3), which is what lets the status text come off the row — fourteen
+ * members previously meant twenty-eight full-width buttons, and at 390px the
+ * labels wrapped. Two submits in one form, exactly as before: nothing here
+ * needs JavaScript.
+ *
+ * `aria-pressed` carries the same fact the fill does, so the state is not
+ * stated in colour alone.
+ */
 function renderMemberControls(gameId: string, fixtureId: string, member: SquadMember): string {
   if (member.isGuest) {
     return `<form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form>`;
   }
-  return `<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}">
-             <button class="button" type="submit" name="intent" value="in">Mark in</button>
-             <button class="button" type="submit" name="intent" value="out">Mark out</button>
+  // `waitlisted` counts as in: the organiser marked them in and capacity put
+  // them on the waitlist. The row's own status label says which.
+  const isIn = member.status === "in" || member.status === "waitlisted";
+  const isOut = member.status === "out";
+  return `<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}" class="segment">
+             <button class="seg${isIn ? " on" : ""}" type="submit" name="intent" value="in" aria-pressed="${isIn}">In</button>
+             <button class="seg${isOut ? " out" : ""}" type="submit" name="intent" value="out" aria-pressed="${isOut}">Out</button>
            </form>`;
 }
 
