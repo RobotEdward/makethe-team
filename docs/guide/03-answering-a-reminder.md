@@ -18,8 +18,9 @@ recorded yet: the page asks **Can you make it?** and waits for you.
 **Confirmed — the game is on** means enough people have already said yes for
 the game to go ahead. Beside it, **0 spots left** is how many places are still
 free — none, in this one, which is what the waitlist below is about. Because
-there's no room, the page says so before you tap anything: **The squad is
-full — answering yes puts you 3rd on the waitlist.** When your organiser
+there's no room, the page says so under the two buttons, before you tap
+either of them: **The squad is full — answering yes puts you 3rd on the
+waitlist.** When your organiser
 allows it, the squad list shows who has answered what, so you can see who
 you'd be playing with before you decide — more on that below.
 

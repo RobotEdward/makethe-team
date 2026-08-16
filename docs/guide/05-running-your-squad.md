@@ -78,14 +78,15 @@ whatever this is set to.
 Every fixture has its own page, separate from the game page above — tap its
 date under **Coming up** to open it.
 
-![Everyone's answer for one fixture, with an In/Out control beside each name](images/owner-fixture.png)
+![Everyone's answer for one fixture, with an In/Out control beside each squad member's name and a Remove button beside the guest](images/owner-fixture.png)
 
-Each row shows what the squad list already shows — in, waitlisted, out, or not
-yet responded — as well as, beside every name, a segmented **In**/**Out**
-control that shows which one already applies as well as setting it. Only
-someone on the waitlist keeps a separate status label naming their place in
-line; for everyone else, the control itself is the only place their status is
-said.
+Beside each squad member's name is a segmented **In**/**Out** control that
+shows which one already applies as well as setting it, so most rows need no
+status text at all. Two rows are different: someone on the waitlist keeps a
+label naming their place in line, because the control cannot say "in, but
+second in the queue"; and a guest has no In/Out control at all — they were
+added for this fixture only, so their row shows their status in words beside
+a **Remove** button instead. Guests are covered in their own section below.
 
 ## Answering for someone
 
