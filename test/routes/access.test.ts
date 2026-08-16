@@ -9,7 +9,11 @@ describe("holding page", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(body).toContain("Make The Team");
-    expect(body).not.toMatch(/sign in|dashboard|fixture|squad/i);
+    // "Sign in" is the one exception, and a deliberate one (M11): the page's
+    // whole job is to be the way in, so the link that does that is not
+    // "operational" in the sense this assertion guards against. Everything
+    // that actually describes a signed-in state stays excluded.
+    expect(body).not.toMatch(/dashboard|fixture|squad/i);
   });
 
   it("is not indexable", async () => {

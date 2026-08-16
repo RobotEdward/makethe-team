@@ -1307,3 +1307,10 @@ describe("linked identity is idempotent", () => {
     expect(after!.emailVerifiedAt).toEqual(stamp);
   });
 });
+
+describe("the home page's way in", () => {
+  it("links to the sign-in page", async () => {
+    const body = await (await SELF.fetch(`${ORIGIN}/`)).text();
+    expect(body).toContain(`href="${SIGN_IN_PATH}"`);
+  });
+});
