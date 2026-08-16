@@ -139,7 +139,12 @@ export const SHOTS: Shot[] = [
     // pattern), so this needs no game of its own.
     path: (w) => `/r/${w.inToken}`,
     persona: "anonymous",
-    element: "ul.squad",
+    // M10 §3.5 regrouped the player-facing squad into a `<div class="squad">`
+    // of chips (`src/views/fixture.ts`), replacing the `<ul class="squad">`
+    // this selector used to target — left stale by that change since @guide
+    // is excluded from the default browser run and CI, so nothing caught it
+    // until this capture run failed partway through on "element has no box".
+    element: ".squad",
   },
   {
     id: "respond-squad-hidden",
@@ -177,7 +182,7 @@ export const SHOTS: Shot[] = [
     chapter: "05-running-your-squad",
     title: "The squad",
     route: "/g/:id",
-    shows: "Each member's row, with the control to make them an organiser and to remove them.",
+    shows: "Each member's row, with a Manage disclosure that opens to the role button and the remove link.",
     path: (w) => `/g/${w.gameId}`,
     persona: "organiser",
     // The squad list, not the fixtures list below it — see `element` above.

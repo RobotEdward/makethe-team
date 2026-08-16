@@ -110,7 +110,7 @@
       "title": "The squad",
       "route": "/g/:id",
       "image": "images/squad-controls.png",
-      "shows": "Each member's row, with the control to make them an organiser and to remove them."
+      "shows": "Each member's row, with a Manage disclosure that opens to the role button and the remove link."
     },
     {
       "id": "remove-member",
@@ -142,7 +142,7 @@
       "title": "One fixture, as its organiser sees it",
       "route": "/g/:id/f/:fixtureId",
       "image": "images/owner-fixture.png",
-      "shows": "Everyone's answer for one fixture, with Mark in and Mark out beside each name."
+      "shows": "Everyone's answer for one fixture, with an In/Out segment beside each name."
     },
     {
       "id": "owner-marked-in",

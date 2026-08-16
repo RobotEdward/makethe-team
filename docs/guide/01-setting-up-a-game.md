@@ -48,7 +48,7 @@ same link as a QR code — that's chapter 2.
 
 **Squad (14)** lists everyone who has joined. This game has fourteen people in
 it, with jamie marked as the organiser — that's you, because you set it up.
-Chapter 5 covers what the buttons beside each name do.
+Chapter 5 covers what **Manage** on each row can do.
 
 **Coming up** is the part that does the work. You created the game once, and
 the fixtures for the next few weeks are already there, one a week at 19:00.

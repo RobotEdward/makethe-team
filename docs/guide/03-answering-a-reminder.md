@@ -17,9 +17,11 @@ recorded yet: the page asks **Can you make it?** and waits for you.
 
 **Confirmed — the game is on** means enough people have already said yes for
 the game to go ahead. Beside it, **0 spots left** is how many places are still
-free — none, in this one, which is what the waitlist below is about. When your
-organiser allows it, the squad list shows who has answered what, so you can
-see who you'd be playing with before you decide — more on that below.
+free — none, in this one, which is what the waitlist below is about. Because
+there's no room, the page says so before you tap anything: **The squad is
+full — answering yes puts you 3rd on the waitlist.** When your organiser
+allows it, the squad list shows who has answered what, so you can see who
+you'd be playing with before you decide — more on that below.
 
 ## Saying you're in
 
@@ -27,7 +29,8 @@ see who you'd be playing with before you decide — more on that below.
 
 Tapping a button on this page is what records your answer. Tap **I'm in**
 while there is a place free and the page comes back saying **You're in.**,
-with your name marked **In**.
+with a tick on the **I'm in** button and your own chip sitting under the
+squad's **In** heading below.
 
 That headline is how you know it worked. Close the page without tapping a
 button on it and nothing has been saved — you are not counted, and the place
@@ -40,8 +43,10 @@ tapping the other one any time before kickoff.
 
 ![The squad list on the response page, every name and answer visible](images/respond-squad-shown.png)
 
-By default, this is what you see: everyone in the squad, and what each of
-them answered.
+By default, this is what you see: everyone in the squad, grouped by what they
+answered — **In**, **Waiting**, **Out**, **No reply** — as a row of chips
+under each heading. Your own chip is filled in, so you can pick yourself out
+among the rest.
 
 ![A response page for a game with that turned off, showing a headcount and the player's own answer but no other names](images/respond-squad-hidden.png)
 
@@ -56,16 +61,19 @@ don't see who anyone else is.
 
 The Meadow Park Kickabout has room for ten. If you tap **I'm in** after the
 tenth person has, you go on the waitlist instead and the page tells you your
-position — here, second.
+position — here, second. The **I'm in** button changes to say so too: it now
+reads **I'm in · waiting**, in amber rather than the green a confirmed place
+gets, so it never looks like a place you don't have.
 
 You do not need to do anything else. If someone drops out, the person at the
 top of the waitlist is moved in automatically and emailed. Nobody else is
 told.
 
 When the squad is showing, it tells the same story from the outside: ten
-players marked **In**, then Mika Toivonen first on the waitlist and Grace
-Abara second, in the order they answered. Anyone who has not answered yet —
-Ade Sowande here — shows as **Not yet responded**.
+chips under **In**, then a **Waiting** group with Mika Toivonen and Grace
+Abara, each chip carrying its place in line — Mika's reads **· 1st**, Grace's
+**· 2nd**. Anyone who has not answered yet — Ade Sowande here — sits under
+**No reply**.
 
 ## When the teams go up
 

@@ -16,7 +16,10 @@ there.
 The page then says **You said you can't make it** — that's how you know it
 worked, the same as with any answer. Sam Whitlock has answered that way here.
 Tapping **I'm in** puts you back, and there's no penalty and no message to
-write.
+write. If the squad has filled up while you were out, the page says so before
+you tap — here, **The squad is full — answering yes puts you 3rd on the
+waitlist.** — so changing your mind back to yes might land you on the waitlist
+rather than a place, and you'll know that before you tap it.
 
 Say one of the ten players marked **In** drops out. The place doesn't sit
 empty: Mika Toivonen, first on the waitlist, is moved in and gets an email

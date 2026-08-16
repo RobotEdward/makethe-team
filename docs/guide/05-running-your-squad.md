@@ -6,29 +6,32 @@ on the game page, or one tap from it.
 
 ## Who can organise
 
-![Each squad member's row, with a button to make them an organiser and a link to remove them](images/squad-controls.png)
+![Each squad member's row, with a Manage disclosure that opens to a role button and a remove link](images/squad-controls.png)
 
-Every person in the squad has a row with their name, a button and a link.
+Every person in the squad has a row with their name and a **Manage**
+disclosure. Open it and two things are inside: a button and a link.
 
 **Make an organiser** gives that person the same powers you have: they can
 invite people, change the game's details and take people out. Handy when you're
 away and don't want the game to depend on you having signal.
 
-Your own row is the one at the top, marked **organiser (you)**. It offers
-**Make an ordinary member** instead — that's how you step back from organising
-without leaving the squad. A game always has at least one organiser: if you are
-the only one, the app refuses to make you an ordinary member, so you cannot
-leave the game with nobody able to change anything. Make someone else an
-organiser first, and then you can step back.
+Your own row is the one at the top, marked **organiser (you)**. Open its
+**Manage** disclosure and it offers **Make an ordinary member** instead —
+that's how you step back from organising without leaving the squad. A game
+always has at least one organiser: if you are the only one, the app refuses to
+make you an ordinary member, so you cannot leave the game with nobody able to
+change anything. Make someone else an organiser first, and then you can step
+back.
 
 ## Taking someone out
 
 ![The confirmation page for removing Sam Whitlock from the squad](images/remove-member.png)
 
-**Remove** on someone's row doesn't remove them straight away. It opens a page
-that names the person and spells out exactly what will happen: Sam Whitlock
-would be taken out of the squad for the Meadow Park Kickabout and told by email,
-and because they have no upcoming fixtures, nothing else changes.
+**Remove**, inside that same **Manage** disclosure, doesn't remove them
+straight away. It opens a page that names the person and spells out exactly
+what will happen: Sam Whitlock would be taken out of the squad for the Meadow
+Park Kickabout and told by email, and because they have no upcoming fixtures,
+nothing else changes.
 
 **Remove Sam Whitlock** confirms it. **No, leave the squad as it is** backs out
 and nothing has happened.
@@ -75,16 +78,19 @@ whatever this is set to.
 Every fixture has its own page, separate from the game page above — tap its
 date under **Coming up** to open it.
 
-![Everyone's answer for one fixture, with Mark in and Mark out beside each name](images/owner-fixture.png)
+![Everyone's answer for one fixture, with an In/Out control beside each name](images/owner-fixture.png)
 
 Each row shows what the squad list already shows — in, waitlisted, out, or not
-yet responded — and, beside every name, two buttons: **Mark in** and **Mark
-out**.
+yet responded — as well as, beside every name, a segmented **In**/**Out**
+control that shows which one already applies as well as setting it. Only
+someone on the waitlist keeps a separate status label naming their place in
+line; for everyone else, the control itself is the only place their status is
+said.
 
 ## Answering for someone
 
 Not everyone answers an email. If somebody tells you in person, on the phone,
-or in the group chat, **Mark in** or **Mark out** on their row records it for
+or in the group chat, **In** or **Out** on their row records it for
 them, exactly as if they had tapped the button themselves.
 
 ![A player marked in by the organiser, with the attribution line naming who did it](images/owner-marked-in.png)
