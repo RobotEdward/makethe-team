@@ -171,7 +171,7 @@ ${escapeHtml(lead)}
 <p style="margin:0 0 6px; font-size:14px; line-height:1.5; color:#4a4741; background-color:#ffffff;">${escapeHtml(inLine)}</p>
 <p style="margin:0 0 20px; font-size:14px; line-height:1.5; color:#4a4741; background-color:#ffffff;">${escapeHtml(waitingLine)}</p>
 
-<p style="margin:0 0 20px; font-size:14px; line-height:1.5; color:#6b6862; background-color:#ffffff;">${escapeHtml(ask)}</p>
+<p style="margin:0 0 20px; font-size:14px; line-height:1.5; color:#635f59; background-color:#ffffff;">${escapeHtml(ask)}</p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
@@ -181,7 +181,7 @@ ${escapeHtml(lead)}
 </tr>
 </table>
 
-<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#6b6862; background-color:#ffffff;">That opens a page showing exactly who would be told, and you tap once more to confirm — nothing happens until then.</p>
+<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#635f59; background-color:#ffffff;">That opens a page showing exactly who would be told, and you tap once more to confirm — nothing happens until then.</p>
 ${
   ceilingReached
     ? `

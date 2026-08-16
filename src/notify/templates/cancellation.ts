@@ -175,7 +175,7 @@ ${escapeHtml(lead)}
 
 ${
   reason
-    ? `<p style="margin:0 0 4px; font-size:12px; line-height:1.5; color:#6b6862; background-color:#ffffff; text-transform:uppercase; letter-spacing:0.03em;">Reason given</p>
+    ? `<p style="margin:0 0 4px; font-size:12px; line-height:1.5; color:#635f59; background-color:#ffffff; text-transform:uppercase; letter-spacing:0.03em;">Reason given</p>
 <p style="margin:0 0 20px; padding:12px 14px; font-size:14px; line-height:1.5; color:#4a4741; background-color:#f2efe9; border-left:3px solid #cfc9bc; border-radius:2px;">${escapeHtml(reason)}</p>`
     : ""
 }

@@ -110,7 +110,7 @@ ${escapeHtml(spots)}
 <p style="margin:0 0 2px; font-size:15px; line-height:1.5; color:#4a4741;">${escapeHtml(venueName)}</p>
 <p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#4a4741;">${escapeHtml(kicksOffAtLocal)}</p>
 
-<p style="margin:0 0 20px; font-size:14px; line-height:1.5; color:#6b6862;">${escapeHtml(spots)}</p>
+<p style="margin:0 0 20px; font-size:14px; line-height:1.5; color:#635f59;">${escapeHtml(spots)}</p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
@@ -125,7 +125,7 @@ ${escapeHtml(spots)}
 </tr>
 </table>
 
-<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#6b6862;">Either one opens a page where you'll tap once more to confirm — nothing is recorded until then.</p>
+<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#635f59;">Either one opens a page where you'll tap once more to confirm — nothing is recorded until then.</p>
 
 <hr style="margin:24px 0; border:none; border-top:1px solid #e3ded4;">
 

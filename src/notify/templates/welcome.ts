@@ -135,8 +135,8 @@ ${escapeHtml(lead)}
 </tr>
 </table>
 
-<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#6b6862;">If the button doesn't work, copy this address into your browser:</p>
-<p style="margin:4px 0 0; font-size:12px; line-height:1.5; word-break:break-all; color:#6b6862;">${escapeHtml(dashboardUrl)}</p>
+<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#635f59;">If the button doesn't work, copy this address into your browser:</p>
+<p style="margin:4px 0 0; font-size:12px; line-height:1.5; word-break:break-all; color:#635f59;">${escapeHtml(dashboardUrl)}</p>
 
 <hr style="margin:24px 0; border:none; border-top:1px solid #e3ded4;">
 

@@ -48,7 +48,7 @@ function href(url: string): string {
 function renderLineUpHtml(lineUp: { name: string; players: readonly string[] }): string {
   const rows =
     lineUp.players.length === 0
-      ? `<p style="margin:0 0 12px; font-size:14px; line-height:1.5; color:#6b6862;">Nobody.</p>`
+      ? `<p style="margin:0 0 12px; font-size:14px; line-height:1.5; color:#635f59;">Nobody.</p>`
       : `<ul style="margin:0 0 12px; padding-left:20px; font-size:14px; line-height:1.6; color:#1c1b19;">${lineUp.players
           .map((name) => `<li>${escapeHtml(name)}</li>`)
           .join("")}</ul>`;
