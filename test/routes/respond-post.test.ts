@@ -541,7 +541,7 @@ describe("POST /r/:token — the promoted player is told (N-2, BR-7, J4)", () =>
 });
 
 describe("POST /r/:token — a waitlisted viewer never reads as confirmed (BR-5, fix round 1, finding 1)", () => {
-  it("renders the warn-treated headline above the badge, with no filled primary 'I'm in', through the real route", async () => {
+  it("renders the warn-treated headline above the badge, with no confirmed-green 'I'm in', through the real route", async () => {
     const { fixtureId, playerIds } = await seedOpenFixture({ maxPlayers: 1, squadSize: 2 });
     const [fillerId, latecomerId] = playerIds as [string, string];
     await setResponse(fixtureId, fillerId, "in");
@@ -559,8 +559,11 @@ describe("POST /r/:token — a waitlisted viewer never reads as confirmed (BR-5,
     expect(headlineIndex).toBeGreaterThan(-1);
     expect(badgeIndex).toBeGreaterThan(-1);
     expect(headlineIndex).toBeLessThan(badgeIndex);
-    // ...and the "I'm in" button the player just tapped is not shown filled,
-    // which would read as a confirmation that contradicts the headline.
-    expect(body).not.toMatch(/class="button primary"[^>]*name="intent" value="in"/);
+    // ...and the "I'm in" button the player just tapped is not shown as the
+    // confirmed-green state, which would read as a confirmation that
+    // contradicts the headline — it gets the amber waiting state instead
+    // (M10 §3.1), a positive signal rather than the mere absence of one.
+    expect(body).not.toMatch(/class="button chosen-in"[^>]*name="intent" value="in"/);
+    expect(body).toMatch(/class="button chosen-waiting"[^>]*name="intent" value="in"/);
   });
 });

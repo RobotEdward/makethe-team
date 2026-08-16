@@ -152,11 +152,11 @@ for (const javaScriptEnabled of [true, false] as const) {
       // as the current one. `POST /r/:token` re-renders in place rather than
       // redirecting, deliberately — there is no session to redirect with.
       await visitorPage.getByRole("button", { name: "I'm in" }).click();
-      // The chosen answer is the one rendered `button primary` (BR-5: it is
-      // deliberately not emphasised for a waitlisted viewer, so this also
-      // asserts the seeded fixture had a place free).
-      await expect(visitorPage.locator("button[value='in']")).toHaveClass(/primary/);
-      await expect(visitorPage.locator("button[value='out']")).not.toHaveClass(/primary/);
+      // The chosen answer is the one rendered `chosen-in` (BR-5: a waitlisted
+      // viewer would get `chosen-waiting` instead, never this class, so this
+      // also asserts the seeded fixture had a place free).
+      await expect(visitorPage.locator("button[value='in']")).toHaveClass(/chosen-in/);
+      await expect(visitorPage.locator("button[value='out']")).not.toHaveClass(/chosen-out/);
       await visitor.close();
     });
   });

@@ -115,8 +115,14 @@ export const STYLES = `
   }
   .button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .button:active { transform: translateY(1px); }
-  /* Emphasised action from ?intent= — a solid fill is unmistakable against
-     the outlined default, in both themes, without relying on colour alone. */
+  /* A solid fill for the one action a page wants emphasised — unmistakable
+     against the outlined default, in both themes, without relying on colour
+     alone. No longer used to echo ?intent= on the two response-collecting
+     pages (M10 §3.1: their own chosen-* classes carry that job now); still
+     used standalone elsewhere, e.g. the account-erasure page's cancel
+     action. Deliberately vague about which pages by name — this block is
+     the one inlined into every page including the holding page, where a
+     handful of words describing anything operational are asserted absent. */
   .button.primary {
     background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
   }

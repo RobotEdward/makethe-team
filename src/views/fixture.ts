@@ -48,7 +48,14 @@ export interface FixturePageOptions {
   viewer: { playerId: string; status: ResponseStatus; waitlistRank?: number | null };
   /** Echoed into the form action so the POST carries the same token. */
   token: string;
-  /** From `?intent=`. Emphasises one button with CSS. Never records anything. */
+  /**
+   * From `?intent=`. No longer affects rendering. It was the button's only
+   * source of emphasis until `renderResponseButtons` took that job over from
+   * `viewer.status` instead (M10 §3.1) — `intent` exists on exactly one
+   * render, the one right after a submit, so a player opening their link days
+   * later saw two identical buttons. Left on this type because the route
+   * still parses it from the querystring and other tests reference it.
+   */
   intent: ResponseIntent | null;
   /**
    * From `publishedTeamsFor` — `null` whenever this fixture's teams have not
@@ -277,24 +284,39 @@ export function renderStatusLine(view: FixtureView): string {
   return `<p class="status-badge status-${view.status}">${escapeHtml(label)}</p>${spots}`;
 }
 
-function renderButtons(options: FixturePageOptions): string {
-  const { token, intent, viewer } = options;
-  const action = `/r/${encodeURIComponent(token)}`;
-  // The emphasised button must reflect what actually got recorded, not what
-  // was tapped: after a full fixture waitlists the player, `intent` is still
-  // "in" from the form submit, but echoing that onto the "I'm in" button
-  // would show a solid, filled confirmation to someone who is, in fact, not
-  // in (BR-5). Neither button is emphasised for a waitlisted viewer — the
-  // warn-coloured headline above is what tells them what happened.
-  const effectiveIntent = viewer.status === "waitlisted" ? null : intent;
-  const inClass = effectiveIntent === "in" ? "button primary" : "button";
-  const outClass = effectiveIntent === "out" ? "button primary" : "button";
+/**
+ * The two response buttons, with the viewer's current answer shown in the
+ * control itself rather than only in a sentence above it (M10 §3.1).
+ *
+ * Driven by `status` — what the server recorded — and never by `?intent=`,
+ * which is what the player *tapped* and exists on exactly one render. Those
+ * two differ in the case that matters: a player who taps "I'm in" on a full
+ * fixture is recorded `waitlisted`, and echoing their intent would show them a
+ * solid green confirmation of a place they do not have (BR-5). The waitlisted
+ * state gets its own amber treatment and its own label, so it is a positive
+ * signal rather than the absence of one.
+ *
+ * Shared with the dashboard's cards, which post the same two intents to a
+ * different action with a hidden fixture id. One renderer, because two copies
+ * of "what does 'in' look like" is how the two pages start disagreeing.
+ */
+export function renderResponseButtons(action: string, status: ResponseStatus, hidden = ""): string {
+  const inClass = status === "in" ? "button chosen-in" : status === "waitlisted" ? "button chosen-waiting" : "button";
+  const outClass = status === "out" ? "button chosen-out" : "button";
+  const inLabel = status === "waitlisted" ? "I'm in · waiting" : "I'm in";
+  // A tick only on the settled answer. A waitlisted player has not got what
+  // they asked for, so nothing here may read as a confirmation.
+  const tick = status === "in" ? `<span aria-hidden="true">✓</span> ` : "";
 
   return `
-    <form method="post" action="${escapeHtml(action)}" class="responses">
-      <button type="submit" class="${inClass}" name="intent" value="in">I'm in</button>
-      <button type="submit" class="${outClass}" name="intent" value="out">Can't make it</button>
+    <form method="post" action="${escapeHtml(action)}" class="responses">${hidden}
+      <button type="submit" class="${inClass}" name="intent" value="in" aria-pressed="${status === "in" || status === "waitlisted"}">${tick}${escapeHtml(inLabel)}</button>
+      <button type="submit" class="${outClass}" name="intent" value="out" aria-pressed="${status === "out"}">Can't make it</button>
     </form>`;
+}
+
+function renderButtons(options: FixturePageOptions): string {
+  return renderResponseButtons(`/r/${encodeURIComponent(options.token)}`, options.viewer.status);
 }
 
 function renderReadOnlyNotice(reason: ReadOnlyReason): string {
@@ -313,8 +335,9 @@ function renderReadOnlyNotice(reason: ReadOnlyReason): string {
  * Render the page a player sees when they tap their response link.
  *
  * Server-rendered only — no `<script>`, no auto-submit (TR-4, TR-15). Both
- * response actions are ordinary form submits; `intent` only changes which
- * button carries the `primary` CSS class, never what gets recorded.
+ * response actions are ordinary form submits; the button that carries the
+ * viewer's answer is decided by `viewer.status`, not by `?intent=` — see
+ * `renderResponseButtons`.
  */
 export function renderFixturePage(options: FixturePageOptions): string {
   const { gameName, venueName, kicksOffAtLocal, view, squad, inCount, viewer, readOnlyReason } = options;

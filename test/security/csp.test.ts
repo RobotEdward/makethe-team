@@ -439,14 +439,18 @@ describe("no inline style attribute on any served page", () => {
       { playerId, fixtureId, expiresAt: KICKOFF.getTime() + 86_400_000 },
       RESPONSE_SECRET,
     );
+    // `?intent=` no longer affects rendering (M10 §3.1: the button reflects
+    // `viewer.status`, never the querystring) — both captures render
+    // byte-identical HTML now, kept as two requests only because the URLs
+    // themselves must both still resolve to the real respond page.
     await capture(
       "respond, intent=in",
-      /class="button primary" name="intent" value="in"/,
+      /name="intent" value="in"/,
       `https://makethe.team/r/${respondToken}?intent=in`,
     );
     await capture(
       "respond, intent=out",
-      /class="button primary" name="intent" value="out"/,
+      /name="intent" value="out"/,
       `https://makethe.team/r/${respondToken}?intent=out`,
     );
     await capture("bad respond token", /This link isn't working/, "https://makethe.team/r/not-a-real-token");

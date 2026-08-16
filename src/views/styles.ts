@@ -73,6 +73,20 @@ export const FIXTURE_STYLES_CSS = `
   @media (min-width: 30rem) {
     .responses { flex-direction: row; }
   }
+
+  /* The answer, in the control that set it (M10 §3.1). Each state is a fill
+     plus a distinct label or glyph, never colour alone -- the tick on
+     "chosen-in" and the "· waiting" on "chosen-waiting" are what make the
+     three states tellable apart without seeing colour at all. */
+  .button.chosen-in {
+    background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+  }
+  .button.chosen-waiting {
+    background: var(--warn-bg); border-color: var(--warn); color: var(--warn);
+  }
+  .button.chosen-out {
+    background: var(--line); border-color: var(--mut); color: var(--fg);
+  }
 `;
 
 /**

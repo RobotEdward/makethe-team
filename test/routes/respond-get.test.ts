@@ -207,28 +207,18 @@ describe("GET /r/:token — rendering", () => {
     expect(body).toContain(`name="intent" value="out"`);
   });
 
-  it("emphasises the 'in' button for ?intent=in but does not record anything", async () => {
+  it("does not emphasise either button from ?intent= alone — it never records anything and no longer drives appearance", async () => {
     const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
+    // The seeded viewer is still `pending`, so neither button should carry a
+    // `chosen-*` class regardless of what `?intent=` claims.
     const body = await (await SELF.fetch(`https://makethe.team/r/${token}?intent=in`)).text();
 
-    expect(body).toMatch(/class="button primary"[^>]*name="intent" value="in"/);
-    // The other button is not emphasised.
-    expect(body).not.toMatch(/class="button primary"[^>]*name="intent" value="out"/);
+    expect(body).not.toContain(`class="button chosen-`);
   });
 
-  it("emphasises the 'out' button for ?intent=out", async () => {
-    const { fixtureId, playerId } = await seedRespondableFixture();
-    const token = await tokenFor(fixtureId, playerId);
-
-    const body = await (await SELF.fetch(`https://makethe.team/r/${token}?intent=out`)).text();
-
-    expect(body).toMatch(/class="button primary"[^>]*name="intent" value="out"/);
-    expect(body).not.toMatch(/class="button primary"[^>]*name="intent" value="in"/);
-  });
-
-  it("neither button is emphasised for an absent or unrecognised intent", async () => {
+  it("neither button is emphasised for a pending viewer, with or without ?intent=", async () => {
     const { fixtureId, playerId } = await seedRespondableFixture();
     const token = await tokenFor(fixtureId, playerId);
 
@@ -236,8 +226,24 @@ describe("GET /r/:token — rendering", () => {
     const junk = await (await SELF.fetch(`https://makethe.team/r/${token}?intent=maybe`)).text();
 
     for (const body of [bare, junk]) {
-      expect(body).not.toMatch(/class="button primary"/);
+      expect(body).not.toContain(`class="button chosen-`);
     }
+  });
+
+  it("shows the recorded answer in the button itself, driven by status not ?intent=", async () => {
+    const { fixtureId, playerId } = await seedRespondableFixture();
+    const token = await tokenFor(fixtureId, playerId);
+
+    await db
+      .update(responses)
+      .set({ status: "in", respondedAt: NOW })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, playerId)));
+
+    // A stale/mismatched ?intent=out must not override what was recorded.
+    const body = await (await SELF.fetch(`https://makethe.team/r/${token}?intent=out`)).text();
+
+    expect(body).toMatch(/class="button chosen-in"[^>]*name="intent" value="in"/);
+    expect(body).not.toMatch(/class="button chosen-out"/);
   });
 });
 

@@ -56,6 +56,36 @@ describe("fixture page", () => {
     expect(html).not.toContain("submit()");
   });
 
+  it("shows the answer in the button on every render, not only after submitting", () => {
+    // No ?intent= anywhere — this is a player opening their link days later.
+    const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "in" }, intent: null }));
+    expect(html).toContain(`class="button chosen-in"`);
+  });
+
+  it("never gives a waitlisted player the confirmed green (BR-5)", () => {
+    const html = renderFixturePage(
+      optionsWith({
+        viewer: { playerId: "p1", status: "waitlisted", waitlistRank: 2 },
+        intent: "in",
+      }),
+    );
+    // The intent says "in" because that is what they tapped. What got recorded
+    // is a waitlist place, and that is what the control must show.
+    expect(html).toContain(`class="button chosen-waiting"`);
+    expect(html).not.toContain(`class="button chosen-in"`);
+    expect(html).toMatch(/I(&#39;|')m in · waiting/);
+  });
+
+  it("emphasises neither button for a player who has not answered", () => {
+    const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "pending" }, intent: null }));
+    expect(html).not.toContain(`class="button chosen-`);
+  });
+
+  it("shows the out answer in the out button", () => {
+    const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "out" }, intent: null }));
+    expect(html).toContain(`class="button chosen-out"`);
+  });
+
   it("escapes player names", () => {
     const html = renderFixturePage({
       ...BASE,
@@ -92,16 +122,20 @@ describe("fixture page", () => {
       viewer: { playerId: "p2", status: "waitlisted" as const, waitlistRank: 1 },
     };
 
-    it("does not present a filled primary 'I'm in' button", () => {
+    it("does not present a confirmed-green 'I'm in' button", () => {
       const html = renderFixturePage(WAITLISTED_CONFIRMED);
-      expect(html).not.toMatch(/class="button primary"[^>]*name="intent" value="in"/);
+      expect(html).not.toMatch(/class="button chosen-in"[^>]*name="intent" value="in"/);
     });
 
-    it("still shows a filled 'in' button when tapped ?intent=in but the viewer is not waitlisted", () => {
-      // Control: the suppression above is specific to a waitlisted viewer,
-      // not a general regression that disables the ?intent= emphasis.
-      const html = renderFixturePage({ ...WAITLISTED_CONFIRMED, viewer: { playerId: "p2", status: "pending" }, intent: "in" });
-      expect(html).toMatch(/class="button primary"[^>]*name="intent" value="in"/);
+    it("ignores ?intent= entirely — appearance is driven by status alone, not by what was tapped", () => {
+      // Control: even a mismatched, stale, or hand-crafted ?intent= does not
+      // change which button is emphasised. Only `viewer.status` may.
+      const html = renderFixturePage({
+        ...WAITLISTED_CONFIRMED,
+        viewer: { playerId: "p2", status: "pending" },
+        intent: "in",
+      });
+      expect(html).not.toContain(`class="button chosen-`);
     });
 
     it("gives the waitlist headline the warn treatment, not the default", () => {

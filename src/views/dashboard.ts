@@ -8,7 +8,7 @@ import {
 } from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
-import { renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
+import { renderResponseButtons, renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
@@ -77,12 +77,11 @@ export interface DashboardPageOptions {
  * it touches the capacity object.
  */
 function renderActions(row: DashboardRow): string {
-  return `
-      <form method="post" action="${DASHBOARD_PATH}" class="responses">
-        <input type="hidden" name="fixtureId" value="${escapeHtml(row.fixtureId)}">
-        <button type="submit" class="button" name="intent" value="in">I'm in</button>
-        <button type="submit" class="button" name="intent" value="out">Can't make it</button>
-      </form>`;
+  return renderResponseButtons(
+    DASHBOARD_PATH,
+    row.myStatus,
+    `<input type="hidden" name="fixtureId" value="${escapeHtml(row.fixtureId)}">`,
+  );
 }
 
 /**
