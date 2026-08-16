@@ -122,7 +122,8 @@ home and the route carries no policy:
 - Trimmed.
 - Empty after trimming is refused. A squad list of blanks is worse than a
   refusal.
-- Capped at 80 characters, matching what `parseGameForm` does for game names.
+- Capped at 200 characters, matching `MAX_NAME_LENGTH` in
+  `src/domain/game-form.ts`, which is what game and venue names use.
 
 A refusal re-renders the page itself at 422 with the reason on it — the pattern
 `renderDashboard` and `renderDeleteAccount` both use, which is why the page gets
