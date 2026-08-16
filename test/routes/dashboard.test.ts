@@ -2,7 +2,13 @@ import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { DASHBOARD_PATH, DELETE_ACCOUNT_CANCEL_PATH, DELETE_ACCOUNT_PATH, SIGN_IN_PATH } from "../../src/auth/paths.js";
+import {
+  ACCOUNT_PATH,
+  DASHBOARD_PATH,
+  DELETE_ACCOUNT_CANCEL_PATH,
+  DELETE_ACCOUNT_PATH,
+  SIGN_IN_PATH,
+} from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
@@ -442,6 +448,14 @@ describe("GET /app", () => {
    * "built but nobody can get to it" failure `renderOwnedGamesSection`'s
    * comment describes, and which happened again at M8.
    */
+  it("links to the account page", async () => {
+    const { cookie } = await signIn();
+    const body = await (
+      await SELF.fetch(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } })
+    ).text();
+    expect(body).toContain(`href="${ACCOUNT_PATH}"`);
+  });
+
   it("links to deleting my account and data, with no erasure banner when none is pending", async () => {
     const { cookie } = await signIn();
     await viewerId();

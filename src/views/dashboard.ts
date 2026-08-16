@@ -1,4 +1,5 @@
 import {
+  ACCOUNT_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
@@ -272,7 +273,7 @@ export function renderDashboardPage({
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
     ${renderOwnedGamesSection(ownedGames)}
-    <p><a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
+    <p><a href="${ACCOUNT_PATH}">Your account</a> · <a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
     <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
     ${signOutForm("Sign out")}
   `;

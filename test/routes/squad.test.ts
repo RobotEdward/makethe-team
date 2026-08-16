@@ -382,6 +382,13 @@ describe("GET /g/:id/squad/:playerId", () => {
     expect(body).not.toContain("fixture-card");
   });
 
+  it("is linked from the game overview's per-member disclosure", async () => {
+    const { cookie, gameId, memberId } = await ownedGame();
+
+    const body = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
+    expect(body).toContain(`href="/g/${gameId}/squad/${memberId}"`);
+  });
+
   it("404s for a signed-in player who merely belongs to the game", async () => {
     const { cookie } = await signIn();
     const db = testDb();

@@ -1,4 +1,11 @@
-import { gameEditPath, joinPath, memberRemovePath, memberRolePath, ownerFixturePath } from "../auth/paths.js";
+import {
+  gameEditPath,
+  joinPath,
+  memberDetailPath,
+  memberRemovePath,
+  memberRolePath,
+  ownerFixturePath,
+} from "../auth/paths.js";
 import { oddMaxWarning } from "../domain/game-form.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
@@ -72,6 +79,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
         <span class="member">${name}${organiser}${guest}${you}</span>
         <details class="member-actions">
           <summary>Manage</summary>
+          <p><a href="${escapeHtml(memberDetailPath(gameId, member.playerId))}">View details</a></p>
           <form method="post" action="${escapeHtml(memberRolePath(gameId, member.playerId))}">
             <input type="hidden" name="role" value="${nextRole}">
             <button class="button" type="submit">${roleLabel}</button>
