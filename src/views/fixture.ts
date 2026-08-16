@@ -5,7 +5,7 @@ import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { escapeHtml, layout } from "./layout.js";
-import { attribution, ordinal, squadStatusLabel } from "./squad-row.js";
+import { ordinal } from "./squad-row.js";
 import { renderTeamSides } from "./team-picker.js";
 import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
@@ -171,21 +171,86 @@ function viewerHeadlineClosed(
   }
 }
 
+/** The four groups a player-facing squad is read in, in this order. */
+const SQUAD_GROUPS: readonly { status: ResponseStatus; label: string }[] = [
+  { status: "in", label: "In" },
+  { status: "waitlisted", label: "Waiting" },
+  { status: "out", label: "Out" },
+  { status: "pending", label: "No reply" },
+];
+
+/**
+ * The squad, grouped by answer, as chips (M10 §3.5).
+ *
+ * Fourteen identical rows made "are my mates in?" a question you had to read
+ * every line to answer, and left the waitlist order implied only by position.
+ * Grouping answers the first; the rank inside a waiting chip answers the
+ * second out loud.
+ *
+ * A group with nobody in it renders nothing at all — a heading over an empty
+ * list reads as a broken page rather than an honest empty state, which is the
+ * same rule `renderOwnedGamesSection` follows on the dashboard.
+ *
+ * BR-27's attribution moves to a sentence beneath its group rather than onto
+ * the chip, which could not carry it without becoming a row again. It is kept
+ * because no email tells a player that somebody answered for them, so this is
+ * the only place they can ever find out.
+ */
 function renderSquadList(squad: readonly SquadMember[]): string {
   if (squad.length === 0) return `<p class="muted">No players yet.</p>`;
 
-  const items = squad
-    .map(
-      (member) =>
-        // `displayName`, never `member.name` (§4, BR-34): an erased player
-        // stays in the squad of a fixture that has already been played, which
-        // is exactly what keeps its numbers honest — so this list is where the
-        // `[erased player]` placeholder would otherwise be seen.
-        `<li><span class="name">${escapeHtml(displayName(member.name, member.erasedAt))}${member.isGuest ? " (guest)" : ""}</span><span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>${attribution(member)}</li>`,
-    )
-    .join("");
+  const groups = SQUAD_GROUPS.map(({ status, label }) => {
+    const members = squad.filter((member) => member.status === status);
+    if (members.length === 0) return "";
 
-  return `<ul class="squad">${items}</ul>`;
+    const chips = members
+      .map((member) => {
+        // `displayName`, never `member.name` (BR-34) — an erased player stays
+        // in a played fixture's squad, which is what keeps its numbers honest.
+        const name = displayName(member.name, member.erasedAt);
+        const guest = member.isGuest ? " (guest)" : "";
+        const rank = status === "waitlisted" && member.waitlistRank !== null ? ` · ${ordinal(member.waitlistRank)}` : "";
+        return `<li class="chip chip-${status}">${escapeHtml(`${name}${guest}${rank}`)}</li>`;
+      })
+      .join("");
+
+    return `<div class="squad-group">
+        <p class="group-head"><span class="group-label">${label}</span> <span class="group-count">${members.length}</span></p>
+        <ul class="chips">${chips}</ul>
+        ${renderGroupAttribution(members)}
+      </div>`;
+  }).join("");
+
+  return `<div class="squad">${groups}</div>`;
+}
+
+/**
+ * BR-27's attribution for a whole group, in one sentence.
+ *
+ * `attribution` in `src/views/squad-row.ts` renders it per row and is still
+ * what the organiser's page uses. This says the same thing about a set, so a
+ * group of chips can carry it without every chip growing a second line.
+ *
+ * A group can contain members set by different organisers, and mixed
+ * statuses cannot occur inside one group (the group *is* a status), so
+ * `verb` is safe to take from the first member.
+ */
+function renderGroupAttribution(members: readonly SquadMember[]): string {
+  const set = members.filter((member) => member.source === "owner" && member.setBy !== null);
+  if (set.length === 0) return "";
+
+  const verb = set[0]!.status === "out" ? "marked out" : "marked in";
+  // §4: never `setBy.name` directly — an organiser who has since erased
+  // themselves leaves this line behind on every response they set.
+  const by = [...new Set(set.map((member) => displayName(member.setBy!.name, member.setBy!.erasedAt)))];
+  const names = set.map((member) => displayName(member.name, member.erasedAt));
+  return `<p class="set-by">${escapeHtml(`${listSentence(names)} ${names.length === 1 ? "was" : "were"} ${verb} by ${listSentence(by)}.`)}</p>`;
+}
+
+/** "a", "a and b", "a, b and c" — the Oxford comma deliberately omitted. */
+function listSentence(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 /**

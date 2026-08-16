@@ -110,7 +110,14 @@ export const SQUAD_STYLES_CSS = `
     list-style: none; margin: 0; padding: 0; text-align: left;
     border-top: 1px solid var(--line);
   }
-  .squad li {
+  /* Rows: the organiser's fixture page only (still a ul.squad). The player's
+     page groups into chips below — the organiser is acting on individuals, not
+     scanning — and its own squad wrapper is a div, not a ul, precisely so a
+     bare ".squad li" cannot also select a chip: a chip is an li too
+     (li.chip inside ul.chips inside div.squad), and would otherwise inherit
+     this row's flex/justify-content/border layout. Scoped to ul.squad > li so
+     only the organiser's rows are ever selected. */
+  ul.squad > li {
     display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
     padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line);
   }
@@ -119,6 +126,20 @@ export const SQUAD_STYLES_CSS = `
   .squad .status-in { color: var(--accent); font-weight: 600; }
   .squad .status-waitlisted { color: var(--warn); font-weight: 600; }
   .squad .set-by { display: block; font-size: var(--t-support); color: var(--mut); }
+
+  /* Chips: the player's fixture page (M10 §3.5). */
+  .squad-group { margin: 0 0 1.1rem; }
+  .group-head { display: flex; align-items: baseline; gap: 0.5rem; margin: 0 0 0.4rem; }
+  .group-label { font-weight: 600; color: var(--fg); font-size: var(--t-support); }
+  .group-count { font-family: var(--mono); font-size: var(--t-support); color: var(--mut); }
+  .chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; padding: 0; }
+  .chip {
+    padding: 0.3rem 0.65rem; border-radius: 999px;
+    font-size: var(--t-support); background: var(--line); color: var(--mut);
+  }
+  .chip-in { background: var(--accent-mut); color: var(--accent); }
+  .chip-waitlisted { background: var(--warn-bg); color: var(--warn); }
+  .set-by { display: block; margin: 0.4rem 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
 
 /**

@@ -19,9 +19,20 @@ import { JOINER_NAME, seedWorld } from "./world.js";
  * wrong, both because a page-wide `toContain` cannot tell the difference.
  */
 
-/** The `<li>` for one squad member, by their visible name. */
+/** The `<li>` for one squad member, by their visible name — the organiser's rows. */
 function squadRow(page: Page, name: string) {
   return page.locator("ul.squad li").filter({ hasText: name });
+}
+
+/**
+ * The chip for one squad member on the player's own fixture page (M10 §3.5).
+ * Distinct from `squadRow` above: the player's page groups into
+ * `<li class="chip">` inside `<ul class="chips">` inside `<div class="squad">`
+ * rather than `<ul class="squad"><li>`, so `squadRow`'s `ul.squad li`
+ * locator finds nothing there.
+ */
+function squadChip(page: Page, name: string) {
+  return page.locator("ul.chips li.chip").filter({ hasText: name });
 }
 
 for (const javaScriptEnabled of [true, false] as const) {
@@ -215,10 +226,11 @@ test("the organiser's squad-visibility setting hides and reveals names on the re
   await page.waitForURL(/\/g\/[^/]+$/);
 
   await page.goto(`/r/${world.responseToken}`);
-  // Scoped to the squad list itself, per this file's own locator-discipline
-  // note: `ul.squad li` matched two different lists on one page before.
-  await expect(squadRow(page, JOINER_NAME)).toHaveCount(1);
-  await expect(squadRow(page, OTHER_MEMBER_NAME)).toHaveCount(1);
+  // The player's page renders the squad as chips (M10 §3.5), not
+  // `ul.squad li` rows — `squadChip`, not `squadRow`, is the locator that
+  // actually finds something here.
+  await expect(squadChip(page, JOINER_NAME)).toHaveCount(1);
+  await expect(squadChip(page, OTHER_MEMBER_NAME)).toHaveCount(1);
 
   expect(await seen.violations()).toEqual([]);
   expect(seen.errors()).toEqual([]);

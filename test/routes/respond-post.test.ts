@@ -245,9 +245,11 @@ describe("POST /r/:token — capacity goes through the Durable Object (TR-10, BR
     const firstToken = await tokenFor(fixtureId, first);
     const body = await (await postIntent(firstToken, "out")).text();
 
-    expect(body).not.toMatch(/waitlisted \(3rd\)/i);
-    expect(body).toMatch(/waitlisted \(1st\)/i);
-    expect(body).toMatch(/waitlisted \(2nd\)/i);
+    // M10 §3.5: the player-facing squad renders waitlist rank inside a chip
+    // ("Name · 1st"), not the old row wording ("Waitlisted (1st)").
+    expect(body).not.toMatch(/· 3rd/);
+    expect(body).toMatch(/· 1st/);
+    expect(body).toMatch(/· 2nd/);
 
     const [secondRow] = await db.select().from(responses).where(eq(responses.playerId, second));
     const [thirdRow] = await db.select().from(responses).where(eq(responses.playerId, third));

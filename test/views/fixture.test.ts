@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { renderFixturePage, type FixturePageOptions } from "../../src/views/fixture.js";
+import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
+import { SQUAD_STYLES_CSS } from "../../src/views/styles.js";
+import type { SquadMember } from "../../src/db/queries.js";
+import type { ResponseStatus } from "../../src/domain/response-status.js";
 
 const BASE = {
   gameName: "Thursday 7-a-side",
@@ -41,6 +45,27 @@ const BASE = {
 
 function optionsWith(overrides: Partial<FixturePageOptions>): FixturePageOptions {
   return { ...BASE, ...overrides };
+}
+
+/** Shorthand for `renderFixturePage(pageOptions({ squad: [...] }))` callers below. */
+function pageOptions(overrides: Partial<FixturePageOptions>): FixturePageOptions {
+  return optionsWith(overrides);
+}
+
+/** A minimal squad member, for tests that only care about one or two fields. */
+function member(
+  overrides: Partial<SquadMember> & { name: string; status: ResponseStatus },
+): SquadMember {
+  return {
+    playerId: overrides.name,
+    erasedAt: null,
+    team: null,
+    waitlistRank: null,
+    setBy: null,
+    source: "token",
+    isGuest: false,
+    ...overrides,
+  };
 }
 
 describe("fixture page", () => {
@@ -473,6 +498,105 @@ describe("fixture page", () => {
     const html = renderFixturePage(optionsWith({ squad: null, inCount: 1 }));
 
     expect(html).toContain("1 in so far");
+  });
+
+  describe("the squad, grouped by answer as chips (M10 §3.5)", () => {
+    it("groups the squad by answer with a count", () => {
+      const html = renderFixturePage(pageOptions({ squad: [
+        member({ name: "Ada", status: "in" }),
+        member({ name: "Bo", status: "in" }),
+        member({ name: "Cy", status: "waitlisted", waitlistRank: 1 }),
+        member({ name: "Di", status: "pending" }),
+      ]}));
+      expect(html).toContain(">In<");
+      expect(html).toMatch(/In<\/span>\s*<span class="group-count">2</);
+      expect(html).toMatch(/Waiting<\/span>\s*<span class="group-count">1</);
+      expect(html).toContain(`class="chip`);
+    });
+
+    it("keeps BR-27 attribution as a line beneath the group", () => {
+      const html = renderFixturePage(pageOptions({ squad: [
+        member({ name: "Ada", status: "in", source: "owner", setBy: { playerId: "o-1", name: "Jamie", erasedAt: null } }),
+      ]}));
+      expect(html).toContain("marked in by Jamie");
+    });
+
+    it("omits a group nobody is in", () => {
+      // A heading over nothing reads as a broken page.
+      const html = renderFixturePage(pageOptions({ squad: [member({ name: "Ada", status: "in" })] }));
+      expect(html).not.toContain("Waiting");
+    });
+
+    it("shows a waitlisted player's place in their chip", () => {
+      const html = renderFixturePage(pageOptions({ squad: [member({ name: "Cy", status: "waitlisted", waitlistRank: 2 })] }));
+      expect(html).toContain("Cy · 2nd");
+    });
+
+    it("still marks guests", () => {
+      const html = renderFixturePage(pageOptions({ squad: [member({ name: "Jono", status: "in", isGuest: true })] }));
+      expect(html).toContain("Jono (guest)");
+    });
+
+    /**
+     * The trap this task calls out: `SQUAD_STYLES_CSS` is shared with the
+     * organiser's page, and a chip is an `<li>` too (`li.chip` inside
+     * `ul.chips` inside `div.squad`) — so a bare `.squad li` selector would
+     * apply the organiser's row layout (flex, space-between, a border) to
+     * every chip as well. A string assertion on the chip's own class list
+     * cannot catch that; only checking what the *selector itself* can reach
+     * proves it.
+     *
+     * The row rule is `ul.squad > li`, which is structurally unable to select
+     * anything inside `<div class="squad">` — a child combinator requires the
+     * named parent tag to actually be that element, and no CSS engine can
+     * make a `<div>` match a `ul` selector. So the proof is two checks: (1)
+     * the CSS text really does scope the row rule to `ul.squad > li`, not the
+     * old bare `.squad li`; and (2) the player's page — where the chips live
+     * — never emits `<ul class="squad">` for that selector to ever attach to,
+     * while the organiser's page (rendered from the same `SQUAD_STYLES_CSS`)
+     * still does, so the row rule keeps applying where it is meant to.
+     */
+    it("scopes the organiser's row rules so they cannot reach the player's chips", () => {
+      // (1) The stylesheet itself: the row rule is child-combinator-scoped to
+      // `ul.squad`, and no bare `.squad li` rule survives to over-match.
+      expect(SQUAD_STYLES_CSS).toContain("ul.squad > li {");
+      expect(SQUAD_STYLES_CSS).not.toContain(".squad li {");
+
+      // (2) The player's page structurally cannot be selected by `ul.squad > li`:
+      // its squad wrapper is a `<div>`, not a `<ul>`.
+      const playerHtml = renderFixturePage(pageOptions({
+        squad: [member({ name: "Ada", status: "in" })],
+      }));
+      expect(playerHtml).toContain(`<div class="squad">`);
+      expect(playerHtml).not.toContain(`<ul class="squad">`);
+      expect(playerHtml).toContain(`<li class="chip chip-in">`);
+
+      // The organiser's page, from the same shared CSS, keeps its `<ul class="squad">` —
+      // so `ul.squad > li` still reaches the rows it was written for.
+      const ownerParams: OwnerFixtureParams = {
+        gameId: "g-1",
+        gameName: "Thursday 7-a-side",
+        fixtureId: "f-1",
+        kicksOffAtLocal: "Thursday 13 August, 19:00",
+        venueName: "Oxford Sports Park",
+        inCount: 1,
+        maxPlayers: 10,
+        view: { status: "open", flags: [], spotsLeft: 5, needsOwnerAttention: false },
+        squad: [
+          { playerId: "p-1", name: "Ada", erasedAt: null, status: "in", team: null, waitlistRank: null,
+            setBy: null, source: "token", isGuest: false },
+        ],
+        viewerPlayerId: "p-1",
+        teamNames: { a: "Reds", b: "Blues" },
+        prefersEvenNumbers: false,
+        teamsPublished: false,
+        teamsNeedAnotherLook: false,
+        announcementOutstanding: false,
+      };
+      const ownerHtml = renderOwnerFixturePage(ownerParams);
+      expect(ownerHtml).toContain(`<ul class="squad">`);
+      expect(ownerHtml).not.toContain(`<div class="squad">`);
+    });
   });
 });
 
