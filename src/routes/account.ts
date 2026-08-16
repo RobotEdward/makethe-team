@@ -2,6 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
+  ACCOUNT_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
@@ -9,13 +10,18 @@ import {
 import { requirePlayer } from "../auth/session.js";
 import { recordAudit } from "../db/audit.js";
 import { getDb } from "../db/client.js";
+import { listPlayerFixtureHistory } from "../db/dashboard-queries.js";
 import { players } from "../db/schema.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { erasureDeadline } from "../domain/erasure-window.js";
+import { fixtureView, type FixtureStatus } from "../domain/fixture-view.js";
+import { parsePlayerName } from "../domain/player-name.js";
+import type { ResponseStatus } from "../domain/response-status.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendErasureScheduledEmail } from "../notify/send-erasure-scheduled.js";
+import { renderAccountPage } from "../views/account.js";
 import { renderDeleteAccountPage } from "../views/delete-account.js";
 
 export const account = new Hono<AppEnv>();
@@ -317,4 +323,151 @@ account.post(DELETE_ACCOUNT_CANCEL_PATH, requirePlayer, async (c) => {
   // them here is over, and the delete page in its `offer` state is not where
   // someone who just decided to stay belongs.
   return c.redirect(DASHBOARD_PATH, 303);
+});
+
+/** How many fixtures the account page shows. Twenty weeks of a weekly game. */
+const HISTORY_LIMIT = 20;
+
+/**
+ * Render `/app/account` from scratch, in whichever state the database is in.
+ *
+ * Its own function for the reason `renderDeleteAccount` above and
+ * `renderDashboard` are: the `POST`'s refusal must answer with the same page a
+ * plain `GET` would, with the reason on it, and a refusal assembled separately
+ * from the page it refuses on is exactly how the two drift apart. `problem` is
+ * the only difference between the two callers, and it drives the status code.
+ */
+async function renderAccount(c: Context<AppEnv>, problem?: string) {
+  const now = new Date(Date.now());
+  const player = c.get("player")!;
+  const db = getDb(c.env.DB);
+
+  const history = await listPlayerFixtureHistory(db, player.id, HISTORY_LIMIT);
+
+  return c.html(
+    renderAccountPage({
+      playerName: player.name,
+      email: player.email,
+      fixtures: history.map((fixture) => ({
+        gameId: fixture.gameId,
+        gameName: fixture.gameName,
+        venueName: fixture.venueName,
+        // Every timezone conversion in this codebase goes through this one
+        // module, in the fixture's own game's zone (TR-5).
+        kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, fixture.timezone),
+        statusLabel: fixtureStatusLabel(fixtureView(fixture, now).status),
+        myStatusLabel: historyStatusLabel(fixture.myStatus),
+      })),
+      problem,
+      // `player` already carries `erasesAt` — `sessionMiddleware` selects the
+      // whole row, so this is a field read, not a second query. Not scoped to
+      // a game, so `Europe/London`, matching the N-8 email and the dashboard.
+      erasesAtLocal:
+        player.erasesAt === null
+          ? undefined
+          : formatLocalDateTime(player.erasesAt, "Europe/London"),
+    }),
+    problem === undefined ? 200 : 422,
+  );
+}
+
+/**
+ * The fixture's own state in words, past tense where the fixture is past.
+ *
+ * Its own function rather than `renderStatusLine` from `src/views/fixture.ts`:
+ * that one words a fixture somebody can still act on ("2 more needed"), and
+ * every row here may be history.
+ */
+function fixtureStatusLabel(status: FixtureStatus): string {
+  switch (status) {
+    case "played":
+      return "Played";
+    case "cancelled":
+      return "Called off";
+    case "scheduled":
+      return "Not open yet";
+    case "confirmed":
+      return "Going ahead";
+    case "short":
+      return "Short of players";
+    case "open":
+      return "Open for answers";
+  }
+}
+
+/** What the viewer answered, worded for a list that is mostly history. */
+function historyStatusLabel(status: ResponseStatus): string {
+  switch (status) {
+    case "in":
+      return "You were in";
+    case "out":
+      return "You couldn't make it";
+    case "waitlisted":
+      return "You were on the waitlist";
+    case "pending":
+      return "You didn't answer";
+    case "withdrawn":
+      // Unreachable: `entitledTo` excludes withdrawn rows. Here so the switch
+      // is exhaustive and a new status becomes a typecheck failure.
+      return "You withdrew";
+  }
+}
+
+/**
+ * The page itself. **Writes nothing** — the rename is the `POST` below.
+ *
+ * `requirePlayer`, matching the dashboard: an anonymous visitor is redirected
+ * to sign-in and a session with no linked Player gets the 403 page with its
+ * exits. The guard establishes *who* and stops there (TR-18); there is no
+ * player id in this route's URL to check, because the subject is always
+ * `c.get("player")`, which is also why this page has no denial state to
+ * design.
+ */
+account.get(ACCOUNT_PATH, requirePlayer, async (c) => renderAccount(c));
+
+/**
+ * Rename yourself (M11).
+ *
+ * **`players.name` only — never Better Auth's `user.name`.** Nothing in this
+ * product renders that column; the domain row is the name every page, every
+ * email and every squad list reads. Writing both would create two names that
+ * can disagree with no rule about which wins.
+ *
+ * The origin check mirrors `POST /app`'s, for the same reason: this is a
+ * same-origin form post on our own page, a browser always sends `Origin` on a
+ * cross-site one, and a missing header is a non-browser client acting on its
+ * own behalf.
+ */
+account.post(ACCOUNT_PATH, requirePlayer, async (c) => {
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== originOf(c.env)) {
+    return c.text("Forbidden", 403);
+  }
+
+  const now = new Date(Date.now());
+  const player = c.get("player")!;
+  const db = getDb(c.env.DB);
+
+  const form = await c.req.parseBody();
+  const parsed = parsePlayerName(form["name"]);
+  // Re-rendered as the page itself at 422 with the reason on it, the way
+  // `renderDeleteAccount` and `renderDashboard` answer their own refusals,
+  // rather than a dead end.
+  if (!parsed.ok) return renderAccount(c, parsed.problem);
+
+  await db.update(players).set({ name: parsed.name }).where(eq(players.id, player.id));
+  await recordAudit(db, {
+    actorPlayerId: player.id,
+    entityType: "player",
+    entityId: player.id,
+    action: "player.renamed",
+    before: { name: player.name },
+    after: { name: parsed.name },
+    now,
+  });
+
+  // 303 to the page itself, so a refresh does not re-post and the new name is
+  // rendered by the one `GET` above rather than by a second copy of the page
+  // assembled after the write.
+  return c.redirect(ACCOUNT_PATH, 303);
 });
