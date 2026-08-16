@@ -137,6 +137,14 @@
       "shows": "The Let players see who else is playing checkbox on the edit form, checked because that's the default every game starts with."
     },
     {
+      "id": "squad-member",
+      "chapter": "05-running-your-squad",
+      "title": "Looking somebody up",
+      "route": "/g/:id/squad/:playerId",
+      "image": "images/squad-member.png",
+      "shows": "A squad member's own small page: their name, their email address, whether they're an organiser, and how long they've been in the squad — nothing about what they've played."
+    },
+    {
       "id": "owner-fixture",
       "chapter": "05-running-your-squad",
       "title": "One fixture, as its organiser sees it",
@@ -191,6 +199,14 @@
       "route": "/app/passkeys",
       "image": "images/passkeys.png",
       "shows": "Where a player adds a passkey so they do not need an emailed link."
+    },
+    {
+      "id": "account",
+      "chapter": "07-your-own-fixtures",
+      "title": "Your account",
+      "route": "/app/account",
+      "image": "images/account.png",
+      "shows": "A player's own account page: their name in an editable field, their email address beside it, a link to manage passkeys, and their last fixtures across every game, most recent first."
     }
   ]
 }

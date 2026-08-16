@@ -219,6 +219,18 @@ export const SHOTS: Shot[] = [
     element: '.field:has(#squadVisibleToPlayers)',
   },
   {
+    id: "squad-member",
+    chapter: "05-running-your-squad",
+    title: "Looking somebody up",
+    route: "/g/:id/squad/:playerId",
+    shows:
+      "A squad member's own small page: their name, their email address, whether " +
+      "they're an organiser, and how long they've been in the squad — nothing about " +
+      "what they've played.",
+    path: (w) => `/g/${w.gameId}/squad/${w.removablePlayerId}`,
+    persona: "organiser",
+  },
+  {
     id: "owner-fixture",
     chapter: "05-running-your-squad",
     title: "One fixture, as its organiser sees it",
@@ -310,6 +322,18 @@ export const SHOTS: Shot[] = [
     route: "/app/passkeys",
     shows: "Where a player adds a passkey so they do not need an emailed link.",
     path: () => "/app/passkeys",
+    persona: "organiser",
+  },
+  {
+    id: "account",
+    chapter: "07-your-own-fixtures",
+    title: "Your account",
+    route: "/app/account",
+    shows:
+      "A player's own account page: their name in an editable field, their email " +
+      "address beside it, a link to manage passkeys, and their last fixtures across " +
+      "every game, most recent first.",
+    path: () => "/app/account",
     persona: "organiser",
   },
 ];
