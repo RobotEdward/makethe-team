@@ -20,9 +20,10 @@ the waitlist, who were also expecting to hear.
 A few words save a dozen replies — "Pitch flooded" is plenty. Leave it blank if
 you'd rather not say, and the email simply says the game is off.
 
-**Cancel this game and tell everyone** does both things its name promises. It
-can't be undone from here: once it's off, everyone who was in or on the
-waitlist gets the email, and nobody can answer that fixture any more.
+**Call it off and email `N` people** does both things its name promises,
+where `N` is the number of people about to be told. It can't be undone: once
+it's off, everyone who was in or on the waitlist gets the email, and nobody
+can answer that fixture any more.
 
 Only that week is affected. Next week's fixture is untouched and its
 reminders will go out as usual.

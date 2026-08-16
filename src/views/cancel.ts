@@ -76,14 +76,6 @@ export interface CancelConfirmPageOptions extends CancelPreview {
 /** `CANCEL_STYLES_CSS`, wrapped exactly as it is inlined into the page body. */
 const CANCEL_STYLES_TAG = `\n<style>${CANCEL_STYLES_CSS}</style>\n`;
 
-function fixtureHeading(preview: CancelPreview): string {
-  return `
-    <h1>${escapeHtml(preview.gameName)}</h1>
-    <p class="venue">${escapeHtml(preview.venueName)}</p>
-    <p class="kickoff">${escapeHtml(preview.kicksOffAtLocal)}</p>
-  `;
-}
-
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
 }
@@ -104,8 +96,9 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
 
   const body = `
     ${CANCEL_STYLES_TAG}
-    <h2 class="cancel-heading">Cancel this game?</h2>
-    ${fixtureHeading(options)}
+    <h1 class="cancel-heading">${escapeHtml(options.kicksOffAtLocal)} won't be played</h1>
+    <p class="venue">${escapeHtml(options.gameName)}, ${escapeHtml(options.venueName)}</p>
+    <p>Every other week carries on as normal.</p>
     <p class="spots">${options.inCount} ${plural(options.inCount, "player is", "players are")} in.</p>
     <p class="spots">${reachable} ${plural(reachable, "person", "people")} will be emailed to say it's off.</p>
     ${
@@ -118,9 +111,10 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
       <label for="reason">Why is it off? (optional — this goes in the email)</label>
       <textarea id="reason" name="reason" rows="4" maxlength="${MAX_REASON_LENGTH}" placeholder="Pitch flooded">${escapeHtml(reason ?? "")}</textarea>
       <p class="hint">Up to ${MAX_REASON_LENGTH} characters. Leave it blank if you'd rather not say.</p>
-      <button class="button danger" type="submit">Cancel this game and tell everyone</button>
+      <button class="button danger" type="submit">Call it off and email ${reachable} ${plural(reachable, "person", "people")}</button>
     </form>
-    <p class="read-only">This can't be undone here. Once it's cancelled, everyone who was in or on the waitlist gets an email, and nobody can respond to this fixture again.</p>
+    <a class="button keep-on" href="/cancel/${escapeHtml(token)}">Keep the game on</a>
+    <p class="read-only">This can't be undone. Once it's cancelled, everyone who was in or on the waitlist gets an email, and nobody can respond to this fixture again.</p>
   `;
 
   return layout({ title: `Cancel ${options.gameName} — Make The Team`, body });

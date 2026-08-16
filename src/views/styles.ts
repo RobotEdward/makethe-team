@@ -259,6 +259,11 @@ export const CANCEL_STYLES_CSS = `
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left;
   }
   .cancel-heading { text-align: center; margin-top: 0; color: var(--danger); }
+  /* The backing-out link, styled as the same 52px tap target as every other
+     .button but left unfilled (the plain default) so it does not compete
+     with the danger submit above it — the same "outlined, not the point of
+     the page" treatment sign-out gets. */
+  .keep-on { margin-top: 0.75rem; }
 `;
 
 /**

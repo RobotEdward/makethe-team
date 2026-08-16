@@ -756,7 +756,7 @@ describe("no password field anywhere (TR-16)", () => {
       );
       await capture(
         "cancel confirm",
-        /Cancel this game\?/,
+        /won't be played/,
         new Request(`${ORIGIN}/cancel/${cancelToken}`),
       );
       await capture(

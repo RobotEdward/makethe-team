@@ -9,6 +9,7 @@ import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn } from "../support/clock.js";
 import { toLocalParts, toUtc } from "../../src/domain/time/zone.js";
+import { renderCancelConfirmPage, type CancelConfirmPageOptions } from "../../src/views/cancel.js";
 
 const db = getDb(env.DB);
 const CANCEL_SECRET = env.CANCEL_TOKEN_SECRET;
@@ -580,5 +581,40 @@ describe("POST /cancel/:token", () => {
     expect(body).toMatch(/already been played/i);
     expect(await lifecycleOf(fixtureId)).toBe("played");
     expect(await n3Rows(fixtureId)).toHaveLength(0);
+  });
+});
+
+/**
+ * `renderCancelConfirmPage`'s copy, at the unit level — the page names the
+ * date rather than the game (M10 §3.7), so one week's cancellation cannot
+ * read as ending the whole thing.
+ */
+function preview(overrides: Partial<CancelConfirmPageOptions>): CancelConfirmPageOptions {
+  return {
+    gameName: "Thursday 7-a-side",
+    venueName: "Oxford Sports Park",
+    kicksOffAtLocal: "Sunday 16 August, 19:00",
+    inCount: 10,
+    recipientCount: 12,
+    unreachableCount: 0,
+    token: "a-token",
+    ...overrides,
+  };
+}
+
+describe("renderCancelConfirmPage copy", () => {
+  it("names the date, not the game, so one week cannot read as all of them", () => {
+    const html = renderCancelConfirmPage(preview({ kicksOffAtLocal: "Sunday 16 August, 19:00" }));
+    expect(html).toContain("Sunday 16 August, 19:00 won't be played");
+    expect(html).not.toContain("Cancel this game?");
+  });
+
+  it("puts the number of people in the button being pressed", () => {
+    const html = renderCancelConfirmPage(preview({ recipientCount: 12, unreachableCount: 0 }));
+    expect(html).toContain("Call it off and email 12 people");
+  });
+
+  it("offers backing out as the thing called cancel", () => {
+    expect(renderCancelConfirmPage(preview({}))).toContain("Keep the game on");
   });
 });

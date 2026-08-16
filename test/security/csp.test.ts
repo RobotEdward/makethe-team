@@ -464,7 +464,7 @@ describe("no inline style attribute on any served page", () => {
       { ownerPlayerId: playerId, fixtureId, expiresAt: KICKOFF.getTime() },
       CANCEL_SECRET,
     );
-    await capture("cancel confirm", /Cancel this game\?/, `https://makethe.team/cancel/${cancelToken}`);
+    await capture("cancel confirm", /won't be played/, `https://makethe.team/cancel/${cancelToken}`);
 
     await capture("robots.txt", /User-agent/i, "https://makethe.team/robots.txt");
     await capture("404", /Not found/, "https://makethe.team/no-such-route");
