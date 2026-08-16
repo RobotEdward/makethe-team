@@ -63,3 +63,26 @@ describe("squad controls", () => {
     expect(renderGameOverviewPage({ ...BASE, viewerPlayerId: "p-owner", squad })).not.toMatch(/style="/);
   });
 });
+
+describe("per-member disclosure (M10 §3.8)", () => {
+  const m = (name: string) => ({ playerId: `p-${name}`, name, role: "player" as const, isGuest: false });
+  const params = (overrides: Partial<typeof BASE> & { squad: typeof BASE.squad }) => ({
+    ...BASE,
+    viewerPlayerId: "p-owner",
+    ...overrides,
+  });
+
+  it("puts role and removal behind a per-member disclosure", () => {
+    const html = renderGameOverviewPage(params({ squad: [m("Callum"), m("Freya")] }));
+    expect(html).toContain("<summary>Manage</summary>");
+    // Both controls still there, and still reachable with no JavaScript —
+    // details/summary is a native element, not an enhancement.
+    expect(html).toContain("Make an organiser");
+    expect(html).toContain(">Remove</a>");
+  });
+
+  it("gives every member their own disclosure", () => {
+    const html = renderGameOverviewPage(params({ squad: [m("Callum"), m("Freya")] }));
+    expect(html.match(/<summary>Manage<\/summary>/g)).toHaveLength(2);
+  });
+});

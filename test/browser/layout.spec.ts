@@ -51,6 +51,12 @@ test("a player's squad chip does not pick up the organiser row's layout", async 
  * identical markup laid out differently. Found by the first capture run.
  */
 
+// M10 §3.8 moved each row's controls behind a per-member `<details
+// class="member-actions">`, closed by default. Closed, its `<button>` is not
+// rendered (a browser gives hidden `<details>` content no box at all), so
+// these three tests now read the row's shape off the always-visible
+// `<summary>` rather than the button inside it.
+
 test("every squad row has the same shape at phone width", async ({ page, browser }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const world = await seedWorld(page, browser);
@@ -68,7 +74,7 @@ test("every squad row has the same shape at phone width", async ({ page, browser
     const row = rows.nth(index);
     const rowBox = (await row.boundingBox())!;
     const nameBox = (await row.locator(".member").boundingBox())!;
-    const buttonBox = (await row.locator("button").boundingBox())!;
+    const summaryBox = (await row.locator("summary").boundingBox())!;
 
     // Offsets relative to the row, rounded: the same arrangement expressed
     // independently of where the row sits on the page.
@@ -76,8 +82,8 @@ test("every squad row has the same shape at phone width", async ({ page, browser
       JSON.stringify({
         nameX: Math.round(nameBox.x - rowBox.x),
         nameY: Math.round(nameBox.y - rowBox.y),
-        buttonX: Math.round(buttonBox.x - rowBox.x),
-        buttonY: Math.round(buttonBox.y - rowBox.y),
+        summaryX: Math.round(summaryBox.x - rowBox.x),
+        summaryY: Math.round(summaryBox.y - rowBox.y),
       }),
     );
   }
@@ -88,21 +94,27 @@ test("every squad row has the same shape at phone width", async ({ page, browser
   ).toBe(1);
 });
 
-test("the member's name sits on its own line at phone width", async ({ page, browser }) => {
-  // The complement to the test above: identical-but-wrong would also pass a
-  // sameness check. This pins which shape it is.
+test("the name and the disclosure share a line at phone width", async ({ page, browser }) => {
+  // Before M10 §3.8, this test pinned the opposite: at 390px the name and its
+  // control could not share a line ("Make an ordinary member" is long), so
+  // the name took a whole line to itself and the control sat below it. The
+  // disclosure collapses both controls to the single word "Manage" behind a
+  // `<summary>`, and a name plus "Manage" fits one line at 390px — so the
+  // `@media (max-width: 30rem)` rule that forced the stack is gone, and this
+  // test now pins the opposite shape: same line, not stacked.
   await page.setViewportSize({ width: 390, height: 844 });
   const world = await seedWorld(page, browser);
   await page.goto(`/g/${world.gameId}`);
 
   const row = page.locator("ul.squad li:has(.member)").first();
   const nameBox = (await row.locator(".member").boundingBox())!;
-  const buttonBox = (await row.locator("button").boundingBox())!;
+  const summaryBox = (await row.locator("summary").boundingBox())!;
 
+  // Vertically overlapping means they share a line.
   expect(
-    buttonBox.y,
-    "at 390px the control must sit below the name, not beside it",
-  ).toBeGreaterThanOrEqual(nameBox.y + nameBox.height);
+    summaryBox.y,
+    "at 390px the name and the disclosure must sit on the same line",
+  ).toBeLessThan(nameBox.y + nameBox.height);
 });
 
 test("a squad row is one line at desktop width", async ({ page, browser }) => {
@@ -112,9 +124,9 @@ test("a squad row is one line at desktop width", async ({ page, browser }) => {
 
   const row = page.locator("ul.squad li:has(.member)").first();
   const nameBox = (await row.locator(".member").boundingBox())!;
-  const buttonBox = (await row.locator("button").boundingBox())!;
+  const summaryBox = (await row.locator("summary").boundingBox())!;
 
-  // Vertically overlapping means they share a line — the stacked phone layout
-  // must not leak upwards into the roomy case.
-  expect(buttonBox.y).toBeLessThan(nameBox.y + nameBox.height);
+  // Vertically overlapping means they share a line — the roomy case must be
+  // at least as compact as the phone case now is.
+  expect(summaryBox.y).toBeLessThan(nameBox.y + nameBox.height);
 });

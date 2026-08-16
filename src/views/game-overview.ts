@@ -52,10 +52,13 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
 
   const problem = params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
 
-  // One row per member, each carrying its two controls. Plain links and a
-  // plain form: the remove link goes to a confirmation page rather than
-  // posting straight away, because removal is destructive and must be
-  // confirmable with JavaScript off.
+  // One row per member, each carrying its two controls behind a
+  // `<details>` disclosure (M10 §3.8): most of a fourteen-person squad is
+  // read, not managed, and both controls together on every row outweighed
+  // the squad itself. `<details>`/`<summary>` is a native element, so the
+  // controls need no script to reach — the remove link still goes to a
+  // confirmation page rather than posting straight away, because removal is
+  // destructive and must be confirmable with JavaScript off.
   const squadItems = squad
     .map((member) => {
       const name = escapeHtml(member.name);
@@ -67,11 +70,14 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       const roleLabel = isOwner ? "Make an ordinary member" : "Make an organiser";
       return `<li>
         <span class="member">${name}${organiser}${guest}${you}</span>
-        <form method="post" action="${escapeHtml(memberRolePath(gameId, member.playerId))}">
-          <input type="hidden" name="role" value="${nextRole}">
-          <button class="button" type="submit">${roleLabel}</button>
-        </form>
-        <a href="${escapeHtml(memberRemovePath(gameId, member.playerId))}">Remove</a>
+        <details class="member-actions">
+          <summary>Manage</summary>
+          <form method="post" action="${escapeHtml(memberRolePath(gameId, member.playerId))}">
+            <input type="hidden" name="role" value="${nextRole}">
+            <button class="button" type="submit">${roleLabel}</button>
+          </form>
+          <a href="${escapeHtml(memberRemovePath(gameId, member.playerId))}">Remove</a>
+        </details>
       </li>`;
     })
     .join("");

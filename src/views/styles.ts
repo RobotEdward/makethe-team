@@ -308,13 +308,21 @@ export const FORM_CSS = `
      suite's visual capture; no string assertion could see it. Grid fixes the
      columns, so every row has the same shape whatever the name. */
   .squad li {
-    display: grid; grid-template-columns: 1fr auto auto;
+    display: grid; grid-template-columns: 1fr auto;
     align-items: center; gap: 0.5rem 0.75rem;
   }
   .squad li form { margin: 0; }
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */
   .squad li .button { width: auto; font-size: var(--t-body); padding: 0.6rem 1rem; }
+  /* The per-member disclosure (M10 §3.8). Deliberately not the general
+     details rule above, which is for the game form's optional sections and
+     carries a top border and a 1.5rem margin — fourteen of those would be a
+     worse page than the fourteen buttons this replaces. */
+  .member-actions { margin: 0; border: 0; padding: 0; }
+  .member-actions summary { font-weight: 500; font-size: var(--t-support); color: var(--mut); }
+  .member-actions[open] { grid-column: 1 / -1; }
+  .member-actions form { margin: 0.5rem 0; }
   /* The segmented mark-in/mark-out (M10 §3.3). A shared rounded track with two
      halves, sized to content — the .button primitive is a 52px full-width tap
      target and two of them per row is what made a fourteen-person squad
@@ -332,14 +340,6 @@ export const FORM_CSS = `
   .segment .seg:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .segment .seg.on { background: var(--accent); color: var(--accent-fg); }
   .segment .seg.out { background: var(--bg); color: var(--fg); }
-  /* Below this width the name and a button like "Make an ordinary member"
-     cannot share a line without squeezing one of them. Rather than let that
-     happen per-name, the name takes the whole first line for every member and
-     the two controls sit together beneath it — one shape for every row. */
-  @media (max-width: 30rem) {
-    .squad li { grid-template-columns: 1fr auto; }
-    .squad li .member { grid-column: 1 / -1; }
-  }
   .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
 `;
 

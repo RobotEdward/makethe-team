@@ -97,10 +97,17 @@ for (const javaScriptEnabled of [true, false] as const) {
       const member = squadRow(page, "Alex Morgan");
       await expect(member.locator(".member")).not.toContainText("organiser");
 
+      // The controls are behind a per-member `<details>` disclosure (M10
+      // §3.8) — a native element, opened here by clicking its `<summary>`
+      // with no script involved. This runs with JavaScript disabled too, and
+      // must still be able to open it, because `<summary>` needs none.
+      await member.locator("summary").click();
+
       // --- promote ---------------------------------------------------------
       await member.getByRole("button", { name: "Make an organiser" }).click();
       await page.waitForURL(/\/g\/[^/]+$/);
       await expect(squadRow(page, "Alex Morgan").locator(".member")).toContainText("organiser");
+      await squadRow(page, "Alex Morgan").locator("summary").click();
       // The control now offers the opposite direction. Scoped to this row:
       // an unscoped check passes whichever label is present anywhere.
       await expect(
@@ -116,6 +123,7 @@ for (const javaScriptEnabled of [true, false] as const) {
       await page.waitForURL(/\/g\/[^/]+$/);
 
       const ownerRow = page.locator("ul.squad li").filter({ hasText: "(you)" });
+      await ownerRow.locator("summary").click();
       const [refusal] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === "POST"),
         ownerRow.getByRole("button", { name: "Make an ordinary member" }).click(),
@@ -129,6 +137,7 @@ for (const javaScriptEnabled of [true, false] as const) {
       ).toContainText("organiser");
 
       // --- remove ----------------------------------------------------------
+      await squadRow(page, "Alex Morgan").locator("summary").click();
       await squadRow(page, "Alex Morgan").getByRole("link", { name: "Remove" }).click();
       await page.waitForURL(/\/squad\/[^/]+\/remove$/);
       // The confirmation page names the person, so a mis-targeted link cannot
