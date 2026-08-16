@@ -27,6 +27,7 @@ import {
 import { fixtures, games, responses } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
+import { displayName } from "../domain/display-name.js";
 import { fixtureView, takingChanges } from "../domain/fixture-view.js";
 import { parseGameForm } from "../domain/game-form.js";
 import { parseGuestName } from "../domain/guest-name.js";
@@ -55,6 +56,7 @@ import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
+import { renderSquadMemberPage } from "../views/squad-member.js";
 import { rowName } from "../views/team-picker.js";
 import { notifyPromotedPlayer } from "./respond.js";
 
@@ -404,6 +406,39 @@ async function loadSquadTarget(
   if (!member.active && options.allowInactive !== true) return null;
   return { db, game, member };
 }
+
+/**
+ * One squad member, as their organiser sees them (M11).
+ *
+ * Entitled entirely by `loadSquadTarget`: owner of *this* game, and
+ * `:playerId` genuinely in *this* squad. `null` is 404 and never 403, because
+ * this path carries two ids either of which could otherwise be probed for
+ * existence (TR-18) — which is also the answer a signed-in stranger gets, by
+ * construction rather than by a separate branch.
+ *
+ * Read-only. There is no `POST` counterpart to this route: renaming a member
+ * is the member's own business (`/app/account`), and the role and removal
+ * controls belong to the two routes below.
+ */
+gamesRoutes.get("/g/:id/squad/:playerId", requirePlayer, async (c) => {
+  const target = await loadSquadTarget(c, c.req.param("id"), c.req.param("playerId"));
+  if (target === null) return c.text("Not found", 404);
+
+  return c.html(
+    renderSquadMemberPage({
+      gameId: target.game.id,
+      gameName: target.game.name,
+      // Never the raw column. An organiser who has since erased themselves, or
+      // a member erased between two page loads, must not render as a
+      // placeholder name — every renderer of a player's name goes through this.
+      memberName: displayName(target.member.name, null),
+      email: target.member.email,
+      isGuest: target.member.isGuest,
+      role: target.member.role,
+      joinedAtLocal: formatLocalDateTime(target.member.joinedAt, target.game.timezone),
+    }),
+  );
+});
 
 gamesRoutes.get("/g/:id/squad/:playerId/remove", requirePlayer, async (c) => {
   const target = await loadSquadTarget(c, c.req.param("id"), c.req.param("playerId"));

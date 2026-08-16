@@ -352,6 +352,77 @@ describe("POST /g/:id/squad/:playerId/role", () => {
   });
 });
 
+describe("GET /g/:id/squad/:playerId", () => {
+  beforeEach(resetDatabase);
+
+  it("shows the member's name, email, role and joined date", async () => {
+    const { cookie, gameId, memberId } = await ownedGame();
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${memberId}`, {
+      headers: { cookie },
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("Sam Okafor");
+    expect(body).toContain("sam@example.com");
+  });
+
+  it("shows no fixture history, not even from this game", async () => {
+    const { cookie, gameId, memberId, db } = await ownedGame();
+    const fixtureId = await insertFixture(db, gameId, { lifecycle: "played" });
+    await insertResponse(db, fixtureId, memberId, { status: "in" });
+
+    const body = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${memberId}`, { headers: { cookie } })
+    ).text();
+
+    // The class the account page's history uses. Its absence is the property
+    // most likely to be broken by a later refactor that "shares" the two views.
+    expect(body).not.toContain("fixture-card");
+  });
+
+  it("404s for a signed-in player who merely belongs to the game", async () => {
+    const { cookie } = await signIn();
+    const db = testDb();
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    // The viewer is an ordinary member, not an organiser.
+    await insertMembership(db, gameId, viewer!.id, { role: "player" });
+    const owner = await insertPlayer(db, { name: "Sam Okafor", email: "sam@example.com" });
+    await insertMembership(db, gameId, owner, { role: "owner" });
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${owner}`, {
+      headers: { cookie },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("404s for an organiser of a different game", async () => {
+    const { cookie } = await ownedGame();
+    const db = testDb();
+    const otherGameId = await insertGame(db, { name: "Somebody else's game" });
+    const stranger = await insertPlayer(db, { name: "Priya Raman", email: "priya@example.com" });
+    await insertMembership(db, otherGameId, stranger);
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${otherGameId}/squad/${stranger}`, {
+      headers: { cookie },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("404s for a player who is not in this squad", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const db = testDb();
+    const stranger = await insertPlayer(db, { name: "Priya Raman", email: "priya@example.com" });
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${stranger}`, {
+      headers: { cookie },
+    });
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("the game page's squad controls", () => {
   beforeEach(resetDatabase);
 
