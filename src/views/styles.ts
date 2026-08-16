@@ -139,6 +139,17 @@ export const SQUAD_STYLES_CSS = `
   }
   .chip-in { background: var(--accent-mut); color: var(--accent); }
   .chip-waitlisted { background: var(--warn-bg); color: var(--warn); }
+  /* The viewer's own chip (M10 §3.5): a solid fill of the group's own colour
+     family, so "am I counted?" is answered by colour, not by hunting for a
+     name. chip-in and chip-waitlisted each have an accent family above to
+     invert to a solid version of; chip-out and chip-pending have none —
+     both fall back to the plain neutral chip tint above without their own
+     rule — so they get an explicit solid fg/bg inversion instead of
+     silently keeping the unhighlighted tint. Text stays the player's real
+     name throughout; this is a colour cue only. */
+  .chip-in.chip-you { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
+  .chip-waitlisted.chip-you { background: var(--warn); color: var(--bg); font-weight: 600; }
+  .chip-out.chip-you, .chip-pending.chip-you { background: var(--fg); color: var(--bg); font-weight: 600; }
   .set-by { display: block; margin: 0.4rem 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
 

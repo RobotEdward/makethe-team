@@ -46,7 +46,7 @@ export interface PlayerGameParams {
  * plain markup, so it works with JavaScript off.
  */
 export function renderPlayerGamePage(params: PlayerGameParams): string {
-  const { gameName, venueName, venueAddress, timezone, openFixture, upcoming } = params;
+  const { gameName, venueName, venueAddress, timezone, openFixture, upcoming, viewerPlayerId } = params;
 
   const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
 
@@ -56,7 +56,7 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
       : `
         <p class="kickoff">${escapeHtml(openFixture.kicksOffAtLocal)}</p>
         ${renderStatusLine(openFixture.view)}
-        ${renderSquadSection(openFixture.squad, openFixture.inCount)}
+        ${renderSquadSection(openFixture.squad, openFixture.inCount, viewerPlayerId)}
         ${renderPublishedTeamsSection(openFixture.teams, openFixture.squad)}
       `;
 

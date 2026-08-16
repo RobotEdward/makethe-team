@@ -195,8 +195,17 @@ const SQUAD_GROUPS: readonly { status: ResponseStatus; label: string }[] = [
  * the chip, which could not carry it without becoming a row again. It is kept
  * because no email tells a player that somebody answered for them, so this is
  * the only place they can ever find out.
+ *
+ * `viewerPlayerId` is nullable so a future caller with no viewer identity to
+ * hand has nothing to fabricate — every current caller has one, but the type
+ * does not assume that stays true. When it matches a member, that member's
+ * chip gets `chip-you` (M10 §3.5: "the viewer's own chip filled in the
+ * group's colour so they can see themselves counted") — a colour cue, not a
+ * text change: the chip keeps the player's real name (`displayName`, never
+ * "You") because `squadRow`/`squadChip` locators in the browser suite find
+ * the viewer's own chip by that name on their own response page.
  */
-function renderSquadList(squad: readonly SquadMember[]): string {
+function renderSquadList(squad: readonly SquadMember[], viewerPlayerId: string | null): string {
   if (squad.length === 0) return `<p class="muted">No players yet.</p>`;
 
   const groups = SQUAD_GROUPS.map(({ status, label }) => {
@@ -210,7 +219,8 @@ function renderSquadList(squad: readonly SquadMember[]): string {
         const name = displayName(member.name, member.erasedAt);
         const guest = member.isGuest ? " (guest)" : "";
         const rank = status === "waitlisted" && member.waitlistRank !== null ? ` · ${ordinal(member.waitlistRank)}` : "";
-        return `<li class="chip chip-${status}">${escapeHtml(`${name}${guest}${rank}`)}</li>`;
+        const isYou = viewerPlayerId !== null && member.playerId === viewerPlayerId;
+        return `<li class="chip chip-${status}${isYou ? " chip-you" : ""}">${escapeHtml(`${name}${guest}${rank}`)}</li>`;
       })
       .join("");
 
@@ -263,12 +273,21 @@ function listSentence(items: readonly string[]): string {
  * Exported so the dashboard (task 4) can render the same sentence for the
  * same setting rather than retyping it — two copies of this wording is how
  * they drift apart.
+ *
+ * `viewerPlayerId` is threaded straight through to `renderSquadList` to
+ * highlight the viewer's own chip; nullable for the same reason it is there —
+ * a future caller with no viewer to hand passes `null` rather than a made-up
+ * id.
  */
-export function renderSquadSection(squad: readonly SquadMember[] | null, inCount: number): string {
+export function renderSquadSection(
+  squad: readonly SquadMember[] | null,
+  inCount: number,
+  viewerPlayerId: string | null,
+): string {
   if (squad === null) {
     return `<p class="muted">Who's playing isn't shown for this game. ${inCount} in so far.</p>`;
   }
-  return renderSquadList(squad);
+  return renderSquadList(squad, viewerPlayerId);
 }
 
 /**
@@ -454,7 +473,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}
     ${renderPublishedTeamsSection(teams, squad)}
     <h2>Squad</h2>
-    ${renderSquadSection(squad, inCount)}
+    ${renderSquadSection(squad, inCount, viewer.playerId)}
   `;
 
   return layout({

@@ -521,6 +521,62 @@ describe("fixture page", () => {
       expect(html).toContain("marked in by Jamie");
     });
 
+    /**
+     * Fix round 1, finding 3: every existing attribution test used exactly
+     * one member with one setter, so `listSentence`'s multi-name grammar
+     * ("a, b and c", `was`/`were` agreement, and the `[...new Set(...)]`
+     * dedup across two different setters) was never exercised — including
+     * the spec's own example sentence.
+     */
+    describe("group attribution's multi-name grammar (fix round 1, finding 3)", () => {
+      const jamie = { playerId: "o-1", name: "Jamie", erasedAt: null };
+
+      it("joins two names with 'and', and uses 'were' for two people", () => {
+        const html = renderFixturePage(pageOptions({ squad: [
+          member({ name: "Nadia Okafor", status: "in", source: "owner", setBy: jamie }),
+          member({ name: "Theo Marchetti", status: "in", source: "owner", setBy: jamie }),
+        ]}));
+        // The spec's own example sentence.
+        expect(html).toContain("Nadia Okafor and Theo Marchetti were marked in by Jamie");
+      });
+
+      it("joins three names with commas and a final 'and', deliberately no Oxford comma", () => {
+        const html = renderFixturePage(pageOptions({ squad: [
+          member({ name: "Ada", status: "in", source: "owner", setBy: jamie }),
+          member({ name: "Bo", status: "in", source: "owner", setBy: jamie }),
+          member({ name: "Cy", status: "in", source: "owner", setBy: jamie }),
+        ]}));
+        expect(html).toContain("Ada, Bo and Cy were marked in by Jamie");
+      });
+
+      it("uses 'was' rather than 'were' for exactly one name", () => {
+        const html = renderFixturePage(pageOptions({ squad: [
+          member({ name: "Ada", status: "in", source: "owner", setBy: jamie }),
+        ]}));
+        expect(html).toContain("Ada was marked in by Jamie");
+        expect(html).not.toContain("were marked in");
+      });
+
+      it("dedupes and lists two different setters in one group", () => {
+        const priya = { playerId: "o-2", name: "Priya", erasedAt: null };
+        const html = renderFixturePage(pageOptions({ squad: [
+          member({ name: "Ada", status: "in", source: "owner", setBy: jamie }),
+          member({ name: "Bo", status: "in", source: "owner", setBy: priya }),
+        ]}));
+        expect(html).toContain("Ada and Bo were marked in by Jamie and Priya");
+      });
+
+      it("does not repeat the same setter's name when they set everyone in the group", () => {
+        const html = renderFixturePage(pageOptions({ squad: [
+          member({ name: "Ada", status: "in", source: "owner", setBy: jamie }),
+          member({ name: "Bo", status: "in", source: "owner", setBy: jamie }),
+        ]}));
+        // Exactly one "Jamie" in the sentence, not "Jamie and Jamie".
+        expect(html).not.toContain("Jamie and Jamie");
+        expect(html).toContain("by Jamie.");
+      });
+    });
+
     it("omits a group nobody is in", () => {
       // A heading over nothing reads as a broken page.
       const html = renderFixturePage(pageOptions({ squad: [member({ name: "Ada", status: "in" })] }));
@@ -535,6 +591,62 @@ describe("fixture page", () => {
     it("still marks guests", () => {
       const html = renderFixturePage(pageOptions({ squad: [member({ name: "Jono", status: "in", isGuest: true })] }));
       expect(html).toContain("Jono (guest)");
+    });
+
+    /**
+     * Fix round 1, finding 1: M10 §3.5 — "the viewer's own chip filled in the
+     * group's colour so they can see themselves counted." A colour cue via a
+     * `chip-you` modifier class, not a text change: the name stays the
+     * player's real name throughout (never "You"), because
+     * `test/browser/journeys.spec.ts` locates the viewer's own chip by their
+     * real name on their own response page, and the spec's requirement is the
+     * fill, not the label.
+     */
+    describe("the viewer's own chip is highlighted, in every group", () => {
+      it("marks the viewer's chip in the In group", () => {
+        const html = renderFixturePage(pageOptions({
+          squad: [member({ name: "Ada", status: "in" }), member({ name: "Bo", status: "in" })],
+          viewer: { playerId: "Ada", status: "in" },
+        }));
+        expect(html).toContain(`<li class="chip chip-in chip-you">Ada</li>`);
+        // The other In member is not the viewer, so no highlight.
+        expect(html).toContain(`<li class="chip chip-in">Bo</li>`);
+      });
+
+      it("marks the viewer's chip in the Waiting group, rank and all", () => {
+        const html = renderFixturePage(pageOptions({
+          squad: [member({ name: "Cy", status: "waitlisted", waitlistRank: 2 })],
+          viewer: { playerId: "Cy", status: "waitlisted", waitlistRank: 2 },
+        }));
+        expect(html).toContain(`<li class="chip chip-waitlisted chip-you">Cy · 2nd</li>`);
+      });
+
+      it("marks the viewer's chip in the Out group", () => {
+        const html = renderFixturePage(pageOptions({
+          squad: [member({ name: "Eve", status: "out" })],
+          viewer: { playerId: "Eve", status: "out" },
+        }));
+        expect(html).toContain(`<li class="chip chip-out chip-you">Eve</li>`);
+      });
+
+      it("marks the viewer's chip in the No reply group", () => {
+        const html = renderFixturePage(pageOptions({
+          squad: [member({ name: "Fay", status: "pending" })],
+          viewer: { playerId: "Fay", status: "pending" },
+        }));
+        expect(html).toContain(`<li class="chip chip-pending chip-you">Fay</li>`);
+      });
+
+      it("highlights nobody when the viewer is not on the visible squad", () => {
+        const html = renderFixturePage(pageOptions({
+          squad: [member({ name: "Ada", status: "in" })],
+          viewer: { playerId: "somebody-else", status: "pending" },
+        }));
+        // Scoped to the rendered `<li>`, not the whole page — the stylesheet
+        // in <head> mentions `chip-you` in its own selectors regardless of
+        // whether any chip in the body carries the class.
+        expect(html).not.toMatch(/<li class="[^"]*chip-you/);
+      });
     });
 
     /**

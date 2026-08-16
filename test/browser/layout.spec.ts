@@ -2,6 +2,42 @@ import { expect, test } from "@playwright/test";
 import { seedWorld } from "./world.js";
 
 /**
+ * A textual pin on `SQUAD_STYLES_CSS`'s selector (see
+ * `test/views/fixture.test.ts`) can only prove today's selector text is
+ * scoped; it says nothing about a future rule shaped differently — say
+ * `.squad ul li { ... }` — that would still reach `div.squad > ul.chips >
+ * li.chip` while passing every string assertion. Only a browser's own
+ * cascade resolves that, so this belongs here rather than in the view test:
+ * load the player's real response page and read the *computed* style off a
+ * real chip, not its markup.
+ */
+test("a player's squad chip does not pick up the organiser row's layout", async ({ page, browser }) => {
+  const world = await seedWorld(page, browser);
+  await page.goto(`/r/${world.responseToken}`);
+
+  const chip = page.locator("ul.chips li.chip").first();
+  await expect(chip).toBeVisible();
+
+  // Reached via `globalThis` because this project is typed against the
+  // Workers runtime and has no DOM lib — see `console-gate.spec.ts`.
+  const computed = await chip.evaluate((el) => {
+    const { getComputedStyle } = globalThis as unknown as {
+      getComputedStyle: (element: unknown) => { display: string; justifyContent: string; borderBottomWidth: string };
+    };
+    const style = getComputedStyle(el);
+    return { display: style.display, justifyContent: style.justifyContent, borderBottomWidth: style.borderBottomWidth };
+  });
+
+  // `ul.squad > li`'s row rule sets `display: flex; justify-content:
+  // space-between` and a bottom border on the organiser's rows. None of that
+  // may land on a chip — if it did, the row's own child layout would apply to
+  // whatever the chip contains and it would grow the row's divider.
+  expect(computed.display).not.toBe("flex");
+  expect(computed.justifyContent).not.toBe("space-between");
+  expect(computed.borderBottomWidth).toBe("0px");
+});
+
+/**
  * Layout assertions — geometry, not pixels.
  *
  * This is a narrow tier and should stay narrow: it exists for the defects
