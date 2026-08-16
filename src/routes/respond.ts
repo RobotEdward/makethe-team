@@ -129,6 +129,11 @@ async function renderFixtureForViewer(params: {
     view,
     squad: squadForViewer(game, squad, { isOwner }),
     inCount: fixture.inCount,
+    // The unfiltered squad this function already holds, not the
+    // visibility-filtered list passed as `squad` above (which may be `null`
+    // precisely when the organiser has hidden it, BR-33) — the case that most
+    // needs this count.
+    waitlistCount: squad.filter((member) => member.status === "waitlisted").length,
     viewer,
     token,
     intent,

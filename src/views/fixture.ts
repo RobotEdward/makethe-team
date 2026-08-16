@@ -44,6 +44,17 @@ export interface FixturePageOptions {
    * list's length.
    */
   inCount: number;
+  /**
+   * How many are on the waitlist right now, so the page can say what place a
+   * yes would take (M10 §3.4). Beside `inCount` and for the same reason: a
+   * count the page must be able to state whether or not the squad's names are
+   * visible to this viewer (BR-33).
+   *
+   * Required. An optional field here would let a new caller drop the warning
+   * from a full fixture with nothing failing — which is the exact misreading
+   * ("0 spots left" as "you can't come") this exists to prevent.
+   */
+  waitlistCount: number;
   /** The player this page is being rendered for, identified by their token. */
   viewer: { playerId: string; status: ResponseStatus; waitlistRank?: number | null };
   /** Echoed into the form action so the POST carries the same token. */
@@ -319,6 +330,22 @@ function renderButtons(options: FixturePageOptions): string {
   return renderResponseButtons(`/r/${encodeURIComponent(options.token)}`, options.viewer.status);
 }
 
+/**
+ * What answering yes would actually do, on a fixture with no room left.
+ *
+ * Shown where the tap happens rather than as a status line above it, and only
+ * to a viewer who could still take that place: `pending`, or `out` and
+ * entitled to change their mind. Someone already `in` is not going to join a
+ * waitlist, and someone already `waitlisted` has a headline saying precisely
+ * where they are — offering to put them on it would read as though they were
+ * not on it.
+ */
+function renderFullWarning(view: FixtureView, viewer: FixturePageOptions["viewer"], waitlistCount: number): string {
+  if (view.spotsLeft > 0) return "";
+  if (viewer.status !== "pending" && viewer.status !== "out") return "";
+  return `<p class="full-warning">The squad is full — answering yes puts you ${ordinal(waitlistCount + 1)} on the waitlist.</p>`;
+}
+
 function renderReadOnlyNotice(reason: ReadOnlyReason): string {
   const message =
     reason === "played"
@@ -359,7 +386,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${renderStatusLine(view)}
     ${renderNudge(view)}
     ${renderOverCapacity(view)}
-    ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options)}
+    ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}
     ${renderPublishedTeamsSection(teams, squad)}
     <h2>Squad</h2>
     ${renderSquadSection(squad, inCount)}

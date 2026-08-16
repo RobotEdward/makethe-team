@@ -87,6 +87,8 @@ export const FIXTURE_STYLES_CSS = `
   .button.chosen-out {
     background: var(--line); border-color: var(--mut); color: var(--fg);
   }
+
+  .full-warning { margin: 0.5rem 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
 
 /**

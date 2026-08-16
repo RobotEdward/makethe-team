@@ -29,6 +29,7 @@ const BASE = {
     },
   ],
   inCount: 1,
+  waitlistCount: 0,
   viewer: { playerId: "p2", status: "pending" as const },
   token: "tok",
   intent: null,
@@ -472,6 +473,61 @@ describe("fixture page", () => {
     const html = renderFixturePage(optionsWith({ squad: null, inCount: 1 }));
 
     expect(html).toContain("1 in so far");
+  });
+});
+
+/**
+ * M10 §3.4. "0 spots left" sitting beside a green confirmed badge, above two
+ * live response buttons, reads as "you can't come" — this states the outcome
+ * where the tap happens: what answering yes would actually do.
+ */
+describe("full fixture — states what a yes would do, before the tap", () => {
+  const FULL_VIEW = { status: "confirmed" as const, flags: [], spotsLeft: 0, needsOwnerAttention: false };
+
+  it("tells a player what answering yes would do on a full fixture", () => {
+    const html = renderFixturePage(optionsWith({
+      view: FULL_VIEW,
+      viewer: { playerId: "p1", status: "pending" },
+      waitlistCount: 2,
+    }));
+    expect(html).toContain("The squad is full — answering yes puts you 3rd on the waitlist.");
+  });
+
+  it("says it to a player who said no, who might yet change their mind", () => {
+    const html = renderFixturePage(optionsWith({
+      view: FULL_VIEW,
+      viewer: { playerId: "p1", status: "out" },
+      waitlistCount: 0,
+    }));
+    expect(html).toContain("puts you 1st on the waitlist");
+  });
+
+  it("does not warn a player who is already in", () => {
+    const html = renderFixturePage(optionsWith({
+      view: FULL_VIEW,
+      viewer: { playerId: "p1", status: "in" },
+      waitlistCount: 2,
+    }));
+    expect(html).not.toContain("on the waitlist.");
+  });
+
+  it("does not warn a player who is already on the waitlist", () => {
+    // Their headline says exactly where they are; a second sentence offering to
+    // put them on it would read as though they were not.
+    const html = renderFixturePage(optionsWith({
+      view: FULL_VIEW,
+      viewer: { playerId: "p1", status: "waitlisted", waitlistRank: 1 },
+      waitlistCount: 2,
+    }));
+    expect(html).not.toContain("answering yes puts you");
+  });
+
+  it("says nothing when there is still room", () => {
+    const html = renderFixturePage(optionsWith({
+      view: { status: "open" as const, flags: [], spotsLeft: 3, needsOwnerAttention: false },
+      waitlistCount: 0,
+    }));
+    expect(html).not.toContain("The squad is full");
   });
 });
 
