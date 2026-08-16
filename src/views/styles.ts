@@ -365,17 +365,20 @@ export const FORM_CSS = `
   }
   .segment .seg:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .segment .seg.on { background: var(--accent); color: var(--accent-fg); }
-  /* A solid neutral fill, not var(--bg) on var(--fg) text as this used to be
-     — var(--bg) sits almost on top of the track's own var(--line) (about
-     1.16:1 in light, 1.6:1 in dark), so a pressed "Out" barely differed from
-     an unpressed segment while a pressed "In" was a loud solid green (M10
-     whole-branch review, Minor 7). The same fg/bg inversion
-     .chip-out.chip-you already uses for the identical status elsewhere on
-     this page, so "Out" reads as one consistent neutral treatment across the
-     squad rows and the chips: dark ink on light in light mode, light ink on
-     dark in dark mode — high-contrast against the track in both, and never
-     mistakable for the green confirmed fill. */
-  .segment .seg.out { background: var(--fg); color: var(--bg); }
+  /* A solid mid-grey fill. It was var(--bg), which sits almost on top of the
+     track's own var(--line) — about 1.16:1 in light — so a pressed "Out"
+     barely differed from an unpressed segment while a pressed "In" was a loud
+     solid green (M10 whole-branch review, Minor 7).
+     var(--mut) and not var(--fg): near-black would be visually heavier than
+     the accent-green "In" beside it, so scanning a squad the dropouts would
+     shout louder than the players — and grey is what M10 gives "out, no reply,
+     inert" (spec 2.1). This is about 4.7:1 against the track in light and
+     4.2:1 in dark, which is plainly visible at a glance down fourteen rows,
+     with about 6:1 for its own label. Deliberately NOT the fg/bg inversion
+     .chip-out.chip-you uses: there that treatment means "this one is you",
+     and one product should not spend the same strong inversion on two
+     unrelated meanings. */
+  .segment .seg.out { background: var(--mut); color: var(--bg); }
   .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
 `;
 
