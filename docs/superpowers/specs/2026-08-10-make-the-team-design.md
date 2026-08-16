@@ -657,6 +657,7 @@ Each milestone is independently deployable and demonstrable.
 | **M7** | Polish — empty states, error pages, accessibility pass, unsubscribe and leave-game flows, delete-my-data, `/privacy` stub | Usable by a stranger with no explanation, and a player can remove themselves and their data |
 | **M8** | Squad visibility — an owner-controlled setting, and a player's view of a game | A player can see who else is playing, and an owner can turn that off |
 | **M9** | Team picking (BR-35) — two named sides per game, a picker on the owner's fixture page, and N-9 | An owner can split an open fixture's players into two sides with JavaScript off, publish them, and everyone playing is emailed their side |
+| **M11** | Player account — a home-page sign-in link, a player's own `/app/account` (editable name, read-only email, a passkeys link, their last 20 fixtures across every game), and an organiser's read-only `/g/:id/squad/:playerId` (name, email, role, joined date, no fixture history) | A player can rename themselves and see their last 20 fixtures from `/app/account`; an organiser can open `/g/:id/squad/:playerId` for anyone in their squad and see who they are with nothing about what they've played; anyone else signed in gets a 404 |
 
 M1–M4 are the product. M5–M7 make it shareable. Score recording and the funding page come after, as separate specs — as team picking did, delivered as M9.
 

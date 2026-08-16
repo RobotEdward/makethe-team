@@ -41,5 +41,24 @@ Adding one changes nothing else. The emailed sign-in link keeps working, so if
 you're on a borrowed computer or your phone is flat, you can still get in the
 old way.
 
+## Your account
+
+![A player's own account page: their name in an editable field, their email address beside it, a link to manage passkeys, and their last fixtures across every game, most recent first](images/account.png)
+
+There's a page for you as well as for your games. **Your account** — linked
+from your games list — has your name on it, and changing it there changes it
+everywhere: on every fixture your squad can see, and in every email that goes
+out about you.
+
+Your email address is on that page too, but you can't change it there. It's
+how you sign in, so changing it isn't a matter of typing a new one — get it
+wrong and the link that would put it right goes to somebody else's inbox. For
+now, if you need a different address, sign up again with it and ask your
+organiser to swap you over.
+
+Underneath is everything you've played, most recent first, twenty fixtures
+deep, across all your games rather than just one. If you've left a game, its
+fixtures aren't in the list: the page shows you the squads you're in.
+
 That's the whole product. Set the game up once, share one link, and let the
 emails do the asking.

@@ -23,6 +23,20 @@ make you an ordinary member, so you cannot leave the game with nobody able to
 change anything. Make someone else an organiser first, and then you can step
 back.
 
+## Looking somebody up
+
+![A squad member's own small page: their name, their email address, whether they're an organiser, and how long they've been in the squad — nothing about what they've played](images/squad-member.png)
+
+Open **Manage** next to anybody in your squad and the first thing there is
+**View details**. It's a small page: their name, their email address, whether
+they're an organiser, and how long they've been in the squad.
+
+You can't edit any of it, and you can't see what they've played. Their name is
+theirs to change, and their fixtures in *other* games aren't yours to look at
+— this page is about your squad, not about a person. Changing their role or
+taking them out of the squad is still done back on the game page, where it's
+always been.
+
 ## Taking someone out
 
 ![The confirmation page for removing Sam Whitlock from the squad](images/remove-member.png)
