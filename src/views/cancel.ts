@@ -6,11 +6,16 @@ import { CANCEL_STYLES_CSS } from "./styles.js";
  *
  * Every one of them is built from `layout()` and the token-based styles
  * already defined there — no second visual language, no page-local
- * stylesheet. The only new element type this flow needs is a textarea and a
- * destructive-looking submit, both styled from the existing `--warn` tokens
- * via the small inline block below, which exists because `layout()`'s
+ * stylesheet. The only new element type this flow needs is a textarea, styled
+ * by the small inline block below, which exists because `layout()`'s
  * stylesheet is shared with the player-facing pages and gaining a rule that
  * only ever applies here would be dead weight on the critical path.
+ *
+ * The destructive submit is no longer styled here at all. It used to be
+ * repainted to the `--warn` palette by this page's own block; M10 gave the
+ * product a real `--danger` token and a shared `.button.danger` in `STYLES`,
+ * so this page now gets its red from the same rule the three other
+ * irreversible actions do.
  *
  * Nothing here decides anything: the route has already verified the token,
  * proved entitlement, and read the counts. These functions render.
@@ -51,11 +56,16 @@ export interface CancelConfirmPageOptions extends CancelPreview {
 }
 
 /**
- * Two rules, one for the reason box and one for the destructive submit.
+ * The reason box, and the destructive submit's *layout* — its width and the
+ * space above it. Its colour comes from `.button.danger` in `STYLES`.
  *
- * The button is `--warn`, not `--accent`: every other primary button in this
- * product confirms something good is happening ("I'm in"), and this one ends
- * a game. It must not look like them.
+ * Until M10 this block repainted that button to the `--warn` palette, on the
+ * reasoning that every other primary button in the product confirms something
+ * good is happening ("I'm in") and this one ends a game, so it must not look
+ * like them. That reasoning was right and the product has since acted on it
+ * properly: `--danger` exists, nothing else in the app uses it, and three
+ * other irreversible actions wear it too. Amber here would now mean
+ * "unsettled", which is what the waitlist uses it for.
  *
  * Exported as bare CSS, without the `<style>` tags, so `src/security/csp.ts`
  * can hash exactly what ends up between them (see `STYLES` in
