@@ -223,6 +223,19 @@ describe("GET /cancel/:token", () => {
     expect(body).toMatch(/3 people will be emailed/i);
   });
 
+  it("styles the irreversible action as dangerous, never as primary", async () => {
+    const { fixtureId } = await seedSquad();
+    const body = await getCancel(await cancelToken(fixtureId)).then((r) => r.text());
+
+    expect(body).toContain(`class="button danger"`);
+    expect(body).not.toContain(`class="button primary"`);
+    // The cancel button's colour comes from the shared `.button.danger` rule
+    // now, not a page-local override to `--warn` (amber) — cancelling a game
+    // is destructive, not a correctable form error.
+    expect(body).not.toMatch(/\.cancel-form \.button\.danger \{[^}]*--warn/);
+    expect(body).toMatch(/\.cancel-heading\s*\{[^}]*--danger/);
+  });
+
   it("offers exactly one form, one submit and a reason field, with no JavaScript", async () => {
     const { fixtureId } = await seedSquad();
     const token = await cancelToken(fixtureId);

@@ -172,6 +172,22 @@ describe("GET /app/delete", () => {
     expect(body).toContain("<button");
     expect(body).not.toContain("Co-Organised Game");
   });
+
+  it("styles Delete my data as dangerous but keeps Keep my account primary", async () => {
+    // Two primary buttons in one file, and both are right: a viewer never sees
+    // the offer and the keep button together, and cancelling a pending erasure
+    // is a safe, restorative action that IS the primary thing on its page.
+    // Asserted so a later sweep for "green near deletion" cannot take it.
+    const { cookie } = await signIn();
+
+    const offerHtml = await (await get(cookie)).text();
+    expect(offerHtml).toContain(`class="button danger"`);
+    expect(offerHtml).not.toContain(`class="button primary"`);
+
+    await post(DELETE_ACCOUNT_PATH, cookie);
+    const pendingHtml = await (await get(cookie)).text();
+    expect(pendingHtml).toContain(`class="button primary"`);
+  });
 });
 
 describe("POST /app/delete", () => {

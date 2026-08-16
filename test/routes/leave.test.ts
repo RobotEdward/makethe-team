@@ -182,6 +182,15 @@ describe("GET /leave/:token", () => {
     expect(body).toContain("Leave this game");
   });
 
+  it("styles the irreversible action as dangerous, never as primary", async () => {
+    const { token } = await seedLeavable();
+
+    const body = await (await SELF.fetch(`https://makethe.team/leave/${token}`)).text();
+
+    expect(body).toContain(`class="button danger"`);
+    expect(body).not.toContain(`class="button primary"`);
+  });
+
   it("changes nothing at all", async () => {
     // The prefetcher guarantee. Mail scanners GET every URL in a message; if
     // this route wrote, they would unsubscribe people who never clicked.

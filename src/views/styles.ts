@@ -205,15 +205,12 @@ export const CANCEL_STYLES_CSS = `
   }
   .cancel-form textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .cancel-form .hint { margin-top: 0.4rem; font-size: var(--t-support); }
-  .cancel-form .button.danger {
-    margin-top: 1.25rem; width: 100%;
-    background: var(--warn-bg); border-color: var(--warn); color: var(--warn);
-  }
+  .cancel-form .button.danger { margin-top: 1.25rem; width: 100%; }
   .form-error {
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left;
   }
-  .cancel-heading { text-align: center; margin-top: 0; color: var(--warn); }
+  .cancel-heading { text-align: center; margin-top: 0; color: var(--danger); }
 `;
 
 /**

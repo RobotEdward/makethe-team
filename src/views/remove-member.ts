@@ -68,7 +68,7 @@ export function renderRemoveMemberPage(params: RemoveMemberPageParams): string {
     ${consequences.join("\n    ")}
     <p>They can join again themselves with the invite link. You can't put them back.</p>
     <form method="post" action="${escapeHtml(memberRemovePath(gameId, playerId))}">
-      <button class="button primary" type="submit">Remove ${name}</button>
+      <button class="button danger" type="submit">Remove ${name}</button>
     </form>
     <p><a href="${escapeHtml(gamePath(gameId))}">No, leave the squad as it is</a></p>
   `;

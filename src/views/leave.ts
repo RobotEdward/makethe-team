@@ -51,7 +51,7 @@ function confirmBody(gameName: string, token: string, isOrganiser: boolean): str
     <p>Leaving means you'll stop getting email about ${gameName}, and your place in any fixture that's still open is freed for someone else.</p>
     ${organiserWarning}
     <form method="post" action="/leave/${escapeHtml(token)}">
-      <button class="button primary" type="submit">Leave this game</button>
+      <button class="button danger" type="submit">Leave this game</button>
     </form>
   `;
 }

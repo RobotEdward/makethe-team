@@ -92,4 +92,10 @@ describe("renderRemoveMemberPage", () => {
     const html = renderRemoveMemberPage({ ...BASE, commitments: { in: 1, waitlisted: 1 } });
     expect(html).not.toMatch(/style="/);
   });
+
+  it("styles the irreversible action as dangerous, never as primary", () => {
+    const html = renderRemoveMemberPage({ ...BASE, commitments: { in: 0, waitlisted: 0 } });
+    expect(html).toContain(`class="button danger"`);
+    expect(html).not.toContain(`class="button primary"`);
+  });
 });

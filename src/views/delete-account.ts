@@ -76,7 +76,7 @@ function offerBody(): string {
     <p>Fixtures you've already played still count you, as a former player with no name attached — that's what keeps a past game's numbers honest for everyone else who was there.</p>
     <p>It happens <strong>two days from now</strong>, not straight away. Nothing changes in the meantime: you stay in your squads, your answers stand, and you can stop it from this page at any point before then.</p>
     <form method="post" action="${escapeHtml(DELETE_ACCOUNT_PATH)}">
-      <button class="button primary" type="submit">Delete my data</button>
+      <button class="button danger" type="submit">Delete my data</button>
     </form>
   `;
 }
