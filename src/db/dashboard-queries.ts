@@ -1,4 +1,4 @@
-import { and, asc, eq, ne, notInArray, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ne, notInArray, type SQL } from "drizzle-orm";
 import { TERMINAL_LIFECYCLES, type Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { Db } from "./client.js";
@@ -46,8 +46,7 @@ export interface DashboardFixture {
 }
 
 /**
- * The entitlement predicate, in one place, used by both the read and the
- * write path.
+ * The entitlement predicate, in one place, used by every read and write path.
  *
  * **This is a security control, not a display filter (TR-18).** The session
  * middleware established *who* is asking and stopped there; every membership
@@ -56,23 +55,23 @@ export interface DashboardFixture {
  *
  * - `memberships.active` — a player who left a Game keeps their history but
  *   loses their standing in it. Dropping this condition would let anyone who
- *   was *ever* in a squad keep seeing and changing that squad's fixtures.
+ *   was *ever* in a squad keep seeing that squad's fixtures. The visible
+ *   consequence, stated so nobody "fixes" it later: leaving a game removes its
+ *   fixtures from the account page's history too.
  * - `responses.player_id = :viewer` — the join starts from the viewer's own
  *   response rows, so no row for another player can be reached at all, whether
  *   to display or to write.
- * - a non-terminal lifecycle — `played` and `cancelled` fixtures are closed to
- *   everyone (BR-15), so they are neither listed nor actionable.
+ * - `withdrawn` is excluded for the reason `getFixtureWithSquad` excludes it:
+ *   a withdrawn player is not a squad member any more (spec amendment 5).
  *
- * `withdrawn` is excluded for the same reason `getFixtureWithSquad` excludes
- * it: a withdrawn player is not a squad member any more (spec amendment 5).
- *
- * "Upcoming" is defined by lifecycle rather than by comparing `kicks_off_at`
- * against a clock: the retire sweep is what moves a finished fixture to
- * `played`, and a fixture still `open` an hour after its nominal kickoff is
- * genuinely still open to respond to. A clock comparison here would hide it
- * and would make the page's contents depend on an instant D1 and the Durable
- * Object can disagree about. Past fixtures as a *feature* — a history view —
- * are out of scope for this milestone.
+ * **The lifecycle filter is deliberately *not* here (M11).** It used to be,
+ * and it was the one condition in this function that is a question of scope
+ * rather than of entitlement: the dashboard is a to-do list so it excludes
+ * `played` and `cancelled`, and the account page is a history so it includes
+ * them. Passing it in keeps the three security conditions in exactly one place
+ * while letting a caller widen what it *shows* without touching what it may
+ * *reach*. A caller that widened this function's `notInArray` instead would
+ * have silently widened the dashboard's write path with it.
  *
  * **Driving the join from `responses` has a consequence worth stating out
  * loud: a player who joins a Game *after* a fixture has already opened has no
@@ -92,7 +91,6 @@ function entitledTo(playerId: string, extra?: SQL): SQL | undefined {
     eq(responses.playerId, playerId),
     eq(memberships.active, true),
     ne(responses.status, "withdrawn"),
-    notInArray(fixtures.lifecycle, [...TERMINAL_LIFECYCLES]),
     ...(extra ? [extra] : []),
   );
 }
@@ -144,12 +142,27 @@ function toDashboardFixture(row: EntitledRow): DashboardFixture {
 }
 
 /**
- * Every fixture the viewer may see, soonest first (J7, BR-25).
+ * The lifecycle scope the *dashboard* uses: a fixture nobody can act on any
+ * more is not a thing to do this week.
+ *
+ * "Upcoming" is defined by lifecycle rather than by comparing `kicks_off_at`
+ * against a clock: the retire sweep is what moves a finished fixture to
+ * `played`, and a fixture still `open` an hour after its nominal kickoff is
+ * genuinely still open to respond to. A clock comparison here would hide it
+ * and would make the page's contents depend on an instant D1 and the Durable
+ * Object can disagree about.
+ */
+const NOT_FINISHED = notInArray(fixtures.lifecycle, [...TERMINAL_LIFECYCLES]);
+
+/**
+ * Every fixture the viewer may still act on, soonest first (J7, BR-25).
  *
  * One statement, no matter how many games the viewer belongs to.
  */
 export async function listDashboardFixtures(db: Db, playerId: string): Promise<DashboardFixture[]> {
-  const rows = await selectEntitledFixtures(db, playerId).orderBy(asc(fixtures.kicksOffAt));
+  const rows = await selectEntitledFixtures(db, playerId, NOT_FINISHED).orderBy(
+    asc(fixtures.kicksOffAt),
+  );
   return rows.map(toDashboardFixture);
 }
 
@@ -159,13 +172,46 @@ export async function listDashboardFixtures(db: Db, playerId: string): Promise<D
  *
  * `null` means "no", without distinguishing "no such fixture" from "not
  * yours": the caller answers 404 either way, so a fixture id cannot be probed
- * for existence (TR-18).
+ * for existence (TR-18). Keeping `NOT_FINISHED` here is what locks a `played`
+ * fixture (BR-15) against a replayed form.
  */
 export async function findActionableFixture(
   db: Db,
   playerId: string,
   fixtureId: string,
 ): Promise<DashboardFixture | null> {
-  const [row] = await selectEntitledFixtures(db, playerId, eq(fixtures.id, fixtureId)).limit(1);
+  const [row] = await selectEntitledFixtures(
+    db,
+    playerId,
+    and(NOT_FINISHED, eq(fixtures.id, fixtureId)),
+  ).limit(1);
   return row ? toDashboardFixture(row) : null;
+}
+
+/**
+ * The viewer's own fixtures, most recent first, across every game they are
+ * still an active member of (M11, the account page).
+ *
+ * Two deliberate differences from `listDashboardFixtures`, and nothing else:
+ *
+ * 1. **No lifecycle filter at all.** `played` and `cancelled` fixtures are the
+ *    history — excluding them, as the dashboard does, would leave this list
+ *    showing exactly what the dashboard already shows.
+ * 2. **`desc` and a `limit`.** Most recent first, so an upcoming fixture sorts
+ *    above a played one and the list is a timeline rather than a to-do list.
+ *
+ * Everything that keeps one player out of another's rows is untouched: this
+ * goes through `selectEntitledFixtures`, whose join is rooted at
+ * `responses.player_id = :viewer`, so there is no other player's row for it to
+ * reach even if a future caller passed a hostile `limit`.
+ */
+export async function listPlayerFixtureHistory(
+  db: Db,
+  playerId: string,
+  limit: number,
+): Promise<DashboardFixture[]> {
+  const rows = await selectEntitledFixtures(db, playerId)
+    .orderBy(desc(fixtures.kicksOffAt))
+    .limit(limit);
+  return rows.map(toDashboardFixture);
 }
