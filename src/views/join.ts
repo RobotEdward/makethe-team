@@ -1,4 +1,4 @@
-import { joinPath } from "../auth/paths.js";
+import { joinPath, PRIVACY_PATH } from "../auth/paths.js";
 import { describeRecurrenceRule, parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { redactName } from "../domain/redact-name.js";
 import { escapeHtml, layout } from "./layout.js";
@@ -148,7 +148,7 @@ export function renderInvitePage(params: InvitePageParams): string {
                autocapitalize="off" spellcheck="false" required
                value="${escapeHtml(values?.email ?? "")}">
       </div>
-      <p>We'll email you when there's a game on. That's the whole point of the address.</p>
+      <p>We'll email you when there's a game on. That's the whole point of the address. <a href="${PRIVACY_PATH}">What else we do with it</a>.</p>
       <div class="actions">
         <button class="button primary" type="submit">Join the squad</button>
       </div>

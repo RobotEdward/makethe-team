@@ -134,9 +134,20 @@ M2's carry-forward note about nothing being able to produce an `open` fixture is
 — M3's hourly sweep now owns the `scheduled → open` transition — and has been removed from
 this list per the rule above.
 
-Four notes remain. None is a defect: the first is relevant to whichever milestone adds a
-second environment, the second and fourth to the milestone that writes `/privacy`, and the
-third to the milestone that records results.
+Two notes remain. Neither is a defect: the first is relevant to whichever milestone adds a
+second environment, the second to the milestone that records results.
+
+**Notes 2 and 4 have been discharged, not deleted.** They existed to be read off onto
+`/privacy`, and M7c wrote that page — the three things erasure cannot reach are now under
+"What deleting your data does not reach", and the Google Fonts disclosure is under "Who
+else sees it". The *limits themselves are unchanged*: a last active organiser still cannot
+be erased, the trial allowlist still fails closed, free text another person wrote still
+cannot be searched, and every page load still tells Google the visitor's IP. What changed
+is that a person is now told before they rely on any of it. Kept here as a pointer rather
+than a list, because the failure mode this section guards against has inverted: it is no
+longer "somebody forgets to write it down" but "somebody changes one of these and leaves
+the page saying the old thing". `test/routes/privacy.test.ts` pins each admission, so that
+change fails a test rather than shipping quietly.
 
 1. **`triggers.crons` sits at the top level of `wrangler.jsonc`**, which is correct while
    production is the only environment — but it is inherited, so adding a staging
@@ -144,36 +155,7 @@ third to the milestone that records results.
    two environments running the reminder sweep against real people. The runbook documents
    the required move; the configuration does not yet enforce it.
 
-2. **Three things erasure (BR-34, M7b) cannot reach, which `/privacy` must say out loud.**
-   The privacy page is the next milestone, and it is the only place a person can be told
-   these before they rely on "delete my data" meaning all of it. Written down here so they
-   are read off a list rather than rediscovered:
-
-   - **A last active organiser cannot be erased.** `/app/delete` refuses the request while
-     the player is the only organiser any game has, and the sweep refuses it again at
-     execution — so a request that was honest when it was made, and becomes blocked before
-     the deadline, **stays pending indefinitely** rather than half-completing. That is the
-     safe direction (a game is never left without an organiser, and no squad is left
-     half-departed), but it means a scheduled erasure is not a promise of a date. The way
-     out is to make somebody else an organiser; **nothing else unblocks it**. It can still
-     be *cancelled*: `POST /app/delete/cancel` refuses only once execution has actually
-     begun and stopped part-way (`players.erasure_started_at`), which a block found by the
-     pre-check never does — so a blocked player is never trapped, they can hand over or
-     keep their account. While it waits, the delete page and the dashboard banner both say
-     it is held up and name the game, one `player.erasure_blocked` audit row records the
-     transition (once, not once per hourly retry), and the sweep names the player in its
-     log line.
-   - **During the trial, `SIGNIN_ALLOWLIST` fails closed.** Erasure is reachable only from
-     a signed-in session, and a player whose address is not on the allowlist cannot get
-     one — so they cannot reach the page at all and must ask the author directly. This is
-     temporary by construction: it disappears when the allowlist is deleted at launch.
-   - **Free text another person wrote can still name someone.** A fixture's `notes`, a
-     `venue_override`, a game's name — all of it is typed by an organiser about whoever
-     they like, and none of it is structured, so no erasure can find a name inside it.
-     Erasure anonymises the erased player's own rows; it cannot rewrite somebody else's
-     prose. Removing such a mention is a request to the organiser who wrote it.
-
-3. **`responses.team` (BR-35, M9) records the teams as *published*, not as *played* —
+2. **`responses.team` (BR-35, M9) records the teams as *published*, not as *played* —
    which matters to results recording and to anything trained on it.**
 
    Team picking stores each player's side on their response row, so a results table joined
@@ -195,14 +177,6 @@ third to the milestone that records results.
 
    Decide this when results are designed, not after a season of data has accumulated
    without it.
-
-4. **Every page load now discloses the visitor's IP address to Google.** M10 (§2.4 of the
-   design treatment spec) adopted Instrument Sans and IBM Plex Mono from Google Fonts, over
-   a recorded objection, opening the first two external-host holes in an otherwise
-   `default-src 'none'` CSP (`style-src` and `font-src` in `src/security/csp.ts`, naming
-   `FONT_ORIGINS`). The stylesheet request is unauthenticated and unavoidable — it happens
-   on every page, for every visitor, before they have made any choice — so it is a
-   disclosure the product makes on their behalf. `/privacy` must say so.
 
 ## Repository and deploy hardening — applied 11 August 2026
 

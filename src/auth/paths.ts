@@ -16,6 +16,13 @@
  * guards and the page cannot disagree about the path — `src/routes/signin.ts`
  * registers itself from this value rather than restating it.
  */
+/**
+ * `/privacy` (M7c). Public — no session, no token: somebody deciding whether
+ * to hand over an email address has to be able to read it before they type
+ * one, and somebody who never signs up at all still has the right to read it.
+ */
+export const PRIVACY_PATH = "/privacy";
+
 export const SIGN_IN_PATH = "/sign-in";
 
 /**

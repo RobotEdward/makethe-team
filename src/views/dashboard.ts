@@ -3,6 +3,7 @@ import {
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
+  PRIVACY_PATH,
   PASSKEYS_PATH,
   gamePath,
 } from "../auth/paths.js";
@@ -272,7 +273,7 @@ export function renderDashboardPage({
     }
     ${renderOwnedGamesSection(ownedGames)}
     <p><a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
-    <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a></p>
+    <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
     ${signOutForm("Sign out")}
   `;
 

@@ -5,6 +5,7 @@ import {
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
   PASSKEYS_PATH,
+  PRIVACY_PATH,
   SIGN_IN_COMPLETE_PATH,
   SIGN_IN_PATH,
 } from "../../src/auth/paths.js";
@@ -22,11 +23,13 @@ const CONSTANTS: Record<string, string> = {
   PASSKEYS_PATH,
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
+  PRIVACY_PATH,
 };
 
 /** Which catalogue entry covers which route. */
 const ROUTE_TO_ID = new Map<string, string>([
   ["/", "home"],
+  [PRIVACY_PATH, "privacy"],
   [SIGN_IN_PATH, "sign-in"],
   [DASHBOARD_PATH, "dashboard"],
   [PASSKEYS_PATH, "passkeys"],

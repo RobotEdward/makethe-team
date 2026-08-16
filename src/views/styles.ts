@@ -438,8 +438,31 @@ export const TEAM_PICKER_CSS = `
   .your-side { margin: 1rem 0 0.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--accent); }
 `;
 
+/**
+ * `/privacy` (M7c) — a page of prose, which nothing else in this product is.
+ *
+ * Its own block rather than reusing `FORM_CSS`: that block widens the column
+ * for pages with real forms and carries a dozen rules for inputs, squad rows
+ * and disclosures that this page can never render. The only thing the two
+ * genuinely share is the wider measure, which is one line.
+ *
+ * The paired what/why entries are a definition list in spirit but not in
+ * markup — a `dl` puts the term and its description in separate boxes that
+ * are awkward to keep together when the term is a whole sentence, which
+ * every one of these is.
+ */
+export const PRIVACY_STYLES_CSS = `
+  main { max-width: 40rem; }
+  .lede { font-size: var(--t-lead); color: var(--fg); margin-bottom: 1.5rem; }
+  .held { margin: 0 0 1.1rem; }
+  .held-what { color: var(--fg); font-weight: 600; }
+  .held-why { margin-top: 0.15rem; }
+  .updated { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: var(--t-support); }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
+  PRIVACY_STYLES_CSS,
   TEAM_PICKER_CSS,
   SQUAD_STYLES_CSS,
   DASHBOARD_STYLES_CSS,

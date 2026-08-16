@@ -1,4 +1,4 @@
-import { SIGN_IN_COMPLETE_PATH, SIGN_IN_PATH } from "../auth/paths.js";
+import { PRIVACY_PATH, SIGN_IN_COMPLETE_PATH, SIGN_IN_PATH } from "../auth/paths.js";
 import { layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
 import { PASSKEY_SIGN_IN_JS } from "./scripts.js";
@@ -70,6 +70,7 @@ export function renderSignInPage({ linkFailed, signedOut }: SignInPageOptions): 
         <button class="button" type="button" id="passkey-button">Sign in with a passkey</button>
         <p class="nudge" id="passkey-problem" hidden></p>
       </div>
+      <p class="privacy-link"><a href="${PRIVACY_PATH}">What we do with your email address</a></p>
     `,
   });
 }

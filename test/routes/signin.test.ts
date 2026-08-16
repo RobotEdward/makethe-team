@@ -15,7 +15,7 @@ import {
 } from "../../src/auth/session.js";
 // Not re-exported by `session.ts` — that re-export is the sign-in flow's own
 // paths, and this page is not part of it (`src/auth/paths.ts`).
-import { DELETE_ACCOUNT_PATH } from "../../src/auth/paths.js";
+import { DELETE_ACCOUNT_PATH, PRIVACY_PATH } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
@@ -622,6 +622,7 @@ describe("no password field anywhere (TR-16)", () => {
 
     // Stateless pages: no session, no linking outcome, safe to run in any order.
     await capture("home", /Getting a regular game on/, new Request(`${ORIGIN}/`));
+    await capture("privacy", /What is held, and why/, new Request(`${ORIGIN}${PRIVACY_PATH}`));
     await capture("robots", /User-agent/i, new Request(`${ORIGIN}/robots.txt`));
     await capture("not found", /Not found/, new Request(`${ORIGIN}/nope`));
     await capture("sign-in", /Email me a sign-in link/, new Request(`${ORIGIN}${SIGN_IN_PATH}`));
@@ -903,6 +904,7 @@ describe("no password field anywhere (TR-16)", () => {
     expect(pages.map((page) => page.name).sort()).toEqual(
       [
         "home",
+        "privacy",
         "robots",
         "not found",
         "sign-in",
@@ -1140,6 +1142,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
     "GET /robots.txt": "robots",
     "GET /": "home",
+    "GET /privacy": "privacy",
     "GET /r/:token": "bad respond token",
     "GET /leave/:token": "bad leave token",
     "GET /cancel/:token": "cancel confirm",

@@ -3,6 +3,7 @@ import {
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
   PASSKEYS_PATH,
+  PRIVACY_PATH,
   SIGN_IN_PATH,
 } from "../../src/auth/paths.js";
 import type { World } from "./world.js";
@@ -47,6 +48,13 @@ export const CATALOGUE: CataloguePage[] = [
     path: () => "/",
     persona: "anonymous",
     note: "The holding page an unauthenticated visitor lands on.",
+  },
+  {
+    id: "privacy",
+    title: "Privacy",
+    path: () => PRIVACY_PATH,
+    persona: "anonymous",
+    note: "What the product holds about a person, and the four things erasure cannot reach. Anonymous on purpose: it has to be readable before anybody hands over an address.",
   },
   {
     id: "sign-in",

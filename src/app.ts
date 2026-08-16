@@ -7,6 +7,7 @@ import { cancel } from "./routes/cancel.js";
 import { dashboard } from "./routes/dashboard.js";
 import { gamesRoutes } from "./routes/games.js";
 import { home } from "./routes/home.js";
+import { privacy } from "./routes/privacy.js";
 import { join } from "./routes/join.js";
 import { passkeys } from "./routes/passkeys.js";
 import { respond } from "./routes/respond.js";
@@ -101,6 +102,8 @@ export function createApp(): Hono<AppEnv> {
 
   app.route("/", robots);
   app.route("/", home);
+  // Public and ungated on purpose — see src/routes/privacy.ts.
+  app.route("/", privacy);
   app.route("/", respond);
   app.route("/", cancel);
   // `/j/:token`, the public invite page. Registered here alongside `respond`
