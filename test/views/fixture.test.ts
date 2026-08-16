@@ -493,6 +493,25 @@ describe("full fixture — states what a yes would do, before the tap", () => {
     expect(html).toContain("The squad is full — answering yes puts you 3rd on the waitlist.");
   });
 
+  it("still counts correctly when the organiser hides the squad (BR-33)", () => {
+    // The case `waitlistCount` exists for. `squad` is null here, so a count
+    // derived from the list this page renders would be 0 and every player in a
+    // squad-hidden game would be told they'd be 1st in a queue of three. The
+    // field is fed from the route's *unfiltered* squad precisely so that
+    // cannot happen; without this test, wiring it to the filtered list would
+    // pass every other assertion in the file.
+    const html = renderFixturePage(optionsWith({
+      view: FULL_VIEW,
+      squad: null,
+      viewer: { playerId: "p1", status: "pending" },
+      waitlistCount: 2,
+    }));
+    expect(html).toContain("The squad is full — answering yes puts you 3rd on the waitlist.");
+    // And the page really is the squad-hidden one, so the assertion above is
+    // not passing because the fixture quietly rendered a visible squad.
+    expect(html).toContain("isn't shown for this game");
+  });
+
   it("says it to a player who said no, who might yet change their mind", () => {
     const html = renderFixturePage(optionsWith({
       view: FULL_VIEW,
