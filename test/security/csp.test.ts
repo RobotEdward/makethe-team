@@ -1,6 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { FONT_ORIGINS } from "../../src/security/csp.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, games, memberships, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
@@ -218,19 +219,30 @@ async function expectStylesAllowed(csp: string, html: string) {
 describe("Content-Security-Policy", () => {
   it("allows the two font origins and nothing wider", async () => {
     const header = await cspHeader();
-    const styleSrc = header.split("; ").find((d) => d.startsWith("style-src "))!;
-    const fontSrc = header.split("; ").find((d) => d.startsWith("font-src "))!;
+    const directive = (name: string) => header.split("; ").find((d) => d.startsWith(`${name} `))!;
 
-    expect(styleSrc).toContain("https://fonts.googleapis.com");
-    expect(fontSrc).toBe("font-src https://fonts.gstatic.com");
+    // Enumerated, not merely searched. An earlier version of this test asserted
+    // `styleSrc).toContain("https://fonts.googleapis.com")` and checked the
+    // whole header for the substring "https:;" — which proved the required host
+    // was present but said nothing about a *second* host being added beside it,
+    // and caught scheme-only sources (`style-src https:`) only by accident of
+    // where the join happened to put a semicolon. `style-src` is the directive
+    // that also carries the hash allowlist, so a stray extra origin there is
+    // the likeliest way this policy ever quietly widens. Splitting into tokens
+    // and insisting every one is a known shape is what actually refuses that.
+    const tokens = (name: string) => directive(name).split(" ").slice(1);
 
-    // The point of the directive is what it refuses. A wildcard scheme source
-    // would pass any test that only checks the fonts load.
-    expect(header).not.toContain("https:;");
-    expect(header).not.toContain("'unsafe-inline'");
-    for (const directive of [styleSrc, fontSrc]) {
-      expect(directive).not.toContain("*");
+    for (const token of tokens("style-src")) {
+      const known = /^'sha256-[A-Za-z0-9+/]+={0,2}'$/.test(token) || token === FONT_ORIGINS[0];
+      expect(known, `unexpected style-src source: ${token}`).toBe(true);
     }
+    expect(tokens("style-src")).toContain(FONT_ORIGINS[0]);
+    expect(tokens("font-src")).toEqual([FONT_ORIGINS[1]]);
+
+    // Belt and braces on the two shapes that would defeat the whole directive
+    // even while every token above still looked plausible.
+    expect(header).not.toContain("'unsafe-inline'");
+    expect(header).not.toContain("*");
   });
 
   it("holding page (/): fixed directives present and inline styles covered", async () => {
