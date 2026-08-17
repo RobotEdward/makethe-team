@@ -133,6 +133,71 @@ describe("GET /j/:token", () => {
   });
 
   /**
+   * The reason this page exists is the two fields, and the person reading it
+   * is standing in a car park having just scanned a poster. Order is the whole
+   * point here, so this compares positions: a test that merely found both
+   * somewhere in the document would pass with the squad back on top.
+   */
+  it("puts the form above the squad, for someone standing in a car park", async () => {
+    const { db, game } = await seedGame();
+    for (const name of ["Alex Ainsley", "Bev Brown", "Chris Clark"]) {
+      await insertMembership(db, game.id, await insertPlayer(db, { name, email: `${name.split(" ")[0]}@example.com` }));
+    }
+
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    expect(html).toContain(`name="name"`);
+    expect(html).toContain("Who's playing (3)");
+    expect(html.indexOf(`name="name"`)).toBeLessThan(html.indexOf("Who's playing"));
+  });
+
+  it("shows the squad as chips, because nothing here acts on a person", async () => {
+    const { db, game } = await seedGame();
+    await insertMembership(db, game.id, await insertPlayer(db, { name: "Alex Ainsley", email: "alex@example.com" }));
+
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    expect(html).toContain(`<li class="chip">Alex A.</li>`);
+    // A `div` wrapper, not a `ul`: a chip is an `li` too, and the row rule
+    // `ul.squad > li` would otherwise lay every chip out as a full-width row.
+    expect(html).toContain(`<div class="squad"><ul class="chips">`);
+    expect(html).not.toContain(`<ul class="squad">`);
+    // No status modifier. This page knows who is in the squad, not who has
+    // answered what, so a colour here would assert something it cannot know.
+    expect(html).not.toContain(`class="chip chip-`);
+  });
+
+  it("says nobody has joined yet in a sentence, not in a chip", async () => {
+    const { game } = await seedGame();
+
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    expect(html).toContain("<p>Nobody has joined yet — you'd be first.</p>");
+    expect(html).toContain("Who's playing (0)");
+  });
+
+  /**
+   * `SQUAD_STYLES_CSS` and `FORM_CSS` both declare `ul.squad > li` at the same
+   * specificity and `layout()` emits `pageStyles` in array order, so the later
+   * block wins. Nothing on this page renders a `ul.squad` today — the chips sit
+   * in a `div` — but the day one comes back (an empty state, a row list) the
+   * shape it gets must not depend on which block was appended last. The
+   * presence assertions matter: `indexOf` returns -1 for a missing block, and
+   * -1 is less than everything, so an order comparison alone passes vacuously
+   * if a block is dropped entirely.
+   */
+  it("emits the squad styles before the form styles, so the row rule is settled", async () => {
+    const { game } = await seedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    const squadBlock = ".chip {";
+    const formBlock = ".field label {";
+    expect(html, "the squad block must actually be on the page").toContain(squadBlock);
+    expect(html, "the form block must actually be on the page").toContain(formBlock);
+    expect(html.indexOf(squadBlock)).toBeLessThan(html.indexOf(formBlock));
+  });
+
+  /**
    * Rotating the token and deactivating the game are an owner's only ways to
    * kill a leaked link. A shared cache holding a 200 for the old URL would
    * silently defeat both for the length of its TTL, so this page must never be

@@ -2,7 +2,7 @@ import { joinPath, PRIVACY_PATH } from "../auth/paths.js";
 import { describeRecurrenceRule, parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { redactName } from "../domain/redact-name.js";
 import { escapeHtml, layout } from "./layout.js";
-import { FORM_CSS } from "./styles.js";
+import { FORM_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 /**
  * The two pages behind the public invite link (J1, spec §4.4).
@@ -68,7 +68,14 @@ export interface InvitePageParams {
 }
 
 /**
- * The invite page: what this game is, who is already in, and one form.
+ * The invite page: what this game is, one form, and who is already in.
+ *
+ * The form sits *above* the squad. Someone who has just scanned the QR code
+ * on a poster is standing up with a phone in one hand, and a squad of
+ * fourteen between them and the two fields they came for is fourteen names
+ * of scrolling before anything can be typed. The list stays on the page —
+ * seeing that others are already in is why some people join — but as social
+ * proof at the foot, not as an obstacle.
  *
  * The form's `action`, `method` and field names are the load-bearing part —
  * `test/routes/join.test.ts` derives its assertion from this rendered HTML
@@ -105,11 +112,26 @@ export function renderInvitePage(params: InvitePageParams): string {
 
   const sizeLine = `<p>${minPlayers} to ${maxPlayers} players.</p>`;
 
-  const squadItems = squad
+  const squadChips = squad
     // BR-26. The one place a squad member's name is interpolated on a public
     // page, and it is redacted at that exact point.
-    .map((member) => `<li>${escapeHtml(redactName(member.name))}</li>`)
+    .map((member) => `<li class="chip">${escapeHtml(redactName(member.name))}</li>`)
     .join("");
+
+  // Chips, not rows: nothing on this page acts on a person, so this is a list
+  // to scan. Plain `.chip` with no status modifier — a colour here would
+  // assert an answer to a fixture that this page does not know.
+  //
+  // The wrapper is a `div`, never a `ul`: a chip is an `li` too, and
+  // `FORM_CSS`/`SQUAD_STYLES_CSS`'s `ul.squad > li` row layout would then
+  // reach it (see the comment on `SQUAD_STYLES_CSS`).
+  //
+  // The empty state is a sentence, so it is written as one rather than
+  // dressed as a chip nobody can be.
+  const squadBlock =
+    squad.length === 0
+      ? `<p>Nobody has joined yet — you'd be first.</p>`
+      : `<div class="squad"><ul class="chips">${squadChips}</ul></div>`;
 
   const whenLine =
     firstFixtureLocal === null
@@ -131,9 +153,6 @@ export function renderInvitePage(params: InvitePageParams): string {
     ${sizeLine}
     ${whenLine}
 
-    <h2>Who's playing (${squad.length})</h2>
-    <ul class="squad">${squadItems || "<li>Nobody has joined yet — you'd be first.</li>"}</ul>
-
     <h2>Join the squad</h2>
     ${errorBlock}
     <form method="post" action="${escapeHtml(joinPath(inviteToken))}">
@@ -153,9 +172,18 @@ export function renderInvitePage(params: InvitePageParams): string {
         <button class="button primary" type="submit">Join the squad</button>
       </div>
     </form>
+
+    <h2>Who's playing (${squad.length})</h2>
+    ${squadBlock}
   `;
 
-  return layout({ title: `Join ${gameName} — Make The Team`, body, pageStyles: [FORM_CSS] });
+  // SQUAD_STYLES_CSS first, FORM_CSS second, and the order is load-bearing:
+  // both declare `ul.squad > li` at the same specificity, and `layout()`
+  // emits these in array order, so the later block wins. FORM_CSS's row rule
+  // is the one this page's own forms are written against, and putting
+  // SQUAD_STYLES_CSS after it would hand a squad row's shape back to whichever
+  // block happened to be appended last.
+  return layout({ title: `Join ${gameName} — Make The Team`, body, pageStyles: [SQUAD_STYLES_CSS, FORM_CSS] });
 }
 
 export interface JoinOutcomePageParams {
