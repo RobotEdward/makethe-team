@@ -50,7 +50,7 @@ jobs:
       # Keyed on the exact Playwright version: browser builds are pinned per
       # release, so a version bump must miss the cache rather than run against
       # whatever the previous release downloaded.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         id: browser-cache
         with:
           path: ~/.cache/ms-playwright
