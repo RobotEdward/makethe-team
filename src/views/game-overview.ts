@@ -15,7 +15,7 @@ import { fixtureStatusWords } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
 import { qrSvg } from "./qr.js";
 import { COPY_INVITE_JS } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 export interface GameOverviewParams {
   gameId: string;
@@ -150,10 +150,22 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
   return layout({
     title: `${gameName} — Make The Team`,
     body,
+    // The order here is load-bearing, not alphabetical. SQUAD_STYLES_CSS and
+    // FORM_CSS both write `ul.squad > li` at identical specificity, so
+    // whichever is passed last wins: SQUAD_STYLES_CSS lays a squad row out as
+    // flex with align-items: baseline, FORM_CSS as a grid. The grid is
+    // deliberate — flex wrapping made a row's shape depend on how long the
+    // member's name happened to be, so two rows of identical markup laid out
+    // differently (M10 whole-branch review). Passing SQUAD_STYLES_CSS *after*
+    // FORM_CSS silently reinstates that, and no string assertion can see it.
+    // It goes first so FORM_CSS's grid wins and the only thing that lands is
+    // the container rule FORM_CSS lacks: the list's top border, which is what
+    // was making the squad read as the unstyled list next to .fixtures.
+    //
     // FIXTURE_STYLES_CSS is here for .back-link alone. Everything else it
     // carries is selected by a class this page never renders, so nothing
     // already on the page changes appearance by adding it.
-    pageStyles: [FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS],
+    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS],
     pageScripts: [COPY_INVITE_JS],
   });
 }

@@ -92,6 +92,16 @@ const STATUS_LABEL: Record<FixtureView["status"], string> = {
 };
 
 /**
+ * What a stored lifecycle is called when it is not one this build knows.
+ *
+ * Deliberately not `STATUS_LABEL.scheduled`, the obvious fallback: "Not open
+ * yet" is a specific claim about a real fixture, and asserting it about one
+ * whose state could not be read is a confident lie where an admission costs
+ * nothing. Neither wording lets an organiser act, but only one misleads them.
+ */
+const UNKNOWN_STATUS_WORDS = "Status unknown";
+
+/**
  * The words for a fixture's *stored* lifecycle, for the pages that list
  * fixtures rather than render one (the organiser's game page; the member's,
  * which has the same defect).
@@ -104,9 +114,26 @@ const STATUS_LABEL: Record<FixtureView["status"], string> = {
  * `Lifecycle` is a subset of `FixtureView["status"]`, so it indexes the same
  * record directly; the derived `short`/`confirmed` judgements are simply not
  * reachable from a stored value.
+ *
+ * Total on purpose, despite the parameter type saying it cannot need to be.
+ * `Lifecycle` comes from `text("lifecycle", { enum: LIFECYCLES })`, and
+ * Drizzle's `enum` is a type-level assertion only — the migration that
+ * created the column writes a bare `text ... NOT NULL DEFAULT 'scheduled'`
+ * with no CHECK constraint, so the row can hold a value outside the union: a
+ * legacy row, a hand-applied fix, or a newer deploy writing a lifecycle this
+ * build has never heard of partway through a rollout. The type is a claim
+ * about the schema, not a guarantee about the rows.
+ *
+ * Without the fallback that case is worse than the raw token this function
+ * replaced. An unmapped key is `undefined`, which is invisible here —
+ * indexing a Record with a union key is only `| undefined` under
+ * `noUncheckedIndexedAccess`, and the declared `string` return absorbs it —
+ * and every caller hands the result to `escapeHtml`, which calls `.replace`
+ * on it and throws. The organiser's home page 500s instead of printing an
+ * ugly word.
  */
 export function fixtureStatusWords(lifecycle: Lifecycle): string {
-  return STATUS_LABEL[lifecycle];
+  return STATUS_LABEL[lifecycle] ?? UNKNOWN_STATUS_WORDS;
 }
 
 function viewerHeadline(

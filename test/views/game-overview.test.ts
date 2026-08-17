@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { LIFECYCLES, type Lifecycle } from "../../src/domain/lifecycle.js";
 import { fixtureStatusWords } from "../../src/views/fixture.js";
 import { renderGameOverviewPage } from "../../src/views/game-overview.js";
-import { FIXTURE_STYLES_CSS, INVITE_CSS } from "../../src/views/styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 
 const BASE = {
   gameId: "g-1",
@@ -96,7 +96,31 @@ describe("per-member disclosure (M10 §3.8)", () => {
 });
 
 describe("the invite card (M12 §4)", () => {
-  const cardOf = (html: string) => html.match(/<div class="card">[\s\S]*?<\/form>\s*<\/div>/)?.[0];
+  /**
+   * The invite card's markup, anchored on `id="invite-url"` — the one thing
+   * inside it that is an identifier rather than a shape.
+   *
+   * This was a regex running from `<div class="card">` to the first
+   * `</form>\s*</div>`, which depended on the rotate form being the card's
+   * only form and on the exact whitespace between two closing tags. Reformat
+   * the template and it would have kept "passing" while returning a slice
+   * that no longer contained what the assertions below check.
+   */
+  const cardOf = (html: string) => {
+    const open = html.indexOf('<div class="card">');
+    if (open === -1) return undefined;
+    // Walk to the </div> that actually closes it, counting nesting, rather
+    // than guessing at the first one that follows some other landmark.
+    let depth = 0;
+    for (const tag of html.slice(open).matchAll(/<div\b|<\/div>/g)) {
+      depth += tag[0] === "</div>" ? -1 : 1;
+      if (depth === 0) {
+        const card = html.slice(open, open + tag.index + "</div>".length);
+        return card.includes('id="invite-url"') ? card : undefined;
+      }
+    }
+    return undefined;
+  };
 
   it("puts the link, its QR and the rotate form in one card", () => {
     const card = cardOf(render());
@@ -215,5 +239,65 @@ describe("getting back out", () => {
 
   it("ships the block that styles the invite card", () => {
     expect(render()).toContain(INVITE_CSS);
+  });
+});
+
+describe("a lifecycle this build does not know", () => {
+  // The column has no CHECK constraint (see the migration), so `Lifecycle` is
+  // a claim about the schema, not a guarantee about the rows. A legacy row, a
+  // hand-applied fix, or a newer deploy mid-rollout can put a value here that
+  // the words table has no entry for. `as never` is how that row is expressed
+  // in a test the type system would otherwise forbid writing.
+  const LEGACY = "abandoned" as never;
+  const row = { id: "f-1", kicksOffAt: KICKOFF, lifecycle: LEGACY, inCount: 6 };
+
+  it("still renders the organiser's page", () => {
+    // Not a cosmetic assertion. An unmapped key was `undefined`, and every
+    // caller hands the result to escapeHtml, which calls .replace on it — so
+    // before the fallback this threw a TypeError and 500'd the whole page.
+    // That is strictly worse than the raw token this task replaced, which at
+    // least rendered.
+    expect(() => render({ upcoming: [row] })).not.toThrow();
+  });
+
+  it("says so in words rather than printing nothing or the raw value", () => {
+    const detail = render({ upcoming: [row] }).match(/<span class="detail">([^<]*)<\/span>/)?.[1];
+    expect(detail).toBe("Status unknown — 6 in");
+    expect(detail).not.toContain("undefined");
+    expect(detail).not.toContain("abandoned");
+  });
+
+  it("does not claim an unreadable fixture is one of the states it knows", () => {
+    // "Not open yet" is the tempting fallback and it is a specific claim about
+    // a real fixture. Admitting ignorance is cheap; misleading the organiser
+    // about whether people can respond is not.
+    expect(fixtureStatusWords(LEGACY)).toBe("Status unknown");
+    for (const known of LIFECYCLES) {
+      expect(fixtureStatusWords(LEGACY)).not.toBe(fixtureStatusWords(known));
+    }
+  });
+
+  it("still links the fixture, so the organiser can go and look at it", () => {
+    expect(render({ upcoming: [row] })).toContain('href="/g/g-1/f/f-1"');
+  });
+});
+
+describe("the squad list is styled too", () => {
+  it("ships the block that draws the squad list's own container", () => {
+    // Without SQUAD_STYLES_CSS the squad had no top border while the fixture
+    // list right below it did, so on the page this task exists to finish the
+    // squad read as the unstyled one.
+    expect(render()).toContain(SQUAD_STYLES_CSS);
+  });
+
+  it("keeps a squad row a grid, not the flex row SQUAD_STYLES_CSS would impose", () => {
+    // Both blocks write `ul.squad > li` at identical specificity, so the one
+    // passed last wins. FORM_CSS's grid is deliberate: flex wrapping made a
+    // row's shape depend on how long the member's name was, so two rows of
+    // identical markup laid out differently (M10 whole-branch review).
+    // Ordering is invisible to every other assertion in this file — this is
+    // the only thing standing between that bug and a silent return.
+    const html = render({ squad: [{ playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false }] });
+    expect(html.indexOf(SQUAD_STYLES_CSS)).toBeLessThan(html.indexOf(FORM_CSS));
   });
 });
