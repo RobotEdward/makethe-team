@@ -4,7 +4,7 @@ import { createApp } from "../../src/app.js";
 import { PASSKEYS_PATH, SIGN_IN_PATH } from "../../src/auth/session.js";
 import { getDb } from "../../src/db/client.js";
 import { passkey, players, user as userTable } from "../../src/db/schema.js";
-import { PASSKEY_REGISTER_JS } from "../../src/views/scripts.js";
+import { PASSKEY_REGISTER_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { resetDatabase } from "../support/factories.js";
 import { ORIGIN, bindings, signIn } from "../support/sign-in.js";
 
@@ -62,9 +62,13 @@ describe("GET /app/passkeys", () => {
 
     expect(response.status).toBe(403);
     expect(body).toMatch(/We can't find your player/);
-    // And no script on the refusal: the enhancement is not offered to someone
-    // who cannot use the account it would attach to.
-    expect(body).not.toContain("<script");
+    // No page-specific script on the refusal: the passkey enhancement is not
+    // offered to someone who cannot use the account it would attach to. The
+    // site-wide service worker registration (M13) still ships — it is not a
+    // page opt-in — so it is stripped first, the same way
+    // test/routes/signin.test.ts's whole-site sweep does.
+    expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
   });
 
   it("serves a signed-in player the page, with the add button hidden until script runs", async () => {

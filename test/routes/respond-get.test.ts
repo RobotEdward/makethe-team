@@ -5,6 +5,7 @@ import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW } from "../support/clock.js";
 
@@ -175,7 +176,11 @@ describe("GET /r/:token — rendering", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(body).toContain("Thursday 7-a-side");
     expect(body).toContain("Oxford Sports Park");
-    expect(body).not.toContain("<script");
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5), so it is stripped before checking that nothing else needing
+    // script has crept onto this one.
+    expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
   });
 
   /**

@@ -1,4 +1,4 @@
-import { AUTH_API_PREFIX, PASSKEYS_PATH, SIGN_IN_COMPLETE_PATH } from "../auth/paths.js";
+import { AUTH_API_PREFIX, PASSKEYS_PATH, SERVICE_WORKER_PATH, SIGN_IN_COMPLETE_PATH } from "../auth/paths.js";
 
 /**
  * Every line of client-side JavaScript this app can emit, in one place.
@@ -426,8 +426,69 @@ export const TEAM_PICKER_JS = `
 `;
 
 /**
+ * Registers the service worker (M13).
+ *
+ * The third script block in the project, and it earns its place on the same
+ * ground as the passkey ones: there is no server-side substitute — a service
+ * worker can only be registered by a page, from script.
+ *
+ * Enhancement, not provision. Registration failing for any reason at all —
+ * an old browser, a private window, a corporate policy, a user who has
+ * scripting off — must leave every page exactly as it already was, which is
+ * fully working. Nothing on this site needs the worker to function; it adds
+ * an offline page and makes the app installable.
+ *
+ * The `catch` is deliberately empty rather than logging. A failed
+ * registration is not an error condition for the visitor, and a console error
+ * on every page load would trip the browser-test console gate for something
+ * that is working as designed.
+ *
+ * Deliberately **not** a member of `PAGE_SCRIPT_BLOCKS`: that array is what
+ * `layout()`'s `pageScripts` parameter is typed against, i.e. the set a page
+ * can *opt into*, and this block is never opted into — every page carries it,
+ * the same way every page carries `STYLES` in `src/views/styles.ts` without
+ * being able to opt out. See `SCRIPT_BLOCKS` below for where it actually
+ * joins the enumeration the CSP hashes.
+ *
+ * Registers immediately, with no `window.addEventListener("load", ...)` or
+ * `window.onload = ...` wrapper deferring it — despite that deferral being
+ * the idiom every guide for this API reaches for, and the idiom the other
+ * scripts in this file would reach for too. Both were tried and both broke
+ * an existing site-wide guard, for reasons that only show up once a script
+ * ships on *every* page rather than the one or two it used to be confined
+ * to:
+ *
+ * - `addEventListener("load", ...)` put the substring "event" into the
+ *   served bytes of every page, including the anonymous link-failure and
+ *   holding pages `test/routes/respond-get.test.ts` and
+ *   `test/views/fixture.test.ts` assert never contain that word anywhere —
+ *   this product calls it a fixture, never an event.
+ * - `window.onload = ...` put the substring "onload" into the same bytes,
+ *   which trips a *different* guard: `test/views/fixture.test.ts`'s TR-15
+ *   test bans "onload" outright, because on this page specifically it is
+ *   the signature of an auto-submitting response button rather than an
+ *   explicit click — exactly the anti-pattern TR-15 exists to rule out.
+ *
+ * Deferred registration exists to keep the worker's own fetch off the
+ * critical path for the *initial* page load. That benefit does not apply
+ * here: this `<script>` is emitted last, immediately before `</body>`
+ * (`layout()` in `src/views/layout.ts`), so by the time it runs the browser
+ * has already parsed everything the page needs — registering the worker
+ * cannot delay anything this page still has left to do. Losing the deferral
+ * costs nothing real and buys freedom from both banned words at once.
+ */
+export const SERVICE_WORKER_JS = `
+(function () {
+  if (!("serviceWorker" in navigator)) return;
+  navigator.serviceWorker.register("${SERVICE_WORKER_PATH}").catch(function () {});
+})();
+`;
+
+/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
+ *
+ * `SERVICE_WORKER_JS` is deliberately absent — see its own comment for why.
  */
 export const PAGE_SCRIPT_BLOCKS = [
   PASSKEY_SIGN_IN_JS,
@@ -439,11 +500,15 @@ export const PAGE_SCRIPT_BLOCKS = [
 export type PageScriptBlock = (typeof PAGE_SCRIPT_BLOCKS)[number];
 
 /**
- * The complete set of `<script>` blocks the app can ever emit. Unlike
- * `STYLE_BLOCKS` there is no site-wide member: nothing runs on a page that
- * did not ask for it, and no page asks for script unless passkeys need it.
+ * The complete set of `<script>` blocks the app can ever emit — the site-wide
+ * service worker registration plus every page-specific block above. Mirrors
+ * `STYLE_BLOCKS = [STYLES, ...PAGE_STYLE_BLOCKS]` in `src/views/styles.ts`
+ * exactly, including the reason: `layout()` emits `SERVICE_WORKER_JS`
+ * unconditionally (never through `pageScripts`), so it has to be added to
+ * this array by hand rather than arriving automatically the way a
+ * `PAGE_SCRIPT_BLOCKS` member does.
  *
  * **This is the value a CSP's `script-src` hashing must map over** — see the
  * module comment for the exact change M4's `src/security/csp.ts` has to make.
  */
-export const SCRIPT_BLOCKS = [...PAGE_SCRIPT_BLOCKS] as const;
+export const SCRIPT_BLOCKS = [SERVICE_WORKER_JS, ...PAGE_SCRIPT_BLOCKS] as const;

@@ -10,6 +10,7 @@ import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn } from "../support/clock.js";
 import { toLocalParts, toUtc } from "../../src/domain/time/zone.js";
 import { renderCancelConfirmPage, type CancelConfirmPageOptions } from "../../src/views/cancel.js";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 
 const db = getDb(env.DB);
 const CANCEL_SECRET = env.CANCEL_TOKEN_SECRET;
@@ -242,7 +243,11 @@ describe("GET /cancel/:token", () => {
     const token = await cancelToken(fixtureId);
     const body = await getCancel(token).then((r) => r.text());
 
-    expect(body).not.toContain("<script");
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5); stripped first so this keeps proving nothing *else* needs
+    // script.
+    expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
     expect(body.match(/<form/g)).toHaveLength(1);
     expect(body).toContain(`action="/cancel/${token}"`);
     expect(body).toContain('method="post"');

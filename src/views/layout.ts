@@ -1,4 +1,5 @@
-import type { PageScriptBlock } from "./scripts.js";
+import { APPLE_TOUCH_ICON_PATH, MANIFEST_PATH } from "../auth/paths.js";
+import { SERVICE_WORKER_JS, type PageScriptBlock } from "./scripts.js";
 import type { PageStyleBlock } from "./styles.js";
 
 export interface LayoutOptions {
@@ -19,10 +20,17 @@ export interface LayoutOptions {
    */
   pageStyles?: readonly PageStyleBlock[];
   /**
-   * Client-side JavaScript for this page alone — in practice, only the two
-   * passkey enhancements. **Almost every page should leave this unset**, and
-   * a page that sets it must still be completely usable when the script never
-   * runs (see `src/views/scripts.ts` for the whole argument).
+   * Client-side JavaScript for this page alone — in practice, only the
+   * passkey and team-picker enhancements. **Almost every page should leave
+   * this unset**, and a page that sets it must still be completely usable
+   * when the script never runs (see `src/views/scripts.ts` for the whole
+   * argument).
+   *
+   * That "almost every page" is about *this* parameter only. `layout()` also
+   * emits `SERVICE_WORKER_JS` on every single page (M13), but not through
+   * here: registering the service worker is an app-wide job, not something
+   * any one page opts into, so it is never passed as a `pageScripts` entry —
+   * see that constant's own comment in `src/views/scripts.ts`.
    *
    * Typed against `PageScriptBlock` — the union of blocks listed in
    * `PAGE_SCRIPT_BLOCKS` — for the same reason `pageStyles` is: M4's
@@ -186,7 +194,14 @@ export function layout({ title, body, pageStyles, pageScripts, centred }: Layout
   // No attributes on the tag — not `src`, not `type`, not `nonce`. A bare
   // inline `<script>` is what a CSP SHA-256 hash of the block's exact text
   // covers, and it is what `test/routes/signin.test.ts` insists on finding.
-  const scriptTags = (pageScripts ?? []).map((js) => `<script>${js}</script>`).join("\n");
+  //
+  // SERVICE_WORKER_JS goes first and unconditionally, ahead of whatever
+  // pageScripts carries — mirroring STYLES leading pageStyles above — because
+  // it is the one block every page emits regardless of what it opts into via
+  // `pageScripts` (see that field's comment on `LayoutOptions`).
+  const scriptTags = [SERVICE_WORKER_JS, ...(pageScripts ?? [])]
+    .map((js) => `<script>${js}</script>`)
+    .join("\n");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -196,6 +211,10 @@ export function layout({ title, body, pageStyles, pageScripts, centred }: Layout
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="manifest" href="${MANIFEST_PATH}">
+<!-- iOS reads only this. It ignores the manifest's icon list entirely. -->
+<link rel="apple-touch-icon" href="${APPLE_TOUCH_ICON_PATH}">
+<meta name="theme-color" content="#1f6f4a">
 <title>${escapeHtml(title)}</title>
 ${styleTags}
 </head>

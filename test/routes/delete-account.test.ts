@@ -12,6 +12,7 @@ import { auditLog, fixtures, memberships, players, responses, session } from "..
 import { erasePlayer } from "../../src/domain/erase-player.js";
 import { ERASURE_WINDOW_MS } from "../../src/domain/erasure-window.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { insertFixture, insertGame, insertMembership, insertPlayer, resetDatabase } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 
@@ -93,7 +94,11 @@ describe("GET /app/delete", () => {
     const body = await response.text();
 
     expect(response.status).toBe(200);
-    expect(body).not.toContain("<script");
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5); stripped first so this keeps proving nothing *else* needs
+    // script.
+    expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
     expect(body).toContain('method="post"');
     expect(body).toContain(`action="${DELETE_ACCOUNT_PATH}"`);
     // Both halves of what happens, and the delay that makes cancelling possible.

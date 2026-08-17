@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { auditLog, fixtures, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
+import { SCRIPT_BLOCKS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
@@ -217,15 +217,27 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
 
     const served = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
 
+    // M13 Task 5 put the site-wide service worker registration on every
+    // page, so "the picker page carries exactly the one enhancement" is no
+    // longer true of the raw count — every page now carries that plus
+    // whatever it opts into. The picker's *own* opt-in is still exactly one
+    // script, so the assertion is narrowed to the scripts that are not the
+    // site-wide block.
     const scripts = [...served.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
-    expect(scripts, "the picker page carries exactly the one enhancement").toHaveLength(1);
+    const ownScripts = scripts.filter(([, , js]) => js !== SERVICE_WORKER_JS);
+    expect(scripts.some(([, , js]) => js === SERVICE_WORKER_JS), "the page must register the service worker").toBe(
+      true,
+    );
+    expect(ownScripts, "the picker page carries exactly the one enhancement").toHaveLength(1);
     // No `src`, no `type`, no `nonce`: only a bare inline tag is covered by a
     // SHA-256 hash of its own text.
-    expect(scripts[0]![1], "the script tag must carry no attributes").toBe("");
+    for (const [, attributes] of scripts) {
+      expect(attributes, "every script tag must carry no attributes").toBe("");
+    }
     expect(
       SCRIPT_BLOCKS as readonly string[],
       "the picker ships script that is not in SCRIPT_BLOCKS, so the CSP will not hash it",
-    ).toContain(scripts[0]![2]);
+    ).toContain(ownScripts[0]![2]);
 
     // What a browser with scripting off is left holding. Behaviour lives only
     // in the blocks — no inline handler, no `javascript:` URL — so deleting

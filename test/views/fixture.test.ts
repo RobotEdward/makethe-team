@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderFixturePage, type FixturePageOptions } from "../../src/views/fixture.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import type { SquadMember } from "../../src/db/queries.js";
 import type { ResponseStatus } from "../../src/domain/response-status.js";
@@ -70,7 +71,11 @@ function member(
 
 describe("fixture page", () => {
   it("contains no JavaScript at all (TR-4)", () => {
-    expect(renderFixturePage(BASE)).not.toContain("<script");
+    const html = renderFixturePage(BASE);
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5); stripped first so this keeps proving TR-4 for everything else.
+    expect(html).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(html.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
   });
 
   it("offers two explicit POST buttons, not an auto-submit (TR-15)", () => {
@@ -953,6 +958,9 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
-    expect(html).not.toContain("<script");
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5); stripped first so this keeps proving TR-4 for everything else.
+    expect(html).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(html.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
   });
 });
