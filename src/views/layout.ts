@@ -108,6 +108,7 @@ export const STYLES = `
   h2 { font-size: var(--t-lead); margin: 2rem 0 0.6rem; }
   p { color: var(--mut); margin: 0; }
   a { color: var(--accent); }
+  .danger-link { color: var(--danger); font-weight: 600; }
 
   .nudge {
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;

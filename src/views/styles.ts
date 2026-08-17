@@ -320,6 +320,19 @@ export const FORM_CSS = `
   .field-invalid input, .field-invalid select { border-color: var(--warn); }
   .row { display: flex; gap: 1rem; }
   .row .field { flex: 1; }
+  /* A checkbox with a label and an explanatory hint. Written as a grid with
+     the control spanning both rows rather than as a .field: a .field puts its
+     label above a full-width input, which for a checkbox means a lone 1.4rem
+     box floating under its own caption, and the hint then reads as belonging
+     to whatever follows. The columns pin the control to the right of both
+     lines of text at every width, so the hint can wrap to three lines without
+     the tick moving. 52px because the whole row is the label's hit area — a
+     bare checkbox is about 22px, well under the phone floor. */
+  .switch-row { display: grid; grid-template-columns: 1fr auto; align-items: center;
+    gap: 0.25rem 1rem; min-height: 52px; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  .switch-row label { font-weight: 600; }
+  .switch-row .hint { grid-column: 1; font-size: var(--t-support); color: var(--mut); }
+  .switch-row input { grid-column: 2; grid-row: 1 / span 2; width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
   details { margin: 1.5rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
   summary { cursor: pointer; font-weight: 600; }
   .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
@@ -484,6 +497,46 @@ export const PRIVACY_STYLES_CSS = `
   .updated { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: var(--t-support); }
 `;
 
+/**
+ * Where the .danger-link explanation lives, because the rule itself cannot
+ * carry one.
+ *
+ * .danger-link is in STYLES (src/views/layout.ts) — several pages offer a
+ * destructive escape hatch as a link rather than a button, and a primitive
+ * three pages share does not belong to any one of them. It gets no comment
+ * beside it there: STYLES is inlined into the public holding page, and
+ * test/routes/access.test.ts asserts that block names no page, file or
+ * operation, so an explanatory comment there would leak the product's shape
+ * to a signed-out visitor and fail that test.
+ *
+ * A link and never a button: M10 §3.2 keeps a filled --danger and a filled
+ * --accent off the same screen, and every page that needs this already
+ * spends its filled button on the safe action. Colour plus weight on a link
+ * marks the dangerous one without a second fill competing for the eye.
+ */
+
+/**
+ * The owner's invite page — the sharing card, and the QR code's disclosure.
+ *
+ * Its own block rather than more rules in FORM_CSS: that block is loaded by
+ * every form and owner page in the product, and a card that only the invite
+ * page can render would be dead CSS hashed into all of them.
+ *
+ * The QR code is a details/summary rather than always-on. It is the least
+ * used of the three ways to pass an invite on, and at 240px it pushed the
+ * link and the share button — which is what most people actually use —
+ * below the fold on a phone. Its own rules zero the general details
+ * treatment from FORM_CSS, whose top border and 1.5rem margin are for the
+ * game form's optional sections and read as a page division here.
+ */
+export const INVITE_CSS = `
+  .card { margin: 1.1rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 0.75rem; }
+  .card h2 { margin: 0 0 0.6rem; font-size: var(--t-body); }
+  .card .actions { margin-top: 0.75rem; }
+  .qr-toggle { margin: 0; border: 0; padding: 0; }
+  .qr-toggle summary { font-weight: 600; font-size: var(--t-support); color: var(--mut); cursor: pointer; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -494,6 +547,7 @@ export const PAGE_STYLE_BLOCKS = [
   PASSKEY_STYLES_CSS,
   CANCEL_STYLES_CSS,
   FORM_CSS,
+  INVITE_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];
