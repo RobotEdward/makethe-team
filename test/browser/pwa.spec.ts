@@ -14,6 +14,39 @@ interface BrowserNavigator {
   };
 }
 
+/** What `waitForServiceWorkerReady` returns: either the registration settled, or it didn't. */
+type ServiceWorkerReadyResult = { ready: true; active: boolean } | { ready: false };
+
+/**
+ * Waits for `navigator.serviceWorker.ready`, bounded.
+ *
+ * `SERVICE_WORKER_JS` (`src/views/scripts.ts`) calls `.catch(function () {})`
+ * on `register()` — correct in production, where a failed registration must
+ * never disturb the page — but it means that if `worker-src` were ever
+ * removed from the CSP, `register()` rejects, the `.catch` swallows it, and
+ * `ready` never resolves at all. Awaiting it unbounded turns that specific,
+ * nameable failure into Playwright's generic 90s per-test timeout, with no
+ * indication anywhere of why. Racing against a short local timer — 5s is
+ * generous against a `wrangler dev` on localhost — turns it back into an
+ * assertion a caller can report on.
+ */
+async function waitForServiceWorkerReady(
+  page: import("@playwright/test").Page,
+  timeoutMs = 5_000,
+): Promise<ServiceWorkerReadyResult> {
+  return page.evaluate(async (timeout) => {
+    const nav = navigator as unknown as BrowserNavigator;
+    const timedOut = new Promise<{ ready: false }>((resolve) => {
+      setTimeout(() => resolve({ ready: false }), timeout);
+    });
+    const becameReady = nav.serviceWorker.ready.then((registration) => ({
+      ready: true as const,
+      active: registration.active !== null,
+    }));
+    return Promise.race([becameReady, timedOut]);
+  }, timeoutMs);
+}
+
 /**
  * The assertions that can only be made in a browser (M13).
  *
@@ -29,16 +62,33 @@ test("the service worker registers with no CSP violation", async ({ page }) => {
   });
 
   await page.goto("/");
-  const registered = await page.evaluate(async () => {
-    const registration = await (navigator as unknown as BrowserNavigator).serviceWorker.ready;
-    return registration.active !== null;
-  });
 
+  // `layout()` puts `<link rel="manifest">` on every page, so this
+  // navigation is also the only place the browser actually runs its manifest
+  // -processing algorithm and enforces `manifest-src` against it — a refused
+  // manifest fetch surfaces here as a CSP violation console message, exactly
+  // like a refused service-worker script under `worker-src` would. That is
+  // what proves the browser *accepts* the manifest under CSP; the second
+  // test below proves a different claim (that the route serves valid JSON),
+  // and does not touch this one.
+  const result = await waitForServiceWorkerReady(page);
+
+  // Asserted first, and regardless of whether the worker ever became ready:
+  // a CSP violation must be reported as a CSP violation, not masked by a
+  // readiness failure that names no cause.
   expect(violations, violations.join("\n")).toEqual([]);
-  expect(registered).toBe(true);
+
+  expect(result.ready, "the service worker never became ready").toBe(true);
+  if (result.ready) expect(result.active).toBe(true);
 });
 
-test("the manifest is fetched and parsed, not refused", async ({ page }) => {
+test("the manifest route serves valid JSON with the fields an install needs", async ({ page }) => {
+  // Direct navigation, not a `<link>`-triggered fetch: this proves the route
+  // answers correctly, not that the browser's manifest-processing algorithm
+  // accepts it under CSP. A top-level navigation to a JSON URL never runs
+  // that algorithm at all — only a document that carries `<link
+  // rel="manifest">` does, which is what the test above actually exercises.
+  // Both claims are worth pinning separately; this one is cheap on its own.
   const response = await page.goto("/manifest.webmanifest");
 
   expect(response?.status()).toBe(200);
@@ -48,7 +98,8 @@ test("the manifest is fetched and parsed, not refused", async ({ page }) => {
 
 test("a failed navigation falls back to the offline page", async ({ page, context }) => {
   await page.goto("/");
-  await page.evaluate(() => (navigator as unknown as BrowserNavigator).serviceWorker.ready);
+  const result = await waitForServiceWorkerReady(page);
+  expect(result.ready, "the service worker never became ready").toBe(true);
 
   await context.setOffline(true);
   await page.goto("/app");
