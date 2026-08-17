@@ -1034,12 +1034,18 @@ describe("no password field anywhere (TR-16)", () => {
     // while its fixture is still open (see the capture's own note). A
     // cancelled fixture renders no picker and would fail the "must carry"
     // assertion below, correctly.
+    // "account" joined this set in M13 Task 6, for the install section's
+    // beforeinstallprompt/appinstalled upgrade — deliberately granted to this
+    // one page, unlike SERVICE_WORKER_JS's site-wide registration, which
+    // every page already carries and for which adding pages here would gut
+    // the guard rather than exercise it.
     const mayCarryScript = new Set([
       "sign-in",
       "sign-in error",
       "passkeys",
       "game overview",
       "owner fixture",
+      "account",
     ]);
 
     // The only two captures whose route never calls layout() at all —

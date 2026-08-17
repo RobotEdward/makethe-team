@@ -476,6 +476,20 @@ export const OFFLINE_STYLES_CSS = `
   .offline-mark { width: 88px; height: 88px; border-radius: 22%; margin: 0 auto 1.5rem; display: block; }
 `;
 
+/**
+ * The install section on the account page (M13). Its own block rather than
+ * an extension of `FORM_CSS`: `renderInstallSection` (`src/views/install.ts`)
+ * is the one place this markup exists, so its canonical CSS lives beside the
+ * other single-page blocks above rather than folded into the wider form
+ * stylesheet every owner page also carries.
+ */
+export const INSTALL_STYLES_CSS = `
+  .install { margin-top: 2rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 0.7rem; }
+  .install h2 { margin-top: 0; }
+  .install ol { margin: 0.5rem 0 0; padding-left: 1.2rem; color: var(--mut); font-size: var(--t-support); }
+  .install li + li { margin-top: 0.35rem; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -487,6 +501,7 @@ export const PAGE_STYLE_BLOCKS = [
   CANCEL_STYLES_CSS,
   FORM_CSS,
   OFFLINE_STYLES_CSS,
+  INSTALL_STYLES_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

@@ -480,6 +480,77 @@ export const SERVICE_WORKER_JS = `
 `;
 
 /**
+ * Upgrades the install section on the account page (M13).
+ *
+ * Feature detection only — never user-agent sniffing. `beforeinstallprompt`
+ * is a Chromium event and its absence is exactly the signal that the manual
+ * instructions are the only route, which is the case on every iPhone.
+ *
+ * Three transitions, all of them subtractive if anything is missing:
+ *   - already installed (display-mode: standalone) → hide the how-to, show
+ *     the confirmation;
+ *   - installable → hide the how-to, show the button, and fire the saved
+ *     prompt on click;
+ *   - neither → change nothing, and the server-rendered instructions stand.
+ *
+ * Unlike `SERVICE_WORKER_JS`, this *is* a member of `PAGE_SCRIPT_BLOCKS`:
+ * the registration above is unconditional, carried by every page, while this
+ * enhancement is opted into by the one page that renders
+ * `renderInstallSection()` (`src/views/install.ts`) — the ordinary case the
+ * enumeration exists for, not the site-wide exception `SERVICE_WORKER_JS` is.
+ *
+ * No `fetch`, so `connect-src` is untouched. If that ever changes, read the
+ * "a hash lets a script run" section at the top of this file first.
+ */
+export const INSTALL_JS = `
+(function () {
+  var section = document.querySelector(".install");
+  if (!section) return;
+
+  var steps = section.querySelector("[data-install-steps]");
+  var intro = section.querySelector("[data-install-instructions]");
+  var button = section.querySelector("[data-install-button]");
+  var done = section.querySelector("[data-install-done]");
+
+  if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
+    if (steps) steps.hidden = true;
+    if (intro) intro.hidden = true;
+    if (done) done.hidden = false;
+    return;
+  }
+
+  var saved = null;
+  window.addEventListener("beforeinstallprompt", function (event) {
+    // Chromium shows its own prompt otherwise, at a moment of its choosing.
+    event.preventDefault();
+    saved = event;
+    if (steps) steps.hidden = true;
+    if (button) button.hidden = false;
+  });
+
+  if (button) {
+    button.addEventListener("click", function () {
+      if (!saved) return;
+      saved.prompt();
+      // A prompt can only be used once. Whatever the player chose, this one
+      // is spent, and holding a stale event would give them a button that
+      // does nothing the second time.
+      saved = null;
+      button.hidden = true;
+      if (steps) steps.hidden = false;
+    });
+  }
+
+  window.addEventListener("appinstalled", function () {
+    if (button) button.hidden = true;
+    if (steps) steps.hidden = true;
+    if (intro) intro.hidden = true;
+    if (done) done.hidden = false;
+  });
+})();
+`;
+
+/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
  *
@@ -490,6 +561,7 @@ export const PAGE_SCRIPT_BLOCKS = [
   PASSKEY_REGISTER_JS,
   COPY_INVITE_JS,
   TEAM_PICKER_JS,
+  INSTALL_JS,
 ] as const;
 
 export type PageScriptBlock = (typeof PAGE_SCRIPT_BLOCKS)[number];

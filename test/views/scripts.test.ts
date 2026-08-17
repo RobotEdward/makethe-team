@@ -75,8 +75,19 @@ describe("the script enumeration", () => {
       // return;` — a double close-paren the other three blocks' guards don't
       // have (the extra one belongs to `!(...)`), so it gets its own
       // alternative rather than reusing the single-`\)` shape above.
+      // `INSTALL_JS` (M13 Task 6) is a fifth kind, and a different shape
+      // again: it has no single browser capability whose absence must short-
+      // circuit the whole block, because every API it touches already
+      // degrades safely on its own — `window.matchMedia` is checked inline
+      // before use, and `beforeinstallprompt`/`appinstalled` are ordinary
+      // events that simply never fire on a browser that doesn't dispatch
+      // them. What it guards instead is its DOM anchor: `if (!section)
+      // return;` before anything else, so a page that never rendered
+      // `renderInstallSection()` — or a future markup change that drops the
+      // `.install` class — gets the same silent no-op every other block gets
+      // for a missing capability.
       expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
-        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;/,
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;/,
       );
     }
   });
