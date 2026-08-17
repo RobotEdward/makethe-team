@@ -10,6 +10,7 @@ import { home } from "./routes/home.js";
 import { privacy } from "./routes/privacy.js";
 import { join } from "./routes/join.js";
 import { passkeys } from "./routes/passkeys.js";
+import { pwa } from "./routes/pwa.js";
 import { respond } from "./routes/respond.js";
 import { robots } from "./routes/robots.js";
 import { cspHeader } from "./security/csp.js";
@@ -101,6 +102,10 @@ export function createApp(): Hono<AppEnv> {
   });
 
   app.route("/", robots);
+  // The manifest, the icons and (from Task 3) the service worker. Public and
+  // unauthenticated like robots.txt, and for the same reason: the browser
+  // asks for these before a visitor is anyone.
+  app.route("/", pwa);
   app.route("/", home);
   // Public and ungated on purpose — see src/routes/privacy.ts.
   app.route("/", privacy);

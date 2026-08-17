@@ -227,3 +227,24 @@ export function leaveOtherGamePath(gameId: string): string {
 export function ownerGuestRemovePath(gameId: string, fixtureId: string, playerId: string): string {
   return `/g/${gameId}/f/${fixtureId}/guest/${playerId}/remove`;
 }
+
+/**
+ * The web app manifest (M13). Served to everyone, unauthenticated: the
+ * browser fetches it on first visit, long before any session exists.
+ */
+export const MANIFEST_PATH = "/manifest.webmanifest";
+
+/** The service worker. Must be served from the root to control every page. */
+export const SERVICE_WORKER_PATH = "/sw.js";
+
+/** The one page the service worker caches (M13, spec §8). */
+export const OFFLINE_PATH = "/offline";
+
+export const ICON_192_PATH = "/icon-192.png";
+export const ICON_512_PATH = "/icon-512.png";
+
+/**
+ * iOS ignores the manifest's icon list completely and reads only
+ * `<link rel="apple-touch-icon">`. This path exists for that link alone.
+ */
+export const APPLE_TOUCH_ICON_PATH = "/apple-touch-icon.png";

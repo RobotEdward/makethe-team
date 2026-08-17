@@ -1162,6 +1162,26 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "assertion lives in test/routes/leave.test.ts. Deliberately excluded " +
       "from the wrongOrigin check the other POSTs above carry — see the " +
       "handler's own doc comment in src/routes/respond.ts.",
+    "GET /manifest.webmanifest":
+      "never returns HTML on any branch — a JSON body served as " +
+      "application/manifest+json only (src/routes/pwa.ts); no template of " +
+      "its own that could carry a script. Its own field and content-type " +
+      "assertions live in test/routes/pwa.test.ts.",
+    "GET /icon-192.png":
+      "never returns HTML on any branch — a PNG body served as image/png " +
+      "only (src/routes/pwa.ts); no template of its own that could carry a " +
+      "script. Its own status-code and content-type assertions live in " +
+      "test/routes/pwa.test.ts.",
+    "GET /icon-512.png":
+      "never returns HTML on any branch — a PNG body served as image/png " +
+      "only (src/routes/pwa.ts); no template of its own that could carry a " +
+      "script. Its own status-code and content-type assertions live in " +
+      "test/routes/pwa.test.ts.",
+    "GET /apple-touch-icon.png":
+      "never returns HTML on any branch — a PNG body served as image/png " +
+      "only (src/routes/pwa.ts); no template of its own that could carry a " +
+      "script. Its own status-code and content-type assertions live in " +
+      "test/routes/pwa.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
