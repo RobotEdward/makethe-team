@@ -228,8 +228,8 @@ a record of who was on which side. The controls go; the pick doesn't.
 ## Replacing the invite link
 
 If the link ends up somewhere you'd rather it hadn't — a public group, a work
-channel, a stranger's phone — **Replace this link** under the QR code on the
-game page gives you a fresh one. The old link stops working immediately, so
+channel, a stranger's phone — **Replace this link**, at the bottom of the
+**Invite people** card on the game page, gives you a fresh one. The old link stops working immediately, so
 share the new one with anybody still waiting to join. People already in the
 squad aren't affected.
 

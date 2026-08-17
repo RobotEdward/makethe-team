@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import type { Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseSource, ResponseStatus } from "../domain/response-status.js";
 import type { TeamAssignment, TeamId } from "../domain/teams.js";
 import type { Db } from "./client.js";
@@ -60,6 +61,19 @@ const SQUAD_ORDER: Record<ResponseStatus, number> = {
   out: 3,
   withdrawn: 4,
 };
+
+// Where a status this build cannot read sorts. Last, and defined, which is the
+// whole point: `responses.status` is a bare `text NOT NULL` with no CHECK
+// constraint, so a row can hold a value with no entry above, and an unmapped
+// key makes the subtraction below `NaN`. A comparator that returns `NaN` does
+// not throw and does not sort — it hands back an arbitrary order that varies
+// with the input, which is the quietest failure of the family this milestone
+// has been chasing. A number puts such a row somewhere specific instead.
+const UNKNOWN_STATUS_ORDER = 99;
+
+function squadOrder(status: ResponseStatus): number {
+  return SQUAD_ORDER[status] ?? UNKNOWN_STATUS_ORDER;
+}
 
 /**
  * Load a fixture, its game and the current squad in display order.
@@ -139,7 +153,7 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
   }));
 
   squad.sort((a, b) => {
-    const byStatus = SQUAD_ORDER[a.status] - SQUAD_ORDER[b.status];
+    const byStatus = squadOrder(a.status) - squadOrder(b.status);
     if (byStatus !== 0) return byStatus;
     if (a.status === "waitlisted") return (a.waitlistRank ?? 0) - (b.waitlistRank ?? 0);
     // Within `in`, `pending` and `out`, the SQL ORDER BY already put rows in
@@ -380,7 +394,10 @@ export async function listUpcomingFixtures(
   db: Db,
   gameId: string,
   now: Date,
-): Promise<Array<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>> {
+  // `lifecycle` is the column's own enum, not a widened `string`: the pages
+  // that render these rows map it to words through `fixtureStatusWords`, and
+  // a widened type there means an unmapped value renders as the raw token.
+): Promise<Array<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>> {
   return db
     .select({
       id: fixtures.id,

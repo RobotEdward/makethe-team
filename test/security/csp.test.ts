@@ -18,6 +18,7 @@ import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } fro
 import { ALLOWED, signIn } from "../support/sign-in.js";
 import { kickoffIn, NOW } from "../support/clock.js";
 import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
+import { INVITE_CSS, STYLE_BLOCKS } from "../../src/views/styles.js";
 
 /**
  * Task 9's CSP header, asserted two ways on every page the app renders:
@@ -251,6 +252,24 @@ describe("Content-Security-Policy", () => {
     // even while every token above still looked plausible.
     expect(header).not.toContain("'unsafe-inline'");
     expect(header).not.toContain("*");
+  });
+
+  /**
+   * The page-level tests below can only see blocks a page actually renders,
+   * so a style block that exists but was never added to `PAGE_STYLE_BLOCKS`
+   * is invisible to every one of them: no hash is emitted, the browser drops
+   * the block in production, its CSS silently vanishes, and nothing here
+   * fails. This walks the enumeration itself, so a new block is covered the
+   * moment it is registered — and `INVITE_CSS` is named outright because it
+   * is the block added with no markup consuming it yet, which is precisely
+   * the case a rendered-page assertion cannot reach.
+   */
+  it("hashes every exported style block, including ones no page renders yet", async () => {
+    const header = await cspHeader();
+    for (const block of STYLE_BLOCKS) {
+      expect(header).toContain(`'sha256-${await sha256Base64(block)}'`);
+    }
+    expect(STYLE_BLOCKS).toContain(INVITE_CSS);
   });
 
   it("holding page (/): fixed directives present and inline styles covered", async () => {

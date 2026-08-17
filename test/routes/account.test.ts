@@ -12,6 +12,7 @@ import {
   insertResponse,
   resetDatabase,
 } from "../support/factories.js";
+import { FIXTURE_STYLES_CSS } from "../../src/views/styles.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
@@ -68,10 +69,41 @@ describe("GET /app/account", () => {
     // email can't be an editable field, and this is the property that pins
     // it — a regression that turned the email into an `<input>` would still
     // contain the address, so `toContain(ALLOWED)` alone would not catch it.
-    expect(body).toContain(`<p class="read-only">${ALLOWED}</p>`);
+    expect(body).toContain(`<p>${ALLOWED}</p>`);
     expect(body).not.toContain(`value="${ALLOWED}"`);
+    expect(body).not.toContain(`name="email"`);
     expect(body).toContain(`href="${PASSKEYS_PATH}"`);
     expect(body).toContain(`href="${DELETE_ACCOUNT_PATH}"`);
+  });
+
+  it("reads the email out with a caption, not inside the empty-state box", async () => {
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(`<p class="readout-label">Email address</p>`);
+    // Anything with an @ in it inside the dashed box is the misuse this
+    // replaced: that box means "nothing here to act on", and an address the
+    // page is reading out to you is a value, not an absence.
+    expect(body).not.toMatch(/<p class="read-only">[^<]*@/);
+  });
+
+  it("keeps the dashed box for the state it means — nothing to act on", async () => {
+    // Signed in, no memberships and so no fixtures: the empty history. Paired
+    // deliberately with the assertion above, because a change that stripped
+    // .read-only from every page would satisfy that one on its own.
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(`<p class="read-only">Nothing yet.`);
+  });
+
+  it("groups signing in under one heading", async () => {
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("<h2>Signing in</h2>");
+    expect(body).not.toContain("<h2>Your email address</h2>");
+    expect(body).not.toContain("<h2>How you sign in</h2>");
   });
 
   it("lists a played fixture, which the dashboard deliberately hides", async () => {
@@ -214,6 +246,51 @@ describe("GET /app/account", () => {
     const body = await (await get(cookie)).text();
     expect(body).not.toContain("Somebody else's game");
     expect(body).not.toContain("Sam Okafor");
+  });
+
+  it("still renders a fixture whose stored lifecycle this build has never heard of", async () => {
+    // `fixtures.lifecycle` is `text NOT NULL DEFAULT 'scheduled'` with no
+    // CHECK constraint behind it, so the column can hold a value outside the
+    // union: a legacy row, a hand-applied fix, or a newer deploy writing one
+    // mid-rollout. `fixtureStatusLabel` was a switch with no `default`, so it
+    // returned `undefined`, which the view hands to `escapeHtml` — a 500 on
+    // this whole page, not one odd word in one row. `as never` is how such a
+    // row is written in a test the type system would otherwise forbid.
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    await insertMembership(db, gameId, me);
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "abandoned" as never,
+      kicksOffAt: NEXT_WEEK,
+      venueOverride: "Unknown state",
+    });
+    await insertResponse(db, fixtureId, me, { status: "in" });
+
+    const response = await get(cookie);
+    expect(response.status).toBe(200);
+
+    const body = await response.text();
+    const start = body.indexOf("Unknown state");
+    expect(start, "expected the fixture's row to render at all").toBeGreaterThan(-1);
+    const row = body.slice(start, body.indexOf("</li>", start));
+
+    // Words, not the stored token and not the absence of both.
+    expect(row).toContain("Status unknown");
+    expect(row).not.toContain("abandoned");
+    expect(row).not.toContain("undefined");
+  });
+
+  it("ends in one back link, wearing the class §2.5 names", async () => {
+    // The link was already here; the class was not, so the 1.5rem that keeps
+    // it off the block above it never applied. This page already carries
+    // FIXTURE_STYLES_CSS, where `.back-link` is declared.
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(`<p class="back-link">`);
+    expect(body.match(/class="back-link"/g)).toHaveLength(1);
+    expect(body).toContain(FIXTURE_STYLES_CSS);
   });
 
   it("shows the pending-erasure banner and its link when one is due", async () => {

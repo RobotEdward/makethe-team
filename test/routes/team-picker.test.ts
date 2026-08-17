@@ -158,6 +158,25 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     expect(html).toContain(`<input type="radio" name="${ada}" value="a">`);
   });
 
+  /**
+   * `test/views/team-picker.test.ts` enumerates the fragment's states; this
+   * asks the same question of the page a browser is actually served, where the
+   * picker's form and the publish form sit one above the other. M12 §2.2:
+   * "Save teams" is the outlined default, so the one fill belongs to the act
+   * that emails the squad.
+   */
+  it("serves one filled button on the whole fixture page, and it is Publish", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, ada } = await seedPickableFixture(viewerId);
+    await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [ada]: "a" }, cookie);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    expect(html.match(/class="button (?:primary|danger)"/g) ?? []).toHaveLength(1);
+    expect(html).toContain(`<button class="button primary" type="submit">Publish teams</button>`);
+    expect(html).toContain(`<button class="button" type="submit">Save teams</button>`);
+  });
+
   it.each(["scheduled", "played", "cancelled"] as const)(
     "renders no picker on a %s fixture",
     async (lifecycle) => {

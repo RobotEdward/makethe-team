@@ -123,6 +123,26 @@ describe("capacity flags", () => {
   });
 });
 
+describe("the counts a renderer needs", () => {
+  it("carries the counts a renderer needs through to the view", () => {
+    const view = fixtureView(facts({ inCount: 9 }), INSIDE_WINDOW);
+    expect(view.inCount).toBe(9);
+    expect(view.minPlayers).toBe(facts({}).minPlayers);
+    expect(view.maxPlayers).toBe(facts({}).maxPlayers);
+  });
+
+  it.each(["scheduled", "cancelled", "played"] as const)("carries them on a %s fixture too", (lifecycle) => {
+    // The non-open lifecycles leave by a different `return` from the one
+    // above, so that is where the three fields go missing — and a renderer
+    // handed `undefined` prints "NaN of undefined" rather than throwing, so
+    // no other test would catch it.
+    const view = fixtureView(facts({ lifecycle, inCount: 9 }), INSIDE_WINDOW);
+    expect(view.inCount).toBe(9);
+    expect(view.minPlayers).toBe(10);
+    expect(view.maxPlayers).toBe(14);
+  });
+});
+
 describe("the warning window boundary", () => {
   it("opens exactly at the offset", () => {
     const boundary = new Date(KICKOFF.getTime() - 12 * 3_600_000);

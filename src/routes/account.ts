@@ -393,6 +393,17 @@ function fixtureStatusLabel(status: FixtureStatus): string {
       return "Short of players";
     case "open":
       return "Open for answers";
+    // Total for the same reason `fixtureStatusWords` in `src/views/fixture.ts`
+    // is: `fixtures.lifecycle` is a bare `text NOT NULL DEFAULT 'scheduled'`
+    // with no CHECK constraint behind it, so a legacy row, a hand-applied fix
+    // or a newer deploy writing mid-rollout can hold a value outside this
+    // union. The type is a claim about the schema, not a guarantee about the
+    // rows. Without this the switch falls off its end and returns `undefined`,
+    // which the view hands to `escapeHtml` — this page 500s rather than
+    // printing a word. Worded as the fixture pages word it rather than
+    // inventing a second phrase for the same admission.
+    default:
+      return "Status unknown";
   }
 }
 
@@ -422,6 +433,21 @@ function historyStatusLabel(status: ResponseStatus, isFinished: boolean): string
       // Unreachable: `entitledTo` excludes withdrawn rows. Here so the switch
       // is exhaustive and a new status becomes a typecheck failure.
       return "You withdrew";
+    // Total for the same reason `fixtureStatusLabel` above is, against the
+    // same schema shape: `responses.status` is a bare `text NOT NULL` with no
+    // CHECK constraint behind it. Without this the switch returns `undefined`,
+    // the view hands it to `escapeHtml`, and this page 500s — the second
+    // unguarded lookup in this one file, which is why
+    // `test/stored-lookups.test.ts` now enumerates the class rather than this
+    // being fixed one instance at a time.
+    //
+    // Silence rather than words, matching `viewerHeadlineOpen`: this line is a
+    // claim about what the reader themselves answered, and there is no true
+    // one to make when the answer cannot be read. The fixture's own state
+    // still reads on the row through `fixtureStatusLabel`, so nothing is left
+    // blank that carries information.
+    default:
+      return "";
   }
 }
 

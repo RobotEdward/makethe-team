@@ -1,6 +1,6 @@
-import { gamePath, leaveOtherGamePath, SIGN_IN_PATH } from "../auth/paths.js";
+import { DASHBOARD_PATH, gamePath, leaveOtherGamePath, SIGN_IN_PATH } from "../auth/paths.js";
 import { escapeHtml, layout } from "./layout.js";
-import { FORM_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 /**
  * The page behind `/leave/:token` (BR-22, task-2).
@@ -111,10 +111,43 @@ function otherGamesBody(otherGames: readonly { gameId: string; gameName: string 
     )
     .join("");
 
+  // `ul.squad`, not a bare `ul`: without it this is the browser's default
+  // bulleted list with a full-width 52px `.button` stacked under each game's
+  // name, which at three squads is a column of identical red-adjacent slabs
+  // and no way to scan the names. The class is the row shape the organiser's
+  // squad list already uses — a name on the left, its one control on the
+  // right — and this list is the same shape of thing.
   return `
     <h2>Your other squads</h2>
-    <ul>${items}</ul>
+    <ul class="squad">${items}</ul>
   `;
+}
+
+/**
+ * The way off this page, for a visitor who has somewhere to go.
+ *
+ * Only rendered when the other-squads lookup *succeeded* for a session this
+ * page recognised as the token's own player, which is what a defined
+ * `otherGames` means (see `otherGamesBody`). It is not quite the same as
+ * "has a session": `resolveOtherGames` also degrades to `undefined` when the
+ * list query throws for a correctly-identified session, so a database fault
+ * costs that visitor this link as well as the list. Deliberate — the same
+ * degradation the sign-in offer above already accepts, and one exit missing
+ * is a better failure than a page that 500s over a nicety.
+ *
+ * Everyone else reaches this page from an email with no session, so
+ * "Back to your games" would land them on sign-in; that page
+ * already offers them sign-in above, in words that say what they get for it,
+ * and one exit that works beats two that go to the same prompt.
+ *
+ * The dashboard and not the game itself, because this page can be read in the
+ * state where the leave has already happened and the game is no longer theirs
+ * to open.
+ */
+function backLink(hasSession: boolean): string {
+  return hasSession
+    ? `<p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>`
+    : "";
 }
 
 export function renderLeavePage(params: LeavePageParams): string {
@@ -133,7 +166,25 @@ export function renderLeavePage(params: LeavePageParams): string {
             : doneBody(gameName)
     }
     ${otherGamesBody(params.otherGames)}
+    ${backLink(params.otherGames !== undefined)}
   `;
 
-  return layout({ title: `Leave ${params.gameName} — Make The Team`, body, pageStyles: [FORM_CSS] });
+  // SQUAD_STYLES_CSS FIRST, and the order is not cosmetic: it and FORM_CSS
+  // both declare `ul.squad > li` at identical specificity (0,1,1), so the
+  // later block in this array wins. FORM_CSS's grid is the one that must,
+  // because a row here is a game's name plus a Leave button and `1fr auto`
+  // pins both columns whatever the name's length. SQUAD_STYLES_CSS's flex
+  // version lets a long name pull the button onto its own line while a short
+  // one keeps it alongside — two rows of identical markup laid out
+  // differently, a bug this product already shipped once (see the grid
+  // comment in FORM_CSS). SQUAD_STYLES_CSS still earns its place: the list's
+  // top border and its `text-align: left` are only there.
+  //
+  // FIXTURE_STYLES_CSS is for `.back-link` alone, the same way
+  // `game-overview.ts` takes it.
+  return layout({
+    title: `Leave ${params.gameName} — Make The Team`,
+    body,
+    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, FIXTURE_STYLES_CSS],
+  });
 }

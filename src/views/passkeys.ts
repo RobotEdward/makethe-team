@@ -1,7 +1,7 @@
 import { DASHBOARD_PATH } from "../auth/paths.js";
 import { escapeHtml, layout } from "./layout.js";
 import { PASSKEY_REGISTER_JS } from "./scripts.js";
-import { PASSKEY_STYLES_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, PASSKEY_STYLES_CSS } from "./styles.js";
 
 export interface PasskeysPageOptions {
   /**
@@ -41,7 +41,12 @@ export function renderPasskeysPage({ labels }: PasskeysPageOptions): string {
 
   return layout({
     title: "Passkeys — Make The Team",
-    pageStyles: [PASSKEY_STYLES_CSS],
+    // `FIXTURE_STYLES_CSS` is here for `.back-link` alone (§2.5), the same way
+    // `src/views/game-overview.ts` and `src/views/leave.ts` carry it: without
+    // the block the class is inert and the link butts against the block above
+    // it. Every other selector in that block is a class this page never
+    // renders, so nothing already here changes appearance.
+    pageStyles: [PASSKEY_STYLES_CSS, FIXTURE_STYLES_CSS],
     pageScripts: [PASSKEY_REGISTER_JS],
     body: `
       <h1>Passkeys</h1>
@@ -51,7 +56,7 @@ export function renderPasskeysPage({ labels }: PasskeysPageOptions): string {
         <button class="button primary" type="button" id="passkey-add-button">Add a passkey</button>
         <p class="nudge" id="passkey-problem" hidden></p>
       </div>
-      <p><a href="${DASHBOARD_PATH}">Back to your games</a></p>
+      <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
     `,
   });
 }

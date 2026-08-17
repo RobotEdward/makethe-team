@@ -141,7 +141,8 @@ export interface GuideWorld {
    * demonstrate an owner's mark-in and guest-add (Task 8's three new shots).
    * It cannot reuse the main fixture: every other chapter has already
    * committed exact numbers to that fixture (chapter 1's "ten people in",
-   * chapter 3's "0 spots left" and Ade Sowande shown as not yet responded,
+   * chapter 3's "10 of 10 in · 2 waiting" and Ade Sowande shown as not yet
+   * responded,
    * chapter 6's headcount on the cancellation page), and the member who
    * never answers there is *the* Ade Sowande those chapters name. Marking
    * him in here would quietly falsify all of them on the next capture. A

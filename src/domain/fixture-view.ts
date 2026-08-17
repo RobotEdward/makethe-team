@@ -22,6 +22,17 @@ export interface FixtureView {
   flags: FixtureFlag[];
   spotsLeft: number;
   needsOwnerAttention: boolean;
+  /**
+   * The three counts carried through unchanged, so a renderer showing the
+   * headcount as a proportion — "9 of 14", and the bar drawn from it — has
+   * them from the view alone. Without these, every page that draws the bar
+   * would need the `FixtureFacts` beside the view it was already given, and
+   * four call sites each doing their own arithmetic is four chances to
+   * disagree about what "full" means.
+   */
+  inCount: number;
+  minPlayers: number;
+  maxPlayers: number;
 }
 
 const HOUR_MS = 3_600_000;
@@ -64,7 +75,19 @@ export function fixtureView(facts: FixtureFacts, now: Date): FixtureView {
       ? 0
       : Math.max(0, facts.maxPlayers - facts.inCount);
 
-    return { status: facts.lifecycle, flags: [], spotsLeft, needsOwnerAttention: false };
+    // The counts go out by this return as well as the main one below: a
+    // `scheduled` or `cancelled` fixture still gets rendered, and omitting
+    // them here would have those pages draw a bar from `undefined` — "NaN of
+    // undefined", which prints rather than throws.
+    return {
+      status: facts.lifecycle,
+      flags: [],
+      spotsLeft,
+      needsOwnerAttention: false,
+      inCount: facts.inCount,
+      minPlayers: facts.minPlayers,
+      maxPlayers: facts.maxPlayers,
+    };
   }
 
   const windowOpensAt = facts.kicksOffAt.getTime() - facts.shortWarningOffsetHours * HOUR_MS;
@@ -89,5 +112,8 @@ export function fixtureView(facts: FixtureFacts, now: Date): FixtureView {
     flags,
     spotsLeft: Math.max(0, facts.maxPlayers - facts.inCount),
     needsOwnerAttention: inWindow && (status === "short" || flags.includes("uneven")),
+    inCount: facts.inCount,
+    minPlayers: facts.minPlayers,
+    maxPlayers: facts.maxPlayers,
   };
 }

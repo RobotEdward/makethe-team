@@ -5,7 +5,7 @@ import {
   gamePath,
 } from "../auth/paths.js";
 import { escapeHtml, layout } from "./layout.js";
-import { FORM_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
 
 /**
  * The page behind `/app/delete` (BR-34, M7b).
@@ -230,12 +230,17 @@ export function renderDeleteAccountPage(params: DeleteAccountPageParams): string
             : pendingBody(params.erasesAtLocal ?? "")
     }
     ${ON_NOBODY_ELSE_S_BEHALF}
-    <p><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
+    <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
   `;
 
   return layout({
     title: `Delete my data — Make The Team`,
     body,
-    pageStyles: [FORM_CSS],
+    // `FIXTURE_STYLES_CSS` is here for `.back-link` alone (§2.5), the same way
+    // `src/views/game-overview.ts` and `src/views/leave.ts` carry it: without
+    // the block the class is inert and the link butts against the paragraph
+    // above it. Every other selector in that block is a class this page never
+    // renders, so nothing already here changes appearance.
+    pageStyles: [FORM_CSS, FIXTURE_STYLES_CSS],
   });
 }

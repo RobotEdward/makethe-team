@@ -80,6 +80,14 @@ test("@guide capture every screen the guide shows", async ({ page, browser }) =>
       await expect(page.locator(shot.element!)).toContainText(GUIDE_GAME_NAME);
     }
 
+    // Open any disclosure this shot lives inside, before anything is measured.
+    // See `Shot.expand` for what a closed one silently produces instead.
+    if (shot.expand) {
+      const summary = page.locator(shot.expand);
+      await summary.click();
+      await expect(summary.locator("xpath=..")).toHaveAttribute("open", "");
+    }
+
     let shotBuffer: Buffer;
     if (shot.element) {
       const box = await page.locator(shot.element).boundingBox();

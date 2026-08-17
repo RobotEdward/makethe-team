@@ -5,6 +5,7 @@ import { PASSKEYS_PATH, SIGN_IN_PATH } from "../../src/auth/session.js";
 import { getDb } from "../../src/db/client.js";
 import { passkey, players, user as userTable } from "../../src/db/schema.js";
 import { PASSKEY_REGISTER_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { FIXTURE_STYLES_CSS } from "../../src/views/styles.js";
 import { resetDatabase } from "../support/factories.js";
 import { ORIGIN, bindings, signIn } from "../support/sign-in.js";
 
@@ -84,6 +85,19 @@ describe("GET /app/passkeys", () => {
     expect(body).toContain(`<script>${PASSKEY_REGISTER_JS}</script>`);
     // Signed-in data: never cached anywhere but this browser.
     expect(response.headers.get("cache-control")).toBe("private, no-store");
+  });
+
+  it("ends in one back link, wearing the class §2.5 names", async () => {
+    // The link was already here; the class was not, so the 1.5rem that keeps
+    // it off the block above it never applied. `.back-link` is declared in
+    // FIXTURE_STYLES_CSS, so the page has to carry that block for the class
+    // to mean anything — a class with no rule behind it fails silently.
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(`<p class="back-link">`);
+    expect(body.match(/class="back-link"/g)).toHaveLength(1);
+    expect(body).toContain(FIXTURE_STYLES_CSS);
   });
 
   it("lists this identity's passkeys and nobody else's (TR-18)", async () => {

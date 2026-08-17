@@ -13,8 +13,9 @@ Signing in shows your fixtures as cards, nearest first.
 
 Each card carries the same facts as the email: the Meadow Park Kickabout,
 Meadow Park 3G, the date and 19:00. **Confirmed — the game is on** means enough
-people have said yes. **0 spots left** means the places are taken. **You're
-in** is your own answer.
+people have said yes. The bar under it fills as people answer, and the count
+beneath it — **10 of 10 in · 2 waiting** — says every place is taken with two
+more queued behind. **You're in** is your own answer.
 
 The game's name at the top of the card is a link. Tap it to see that game on
 its own — where it's played, who else is playing if the organiser shows that,

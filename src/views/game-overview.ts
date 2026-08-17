@@ -1,4 +1,5 @@
 import {
+  DASHBOARD_PATH,
   gameEditPath,
   joinPath,
   memberDetailPath,
@@ -7,12 +8,14 @@ import {
   ownerFixturePath,
 } from "../auth/paths.js";
 import { oddMaxWarning } from "../domain/game-form.js";
+import type { Lifecycle } from "../domain/lifecycle.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
+import { fixtureStatusWords } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
 import { qrSvg } from "./qr.js";
 import { COPY_INVITE_JS } from "./scripts.js";
-import { FORM_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 export interface GameOverviewParams {
   gameId: string;
@@ -25,7 +28,13 @@ export interface GameOverviewParams {
   prefersEvenNumbers: boolean;
   inviteToken: string;
   squad: ReadonlyArray<{ playerId: string; name: string; role: "player" | "owner"; isGuest: boolean }>;
-  upcoming: ReadonlyArray<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>;
+  /**
+   * `lifecycle` is the stored enum, not a display string — the page maps it
+   * through `fixtureStatusWords`. Typed as `Lifecycle` rather than `string`
+   * so a caller cannot hand this page a value the mapping has no words for
+   * and have it print the raw token at whoever is reading.
+   */
+  upcoming: ReadonlyArray<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>;
   /** The id of the player viewing this page, so their row can be marked as "(you)". */
   viewerPlayerId: string;
   /** A refusal to explain on this page, e.g. J6a's last-organiser guard. Escaped and shown near the top. */
@@ -84,16 +93,24 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
             <input type="hidden" name="role" value="${nextRole}">
             <button class="button" type="submit">${roleLabel}</button>
           </form>
-          <a href="${escapeHtml(memberRemovePath(gameId, member.playerId))}">Remove</a>
+          <a class="danger-link" href="${escapeHtml(memberRemovePath(gameId, member.playerId))}">Remove</a>
         </details>
       </li>`;
     })
     .join("");
 
+  // One row per fixture. The state is `fixtureStatusWords`, never the stored
+  // lifecycle value itself: this page is reachable by an organiser who is also
+  // just a player, and "open" is an internal token, not something to tell them.
+  // The words come from the same table the single-fixture page reads, so the
+  // two pages cannot end up naming a fixture's state differently.
   const fixtureItems = upcoming
     .map(
       (fixture) =>
-        `<li><a href="${escapeHtml(ownerFixturePath(gameId, fixture.id))}">${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))}</a> — ${escapeHtml(fixture.lifecycle)}, ${fixture.inCount} in</li>`,
+        `<li>
+        <a href="${escapeHtml(ownerFixturePath(gameId, fixture.id))}">${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))}</a>
+        <span class="detail">${escapeHtml(fixtureStatusWords(fixture.lifecycle))} — ${fixture.inCount} in</span>
+      </li>`,
     )
     .join("");
 
@@ -105,28 +122,50 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     ${oddMax}
     <p><a href="${escapeHtml(gameEditPath(gameId))}">Edit this game</a></p>
 
-    <h2>Invite people</h2>
-    <p>Share this link in your group chat, or let people scan the code.</p>
-    <div class="invite-link">
-      <input id="invite-url" type="text" readonly value="${escapeHtml(inviteUrl)}">
-      <button class="button" type="button" id="invite-copy" hidden>Copy</button>
+    <div class="card">
+      <h2>Invite people</h2>
+      <p>Share this link in your group chat, or let people scan the code.</p>
+      <div class="invite-link">
+        <input id="invite-url" type="text" readonly value="${escapeHtml(inviteUrl)}">
+        <button class="button" type="button" id="invite-copy" hidden>Copy</button>
+      </div>
+      <details class="qr-toggle">
+        <summary>Show the QR code</summary>
+        <div class="qr">${qrSvg(inviteUrl)}</div>
+      </details>
+      <form class="actions" method="post" action="${escapeHtml(`/g/${gameId}/invite/rotate`)}">
+        <button class="button" type="submit">Replace this link</button>
+      </form>
     </div>
-    <div class="qr">${qrSvg(inviteUrl)}</div>
-    <form method="post" action="${escapeHtml(`/g/${gameId}/invite/rotate`)}">
-      <button class="button" type="submit">Replace this link</button>
-    </form>
 
     <h2>Squad (${squad.length})</h2>
     <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>
 
     <h2>Coming up</h2>
-    <ul class="squad">${fixtureItems || "<li>No fixtures scheduled.</li>"}</ul>
+    <ul class="fixtures">${fixtureItems || "<li>No fixtures scheduled.</li>"}</ul>
+
+    <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
   `;
 
   return layout({
     title: `${gameName} — Make The Team`,
     body,
-    pageStyles: [FORM_CSS],
+    // The order here is load-bearing, not alphabetical. SQUAD_STYLES_CSS and
+    // FORM_CSS both write `ul.squad > li` at identical specificity, so
+    // whichever is passed last wins: SQUAD_STYLES_CSS lays a squad row out as
+    // flex with align-items: baseline, FORM_CSS as a grid. The grid is
+    // deliberate — flex wrapping made a row's shape depend on how long the
+    // member's name happened to be, so two rows of identical markup laid out
+    // differently (M10 whole-branch review). Passing SQUAD_STYLES_CSS *after*
+    // FORM_CSS silently reinstates that, and no string assertion can see it.
+    // It goes first so FORM_CSS's grid wins and the only thing that lands is
+    // the container rule FORM_CSS lacks: the list's top border, which is what
+    // was making the squad read as the unstyled list next to .fixtures.
+    //
+    // FIXTURE_STYLES_CSS is here for .back-link alone. Everything else it
+    // carries is selected by a class this page never renders, so nothing
+    // already on the page changes appearance by adding it.
+    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS],
     pageScripts: [COPY_INVITE_JS],
   });
 }

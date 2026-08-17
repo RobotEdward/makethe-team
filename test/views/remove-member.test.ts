@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { memberRemovePath, memberRolePath } from "../../src/auth/paths.js";
 import { renderRemoveMemberPage } from "../../src/views/remove-member.js";
+import { CANCEL_STYLES_CSS, FORM_CSS } from "../../src/views/styles.js";
 
 const BASE = {
   gameId: "g-1",
@@ -77,6 +78,30 @@ describe("renderRemoveMemberPage", () => {
   it("offers a way back that changes nothing", () => {
     const html = renderRemoveMemberPage({ ...BASE, commitments: { in: 0, waitlisted: 0 } });
     expect(html).toContain('href="/g/g-1"');
+  });
+
+  it("gives the escape the same weight as the one on the cancel page", () => {
+    // A heavy red button beside a faint text link is not two choices, it is
+    // one choice and a footnote — `cancel.ts` settled this shape already.
+    const html = renderRemoveMemberPage({ ...BASE, commitments: { in: 0, waitlisted: 0 } });
+    expect(html).toContain(`class="button keep-link"`);
+    expect(html).toContain("No, leave the squad as it is");
+    // Immediately after the form, never inside it: a second submit-shaped
+    // control in a form that removes somebody is a mis-tap waiting to happen.
+    expect(html).not.toMatch(/<a class="button keep-link"[\s\S]*<\/form>/);
+  });
+
+  it("ships the block .keep-link is declared in", () => {
+    // Without it the escape renders as an underlined, unstyled anchor rather
+    // than the outlined button the class names.
+    const html = renderRemoveMemberPage({ ...BASE, commitments: { in: 0, waitlisted: 0 } });
+    const cancelAt = html.indexOf(CANCEL_STYLES_CSS);
+    const formAt = html.indexOf(FORM_CSS);
+    // -1 is less than everything, so an order assertion alone would pass on a
+    // page carrying neither block. These two are what make it mean something.
+    expect(cancelAt).toBeGreaterThan(-1);
+    expect(formAt).toBeGreaterThan(-1);
+    expect(cancelAt).toBeLessThan(formAt);
   });
 
   it("escapes a name containing markup", () => {

@@ -30,7 +30,7 @@ import { STYLES } from "./layout.js";
 
 /**
  * The single-fixture page's display of a game — venue, kickoff time, status
- * badge, spots left, the viewer's own headline, the read-only notice, and
+ * badge, the capacity bar, the viewer's own headline, the read-only notice, and
  * the two response buttons' layout. Also used by the dashboard (J7, BR-25),
  * which renders one of these per fixture using the *same* renderers
  * (`renderStatusLine`, `viewerHeadlineOpen` in `src/views/fixture.ts`) as the
@@ -48,7 +48,23 @@ export const FIXTURE_STYLES_CSS = `
   }
   .status-badge.status-confirmed { border-color: var(--accent); color: var(--accent); }
   .status-badge.status-short, .status-badge.status-cancelled { border-color: var(--warn); color: var(--warn); }
-  .spots { margin-top: 0.4rem; font-size: var(--t-support); }
+  /* The headcount as a proportion rather than a countdown (M12 §3.1): a bar
+     whose fill is who is there, with the numbers under it so nothing is lost
+     when the CSS does not load. */
+  .capacity { margin-top: 0.6rem; }
+  .capacity .track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .capacity .fill { display: block; height: 100%; background: var(--accent); }
+  .capacity .fill.short { background: var(--warn); }
+  .capacity .spots { margin-top: 0.35rem; font-size: var(--t-support); color: var(--mut); }
+  .capacity .count { font-family: var(--mono); }
+
+  /* The width is a class, never a style attribute. style-src is hashes plus
+     one font origin and no unsafe-hashes, so a style attribute cannot be
+     authorised by a hash: the browser would drop it, the bar would render at
+     zero width, and no fetch-level test — none of which run a CSP engine —
+     would notice. Generated rather than typed so these twenty-one rules
+     cannot drift from the twenty-one 5% steps the renderer can emit. */
+${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${i * 5}%; }`).join("\n")}
 
   .viewer-headline {
     margin-top: 1.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--fg); line-height: 1.3;
@@ -181,9 +197,54 @@ export const DASHBOARD_STYLES_CSS = `
     padding: 1.1rem 1rem 1.25rem; margin-bottom: 1rem;
     border: 1px solid var(--line); border-radius: 0.75rem;
   }
-  .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); text-align: center; }
+  .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
   .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: var(--t-lead); }
   .fixture-card .responses { margin-bottom: 0; }
+
+  /* The owned-games section: one row per game the viewer organises, each a
+     link into it (M12 §3.5).
+
+     No comment here may quote that section's heading verbatim. This block is
+     rendered into the page, so a quoted heading is indistinguishable from the
+     real one to the tests that assert an owner-less dashboard never shows it
+     — which is exactly how this comment first broke three of them.
+
+     Without a rule here this is the browser's default bulleted list — discs
+     and a UA indent — sitting directly under a column of bordered fixture
+     cards. It was the last one left in the app: every other list here is
+     either a styled row or a chip.
+
+     The row shape is restated rather than borrowed. Widening ul.squad > li to
+     reach this markup is banned outright (M10 whole-branch review, Critical
+     1): a bare descendant selector is (0,1,1) and beats a chip's own (0,1,0)
+     .chip whatever the block order, and this app nests li inside li. Reusing
+     the .squad class instead would be the same mistake by another route — a
+     game is not a squad member, so the next rule written for a squad row
+     would silently restyle this list too.
+
+     Not .fixture-card either: a card up there carries a heading, a status
+     badge, a headline and two response buttons, and a row down here is a name
+     and nothing else. Borrowing it would put a second, competing card idiom
+     in one column.
+
+     Scoped ul.owned-games > li for the same specificity reason ul.squad > li
+     and ul.fixtures > li are scoped.
+
+     The anchor carries the 44px floor, not the li: the li's padding is not
+     what a finger lands on, and these rows are entirely link. */
+  /* The bottom margin is not decoration: paragraphs get zero margin from the
+     layout's base rule, so the footer's run of account links lands hard
+     against the last row's bottom border and reads as a fourth row of this
+     list. */
+  .owned-games {
+    list-style: none; margin: 0.4rem 0 1.1rem; padding: 0; text-align: left;
+    border-top: 1px solid var(--line);
+  }
+  ul.owned-games > li { border-bottom: 1px solid var(--line); }
+  ul.owned-games > li > a {
+    display: flex; align-items: center; min-height: 44px;
+    padding: 0.4rem 0.1rem; font-size: var(--t-body);
+  }
 `;
 
 /**
@@ -301,9 +362,37 @@ export const FORM_CSS = `
     outline: 3px solid var(--accent); outline-offset: 1px;
   }
   .field .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
+  /* The caption above a value the page is only reading out to the viewer, and
+     the value itself — the paragraph immediately after it, so the pair carries
+     one class between them rather than two names for one idea.
+
+     Deliberately not .read-only: that box's dashed border says there is
+     nothing here to act on, which is true of an empty list and false of a
+     value, where the border instead reads as a disabled field the viewer
+     might once have been able to type into. Nothing on these pages ever was.
+
+     The value is lifted off the base paragraph colour because that colour is
+     the same muted grey as the caption, and a caption indistinguishable from
+     its own value is no caption at all. The bottom margin is here rather than
+     on whatever follows because what follows differs per page. */
+  .readout-label { margin-top: 1.1rem; font-size: var(--t-support); color: var(--mut); }
+  .readout-label + p { color: var(--fg); margin-bottom: 1.1rem; }
   .field-invalid input, .field-invalid select { border-color: var(--warn); }
   .row { display: flex; gap: 1rem; }
   .row .field { flex: 1; }
+  /* A checkbox with a label and an explanatory hint. Written as a grid with
+     the control spanning both rows rather than as a .field: a .field puts its
+     label above a full-width input, which for a checkbox means a lone 1.4rem
+     box floating under its own caption, and the hint then reads as belonging
+     to whatever follows. The columns pin the control to the right of both
+     lines of text at every width, so the hint can wrap to three lines without
+     the tick moving. 52px because the whole row is the label's hit area — a
+     bare checkbox is about 22px, well under the phone floor. */
+  .switch-row { display: grid; grid-template-columns: 1fr auto; align-items: center;
+    gap: 0.25rem 1rem; min-height: 52px; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  .switch-row label { font-weight: 600; }
+  .switch-row .hint { grid-column: 1; font-size: var(--t-support); color: var(--mut); }
+  .switch-row input { grid-column: 2; grid-row: 1 / span 2; width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
   details { margin: 1.5rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
   summary { cursor: pointer; font-weight: 600; }
   .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
@@ -343,8 +432,43 @@ export const FORM_CSS = `
      columns, so every row has the same shape whatever the name. */
   ul.squad > li {
     display: grid; grid-template-columns: 1fr auto;
-    align-items: center; gap: 0.5rem 0.75rem;
+    align-items: center; gap: 0.4rem 0.75rem;
   }
+  /* Placement, not auto-placement — the half of the grid this rule was
+     missing, and the reason a two-part row looked right while a three-part
+     one did not.
+
+     The organiser's fixture row is not always a name and a control. It can
+     carry a status word, and an attribution line saying who set the answer:
+     up to three pieces of text beside the control. Auto-placement walks those
+     into whatever cell is free, so on that page the third piece landed in
+     column 2 and the control was pushed down into column 1, where the 1fr
+     stretched it from the left margin to most of the width — a control of a
+     visibly different size and position from the compact one on every row
+     above it. The row's shape depended on how many children it happened to
+     have, which is the same defect as depending on how long the name is,
+     wearing a different coat.
+
+     So the text goes in column 1 and the control in column 2, said out loud.
+     The control sits in row 1 — beside the name, not centred against the
+     stack. That is a measurement, not a preference. A grid item that spans
+     several tracks contributes its height to all of them, so pinning the
+     control across the text rows (the .switch-row idiom above, which is right
+     for its own two-line row) inflates the empty tracks under a one-line row
+     and leaves the name sitting in the top third of it, 13px above the
+     control it belongs to. Every row in a real squad has one line of text, so
+     that was the common case paying for the rare one. In row 1 the name and
+     the control are in the same track, so they are level in every row shape
+     this markup can produce, and any support lines hang beneath the pair.
+
+     Nothing here refers to how many pieces of text a row has, so a fourth
+     piece would stack under the third and change nothing else.
+
+     A bare text node (the other-squads list on the leave page) has no class
+     to select. It does not need one: it is an anonymous item, and with the
+     control pinned to column 2 the only cell left for it is column 1. */
+  ul.squad > li > .name, ul.squad > li > .status, ul.squad > li > .set-by { grid-column: 1; }
+  ul.squad > li > form { grid-column: 2; grid-row: 1; }
   ul.squad > li form { margin: 0; }
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */
@@ -490,6 +614,101 @@ export const INSTALL_STYLES_CSS = `
   .install li + li { margin-top: 0.35rem; }
 `;
 
+/**
+ * Where the .danger-link explanation lives, because the rule itself cannot
+ * carry one.
+ *
+ * .danger-link is in STYLES (src/views/layout.ts) — several pages offer a
+ * destructive escape hatch as a link rather than a button, and a primitive
+ * three pages share does not belong to any one of them. It gets no comment
+ * beside it there: STYLES is inlined into the public holding page, and
+ * test/routes/access.test.ts asserts that block names no page, file or
+ * operation, so an explanatory comment there would leak the product's shape
+ * to a signed-out visitor and fail that test.
+ *
+ * A link and never a button: M10 §3.2 keeps a filled --danger and a filled
+ * --accent off the same screen, and every page that needs this already
+ * spends its filled button on the safe action. Colour plus weight on a link
+ * marks the dangerous one without a second fill competing for the eye.
+ */
+
+/**
+ * The owner's invite page — the sharing card, and the QR code's disclosure.
+ *
+ * Its own block rather than more rules in FORM_CSS: that block is loaded by
+ * every form and owner page in the product, and a card that only the invite
+ * page can render would be dead CSS hashed into all of them.
+ *
+ * The QR code is a details/summary rather than always-on. It is the least
+ * used of the three ways to pass an invite on, and at 240px it pushed the
+ * link and the share button — which is what most people actually use —
+ * below the fold on a phone. Its own rules zero the general details
+ * treatment from FORM_CSS, whose top border and 1.5rem margin are for the
+ * game form's optional sections and read as a page division here.
+ */
+export const INVITE_CSS = `
+  .card { margin: 1.1rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 0.75rem; }
+  .card h2 { margin: 0 0 0.6rem; font-size: var(--t-body); }
+  .card .actions { margin-top: 0.75rem; }
+  .qr-toggle { margin: 0; border: 0; padding: 0; }
+  /* The padding is the tap target, and it is not decoration. At the support
+     size this control's line box is 1.4rem — 0.875rem against the body's
+     inherited unitless line-height of 1.6, so 22.4px — which is legible but
+     about half the 44px floor, and this is a phone-first page: an owner
+     passing an invite on is standing next to the person taking it. 0.75rem
+     top and bottom brings it to 46.4px.
+     Padding and deliberately NOT min-height with display: flex, which is the
+     obvious way to clear the floor: flex on a summary strips WebKit's native
+     disclosure triangle, and that triangle is the only thing that says this
+     line opens rather than being another piece of grey supporting text. */
+  .qr-toggle summary {
+    padding: 0.75rem 0;
+    font-weight: 600; font-size: var(--t-support); color: var(--mut); cursor: pointer;
+  }
+
+  /* "Coming up" on the owner's game page: one line per fixture, each a link
+     to it. Its own list rather than DASHBOARD_STYLES_CSS's .fixture-list /
+     .fixture-card, which is the right shape for the dashboard — where a card
+     carries a heading, a status badge, a headline and two response buttons —
+     and the wrong one here, where a row is a date, a state and a count.
+     Borrowing it would put a second, competing card idiom next to the invite
+     .card above and ship this page three rules (.fixture-card h2,
+     .viewer-headline, .responses) for elements it can never render.
+
+     Not ul.squad, which is what this list used to wear. A fixture is not a
+     person, and sharing the class means the next rule written for a squad row
+     silently restyles the fixture list too.
+
+     Scoped ul.fixtures > li for the same reason ul.squad > li is (see the
+     comment there): a bare descendant selector beats a chip's own .chip on
+     specificity, and this app has li elements inside li elements. */
+  .fixtures { list-style: none; margin: 0; padding: 0; text-align: left; border-top: 1px solid var(--line); }
+  /* The row is a flex line so the anchor below can be a flex item that fills
+     it. A row is a date wrapped in the link plus a sibling span of state and
+     count that is not part of it, and blockifying the anchor on its own would
+     drop that span onto a second line — the row would grow from one line to
+     two everywhere, to fix a tap target. min-height rather than the vertical
+     padding this rule used to carry: the padding also applied to the empty
+     state, which has no anchor to carry a height, and the row keeps the ~45px
+     it already had instead of stacking 44px on top of 19px of padding. */
+  ul.fixtures > li {
+    display: flex; align-items: center; gap: 0.75rem; min-height: 44px;
+    padding: 0 0.1rem; border-bottom: 1px solid var(--line); font-size: var(--t-body);
+  }
+  /* Constraint 9's 44px floor, the same shape as ul.owned-games > li > a. An
+     anchor is inline by default and min-height does nothing to an inline box,
+     so the hit area was the link text's own line box — about 25px in a row
+     that already measured 45px, which is the trap: the row looks compliant
+     and the thing you actually tap is not. display: flex blockifies it, and
+     flex: 1 hands it every pixel the state and count do not need, so the
+     empty stretch left of them is part of the link too. */
+  ul.fixtures > li > a { display: flex; align-items: center; flex: 1; min-height: 44px; }
+  /* The state and the headcount are context for the date, not peers of it —
+     without the demotion all three read as one undifferentiated run of text
+     and there is nothing to scan down the column for. */
+  .fixtures .detail { color: var(--mut); font-size: var(--t-support); }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -502,6 +721,7 @@ export const PAGE_STYLE_BLOCKS = [
   FORM_CSS,
   OFFLINE_STYLES_CSS,
   INSTALL_STYLES_CSS,
+  INVITE_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

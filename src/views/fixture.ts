@@ -3,6 +3,7 @@ import type { SquadMember } from "../db/queries.js";
 import { displayName } from "../domain/display-name.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
+import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { escapeHtml, layout } from "./layout.js";
 import { ordinal } from "./squad-row.js";
@@ -90,6 +91,51 @@ const STATUS_LABEL: Record<FixtureView["status"], string> = {
   played: "Played",
 };
 
+/**
+ * What a stored lifecycle is called when it is not one this build knows.
+ *
+ * Deliberately not `STATUS_LABEL.scheduled`, the obvious fallback: "Not open
+ * yet" is a specific claim about a real fixture, and asserting it about one
+ * whose state could not be read is a confident lie where an admission costs
+ * nothing. Neither wording lets an organiser act, but only one misleads them.
+ */
+const UNKNOWN_STATUS_WORDS = "Status unknown";
+
+/**
+ * The words for a fixture's *stored* lifecycle, for the pages that list
+ * fixtures rather than render one (the organiser's game page; the member's,
+ * which has the same defect).
+ *
+ * Exported so those pages read this table instead of keeping a second copy of
+ * it. Two copies is how one page starts calling a fixture "open" while
+ * another calls it "Open for responses" — and a page with no mapping at all
+ * prints the stored enum value at whoever is reading it.
+ *
+ * `Lifecycle` is a subset of `FixtureView["status"]`, so it indexes the same
+ * record directly; the derived `short`/`confirmed` judgements are simply not
+ * reachable from a stored value.
+ *
+ * Total on purpose, despite the parameter type saying it cannot need to be.
+ * `Lifecycle` comes from `text("lifecycle", { enum: LIFECYCLES })`, and
+ * Drizzle's `enum` is a type-level assertion only — the migration that
+ * created the column writes a bare `text ... NOT NULL DEFAULT 'scheduled'`
+ * with no CHECK constraint, so the row can hold a value outside the union: a
+ * legacy row, a hand-applied fix, or a newer deploy writing a lifecycle this
+ * build has never heard of partway through a rollout. The type is a claim
+ * about the schema, not a guarantee about the rows.
+ *
+ * Without the fallback that case is worse than the raw token this function
+ * replaced. An unmapped key is `undefined`, which is invisible here —
+ * indexing a Record with a union key is only `| undefined` under
+ * `noUncheckedIndexedAccess`, and the declared `string` return absorbs it —
+ * and every caller hands the result to `escapeHtml`, which calls `.replace`
+ * on it and throws. The organiser's home page 500s instead of printing an
+ * ugly word.
+ */
+export function fixtureStatusWords(lifecycle: Lifecycle): string {
+  return STATUS_LABEL[lifecycle] ?? UNKNOWN_STATUS_WORDS;
+}
+
 function viewerHeadline(
   viewer: FixturePageOptions["viewer"],
   readOnlyReason: ReadOnlyReason | undefined,
@@ -139,6 +185,21 @@ export function viewerHeadlineOpen(viewer: Pick<FixturePageOptions["viewer"], "s
       // Not expected to reach the page for a withdrawn viewer, but a plain
       // fallback is safer than throwing on a display path.
       return "You're no longer in this squad.";
+    // Total against the same schema shape as the lifecycle lookups above:
+    // `responses.status` is a bare `text NOT NULL DEFAULT 'pending'` with no
+    // CHECK constraint, so a row can hold a status this build cannot read.
+    // `src/views/dashboard.ts` passes the result straight to `escapeHtml`
+    // without the guard this page's own call site has, so without this the
+    // dashboard — the page every signed-in player lands on — 500s.
+    //
+    // Silence, and deliberately not "Status unknown". This is a headline about
+    // *you*: every sentence it can return is a claim about what the reader
+    // themselves answered, and there is no true one to make when the answer
+    // cannot be read. `viewerHeadlineClosed` below already returns "" on
+    // `pending` for that reason, and both call sites skip the element entirely
+    // when the headline is empty.
+    default:
+      return "";
   }
 }
 
@@ -168,6 +229,12 @@ function viewerHeadlineClosed(
       return "";
     case "withdrawn":
       return "You're no longer in this squad.";
+    // Same fallback, same reason as `viewerHeadlineOpen` above. Reached only
+    // through `viewerHeadline`, whose one call site guards on the empty
+    // string — but a fallback that exists only because one caller happens to
+    // check is exactly how the missing one above stayed invisible.
+    default:
+      return "";
   }
 }
 
@@ -334,9 +401,19 @@ export function renderPublishedTeamsSection(
 ): string {
   if (teams === null) return "";
 
+  // The side is a stored value too, and `responses.team` is a bare `text`
+  // column with no CHECK constraint (`migrations/0010_ambiguous_pyro.sql`) —
+  // the same shape as `lifecycle` and `status`, so `names[yourSide]` can be
+  // `undefined` and `escapeHtml` would throw on it. Read the name first and
+  // branch on whether there is one: a side this build cannot name is one it
+  // cannot announce, so it says nothing rather than 500ing the page. Not
+  // "Your side hasn't been picked yet" either — a side *was* picked, and
+  // telling this player it was not would be a confident falsehood where
+  // silence costs nothing.
+  const yourSideName = teams.yourSide === null ? null : (teams.names[teams.yourSide] ?? null);
   const yourSide =
-    teams.yourSide !== null
-      ? `<p class="your-side">You're on ${escapeHtml(teams.names[teams.yourSide])}.</p>`
+    yourSideName !== null
+      ? `<p class="your-side">You're on ${escapeHtml(yourSideName)}.</p>`
       : teams.awaitingSide
         ? `<p class="your-side">Your side hasn't been picked yet.</p>`
         : "";
@@ -364,19 +441,66 @@ function renderOverCapacity(view: FixtureView): string {
 }
 
 /**
- * The status badge and the spots-left line, from `fixtureView` alone.
+ * The status badge and the headcount bar, from `fixtureView` plus the one
+ * count it cannot derive.
  *
- * Exported for the dashboard, which shows the same derived status for each of
- * the viewer's fixtures — one renderer, so `short`/`confirmed`/`full` can only
- * ever be worded and coloured one way across the product (BR-12).
+ * Exported for the dashboard, the owner's fixture page and the player's game
+ * page, which show the same derived status for the same fixture — one
+ * renderer, so `short`/`confirmed`/`full` can only ever be worded and
+ * coloured one way across the product (BR-12).
+ *
+ * The bar replaces "N spots left" (M12 §3.1), whose failure case was "0 spots
+ * left" sitting above two live response buttons: it reads as a closed door,
+ * when the truthful answer is that a yes joins the waitlist. A proportion has
+ * no such zero. The numbers stay in `.spots` beneath the bar so nothing is
+ * lost when the CSS does not load.
+ *
+ * `waitlistCount` is a parameter rather than a `FixtureView` field because
+ * the view is derived from capacity facts alone and does not know it.
+ * Required rather than defaulted, so a caller cannot silently omit it and
+ * have this render "· 0 waiting" as though it were a fact it had checked.
  */
-export function renderStatusLine(view: FixtureView): string {
+export function renderStatusLine(view: FixtureView, waitlistCount: number): string {
+  // Total for the same reason `fixtureStatusWords` is, and it matters more
+  // here: `fixtureView` passes a non-`open` lifecycle straight through as
+  // `status`, the column has no CHECK constraint behind it, and this one
+  // function renders the status on four pages including the dashboard. An
+  // unmapped key is `undefined`, `escapeHtml` calls `.replace` on it, and the
+  // page 500s — the identical failure the fallback three lines above exists
+  // to prevent. Same wording, deliberately, rather than a second phrase for
+  // the same admission.
   const label = STATUS_LABEL[view.status];
-  const spots =
-    view.status === "cancelled" || view.status === "played"
-      ? ""
-      : `<p class="spots">${view.spotsLeft} ${view.spotsLeft === 1 ? "spot" : "spots"} left</p>`;
-  return `<p class="status-badge status-${view.status}">${escapeHtml(label)}</p>${spots}`;
+  // The stored value reaches a class attribute, so it is escaped like every
+  // other interpolation (Constraint 6). For a lifecycle this build knows the
+  // output is unchanged; for one it does not, the value is a database string
+  // and not markup.
+  const badge = `<p class="status-badge status-${escapeHtml(view.status)}">${escapeHtml(label ?? UNKNOWN_STATUS_WORDS)}</p>`;
+  // No bar on a fixture that is not taking answers. For `cancelled` and
+  // `played` the reason is that nobody can join. For `scheduled` it is the
+  // distinction `fixtureView`'s own early return already draws for
+  // `spotsLeft`: nobody has been asked yet, so an empty bar — amber, because
+  // an empty squad is below any minimum — would raise an alarm about a
+  // question the organiser has not put to anybody. An unrecognised lifecycle
+  // is guarded the same way and for a stronger reason: the badge has just
+  // admitted the state could not be read, and a bar underneath it would draw
+  // a confident proportion about a fixture nothing is known about.
+  if (label === undefined) return badge;
+  if (view.status === "cancelled" || view.status === "played" || view.status === "scheduled") return badge;
+
+  // Rounded down to a declared 5% step: the CSP forbids a style attribute, so
+  // the width can only be one of the classes FIXTURE_STYLES_CSS declares.
+  // `Math.floor(ratio * 20) * 5` reaches 100 only at a genuinely full squad,
+  // and the clamp keeps a 14-of-10 fixture at a full bar rather than an
+  // overflowing one.
+  const ratio = view.maxPlayers === 0 ? 0 : view.inCount / view.maxPlayers;
+  const pct = Math.min(100, Math.floor(ratio * 20) * 5);
+  const short = view.inCount < view.minPlayers ? " short" : "";
+  const waiting = waitlistCount > 0 ? ` · ${waitlistCount} waiting` : "";
+  return `${badge}
+    <div class="capacity">
+      <div class="track"><span class="fill${short} w-${pct}"></span></div>
+      <p class="spots"><span class="count">${view.inCount} of ${view.maxPlayers}</span> in${escapeHtml(waiting)}</p>
+    </div>`;
 }
 
 /**
@@ -427,7 +551,7 @@ function renderButtons(options: FixturePageOptions): string {
  * Exported and called from `renderRow` in `src/views/dashboard.ts` (M10 whole-
  * branch review, Important 2), for the same reason `renderResponseButtons` is
  * shared rather than copied: the dashboard's card already shows
- * `renderStatusLine`'s "0 spots left" directly above the same live "I'm in"
+ * `renderStatusLine`'s full bar directly above the same live "I'm in"
  * button, so it is exactly as capable of the §3.4 misreading as this page —
  * §3.1's whole premise is that the two pages must not be able to disagree
  * about what "in" looks like, and a warning that existed on only one of them
@@ -480,7 +604,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     <p class="venue">${escapeHtml(venueName)}</p>
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
-    ${renderStatusLine(view)}
+    ${renderStatusLine(view, options.waitlistCount)}
     ${renderNudge(view)}
     ${renderOverCapacity(view)}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}

@@ -16,8 +16,10 @@ Tapping either button in the email brings you here, and nothing has been
 recorded yet: the page asks **Can you make it?** and waits for you.
 
 **Confirmed — the game is on** means enough people have already said yes for
-the game to go ahead. Beside it, **0 spots left** is how many places are still
-free — none, in this one, which is what the waitlist below is about. Because
+the game to go ahead. Under it, a bar fills up as people answer, with the
+count spelled out beneath it — **10 of 10 in · 2 waiting**. The bar is full
+and two people are already queued behind it, which is what the waitlist below
+is about. Because
 there's no room, the page says so under the two buttons, before you tap
 either of them: **The squad is full — answering yes puts you 3rd on the
 waitlist.** When your organiser

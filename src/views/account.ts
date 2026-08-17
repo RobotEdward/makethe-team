@@ -56,7 +56,7 @@ function renderFixture(row: AccountFixtureRow): string {
       <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
       <p class="status-line">${escapeHtml(row.statusLabel)}</p>
-      <p class="viewer-headline">${escapeHtml(row.myStatusLabel)}</p>
+      ${row.myStatusLabel ? `<p class="viewer-headline">${escapeHtml(row.myStatusLabel)}</p>` : ""}
     </li>`;
 }
 
@@ -103,10 +103,18 @@ export function renderAccountPage({
            <p><a href="${DELETE_ACCOUNT_PATH}">More about this</a></p>
          </div>`;
 
+  // Two different things, so two different treatments. An address we hold is a
+  // value being read out: a caption above plain text, because the dashed box
+  // this used to use says "nothing here to act on", which of a value reads as
+  // a field that has been disabled on you. Having no address at all *is*
+  // nothing to act on — the same state as the empty fixture list below — so
+  // that branch keeps the box, and needs no caption because the sentence
+  // already names what is missing.
   const emailLine =
     email === null
       ? `<p class="read-only">We don't have an email address for you.</p>`
-      : `<p class="read-only">${escapeHtml(email)}</p>`;
+      : `<p class="readout-label">Email address</p>
+         <p>${escapeHtml(email)}</p>`;
 
   const body = `
     <h1>Your account</h1>
@@ -123,11 +131,9 @@ export function renderAccountPage({
       <button class="button primary" type="submit">Save</button>
     </form>
 
-    <h2>Your email address</h2>
+    <h2>Signing in</h2>
     ${emailLine}
     <p>This is how you sign in and where your reminders go, so it can't be changed here yet.</p>
-
-    <h2>How you sign in</h2>
     <p><a href="${PASSKEYS_PATH}">Manage your passkeys</a></p>
 
     <h2>Your fixtures</h2>
@@ -139,8 +145,8 @@ export function renderAccountPage({
 
     ${renderInstallSection()}
 
-    <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
-    <p><a href="${DASHBOARD_PATH}">Back to your games</a></p>
+    <p><a href="${escapeHtml(DELETE_ACCOUNT_PATH)}">Delete my account and data</a> · <a href="${escapeHtml(PRIVACY_PATH)}">Privacy</a></p>
+    <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
     ${signOutForm("Sign out")}
   `;
 

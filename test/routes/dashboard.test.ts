@@ -13,6 +13,7 @@ import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { DASHBOARD_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import { insertGame, insertMembership, resetDatabase } from "../support/factories.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
 
@@ -337,6 +338,49 @@ describe("GET /app", () => {
 
     expect(body).toContain("Sunday Kickabout");
     expect(body).toContain(`href="/g/${gameId}"`);
+  });
+
+  /**
+   * The owned-games list was the last browser-default bulleted list in the
+   * app: `<ul class="owned-games">` was rendered and `DASHBOARD_STYLES_CSS`
+   * carried no rule for it at all, so it shipped with UA discs and indent
+   * directly under a column of bordered fixture cards.
+   *
+   * Two assertions, deliberately. The CSS one names the actual defect — that
+   * no rule existed — but still passes if the markup later stops emitting the
+   * class; the markup one still passes if the rule is deleted. Each covers
+   * the other's blind spot.
+   *
+   * The needle carries its opening brace: a bare selector needle
+   * prefix-matches, which is how a `.w-5` assertion earlier in M12 was
+   * silently satisfied by `.w-50`'s rule.
+   */
+  it("styles the games you own instead of shipping a bulleted list", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const gameId = await insertGame(db, { name: "Sunday Kickabout" });
+    await db
+      .insert(memberships)
+      .values({ id: crypto.randomUUID(), gameId, playerId, active: true, role: "owner" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(`<ul class="owned-games">`);
+    expect(DASHBOARD_STYLES_CSS).toContain(".owned-games {");
+    expect(DASHBOARD_STYLES_CSS).toContain("ul.owned-games > li {");
+  });
+
+  /**
+   * Scoped `ul.owned-games > li`, never a bare `.owned-games li`. A bare
+   * descendant selector is (0,1,1) and beats a chip's own (0,1,0) `.chip`
+   * whatever the block order, and this app nests `li` inside `li` — that is
+   * exactly how squad rows swallowed chips once already. The same rule bans
+   * reaching this markup by widening `ul.squad > li`.
+   */
+  it("keeps the owned-games row selector off every other list item", () => {
+    expect(DASHBOARD_STYLES_CSS).not.toContain(".owned-games li {");
+    expect(SQUAD_STYLES_CSS).not.toContain(".squad li {");
+    expect(SQUAD_STYLES_CSS).not.toContain("owned-games");
   });
 
   /**

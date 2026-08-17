@@ -1,5 +1,6 @@
 import { gamePath, ownerFixturePath, ownerGuestPath, ownerGuestRemovePath, ownerResponsePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
+import { RESPONSE_STATUSES } from "../domain/response-status.js";
 import { displayName } from "../domain/display-name.js";
 import { takingChanges, type FixtureView } from "../domain/fixture-view.js";
 import { sideCounts, type TeamId } from "../domain/teams.js";
@@ -8,7 +9,7 @@ import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
 import { TEAM_PICKER_JS } from "./scripts.js";
-import { FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface OwnerFixtureParams {
   gameId: string;
@@ -115,9 +116,21 @@ function renderMemberControls(gameId: string, fixtureId: string, member: SquadMe
  *    status, guest or member, at any status.
  */
 function renderStatusSpan(member: SquadMember, showControls: boolean): string {
-  const segmentAlreadySaysIt = showControls && !member.isGuest && member.status !== "waitlisted";
+  // A fourth case, and the one that is not a design decision: a status this
+  // build has never heard of. The segment cannot be "already saying it",
+  // because it renders neither half pressed — exactly what it renders for
+  // `pending` — so dropping the span would quietly read as "hasn't answered
+  // yet" about a row nothing is known about. `RESPONSE_STATUSES` is the
+  // canonical list, and `responses.status` has no CHECK constraint behind it.
+  const knownToTheSegment = (RESPONSE_STATUSES as readonly string[]).includes(member.status);
+  const segmentAlreadySaysIt =
+    showControls && !member.isGuest && knownToTheSegment && member.status !== "waitlisted";
   if (segmentAlreadySaysIt) return "";
-  return `<span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>`;
+  // The stored value reaches a class attribute, so it is escaped like every
+  // other interpolation (Constraint 6) — the same hole closed in
+  // `renderStatusLine`. For a status this build knows the output is unchanged;
+  // for one it does not, the value is a database string and not markup.
+  return `<span class="status status-${escapeHtml(member.status)}">${escapeHtml(squadStatusLabel(member))}</span>`;
 }
 
 function renderSquadList(
@@ -188,13 +201,23 @@ function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixturePa
  * once it's cancelled, played, or merely scheduled (not yet accepting
  * answers), there is no capacity write for it to make.
  */
+/*
+ * The name box is wrapped in `.field`, not left as a bare label and input:
+ * this page loads `FORM_CSS` and `.guest-form` has no rules of its own, so
+ * without the wrapper the only free-text box on the organiser's fixture page
+ * rendered as the browser's default — a hairline box a third of the width of
+ * every other input in the app, sitting on its own label's line. Found by
+ * looking at the M12 capture; no string assertion can see an unstyled input.
+ */
 function renderGuestForm(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
   if (!takingChanges(params.view)) return "";
   return `<h2>Add a guest</h2>
           <p>Someone playing just this once. They won't be emailed — you'll need to tell them yourself.</p>
           <form method="post" action="${escapeHtml(ownerGuestPath(gameId, fixtureId))}" class="guest-form">
-            <label for="guest-name">Their name</label>
-            <input id="guest-name" name="name" type="text" maxlength="80" required>
+            <div class="field">
+              <label for="guest-name">Their name</label>
+              <input id="guest-name" name="name" type="text" maxlength="80" required>
+            </div>
             <button class="button" type="submit">Add guest</button>
           </form>`;
 }
@@ -240,12 +263,22 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
   const problem = params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
 
+  // Counted from the squad this page is about to list, not read from the
+  // stored `fixtures.waitlist_count` column — deliberately, so do not "unify"
+  // the two without reading this. The owner is shown the roster and the number
+  // side by side, and a number that disagreed with the rows immediately below
+  // it is the one error they cannot be asked to reconcile. `squad` is already
+  // the authority for what this page displays; the column is the authority for
+  // `src/views/player-game.ts`, which has no roster to count when the
+  // organiser has squad visibility off. Each surface counts what it shows.
+  const waitlistCount = squad.filter((member) => member.status === "waitlisted").length;
+
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     ${problem}
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="venue">${escapeHtml(venueName)}</p>
-    ${renderStatusLine(view)}
+    ${renderStatusLine(view, waitlistCount)}
     ${renderOverCapacity(view, inCount, maxPlayers)}
     ${renderConfirm(gameId, fixtureId, params)}
 
@@ -256,13 +289,37 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     ${renderGuestForm(gameId, fixtureId, params)}
 
-    <p><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
+    <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
   `;
 
   return layout({
     title: `${gameName} — Make The Team`,
     body,
-    pageStyles: [FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
+    // `FIXTURE_STYLES_CSS` because this page renders `renderStatusLine` —
+    // without it the status badge and the capacity bar are markup with no
+    // rules behind them, and a bar whose track has no height is invisible
+    // rather than broken, so nothing here fails loudly.
+    //
+    // The order is load-bearing, not alphabetical, and this is the page it
+    // matters most on: it renders the only squad rows in the app that carry
+    // per-member controls. `SQUAD_STYLES_CSS` and `FORM_CSS` both declare
+    // `ul.squad > li` at identical specificity, so whichever `layout()` emits
+    // last wins — SQUAD_STYLES_CSS lays the row out as flex, FORM_CSS as a
+    // `1fr auto` grid. SQUAD_STYLES_CSS goes first so the grid wins, and it
+    // still contributes the container rule FORM_CSS lacks: the list's top
+    // border. `src/views/game-overview.ts` pins the same pair the same way.
+    //
+    // Measured in a browser rather than reasoned about, because a row here is
+    // not the two-part row that rule was first written for. It is a name,
+    // sometimes a status, sometimes an attribution line, and a control — up
+    // to four children. SQUAD_STYLES_CSS's flex row does not wrap, so at
+    // 390px a row carrying all four ran 50px past the viewport: the page
+    // scrolled sideways and the Out half of the segment sat off-screen. Under
+    // FORM_CSS's grid the same row wraps onto a second line and the page
+    // stays 390px wide. The trade is real and worth naming: a waitlisted
+    // member's row and a guest's row are two lines here rather than one. Two
+    // lines that fit beat one line that is partly off the screen.
+    pageStyles: [SQUAD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS],
     // Gated on the same predicate `renderTeams` picks the picker with, so the
     // enhancement ships exactly where the thing it enhances does. A closed
     // fixture renders the read-only line-ups, which have no form to move a
