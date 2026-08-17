@@ -52,6 +52,40 @@ function squadVisibleChecked(values: Partial<Record<string, string>>): boolean {
   return values["squadVisibleToPlayers"] === undefined || values["squadVisibleToPlayers"] === "on";
 }
 
+/**
+ * One settings row: the label, the real checkbox, then the hint — in that
+ * order, and through one function so the two rows cannot disagree.
+ *
+ * `.switch-row` places the checkbox explicitly but leaves the label and the
+ * hint to grid auto-placement, which fills rows in document order. A hint
+ * emitted ahead of its label quietly takes the top row and the label drops
+ * underneath it: nothing throws, nothing fails, the row is just upside down.
+ *
+ * The hint is not decoration. Squad visibility changes nothing the owner can
+ * see from this page, so the sentence is the only place its meaning exists;
+ * both are worded for what the setting does, because a fixed string cannot
+ * describe a value that toggles.
+ *
+ * The checkbox stays a real `<input type="checkbox">` — a CSS-only control
+ * would be invisible to a screen reader and dead with scripting off.
+ */
+function switchRow(row: {
+  name: string;
+  /** The hidden companion; see `PREFERS_EVEN_SUBMITTED`. */
+  submitted: string;
+  label: string;
+  hint: string;
+  checked: boolean;
+}): string {
+  return `
+      <div class="switch-row">
+        <input type="hidden" name="${row.submitted}" value="1">
+        <label for="${row.name}">${escapeHtml(row.label)}</label>
+        <input id="${row.name}" name="${row.name}" type="checkbox"${row.checked ? " checked" : ""}>
+        <span class="hint">${escapeHtml(row.hint)}</span>
+      </div>`;
+}
+
 export interface GameFormPageParams {
   /** Where the form posts. Always a same-origin relative path (`form-action 'self'`). */
   action: string;
@@ -148,24 +182,20 @@ export function renderGameFormPage(params: GameFormPageParams): string {
         ${field("minPlayers", "Minimum players", textInput("minPlayers", "number"))}
         ${field("maxPlayers", "Maximum players", textInput("maxPlayers", "number"))}
       </div>
-      <div class="field">
-        <input type="hidden" name="${PREFERS_EVEN_SUBMITTED}" value="1">
-        <label for="prefersEvenNumbers">
-          <input id="prefersEvenNumbers" name="prefersEvenNumbers" type="checkbox"${
-            prefersEvenChecked(values) ? " checked" : ""
-          }>
-          Prefer even numbers
-        </label>
-      </div>
-      <div class="field">
-        <input type="hidden" name="${SQUAD_VISIBLE_SUBMITTED}" value="1">
-        <label for="squadVisibleToPlayers">
-          <input id="squadVisibleToPlayers" name="squadVisibleToPlayers" type="checkbox"${
-            squadVisibleChecked(values) ? " checked" : ""
-          }>
-          Let players see who else is playing
-        </label>
-      </div>
+      ${switchRow({
+        name: "prefersEvenNumbers",
+        submitted: PREFERS_EVEN_SUBMITTED,
+        label: "Prefer even numbers",
+        hint: "Warns you when the maximum is an odd number.",
+        checked: prefersEvenChecked(values),
+      })}
+      ${switchRow({
+        name: "squadVisibleToPlayers",
+        submitted: SQUAD_VISIBLE_SUBMITTED,
+        label: "Let players see who else is playing",
+        hint: "When off, players see only how many are in; you always see the names.",
+        checked: squadVisibleChecked(values),
+      })}
       <div class="row">
         ${field("teamAName", "First team's name", textInput("teamAName"))}
         ${field("teamBName", "Second team's name", textInput("teamBName"))}

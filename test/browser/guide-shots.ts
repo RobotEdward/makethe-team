@@ -216,7 +216,7 @@ export const SHOTS: Shot[] = [
       "because that's the default every game starts with.",
     path: (w) => `/g/${w.gameId}/edit`,
     persona: "organiser",
-    element: '.field:has(#squadVisibleToPlayers)',
+    element: '.switch-row:has(#squadVisibleToPlayers)',
   },
   {
     id: "squad-member",

@@ -55,6 +55,60 @@ describe("GET /g/new", () => {
   });
 });
 
+describe("the two settings on the game form", () => {
+  beforeEach(resetDatabase);
+
+  async function formHtml(): Promise<string> {
+    const { cookie } = await signIn();
+    return (await SELF.fetch(`${ORIGIN}/g/new`, { headers: { cookie } })).text();
+  }
+
+  it("gives every switch a hint, because one of them has no visible effect", async () => {
+    const html = await formHtml();
+    expect(html.match(/class="switch-row"/g) ?? []).toHaveLength(2);
+    expect(html).toContain("Warns you when the maximum is an odd number.");
+    expect(html).toContain("When off, players see only how many are in; you always see the names.");
+  });
+
+  /**
+   * `.switch-row` places the checkbox explicitly but auto-places the label and
+   * the hint, and CSS Grid fills auto rows in document order. Emit the hint
+   * first and it silently takes row one with the label beneath it — no error,
+   * no failing render, just an upside-down row. Only order catches that.
+   */
+  it.each([
+    ["prefersEvenNumbers", "Warns you when the maximum is an odd number."],
+    ["squadVisibleToPlayers", "When off, players see only how many are in; you always see the names."],
+  ])("puts the label above the hint for %s", async (name, hint) => {
+    const html = await formHtml();
+    const label = html.indexOf(`<label for="${name}">`);
+    const box = html.indexOf(`<input id="${name}"`);
+    const hintAt = html.indexOf(hint);
+
+    expect(label).toBeGreaterThan(-1);
+    expect(box).toBeGreaterThan(label);
+    expect(hintAt).toBeGreaterThan(box);
+  });
+
+  /**
+   * The hidden companions are what tell an untick apart from a form that never
+   * carried the field (see `PREFERS_EVEN_SUBMITTED`). Dropping one while
+   * restyling the row turns every untick into a silent no-op, and no
+   * fetch-level test of the *styling* would notice.
+   */
+  it("still submits both hidden companions, and both boxes still start ticked", async () => {
+    const html = await formHtml();
+    expect(html).toContain('<input type="hidden" name="prefersEvenNumbersSubmitted" value="1">');
+    expect(html).toContain('<input type="hidden" name="squadVisibleToPlayersSubmitted" value="1">');
+
+    for (const name of ["prefersEvenNumbers", "squadVisibleToPlayers"]) {
+      const box = html.match(new RegExp(`<input id="${name}"[^>]*>`))?.[0] ?? "";
+      expect(box).toContain(`name="${name}" type="checkbox"`);
+      expect(box).toContain("checked");
+    }
+  });
+});
+
 describe("POST /g/new", () => {
   beforeEach(resetDatabase);
 
