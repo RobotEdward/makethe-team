@@ -468,6 +468,14 @@ export const PRIVACY_STYLES_CSS = `
   .updated { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: var(--t-support); }
 `;
 
+/**
+ * The offline page (M13). One rule beyond the shared primitives: the mark is
+ * shown at a size that reads as an illustration rather than a favicon.
+ */
+export const OFFLINE_STYLES_CSS = `
+  .offline-mark { width: 88px; height: 88px; border-radius: 22%; margin: 0 auto 1.5rem; display: block; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -478,6 +486,7 @@ export const PAGE_STYLE_BLOCKS = [
   PASSKEY_STYLES_CSS,
   CANCEL_STYLES_CSS,
   FORM_CSS,
+  OFFLINE_STYLES_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

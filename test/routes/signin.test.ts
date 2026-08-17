@@ -15,7 +15,12 @@ import {
 } from "../../src/auth/session.js";
 // Not re-exported by `session.ts` — that re-export is the sign-in flow's own
 // paths, and this page is not part of it (`src/auth/paths.ts`).
-import { ACCOUNT_PATH, DELETE_ACCOUNT_PATH, PRIVACY_PATH } from "../../src/auth/paths.js";
+import {
+  ACCOUNT_PATH,
+  DELETE_ACCOUNT_PATH,
+  OFFLINE_PATH,
+  PRIVACY_PATH,
+} from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
@@ -623,6 +628,7 @@ describe("no password field anywhere (TR-16)", () => {
     // Stateless pages: no session, no linking outcome, safe to run in any order.
     await capture("home", /Getting a regular game on/, new Request(`${ORIGIN}/`));
     await capture("privacy", /What is held, and why/, new Request(`${ORIGIN}${PRIVACY_PATH}`));
+    await capture("offline", /no connection/i, new Request(`${ORIGIN}${OFFLINE_PATH}`));
     await capture("robots", /User-agent/i, new Request(`${ORIGIN}/robots.txt`));
     await capture("not found", /Not found/, new Request(`${ORIGIN}/nope`));
     await capture("sign-in", /Email me a sign-in link/, new Request(`${ORIGIN}${SIGN_IN_PATH}`));
@@ -922,6 +928,7 @@ describe("no password field anywhere (TR-16)", () => {
       [
         "home",
         "privacy",
+        "offline",
         "robots",
         "not found",
         "sign-in",
@@ -1182,12 +1189,20 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "only (src/routes/pwa.ts); no template of its own that could carry a " +
       "script. Its own status-code and content-type assertions live in " +
       "test/routes/pwa.test.ts.",
+    "GET /sw.js":
+      "never returns HTML on any branch — a JavaScript body served as " +
+      "text/javascript only (src/routes/pwa.ts); no template of its own " +
+      "that could carry an un-enumerated script. Unlike GET /offline, which " +
+      "renders through layout() and is captured as a page above, this route " +
+      "IS the script, and its own content-type/cache-control/hash assertions " +
+      "live in test/routes/service-worker.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
     "GET /robots.txt": "robots",
     "GET /": "home",
     "GET /privacy": "privacy",
+    "GET /offline": "offline",
     "GET /r/:token": "bad respond token",
     "GET /leave/:token": "bad leave token",
     "GET /cancel/:token": "cancel confirm",
