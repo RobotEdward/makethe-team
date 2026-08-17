@@ -362,6 +362,21 @@ export const FORM_CSS = `
     outline: 3px solid var(--accent); outline-offset: 1px;
   }
   .field .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
+  /* The caption above a value the page is only reading out to the viewer, and
+     the value itself — the paragraph immediately after it, so the pair carries
+     one class between them rather than two names for one idea.
+
+     Deliberately not .read-only: that box's dashed border says there is
+     nothing here to act on, which is true of an empty list and false of a
+     value, where the border instead reads as a disabled field the viewer
+     might once have been able to type into. Nothing on these pages ever was.
+
+     The value is lifted off the base paragraph colour because that colour is
+     the same muted grey as the caption, and a caption indistinguishable from
+     its own value is no caption at all. The bottom margin is here rather than
+     on whatever follows because what follows differs per page. */
+  .readout-label { margin-top: 1.1rem; font-size: var(--t-support); color: var(--mut); }
+  .readout-label + p { color: var(--fg); margin-bottom: 1.1rem; }
   .field-invalid input, .field-invalid select { border-color: var(--warn); }
   .row { display: flex; gap: 1rem; }
   .row .field { flex: 1; }

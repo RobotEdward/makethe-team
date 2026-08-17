@@ -368,6 +368,40 @@ describe("GET /g/:id/squad/:playerId", () => {
     expect(body).toContain("sam@example.com");
   });
 
+  it("reads the email and the role out with captions, not inside the empty-state box", async () => {
+    const { cookie, gameId, memberId } = await ownedGame();
+
+    const body = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${memberId}`, { headers: { cookie } })
+    ).text();
+
+    expect(body).toContain(`<p class="readout-label">Email</p>`);
+    expect(body).toContain(`<p class="readout-label">In this squad</p>`);
+    // The dashed box means "nothing here to act on". Both of these are values
+    // the page is reading out, so neither may wear it.
+    expect(body).not.toMatch(/<p class="read-only">[^<]*@/);
+    expect(body).not.toMatch(/<p class="read-only">Player, since/);
+    // Still text and never a field: an organiser has no business editing
+    // somebody else's address, and this route has no POST to take it.
+    expect(body).not.toContain(`name="email"`);
+    expect(body).toContain("sam@example.com");
+  });
+
+  it("keeps the dashed box for a member who has no email at all", async () => {
+    // The absence, not a value — nothing here for the organiser to act on,
+    // which is exactly what the box says. Paired with the test above, so
+    // stripping .read-only from the page wholesale fails here.
+    const { cookie, gameId, db } = await ownedGame();
+    const guestId = await insertPlayer(db, { name: "Jo Guest", email: null, isGuest: true });
+    await insertMembership(db, gameId, guestId);
+
+    const body = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${guestId}`, { headers: { cookie } })
+    ).text();
+
+    expect(body).toContain(`<p class="read-only">No email address —`);
+  });
+
   it("shows no fixture history, not even from this game", async () => {
     const { cookie, gameId, memberId, db } = await ownedGame();
     const fixtureId = await insertFixture(db, gameId, { lifecycle: "played" });

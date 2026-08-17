@@ -126,10 +126,17 @@ function otherGamesBody(otherGames: readonly { gameId: string; gameName: string 
 /**
  * The way off this page, for a visitor who has somewhere to go.
  *
- * Only rendered for a session this page has already recognised as the token's
- * own player — which is exactly what a defined `otherGames` means (see
- * `otherGamesBody`). Everyone else reaches this page from an email with no
- * session, so "Back to your games" would land them on sign-in; that page
+ * Only rendered when the other-squads lookup *succeeded* for a session this
+ * page recognised as the token's own player, which is what a defined
+ * `otherGames` means (see `otherGamesBody`). It is not quite the same as
+ * "has a session": `resolveOtherGames` also degrades to `undefined` when the
+ * list query throws for a correctly-identified session, so a database fault
+ * costs that visitor this link as well as the list. Deliberate — the same
+ * degradation the sign-in offer above already accepts, and one exit missing
+ * is a better failure than a page that 500s over a nicety.
+ *
+ * Everyone else reaches this page from an email with no session, so
+ * "Back to your games" would land them on sign-in; that page
  * already offers them sign-in above, in words that say what they get for it,
  * and one exit that works beats two that go to the same prompt.
  *

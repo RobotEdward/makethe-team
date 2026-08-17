@@ -41,20 +41,35 @@ export function renderSquadMemberPage({
   role,
   joinedAtLocal,
 }: SquadMemberPageOptions): string {
+  // An address we hold is a value, and gets the caption-above-value treatment:
+  // the dashed .read-only box means "nothing here to act on", which of a value
+  // reads as a field that has been disabled on you, and this organiser could
+  // never have edited another player's address anyway.
+  //
+  // The other branch keeps the box, because it is not a value at all — it is
+  // an absence, and the state it describes really is one the organiser cannot
+  // act on: a guest was never asked for an address, and no form on this page
+  // or anywhere else lets an organiser supply one for somebody else. It needs
+  // no caption either, since the sentence names what is missing.
   const emailLine =
     email === null
       ? `<p class="read-only">No email address — ${isGuest ? "a guest, added for one fixture" : "we've never had one for them"}.</p>`
-      : `<p class="read-only">${escapeHtml(email)}</p>`;
+      : `<p class="readout-label">Email</p>
+         <p>${escapeHtml(email)}</p>`;
 
+  // The captions carry the words the two <h2>s used to, and there are no
+  // headings left below the <h1>. Both sections are a single line each, and a
+  // heading the size of a lead paragraph over one line of text divides the
+  // page into slices instead of naming parts of it — on a page whose whole
+  // content is one person's name and two facts about them.
   const body = `
     <h1>${escapeHtml(memberName)}</h1>
     <p>In <a href="${escapeHtml(gamePath(gameId))}">${escapeHtml(gameName)}</a>.</p>
 
-    <h2>Email</h2>
     ${emailLine}
 
-    <h2>In this squad</h2>
-    <p class="read-only">${role === "owner" ? "Organiser" : "Player"}, since ${escapeHtml(joinedAtLocal)}.</p>
+    <p class="readout-label">In this squad</p>
+    <p>${role === "owner" ? "Organiser" : "Player"}, since ${escapeHtml(joinedAtLocal)}.</p>
 
     <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to ${escapeHtml(gameName)}</a>, where you can change their role or take them out of the squad.</p>
   `;

@@ -68,10 +68,41 @@ describe("GET /app/account", () => {
     // email can't be an editable field, and this is the property that pins
     // it — a regression that turned the email into an `<input>` would still
     // contain the address, so `toContain(ALLOWED)` alone would not catch it.
-    expect(body).toContain(`<p class="read-only">${ALLOWED}</p>`);
+    expect(body).toContain(`<p>${ALLOWED}</p>`);
     expect(body).not.toContain(`value="${ALLOWED}"`);
+    expect(body).not.toContain(`name="email"`);
     expect(body).toContain(`href="${PASSKEYS_PATH}"`);
     expect(body).toContain(`href="${DELETE_ACCOUNT_PATH}"`);
+  });
+
+  it("reads the email out with a caption, not inside the empty-state box", async () => {
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(`<p class="readout-label">Email address</p>`);
+    // Anything with an @ in it inside the dashed box is the misuse this
+    // replaced: that box means "nothing here to act on", and an address the
+    // page is reading out to you is a value, not an absence.
+    expect(body).not.toMatch(/<p class="read-only">[^<]*@/);
+  });
+
+  it("keeps the dashed box for the state it means — nothing to act on", async () => {
+    // Signed in, no memberships and so no fixtures: the empty history. Paired
+    // deliberately with the assertion above, because a change that stripped
+    // .read-only from every page would satisfy that one on its own.
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(`<p class="read-only">Nothing yet.`);
+  });
+
+  it("groups signing in under one heading", async () => {
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("<h2>Signing in</h2>");
+    expect(body).not.toContain("<h2>Your email address</h2>");
+    expect(body).not.toContain("<h2>How you sign in</h2>");
   });
 
   it("lists a played fixture, which the dashboard deliberately hides", async () => {
