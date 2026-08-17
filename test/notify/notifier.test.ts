@@ -5,7 +5,7 @@ import { getDb } from "../../src/db/client.js";
 import { ConsoleNotifier } from "../../src/notify/console-notifier.js";
 import { NullNotifier } from "../../src/notify/null-notifier.js";
 import { QuotaNotifier } from "../../src/notify/quota.js";
-import type { Message, Notifier } from "../../src/notify/notifier.js";
+import type { EmailMessage, Notifier } from "../../src/notify/notifier.js";
 import type { Bindings } from "../../src/env.js";
 import { resetDatabase } from "../support/factories.js";
 
@@ -32,7 +32,7 @@ beforeEach(async () => {
   await resetDatabase();
 });
 
-function message(overrides: Partial<Message> = {}): Message {
+function message(overrides: Partial<EmailMessage> = {}): EmailMessage {
   return {
     channel: "email",
     to: "player@example.com",

@@ -7,7 +7,7 @@ import { openFixture } from "../../src/domain/open-fixture.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -150,7 +150,7 @@ describe("openAndRemind", () => {
     await openAndRemind(db, notifier, now, SECRET);
 
     const message = notifier.sent.flat()[0];
-    const match = message?.html.match(/\/leave\/([^"]+)"/);
+    const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
     const token = match?.[1];
     expect(token).toBeDefined();
 

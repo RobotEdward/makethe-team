@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
 import { fixtures, games, memberships, players, responses } from "../../src/db/schema.js";
+import type { EmailMessage, Message } from "../../src/notify/notifier.js";
 import { kickoffIn, NOW } from "./clock.js";
 
 /**
@@ -67,6 +68,24 @@ export async function resetDatabase(): Promise<void> {
 /** The Drizzle handle bound to the test D1 database. */
 export function testDb(): Db {
   return getDb(env.DB);
+}
+
+/**
+ * Narrows a captured `Message` to `EmailMessage` for the many suites that
+ * only ever exercise the email channel (M14 split `Message` into a
+ * discriminated union, so a test asserting `message.subject` on the plain
+ * union no longer compiles without first proving `channel === "email"`).
+ *
+ * Throws rather than returning `undefined | EmailMessage`, because every
+ * caller of this immediately dereferences `.subject`/`.html`/`.text` — a
+ * push slipping in here is a bug in the test's setup, and should fail loudly
+ * at the point it was captured rather than as a confusing `undefined` later.
+ */
+export function requireEmailMessage(message: Message): EmailMessage {
+  if (message.channel !== "email") {
+    throw new Error(`expected an email message, got channel "${message.channel}"`);
+  }
+  return message;
 }
 
 export type PlayerInsert = typeof players.$inferInsert;

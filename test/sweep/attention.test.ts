@@ -6,7 +6,7 @@ import { auditLog, fixtures, memberships, notificationLog, players, responses } 
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { verifyCancelToken } from "../../src/domain/token.js";
 import { sendOwnerAttention } from "../../src/sweep/attention.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-cancel-secret";
@@ -155,10 +155,10 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
 
     expect(result.attentionSent).toBe(1);
     expect(notifier.sent.flat()).toHaveLength(1);
-    const message = notifier.sent.flat()[0];
-    expect(message?.to).toBe("owner@example.com");
-    expect(message?.dedupeKey).toBe(`n4:${fixtureId}:${ownerIds[0]}`);
-    expect(message?.text).toContain("2 players short");
+    const message = requireEmailMessage(notifier.sent.flat()[0]!);
+    expect(message.to).toBe("owner@example.com");
+    expect(message.dedupeKey).toBe(`n4:${fixtureId}:${ownerIds[0]}`);
+    expect(message.text).toContain("2 players short");
 
     const rows = await attentionRows(fixtureId);
     expect(rows).toHaveLength(1);
@@ -198,9 +198,9 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
     const result = await run(notifier);
 
     expect(result.attentionSent).toBe(1);
-    const message = notifier.sent.flat()[0];
-    expect(message?.text).toContain("odd number");
-    expect(message?.text).not.toContain("short");
+    const message = requireEmailMessage(notifier.sent.flat()[0]!);
+    expect(message.text).toContain("odd number");
+    expect(message.text).not.toContain("short");
   });
 
   it("does not email an even, sufficient fixture inside the window", async () => {
@@ -336,7 +336,8 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
 
     await run(notifier);
 
-    const text = notifier.sent.flat()[0]?.text ?? "";
+    const firstSent = notifier.sent.flat()[0];
+    const text = firstSent ? requireEmailMessage(firstSent).text : "";
     const match = /https:\/\/makethe\.team\/cancel\/([\w.-]+)/.exec(text);
     expect(match).not.toBeNull();
 
@@ -517,7 +518,7 @@ describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
 
     await run(notifier, NOW, true);
 
-    expect(notifier.sent.flat()[0]?.text).toContain("daily email limit");
+    expect(requireEmailMessage(notifier.sent.flat()[0]!).text).toContain("daily email limit");
   });
 
   it("says nothing about the limit when it is not biting", async () => {
@@ -526,6 +527,6 @@ describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
 
     await run(notifier, NOW, false);
 
-    expect(notifier.sent.flat()[0]?.text).not.toContain("daily email limit");
+    expect(requireEmailMessage(notifier.sent.flat()[0]!).text).not.toContain("daily email limit");
   });
 });

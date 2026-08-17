@@ -6,7 +6,7 @@ import { erasureScheduledKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendErasureScheduledEmail } from "../../src/notify/send-erasure-scheduled.js";
-import { insertPlayer, resetDatabase } from "../support/factories.js";
+import { insertPlayer, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const NOW = new Date("2026-08-12T09:00:00Z");
@@ -68,7 +68,7 @@ describe("sendErasureScheduledEmail (N-8)", () => {
     expect(outcome).toEqual({ kind: "sent" });
     expect(notifier.all).toHaveLength(1);
     expect(notifier.all[0]?.to).toBe("alex@example.com");
-    expect(notifier.all[0]?.text).toContain("14 August");
+    expect(requireEmailMessage(notifier.all[0]!).text).toContain("14 August");
 
     const rows = await logRows();
     expect(rows).toHaveLength(1);
@@ -88,8 +88,9 @@ describe("sendErasureScheduledEmail (N-8)", () => {
 
     await send(playerId, notifier);
 
-    expect(notifier.all[0]?.html).toContain("https://makethe.team/sign-in");
-    expect(notifier.all[0]?.text).toContain("https://makethe.team/sign-in");
+    const message = requireEmailMessage(notifier.all[0]!);
+    expect(message.html).toContain("https://makethe.team/sign-in");
+    expect(message.text).toContain("https://makethe.team/sign-in");
   });
 
   it("skips a guest without writing a row (BR-32)", async () => {

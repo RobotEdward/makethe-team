@@ -1,4 +1,4 @@
-import type { Message, Notifier, SendResult } from "./notifier.js";
+import type { EmailMessage, Message, Notifier, SendResult } from "./notifier.js";
 
 /** Resend's documented per-call limit for `POST /emails/batch`. */
 const BATCH_SIZE = 100;
@@ -70,8 +70,33 @@ export class ResendNotifier implements Notifier {
    * rejects — every failure becomes `{ ok: false, error }` entries.
    */
   private async sendBatch(batch: readonly Message[]): Promise<SendResult[]> {
-    const idempotencyKey = await deriveIdempotencyKey(batch);
-    const payload: ResendEmailPayload[] = batch.map((message) => ({
+    // Resend cannot deliver a push (M14). This is not reachable through
+    // `createNotifier`, which routes each message to the right notifier by
+    // channel before anything gets here (spec §10.2) — it is present
+    // because this class is exported and constructible on its own, and a
+    // silent success for a message that was never sent is exactly the
+    // failure mode `notification_log` exists to prevent.
+    //
+    // A push is refused per-slot with a distinct, greppable reason rather
+    // than dropped from the batch or allowed to derail the emails sharing
+    // the batch with it: the emails are re-sent through this same method
+    // (which is then guaranteed an all-email batch, so it falls straight
+    // through to the real request below) and the two result sets are
+    // merged back into `batch`'s original order here. This recurses at
+    // most once, because the recursive call's own input is already
+    // all-email.
+    if (batch.some((message) => message.channel !== "email")) {
+      const emailBatch = batch.filter((message): message is EmailMessage => message.channel === "email");
+      const emailResults = await this.sendBatch(emailBatch);
+      let nextEmailResult = 0;
+      return batch.map((message) =>
+        message.channel === "email" ? emailResults[nextEmailResult++]! : failure("resend-notifier-received-non-email"),
+      );
+    }
+    const emailBatch = batch as readonly EmailMessage[];
+
+    const idempotencyKey = await deriveIdempotencyKey(emailBatch);
+    const payload: ResendEmailPayload[] = emailBatch.map((message) => ({
       from: this.from,
       to: message.to,
       subject: message.subject,

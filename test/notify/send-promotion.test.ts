@@ -8,7 +8,7 @@ import { promotionKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendPromotionEmail } from "../../src/notify/send-promotion.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -115,7 +115,7 @@ async function logRows() {
 
 /** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
 function leaveTokenFrom(message: Message | undefined): string {
-  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
   if (!match?.[1]) throw new Error("no /leave/ link found in message html");
   return match[1];
 }
@@ -151,16 +151,16 @@ describe("sendPromotionEmail (N-2)", () => {
 
     await send(fixtureId, notifier, promotion("promoted"));
 
-    const message = notifier.all[0];
-    expect(message?.subject).toContain("Thursday 7-a-side");
-    expect(message?.subject.toLowerCase()).toMatch(/you.re in/);
-    expect(message?.html).toContain("Oxford Sports Park");
-    expect(message?.text).toContain("Oxford Sports Park");
-    expect(message?.dedupeKey).toBe(promotionKey(fixtureId, "promoted", NOW.toISOString()));
+    const message = requireEmailMessage(notifier.all[0]!);
+    expect(message.subject).toContain("Thursday 7-a-side");
+    expect(message.subject.toLowerCase()).toMatch(/you.re in/);
+    expect(message.html).toContain("Oxford Sports Park");
+    expect(message.text).toContain("Oxford Sports Park");
+    expect(message.dedupeKey).toBe(promotionKey(fixtureId, "promoted", NOW.toISOString()));
     // Every link is server-built against the site's own origin — nothing in
     // this path takes a URL from a request.
-    expect(message?.html).toContain("https://makethe.team/r/");
-    expect(message?.html).toContain("https://makethe.team/leave/");
+    expect(message.html).toContain("https://makethe.team/r/");
+    expect(message.html).toContain("https://makethe.team/leave/");
   });
 
   it("carries a leave link scoped to the game, not the fixture", async () => {

@@ -19,7 +19,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ResendNotifier } from "../../src/notify/resend-notifier.js";
-import type { Message } from "../../src/notify/notifier.js";
+import type { EmailMessage, Message } from "../../src/notify/notifier.js";
 
 const API_KEY = "test-fake-resend-key-not-real";
 const FROM = "reminders@example.com";
@@ -36,7 +36,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function message(overrides: Partial<Message> = {}): Message {
+function message(overrides: Partial<EmailMessage> = {}): EmailMessage {
   return {
     channel: "email",
     to: "player@example.com",

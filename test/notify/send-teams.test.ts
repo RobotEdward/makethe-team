@@ -8,7 +8,7 @@ import { teamsKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendTeamsEmails } from "../../src/notify/send-teams.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -101,7 +101,7 @@ async function logRows() {
 
 /** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
 function leaveTokenFrom(message: Message | undefined): string {
-  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
   if (!match?.[1]) throw new Error("no /leave/ link found in message html");
   return match[1];
 }
@@ -227,12 +227,12 @@ describe("sendTeamsEmails (N-9)", () => {
 
     await send(fixtureId, notifier);
 
-    const aliceMessage = notifier.all.find((m) => m.to === "alice@example.com");
-    expect(aliceMessage?.html).toContain("Bibs");
-    expect(aliceMessage?.text).toContain("Bibs");
+    const aliceMessage = requireEmailMessage(notifier.all.find((m) => m.to === "alice@example.com")!);
+    expect(aliceMessage.html).toContain("Bibs");
+    expect(aliceMessage.text).toContain("Bibs");
     // Alice's own side is always named, but nobody else's name reaches her copy.
-    expect(aliceMessage?.html).not.toContain("Bob");
-    expect(aliceMessage?.text).not.toContain("Bob");
+    expect(aliceMessage.html).not.toContain("Bob");
+    expect(aliceMessage.text).not.toContain("Bob");
   });
 
   it("shows both full line-ups, including the recipient's own name, when the game shares the squad", async () => {
@@ -247,11 +247,11 @@ describe("sendTeamsEmails (N-9)", () => {
 
     await send(fixtureId, notifier);
 
-    const aliceMessage = notifier.all.find((m) => m.to === "alice@example.com");
-    expect(aliceMessage?.html).toContain("Bibs");
-    expect(aliceMessage?.html).toContain("Skins");
-    expect(aliceMessage?.html).toContain("Alice");
-    expect(aliceMessage?.html).toContain("Bob");
+    const aliceMessage = requireEmailMessage(notifier.all.find((m) => m.to === "alice@example.com")!);
+    expect(aliceMessage.html).toContain("Bibs");
+    expect(aliceMessage.html).toContain("Skins");
+    expect(aliceMessage.html).toContain("Alice");
+    expect(aliceMessage.html).toContain("Bob");
   });
 
   it("removes the row after a daily-ceiling refusal, so a later publish can retry", async () => {

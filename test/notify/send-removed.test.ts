@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { notificationLog } from "../../src/db/schema.js";
 import { sendRemovedEmail } from "../../src/notify/send-removed.js";
 import type { Message, Notifier } from "../../src/notify/notifier.js";
-import { insertGame, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
+import { insertGame, insertPlayer, requireEmailMessage, resetDatabase, testDb } from "../support/factories.js";
 
 const NOW = new Date("2026-08-13T12:00:00Z");
 const LEFT_AT = new Date("2026-08-13T11:59:00Z");
@@ -33,7 +33,7 @@ describe("sendRemovedEmail", () => {
 
     expect(outcome).toEqual({ kind: "sent" });
     expect(notifier.sent[0]).toMatchObject({ to: "sam@example.com" });
-    expect(notifier.sent[0]!.subject).toContain("Thursday 7-a-side");
+    expect(requireEmailMessage(notifier.sent[0]!).subject).toContain("Thursday 7-a-side");
 
     const [row] = await db.select().from(notificationLog);
     expect(row).toMatchObject({

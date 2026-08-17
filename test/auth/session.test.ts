@@ -15,7 +15,7 @@ import { getDb } from "../../src/db/client.js";
 import type { Bindings, AppEnv } from "../../src/env.js";
 import { players, session as sessionTable } from "../../src/db/schema.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
-import { resetDatabase } from "../support/factories.js";
+import { requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const BASE_URL = "http://localhost:8787";
 const EMAIL = "someone@example.com";
@@ -109,7 +109,9 @@ async function signIn(): Promise<{ cookie: string; userId: string }> {
   );
   expect(requested.status).toBe(200);
 
-  const link = /https?:\/\/[^\s"]*magic-link\/verify\?[^\s"]*/.exec(notifier.sent[0]!.text);
+  const link = /https?:\/\/[^\s"]*magic-link\/verify\?[^\s"]*/.exec(
+    requireEmailMessage(notifier.sent[0]!).text,
+  );
   expect(link).not.toBeNull();
   // The link carries `callbackURL=/`, so a successful verification is a
   // redirect to the site root that also sets the session cookie.

@@ -7,7 +7,7 @@ import { cancellationKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendCancellationEmails } from "../../src/notify/send-cancellation.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -87,7 +87,7 @@ async function logRows() {
 
 /** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
 function leaveTokenFrom(message: Message | undefined): string {
-  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
   if (!match?.[1]) throw new Error("no /leave/ link found in message html");
   return match[1];
 }

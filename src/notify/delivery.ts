@@ -79,7 +79,11 @@ export async function insertQueuedLogRows(
           notificationType: params.notificationType,
           fixtureId: params.fixtureId,
           playerId: entry.playerId,
-          channel: "email" as const,
+          // Taken from the message, not assumed. Until M14 there was one
+          // channel and this was hardcoded; filing a push under "email"
+          // would make the two indistinguishable in the log and break the
+          // per-channel dedupe the keys were namespaced for.
+          channel: entry.message.channel,
           status: "queued" as const,
         })),
       )

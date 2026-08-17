@@ -7,7 +7,7 @@ import { welcomeKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendWelcomeEmail } from "../../src/notify/send-welcome.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
@@ -113,7 +113,7 @@ function send(joined: Joined, notifier: Notifier, joinedAt: Date = JOINED_AT) {
 
 /** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
 function leaveTokenFrom(message: Message | undefined): string {
-  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
   if (!match?.[1]) throw new Error("no /leave/ link found in message html");
   return match[1];
 }
@@ -136,7 +136,7 @@ describe("sendWelcomeEmail (N-6)", () => {
     expect(outcome).toEqual({ kind: "sent" });
     expect(notifier.all).toHaveLength(1);
     expect(notifier.all[0]?.to).toBe("joiner@example.com");
-    expect(notifier.all[0]?.subject).toContain("Thursday 7-a-side");
+    expect(requireEmailMessage(notifier.all[0]!).subject).toContain("Thursday 7-a-side");
 
     const rows = await logRows();
     expect(rows).toHaveLength(1);
@@ -167,12 +167,12 @@ describe("sendWelcomeEmail (N-6)", () => {
 
     await send(joined, notifier);
 
-    const message = notifier.all[0];
+    const message = requireEmailMessage(notifier.all[0]!);
     // 20 August is the next `scheduled` fixture; 13 August is already `open`,
     // and the joiner has no `pending` response row for it.
-    expect(message?.text).toContain("20 August");
-    expect(message?.text).not.toContain("13 August");
-    expect(message?.html).toContain("https://makethe.team/app");
+    expect(message.text).toContain("20 August");
+    expect(message.text).not.toContain("13 August");
+    expect(message.html).toContain("https://makethe.team/app");
   });
 
   it("stays honest, and still sends, when the game has no scheduled fixture yet", async () => {
@@ -182,8 +182,9 @@ describe("sendWelcomeEmail (N-6)", () => {
     const outcome = await send(joined, notifier);
 
     expect(outcome).toEqual({ kind: "sent" });
-    expect(notifier.all[0]?.text).not.toContain("null");
-    expect(notifier.all[0]?.html).not.toContain("null");
+    const noFixtureMessage = requireEmailMessage(notifier.all[0]!);
+    expect(noFixtureMessage.text).not.toContain("null");
+    expect(noFixtureMessage.html).not.toContain("null");
   });
 
   it("returns already-logged for a repeated send with the same joinedAt", async () => {
