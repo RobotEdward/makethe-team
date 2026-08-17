@@ -19,7 +19,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ResendNotifier } from "../../src/notify/resend-notifier.js";
-import type { EmailMessage, Message } from "../../src/notify/notifier.js";
+import type { EmailMessage, Message, PushMessage } from "../../src/notify/notifier.js";
 
 const API_KEY = "test-fake-resend-key-not-real";
 const FROM = "reminders@example.com";
@@ -53,6 +53,21 @@ function messages(count: number, prefix = "ply"): Message[] {
     message({ to: `${prefix}-${i}@example.com`, dedupeKey: `n1:fix-1:${prefix}-${i}` }),
   );
 }
+
+function pushMessage(overrides: Partial<PushMessage> = {}): PushMessage {
+  return {
+    channel: "push",
+    to: "player-1",
+    dedupeKey: "push:n1:fix-1:ply-1",
+    title: "You're in for Thursday",
+    body: "19:00 · Goals Vauxhall",
+    url: "https://makethe.team/r/token",
+    tag: "fixture-1",
+    ...overrides,
+  };
+}
+
+const NON_EMAIL_REASON = "resend-notifier-received-non-email";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -123,6 +138,71 @@ describe("ResendNotifier: empty input", () => {
     const results = await notifier.send([]);
     expect(results).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("ResendNotifier: push messages (M14)", () => {
+  // ResendNotifier cannot deliver a push. In production it never sees one
+  // (createNotifier only routes email here, until Task 8), but the class is
+  // exported and constructible on its own, so these pin the refusal itself:
+  // a distinct, greppable reason per push slot, index-correct even when
+  // pushes and emails share a batch, and — the specific regression this
+  // finding was about — no HTTP request at all for an all-push batch.
+  it("refuses every message in an all-push batch without calling fetch", async () => {
+    const notifier = new ResendNotifier(API_KEY, FROM);
+    const input = [pushMessage({ dedupeKey: "push:1" }), pushMessage({ dedupeKey: "push:2" })];
+
+    const results = await notifier.send(input);
+
+    expect(results).toEqual([
+      { ok: false, error: NON_EMAIL_REASON },
+      { ok: false, error: NON_EMAIL_REASON },
+    ]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("refuses a single push without calling fetch", async () => {
+    const notifier = new ResendNotifier(API_KEY, FROM);
+
+    const results = await notifier.send([pushMessage()]);
+
+    expect(results).toEqual([{ ok: false, error: NON_EMAIL_REASON }]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("attributes each result to its own message in an interleaved batch", async () => {
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse(200, { data: [{ id: "id-a" }, { id: "id-c" }] })),
+    );
+
+    const notifier = new ResendNotifier(API_KEY, FROM);
+    const input: Message[] = [
+      message({ to: "a@example.com", dedupeKey: "n1:fix-1:a" }),
+      pushMessage({ to: "push-player", dedupeKey: "push:n1:fix-1:b" }),
+      message({ to: "c@example.com", dedupeKey: "n1:fix-1:c" }),
+    ];
+
+    const results = await notifier.send(input);
+
+    // Each result lands on its own message — not merely three results of
+    // the right shape in some order. The push slot is refused; the two
+    // email slots carry the ids Resend returned for *them* specifically
+    // (only two emails ever reached Resend), preserving `input`'s order.
+    expect(results).toEqual([
+      { ok: true, providerMessageId: "id-a" },
+      { ok: false, error: NON_EMAIL_REASON },
+      { ok: true, providerMessageId: "id-c" },
+    ]);
+
+    // Only the two emails were ever sent to Resend — the push never reached
+    // the request body.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const body = (await requestFromCall(0).json()) as unknown[];
+    expect(body).toHaveLength(2);
+    expect(body).toEqual([
+      expect.objectContaining({ to: "a@example.com" }),
+      expect.objectContaining({ to: "c@example.com" }),
+    ]);
   });
 });
 
