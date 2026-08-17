@@ -42,12 +42,17 @@
  */
 
 /**
- * The maximum payload every push service accepts. It is a property of the
- * services, not of this code — nothing here would break at 4097 bytes, the
- * request would simply come back rejected — so the check below is a local
+ * What a push service is obliged to accept: RFC 8030 §7.2 puts the floor at
+ * 4096 octets **of request body**, not of plaintext. That distinction is the
+ * whole reason the arithmetic below exists — measure the wrong one and a
+ * payload passes the check here and is rejected on someone else's server,
+ * which is precisely the failure this module is built to make impossible.
+ *
+ * It is a property of the services, not of this code: nothing here breaks at
+ * 4097 bytes, the request simply comes back rejected. The check is a local
  * failure standing in for a remote one.
  */
-const MAX_PAYLOAD_BYTES = 4096;
+const MAX_BODY_BYTES = 4096;
 
 /**
  * The `rs` field of the aes128gcm header (RFC 8188 §2.1). One record; we
@@ -56,8 +61,44 @@ const MAX_PAYLOAD_BYTES = 4096;
  */
 const RECORD_SIZE = 4096;
 
-/** An uncompressed P-256 point: a 0x04 tag byte plus two 32-byte coordinates. */
+const SALT_BYTES = 16;
+/** The `auth` secret is fixed at 16 bytes by RFC 8291 §3.2. */
+const AUTH_SECRET_BYTES = 16;
 const P256_PUBLIC_KEY_BYTES = 65;
+/** The `rs` field: a big-endian uint32. */
+const RECORD_SIZE_FIELD_BYTES = 4;
+/** The `idlen` field: a single byte giving the key id's length. */
+const KEY_ID_LENGTH_FIELD_BYTES = 1;
+/** The `0x02` last-record marker, encrypted along with the payload. */
+const PADDING_DELIMITER_BYTES = 1;
+/** AES-GCM's authentication tag, appended to the ciphertext by `encrypt`. */
+const GCM_TAG_BYTES = 16;
+
+/**
+ * The aes128gcm header, whose size is fixed for web push because the key id
+ * is always an uncompressed P-256 point:
+ *
+ *     16 salt + 4 record size + 1 key id length + 65 key id = 86
+ */
+const HEADER_BYTES =
+  SALT_BYTES + RECORD_SIZE_FIELD_BYTES + KEY_ID_LENGTH_FIELD_BYTES + P256_PUBLIC_KEY_BYTES;
+
+/**
+ * Everything the encoding adds to the plaintext: the 86-byte header, the
+ * one-byte padding delimiter that is encrypted with the payload, and
+ * AES-GCM's 16-byte tag. 103 bytes, and none of it varies — there is exactly
+ * one record and exactly one key id length.
+ */
+const OVERHEAD_BYTES = HEADER_BYTES + PADDING_DELIMITER_BYTES + GCM_TAG_BYTES;
+
+/**
+ * The largest plaintext that still fits a conforming service's 4096-octet
+ * body: 4096 − 103 = 3993. Check the arithmetic against `OVERHEAD_BYTES`
+ * above rather than trusting this number; `web-push-encrypt.test.ts` asserts
+ * both sides of the boundary and the resulting body size, so a mistake in
+ * either constant is caught locally instead of by a stranger's server.
+ */
+const MAX_PAYLOAD_BYTES = MAX_BODY_BYTES - OVERHEAD_BYTES;
 
 export interface PushSubscriptionKeys {
   endpoint: string;
@@ -229,16 +270,45 @@ export async function encryptPayload(
   options: EncryptOptions = {},
 ): Promise<Uint8Array> {
   const plaintext = utf8(payload);
-  // `+ 1` for the padding delimiter appended below: it is encrypted along
-  // with the payload, so it counts against the limit. Measured in bytes and
-  // not characters — one emoji in a squad name is four of these.
-  if (plaintext.length + 1 > MAX_PAYLOAD_BYTES) {
-    throw new Error(`push payload too large: ${plaintext.length} bytes, limit ${MAX_PAYLOAD_BYTES - 1}`);
+  // Measured against the *plaintext* limit, which already has the encoding's
+  // 103 bytes of overhead subtracted from the 4096-octet body every service
+  // must accept (see `MAX_PAYLOAD_BYTES`). Bytes, not characters — one emoji
+  // in a squad name is four of these.
+  if (plaintext.length > MAX_PAYLOAD_BYTES) {
+    throw new Error(
+      `push payload too large: ${plaintext.length} bytes of plaintext, limit ${MAX_PAYLOAD_BYTES} ` +
+        `(${MAX_BODY_BYTES}-byte body less ${OVERHEAD_BYTES} bytes of header, padding and tag)`,
+    );
   }
 
   const receiverPublicRaw = base64UrlDecode(subscription.p256dh);
   const authSecret = base64UrlDecode(subscription.auth);
-  const salt = options.salt ?? crypto.getRandomValues(new Uint8Array(16));
+
+  // These two lengths are the module's only unchecked inputs, and they fail
+  // in opposite ways. A wrong-length `p256dh` at least throws inside
+  // `importKey` below, if opaquely. A wrong-length `auth` throws *nowhere*:
+  // it is used at exactly one place, as the HKDF salt, and HKDF accepts a
+  // salt of any length including zero — so a truncated or padded secret
+  // derives a plausible key, encrypts without complaint, and produces a
+  // well-formed body the device cannot decrypt. That is the undiagnosable
+  // remote failure this whole file is written to prevent, arriving through
+  // the one input with nothing downstream to catch it. Two checks turn it
+  // into a named local error.
+  //
+  // The route that stores these values validates them too (Task 10), which
+  // does not make this redundant: that route cannot protect rows already
+  // stored, and this function is the last place that knows what these bytes
+  // have to be.
+  if (receiverPublicRaw.length !== P256_PUBLIC_KEY_BYTES) {
+    throw new Error(
+      `subscription p256dh must be ${P256_PUBLIC_KEY_BYTES} bytes, got ${receiverPublicRaw.length}`,
+    );
+  }
+  if (authSecret.length !== AUTH_SECRET_BYTES) {
+    throw new Error(`subscription auth must be ${AUTH_SECRET_BYTES} bytes, got ${authSecret.length}`);
+  }
+
+  const salt = options.salt ?? crypto.getRandomValues(new Uint8Array(SALT_BYTES));
 
   const localKeys = options.localKeys ?? (await generateEphemeralKeyPair());
 
@@ -289,7 +359,7 @@ export async function encryptPayload(
   // the sender's public key out of this header, because there is nowhere
   // else they could come from — the "key id" is, for web push specifically,
   // the sender's ephemeral public key.
-  const recordSize = new Uint8Array(4);
+  const recordSize = new Uint8Array(RECORD_SIZE_FIELD_BYTES);
   // `false` = big-endian, which is what the RFC's network byte order means.
   new DataView(recordSize.buffer).setUint32(0, RECORD_SIZE, false);
 

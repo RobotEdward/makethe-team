@@ -30,19 +30,33 @@ const VECTOR = {
     "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
 };
 
+const SUBSCRIPTION = {
+  endpoint: "https://push.example/receiver",
+  p256dh: VECTOR.receiverPublicKey,
+  auth: VECTOR.authSecret,
+};
+
+/**
+ * The sizes below are written as literals on purpose, not imported from the
+ * module under test. Importing them would make the assertions restate
+ * whatever the source currently says and agree with it by construction —
+ * exactly the self-agreement the vector above exists to rule out. These come
+ * from the RFCs: 16 salt + 4 record size + 1 key id length + 65 key id
+ * (RFC 8188 §2.1), one padding delimiter plus AES-GCM's 16-byte tag, and a
+ * 4096-octet body floor (RFC 8030 §7.2) leaving 4096 − 103 = 3993.
+ */
+const HEADER_BYTES = 86;
+const DELIMITER_AND_TAG_BYTES = 17;
+const MAX_PLAINTEXT_BYTES = 3993;
+
 describe("RFC 8291 payload encryption", () => {
   it("reproduces the published ciphertext exactly", async () => {
     const localKeys = await importSenderKeys(VECTOR.senderPrivateKey, VECTOR.senderPublicKey);
 
-    const encrypted = await encryptPayload(
-      {
-        endpoint: "https://push.example/receiver",
-        p256dh: VECTOR.receiverPublicKey,
-        auth: VECTOR.authSecret,
-      },
-      VECTOR.plaintext,
-      { salt: base64UrlDecode(VECTOR.salt), localKeys },
-    );
+    const encrypted = await encryptPayload(SUBSCRIPTION, VECTOR.plaintext, {
+      salt: base64UrlDecode(VECTOR.salt),
+      localKeys,
+    });
 
     expect(base64UrlEncode(encrypted)).toBe(VECTOR.expected);
   });
@@ -52,24 +66,81 @@ describe("RFC 8291 payload encryption", () => {
     // sender public key(65) ‖ ciphertext. A receiver reads the sender's key
     // out of this header — there is nowhere else it could come from — so a
     // mis-sized header is not a cosmetic error, it is undecryptable.
-    const encrypted = await encryptPayload(
-      { endpoint: "https://push.example/receiver", p256dh: VECTOR.receiverPublicKey, auth: VECTOR.authSecret },
-      "hello",
-    );
+    const encrypted = await encryptPayload(SUBSCRIPTION, "hello");
 
-    expect(encrypted.length).toBeGreaterThan(86);
+    // Exact, not `greaterThan(86)`. A loose lower bound lets a wrong salt
+    // length through, and then byte 20 lands somewhere inside the public key
+    // — a random byte, so the assertion below would pass about 1 run in 256
+    // and disagree between CI and this machine. A flaky test here is worse
+    // than no test: it teaches you to re-run.
+    expect(encrypted.length).toBe(HEADER_BYTES + 5 + DELIMITER_AND_TAG_BYTES);
     expect(encrypted[20]).toBe(65); // key id length: an uncompressed P-256 point
+    expect(encrypted[21]).toBe(0x04); // and the key id is an uncompressed point
   });
 
-  it("refuses a payload that would exceed the 4KB limit", async () => {
-    // Every push service rejects an oversized payload, and the copy layer
-    // asserts against this rather than discovering it in production.
+  it("frames the header the same way when it generates its own keys", async () => {
+    // Test 1 injects both the salt and the keypair, so it never exercises the
+    // branch production always takes. Everything below is about that branch.
+    const knownSalt = base64UrlDecode(VECTOR.salt);
+    const withKnownSalt = await encryptPayload(SUBSCRIPTION, "hello", { salt: knownSalt });
+
+    // The salt goes out verbatim at offset 0: the receiver has no other
+    // source for it, so a header that dropped or moved it is undecryptable.
+    expect(Array.from(withKnownSalt.subarray(0, 16))).toEqual(Array.from(knownSalt));
+
+    const encrypted = await encryptPayload(SUBSCRIPTION, "hello");
+    // `rs`, big-endian, at offset 16. Little-endian would read 0x00100000.
+    expect(new DataView(encrypted.buffer, encrypted.byteOffset).getUint32(16, false)).toBe(4096);
+  });
+
+  it("uses a fresh salt and a fresh keypair on every message", async () => {
+    // The one catastrophic misuse of AES-GCM is nonce reuse, and the nonce
+    // here is derived from the salt: a constant salt with a stable keypair
+    // reuses it exactly. Nothing else in this suite would notice — replace
+    // `getRandomValues` with a fixed array and every other test still passes.
+    const first = await encryptPayload(SUBSCRIPTION, "hello");
+    const second = await encryptPayload(SUBSCRIPTION, "hello");
+
+    expect(Array.from(first.subarray(0, 16))).not.toEqual(Array.from(second.subarray(0, 16)));
+    // The ephemeral sender keypair is per-message for the same reason.
+    expect(Array.from(first.subarray(21, 86))).not.toEqual(Array.from(second.subarray(21, 86)));
+  });
+
+  it("accepts the largest payload that fits a 4096-octet body and refuses the next one", async () => {
+    // RFC 8030 §7.2 obliges a service to accept 4096 octets *of body*, not of
+    // plaintext, and the encoding adds a fixed 103 bytes (86 header + 1
+    // delimiter + 16 tag). The real plaintext limit is therefore 3993; a
+    // guard written against 4096 waves through a body of up to 4199, which is
+    // rejected remotely and silently.
+    //
+    // Both sides of the boundary are asserted because only the pair pins it:
+    // a `>` that should be `>=` moves the edge by one byte and is invisible
+    // to any test that probes 4097.
+    const largest = await encryptPayload(SUBSCRIPTION, "x".repeat(MAX_PLAINTEXT_BYTES));
+    expect(largest.length).toBe(4096);
+
+    await expect(encryptPayload(SUBSCRIPTION, "x".repeat(MAX_PLAINTEXT_BYTES + 1))).rejects.toThrow(
+      /too large/i,
+    );
+  });
+
+  it("refuses a subscription whose auth secret is the wrong length", async () => {
+    // `auth` reaches exactly one place — the HKDF salt — and HKDF accepts a
+    // salt of any length, including zero. Without this guard a truncated
+    // secret derives a plausible key, encrypts without complaint and yields a
+    // body the device cannot decrypt: no exception, no log, no local symptom
+    // of any kind. It is the only input in the module that fails that
+    // silently, which is why it is checked here and not left to the route
+    // that stores it — that route cannot repair rows already written.
     await expect(
-      encryptPayload(
-        { endpoint: "https://push.example/receiver", p256dh: VECTOR.receiverPublicKey, auth: VECTOR.authSecret },
-        "x".repeat(4097),
-      ),
-    ).rejects.toThrow(/too large/i);
+      encryptPayload({ ...SUBSCRIPTION, auth: base64UrlEncode(new Uint8Array(15)) }, "hello"),
+    ).rejects.toThrow(/auth must be 16 bytes, got 15/);
+  });
+
+  it("refuses a subscription whose p256dh is the wrong length", async () => {
+    await expect(
+      encryptPayload({ ...SUBSCRIPTION, p256dh: base64UrlEncode(new Uint8Array(64)) }, "hello"),
+    ).rejects.toThrow(/p256dh must be 65 bytes, got 64/);
   });
 
   it("round-trips base64url without padding, including bytes that need the URL alphabet", async () => {
