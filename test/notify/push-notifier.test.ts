@@ -3,8 +3,9 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { pushSubscriptions } from "../../src/db/schema.js";
-import type { PushMessage } from "../../src/notify/notifier.js";
+import type { EmailMessage, PushMessage } from "../../src/notify/notifier.js";
 import { PushNotifier } from "../../src/notify/push-notifier.js";
+import { NO_RECIPIENT_REASON } from "../../src/notify/quota.js";
 import { base64UrlEncode, importVapidKeys, type VapidKeys } from "../../src/notify/web-push.js";
 import { insertPlayer, insertSubscription, resetDatabase } from "../support/factories.js";
 import { NOW } from "../support/clock.js";
@@ -116,7 +117,7 @@ describe("PushNotifier", () => {
     expect(result?.ok).toBe(true);
   });
 
-  it("deletes a subscription the push service says is gone", async () => {
+  it("deletes a subscription the push service says is gone (410)", async () => {
     // The only self-healing in the system. Without it the table accumulates
     // dead endpoints forever and every later send burns subrequests on
     // devices that no longer exist.
@@ -130,9 +131,26 @@ describe("PushNotifier", () => {
     expect(rows).toHaveLength(0);
   });
 
-  it("keeps a subscription that failed for a reason that might pass", async () => {
+  it("deletes a subscription the push service says is gone (404)", async () => {
+    // 404 and 410 are the two "gone for good" statuses (RFC 8030 §7.2). Only
+    // 410 was exercised above; the `isGone` check is a plain OR of both, so
+    // this proves the other side of it independently rather than trusting
+    // that 410 passing implies 404 does too.
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/gone");
+    const notifier = new PushNotifier(db, keys, stubFetch(404), NOW);
+
+    await notifier.send([pushMessageFor(playerId)]);
+
+    const rows = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.playerId, playerId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("keeps a subscription that failed for a reason that might pass (429), and stamps last_failure_at", async () => {
     // 429 and 5xx are the push service having a bad day. Deleting on those
     // would unsubscribe a working phone because of someone else's outage.
+    // The stamp is the only record an operator has of when this still-
+    // registered device last actually worked (spec §10.4).
     const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
     await insertSubscription(db, playerId, "https://push.example/busy");
     const notifier = new PushNotifier(db, keys, stubFetch(429), NOW);
@@ -140,7 +158,53 @@ describe("PushNotifier", () => {
     const [result] = await notifier.send([pushMessageFor(playerId)]);
 
     expect(result?.ok).toBe(false);
+    const rows = await db.select().from(pushSubscriptions);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.lastFailureAt).toEqual(NOW);
+    expect(rows[0]?.lastSuccessAt).toBeNull();
+  });
+
+  it("keeps a subscription that failed with a 5xx, and does not delete it", async () => {
+    // Independent of the 429 case: a server error is a different branch of
+    // the same "might pass later" bucket, and the brief calls out both
+    // directions explicitly.
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/flaky");
+    const notifier = new PushNotifier(db, keys, stubFetch(503), NOW);
+
+    const [result] = await notifier.send([pushMessageFor(playerId)]);
+
+    expect(result?.ok).toBe(false);
     expect(await db.select().from(pushSubscriptions)).toHaveLength(1);
+  });
+
+  it("stamps last_success_at on a device that accepted the push", async () => {
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/phone");
+    const notifier = new PushNotifier(db, keys, stubFetch(201), NOW);
+
+    await notifier.send([pushMessageFor(playerId)]);
+
+    const rows = await db.select().from(pushSubscriptions);
+    expect(rows[0]?.lastSuccessAt).toEqual(NOW);
+    expect(rows[0]?.lastFailureAt).toBeNull();
+  });
+
+  it("still delivers to a device with valid keys when a sibling device's keys are malformed", async () => {
+    // encryptPayload (web-push.ts) throws on a wrong-length p256dh/auth —
+    // exactly what a corrupted row would produce. That throw must be
+    // recorded as this one device's failure, not abort the whole message
+    // or the sweep, since PushNotifier.sendToDevice wraps it in try/catch.
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/corrupt", {
+      p256dh: base64UrlEncode(new Uint8Array(64)), // one byte short of the required 65
+    });
+    await insertSubscription(db, playerId, "https://push.example/fine");
+    const notifier = new PushNotifier(db, keys, stubFetch(201), NOW);
+
+    const [result] = await notifier.send([pushMessageFor(playerId)]);
+
+    expect(result).toEqual({ ok: true, providerMessageId: null });
   });
 
   it("reports no-recipient for a player with no devices", async () => {
@@ -152,7 +216,7 @@ describe("PushNotifier", () => {
 
     const [result] = await notifier.send([pushMessageFor(playerId)]);
 
-    expect(result).toEqual({ ok: false, error: "no-recipient" });
+    expect(result).toEqual({ ok: false, error: NO_RECIPIENT_REASON });
   });
 
   it("returns exactly one result per message, in order", async () => {
@@ -177,5 +241,25 @@ describe("PushNotifier", () => {
     const notifier = new PushNotifier(db, keys, stubFetch(201), NOW);
 
     expect(await notifier.send([])).toEqual([]);
+  });
+
+  it("refuses a non-push message rather than throwing or silently succeeding", async () => {
+    // PushNotifier is exported and constructible on its own — nothing
+    // guarantees a caller only ever hands it push messages. A silent
+    // success for something never sent is exactly the failure
+    // notification_log exists to prevent.
+    const email: EmailMessage = {
+      channel: "email",
+      to: "sam@example.com",
+      dedupeKey: `email:${crypto.randomUUID()}`,
+      subject: "You're in",
+      html: "<p>You're in</p>",
+      text: "You're in",
+    };
+    const notifier = new PushNotifier(db, keys, stubFetch(201), NOW);
+
+    const [result] = await notifier.send([email]);
+
+    expect(result?.ok).toBe(false);
   });
 });

@@ -33,7 +33,9 @@ const TTL_SECONDS = 4 * 7 * 24 * 60 * 60;
  * error — is left alone, because those are the push service (or the
  * network) having a bad day, not a verdict on the subscription; deleting on
  * those would unsubscribe a working phone because of somebody else's
- * outage.
+ * outage. A success stamps `last_success_at`; a 429/5xx/thrown failure
+ * stamps `last_failure_at` (spec §10.4) — the only record an operator has
+ * of when a still-registered device last actually worked.
  *
  * `fetch` is injected so the tests can drive every push-service response
  * without a network — the repo blocks outbound network in tests at the
@@ -99,6 +101,29 @@ export class PushNotifier implements Notifier {
     const gone = outcomes.filter((outcome) => outcome.gone).map((outcome) => outcome.id);
     if (gone.length > 0) {
       await this.db.delete(pushSubscriptions).where(inArray(pushSubscriptions.id, gone));
+    }
+
+    // Stamped per message, batched across that message's devices, rather
+    // than one write per device — the same reasoning as the delete above:
+    // D1 round-trips stay proportional to players, not to devices. A device
+    // that was deleted for being gone is excluded from both stamps; there is
+    // no row left to stamp.
+    const succeededIds = outcomes.filter((outcome) => outcome.delivered).map((outcome) => outcome.id);
+    if (succeededIds.length > 0) {
+      await this.db
+        .update(pushSubscriptions)
+        .set({ lastSuccessAt: this.now })
+        .where(inArray(pushSubscriptions.id, succeededIds));
+    }
+
+    const failedIds = outcomes
+      .filter((outcome) => !outcome.delivered && !outcome.gone)
+      .map((outcome) => outcome.id);
+    if (failedIds.length > 0) {
+      await this.db
+        .update(pushSubscriptions)
+        .set({ lastFailureAt: this.now })
+        .where(inArray(pushSubscriptions.id, failedIds));
     }
 
     const delivered = outcomes.find((outcome) => outcome.delivered);
