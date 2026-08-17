@@ -111,14 +111,13 @@ describe("VAPID", () => {
     // all — the same class of failure `requireBinding` exists to prevent.
     //
     // The mismatched pair is assembled from two *separately valid* imports
-    // rather than one JWK built with a's x/y and b's d, because this
-    // runtime's EC JWK import validates that d and x/y agree and throws
-    // `DataError: Invalid EC key in JSON Web Key` before `assertVapidKeysMatch`
-    // ever runs — an even blunter guard than the one under test, and not one
-    // every WebCrypto implementation performs (importVapidKeys's own doc
-    // comment is written for the implementations that don't). Building the
-    // mismatch this way instead exercises `assertVapidKeysMatch` itself,
-    // which is the guard this codebase actually depends on.
+    // rather than by passing a's public key and b's private key straight to
+    // `importVapidKeys`, because on this runtime that path throws inside
+    // `importVapidKeys` itself (see the test below) and never reaches this
+    // function at all. Building the mismatch this way instead exercises
+    // `assertVapidKeysMatch` directly, which is the runtime-independent
+    // backstop — not every WebCrypto implementation catches the mismatch at
+    // import the way workerd does.
     const a = await freshKeys();
     const b = await freshKeys();
     const keysA = await importVapidKeys(a.publicKey, a.privateKey, "mailto:ops@makethe.team");
@@ -126,5 +125,30 @@ describe("VAPID", () => {
     const mismatched = { publicKey: keysA.publicKey, signingKey: keysB.signingKey, subject: keysA.subject };
 
     await expect(assertVapidKeysMatch(mismatched)).rejects.toThrow(/do not match/i);
+  });
+
+  it("importVapidKeys itself rejects a mismatched pair with the same actionable message", async () => {
+    // This is the path an operator actually hits: rotate one env var,
+    // forget the other, and workerd's own JWK import (which validates that
+    // `d` agrees with `x`/`y`) throws first — inside `importVapidKeys`,
+    // before `assertVapidKeysMatch` ever runs. Without this test the
+    // "actionable message" property was only proven for a path production
+    // config errors don't take.
+    const a = await freshKeys();
+    const b = await freshKeys();
+
+    await expect(
+      importVapidKeys(a.publicKey, b.privateKey, "mailto:ops@makethe.team"),
+    ).rejects.toThrow(/do not match/i);
+
+    // The underlying DataError is preserved as `cause`, not discarded, for
+    // anyone who needs to see what the runtime actually said.
+    try {
+      await importVapidKeys(a.publicKey, b.privateKey, "mailto:ops@makethe.team");
+      expect.unreachable("expected importVapidKeys to throw for a mismatched pair");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).cause).toBeInstanceOf(Error);
+    }
   });
 });

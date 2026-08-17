@@ -383,6 +383,18 @@ export interface VapidKeys {
 }
 
 /**
+ * The message every "these two bindings don't agree" failure surfaces,
+ * whichever of the two places below throws it: `importVapidKeys`, when
+ * workerd's own JWK import catches the mismatch first, or
+ * `assertVapidKeysMatch`, on a runtime whose importer does not. One string
+ * so an operator sees the same actionable text — and the same fix — no
+ * matter which path they hit.
+ */
+const VAPID_KEY_MISMATCH_MESSAGE =
+  "VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY do not match — every push would be refused with 403. " +
+  "Both come from one run of scripts/generate-vapid-keys.mjs; set them together or not at all.";
+
+/**
  * Imports the configured VAPID pair.
  *
  * `privateKey` is the JWK `d` parameter, base64url — the form
@@ -390,14 +402,23 @@ export interface VapidKeys {
  * from the public key rather than from `d`, because that is the only public
  * half this function has: nothing here can derive a point from a scalar.
  *
- * Whether that makes a mismatched pair fail here or later is not something
- * to rely on either way. Workerd's own JWK import happens to check that `d`
- * and `x`/`y` agree and throws a `DataError` first — but the WebCrypto spec
- * does not require that check, other implementations skip it, and this
- * function must not be the place a config error is *supposed* to surface:
- * that guarantee belongs to `assertVapidKeysMatch`, called once at startup,
- * whose sign-then-verify check works regardless of what any given runtime's
- * importer bothers to validate.
+ * That is also exactly the shape workerd's JWK importer validates: it
+ * checks that `d` and `x`/`y` agree and throws a raw `DataError` for a
+ * mismatched pair, before `assertVapidKeysMatch` ever runs — which means
+ * the realistic misconfiguration this whole guard exists for (rotate one
+ * env var, forget the other) is caught *here* in production, not there.
+ * The `catch` below re-throws with the same actionable message
+ * `assertVapidKeysMatch` uses, so an operator sees which two bindings to
+ * check either way, and keeps the original `DataError` as `cause` for
+ * anyone who needs to see what the runtime actually said. Without it, a
+ * real rotation mistake would surface as `DataError: Invalid EC key in
+ * JSON Web Key` naming neither binding.
+ *
+ * `assertVapidKeysMatch` is not made redundant by this: the WebCrypto spec
+ * does not require an importer to validate `d` against `x`/`y`, so a
+ * runtime that skips the check would import a mismatched pair here without
+ * complaint. `assertVapidKeysMatch`'s sign-then-verify is the one check
+ * that holds regardless of what a given runtime's importer bothers to do.
  */
 export async function importVapidKeys(publicKey: string, privateKey: string, subject: string): Promise<VapidKeys> {
   const raw = base64UrlDecode(publicKey);
@@ -407,20 +428,25 @@ export async function importVapidKeys(publicKey: string, privateKey: string, sub
     );
   }
 
-  const signingKey = await crypto.subtle.importKey(
-    "jwk",
-    {
-      kty: "EC",
-      crv: "P-256",
-      d: privateKey,
-      x: base64UrlEncode(raw.slice(1, 33)),
-      y: base64UrlEncode(raw.slice(33, 65)),
-      ext: false,
-    },
-    { name: "ECDSA", namedCurve: "P-256" },
-    false,
-    ["sign"],
-  );
+  let signingKey: CryptoKey;
+  try {
+    signingKey = await crypto.subtle.importKey(
+      "jwk",
+      {
+        kty: "EC",
+        crv: "P-256",
+        d: privateKey,
+        x: base64UrlEncode(raw.slice(1, 33)),
+        y: base64UrlEncode(raw.slice(33, 65)),
+        ext: false,
+      },
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["sign"],
+    );
+  } catch (cause) {
+    throw new Error(VAPID_KEY_MISMATCH_MESSAGE, { cause });
+  }
 
   return { publicKey, signingKey, subject };
 }
@@ -431,8 +457,16 @@ export async function importVapidKeys(publicKey: string, privateKey: string, sub
  *
  * Not by deriving the public key from the private one: Web Crypto offers no
  * such operation, and importing a JWK whose `d` disagrees with its `x`/`y`
- * is *not* reliably rejected. Sign-then-verify is the check that actually
- * discriminates.
+ * is *not* reliably rejected — that is a property of a given runtime's
+ * importer, not of the spec. Sign-then-verify is the check that actually
+ * discriminates regardless of what any importer does.
+ *
+ * On workerd specifically, `importVapidKeys` already catches the realistic
+ * failure — a mismatched pair — via its own JWK import, and this function
+ * usually never runs against bad input in practice. It is not dead code for
+ * that reason: it is the backstop that holds on a runtime whose importer
+ * skips the `d`/`x`/`y` check, and the only one of the two checks that is
+ * guaranteed by the spec rather than by what workerd happens to implement.
  *
  * Worth the two operations at startup because the failure it catches —
  * rotating one binding and forgetting the other — produces a 403 from every
@@ -450,10 +484,7 @@ export async function assertVapidKeysMatch(keys: VapidKeys): Promise<void> {
   );
 
   if (!(await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, verifier, signature, probe))) {
-    throw new Error(
-      "VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY do not match — every push would be refused with 403. " +
-        "Both come from one run of scripts/generate-vapid-keys.mjs; set them together or not at all.",
-    );
+    throw new Error(VAPID_KEY_MISMATCH_MESSAGE);
   }
 }
 
