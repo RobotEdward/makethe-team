@@ -4,7 +4,7 @@ import { createNotifier } from "../../src/notify/factory.js";
 import { getDb } from "../../src/db/client.js";
 import { ConsoleNotifier } from "../../src/notify/console-notifier.js";
 import { NullNotifier } from "../../src/notify/null-notifier.js";
-import { QuotaNotifier } from "../../src/notify/quota.js";
+import { RouterNotifier } from "../../src/notify/router-notifier.js";
 import type { EmailMessage, Notifier } from "../../src/notify/notifier.js";
 import type { Bindings } from "../../src/env.js";
 import { resetDatabase } from "../support/factories.js";
@@ -160,13 +160,15 @@ describe("NullNotifier", () => {
 });
 
 describe("createNotifier", () => {
-  // createNotifier always wraps its choice in QuotaNotifier (TR-31, TR-32) so
-  // nothing downstream can bypass the daily send ceiling — that is now the
-  // one type every caller ever sees back.
-  it("wraps the selection in QuotaNotifier so the ceiling cannot be bypassed", () => {
-    expect(createNotifier(bindings("console"), db, NOW)).toBeInstanceOf(QuotaNotifier);
-    expect(createNotifier(bindings("null"), db, NOW)).toBeInstanceOf(QuotaNotifier);
-    expect(createNotifier(bindings("resend"), db, NOW)).toBeInstanceOf(QuotaNotifier);
+  // Since M14, createNotifier always returns a RouterNotifier (router-notifier.ts)
+  // that splits by channel and sends email through exactly the QuotaNotifier-
+  // wrapped path it always used (TR-31, TR-32) — that is still the one thing
+  // every caller's messages route through for the email channel, just no
+  // longer the type `createNotifier` itself returns.
+  it("wraps every choice in a RouterNotifier so the ceiling cannot be bypassed for email", () => {
+    expect(createNotifier(bindings("console"), db, NOW)).toBeInstanceOf(RouterNotifier);
+    expect(createNotifier(bindings("null"), db, NOW)).toBeInstanceOf(RouterNotifier);
+    expect(createNotifier(bindings("resend"), db, NOW)).toBeInstanceOf(RouterNotifier);
   });
 
   it("still delegates to ConsoleNotifier's behaviour for env.NOTIFIER === 'console'", async () => {
@@ -199,7 +201,7 @@ describe("createNotifier", () => {
   describe("env.NOTIFIER === 'resend'", () => {
     it("constructs a working notifier that reaches Resend, still behind the daily ceiling", async () => {
       const notifier = createNotifier(bindings("resend"), db, NOW);
-      expect(notifier).toBeInstanceOf(QuotaNotifier);
+      expect(notifier).toBeInstanceOf(RouterNotifier);
 
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
         new Response(JSON.stringify({ data: [{ id: "resend-msg-1" }] }), {
