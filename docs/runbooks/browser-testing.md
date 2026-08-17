@@ -115,13 +115,13 @@ This destroys local development data only. It never touches production.
 ## The product guide
 
 `docs/guide/` is a hand-written product guide — a README and seven chapters,
-illustrated with 17 screenshots. Regenerate the screenshots with:
+illustrated with 27 screenshots. Regenerate the screenshots with:
 
 ```bash
 npm run guide:capture
 ```
 
-This rebuilds the world, captures the 17 shots, optimises them and rewrites
+This rebuilds the world, captures the 27 shots, optimises them and rewrites
 `docs/guide/manifest.json`. **It writes images and the manifest and never a
 `.md` file.** The chapters are hand-edited prose — that separation is the
 whole reason the writing survives regeneration. Do not expect (or write)
@@ -189,3 +189,31 @@ version, and only the headless shell is installed.
 on a fork's pull request. The job applies migrations first: a runner's D1 is
 empty, and `wrangler dev` will serve happily against a database with no
 tables.
+
+## What this suite cannot prove: the install itself (M13)
+
+`test/browser/pwa.spec.ts` proves the service worker registers with no CSP
+violation, that the manifest is fetched and parsed rather than refused, and
+that a failed navigation under `context.setOffline(true)` falls back to
+`/offline`. That is everything Playwright's Chromium-only, headless
+environment can check. It cannot drive an actual install — there is no OS
+chrome, no home screen, and no separate iOS engine to test against. Before a
+production deploy that touches the manifest, the service worker or the icons,
+check these by hand, on real hardware:
+
+- **Android (Chrome).** The install prompt (or the browser menu's "Install
+  app") appears; installing and opening it launches at `/app` with no address
+  bar or browser chrome; the icon it adds to the home screen is the mark
+  (`src/views/icon.ts`), not a screenshot of whatever page was open when the
+  prompt fired.
+- **iPhone (Safari).** Share → **Add to Home Screen** produces the mark as the
+  icon. This is the *only* assertion that proves `apple-touch-icon` is wired
+  correctly — iOS has no install API, reads no manifest for its icon, and
+  Playwright cannot drive Safari's share sheet at all, so nothing short of
+  doing this by hand exercises that code path. The installed app then opens
+  without Safari's chrome.
+
+Both checks matter for the same reason the rest of this document exists: each
+failure mode is invisible from a server or a headless browser. A wrong or
+missing `apple-touch-icon` link fails silently — iOS falls back to a
+screenshot of the page, and nothing anywhere logs that it did.

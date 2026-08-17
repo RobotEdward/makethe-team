@@ -6,7 +6,7 @@
 // on purpose, since nothing in `src/` may depend on a bundler feature.
 import { describe, expect, it } from "vitest";
 import * as scripts from "../../src/views/scripts.js";
-import { PAGE_SCRIPT_BLOCKS, SCRIPT_BLOCKS } from "../../src/views/scripts.js";
+import { PAGE_SCRIPT_BLOCKS, SCRIPT_BLOCKS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { STYLE_BLOCKS } from "../../src/views/styles.js";
 
 /**
@@ -29,7 +29,11 @@ describe("the script enumeration", () => {
       expect(SCRIPT_BLOCKS as readonly string[]).toContain(block);
     }
     expect(SCRIPT_BLOCKS).toHaveLength(exported.length);
-    expect([...SCRIPT_BLOCKS]).toEqual([...PAGE_SCRIPT_BLOCKS]);
+    // SERVICE_WORKER_JS is deliberately not a PAGE_SCRIPT_BLOCKS member (it is
+    // never opted into — see its own comment in src/views/scripts.ts), so the
+    // enumeration this test pins is SCRIPT_BLOCKS = [SERVICE_WORKER_JS,
+    // ...PAGE_SCRIPT_BLOCKS], not the bare page-script array.
+    expect([...SCRIPT_BLOCKS]).toEqual([SERVICE_WORKER_JS, ...PAGE_SCRIPT_BLOCKS]);
   });
 
   it("is inline, same-origin and free of anything a hash cannot cover", () => {
@@ -56,6 +60,9 @@ describe("the script enumeration", () => {
       // kind again: it needs drag and drop, so it detects `window.DataTransfer`
       // before it makes a single row draggable or reveals a single column, and
       // a browser without it keeps the picker's radio form exactly as served.
+      // `SERVICE_WORKER_JS` (M13) is a fourth: it detects `"serviceWorker" in
+      // navigator` before it ever calls `.register(...)`, so an old browser
+      // takes the same early return every other block does.
       //
       // Deliberately not a bare substring match on the guard token: a script
       // that called `navigator.clipboard.writeText(...)` with no guard at all
@@ -64,8 +71,23 @@ describe("the script enumeration", () => {
       // substring check would wave it through. This instead requires the
       // token to sit inside an `if (...) return;` guard clause, which is what
       // every block below actually does before it touches the API.
+      // SERVICE_WORKER_JS's guard is `if (!("serviceWorker" in navigator))
+      // return;` — a double close-paren the other three blocks' guards don't
+      // have (the extra one belongs to `!(...)`), so it gets its own
+      // alternative rather than reusing the single-`\)` shape above.
+      // `INSTALL_JS` (M13 Task 6) is a fifth kind, and a different shape
+      // again: it has no single browser capability whose absence must short-
+      // circuit the whole block, because every API it touches already
+      // degrades safely on its own — `window.matchMedia` is checked inline
+      // before use, and `beforeinstallprompt`/`appinstalled` are ordinary
+      // events that simply never fire on a browser that doesn't dispatch
+      // them. What it guards instead is its DOM anchor: `if (!section)
+      // return;` before anything else, so a page that never rendered
+      // `renderInstallSection()` — or a future markup change that drops the
+      // `.install` class — gets the same silent no-op every other block gets
+      // for a missing capability.
       expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
-        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;/,
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;/,
       );
     }
   });
@@ -149,4 +171,17 @@ describe("the script enumeration", () => {
     // above would go stale and this test would pass while meaning nothing.
     expect(STYLE_BLOCKS.length).toBeGreaterThan(0);
   });
+});
+
+it("registers the service worker without requiring it to succeed", () => {
+  // The rule this whole module is built on: scripting off and scripting on
+  // must be the same experience. Registration failing — an old browser, a
+  // private window, a policy — must leave every page exactly as it was.
+  expect(SERVICE_WORKER_JS).toContain('"serviceWorker" in navigator');
+  expect(SERVICE_WORKER_JS).toContain(".catch(");
+});
+
+it("is enumerated, so the CSP hashes it", () => {
+  // A block that is not in this array is script the browser silently drops.
+  expect(SCRIPT_BLOCKS).toContain(SERVICE_WORKER_JS);
 });

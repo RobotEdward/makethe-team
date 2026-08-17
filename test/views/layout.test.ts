@@ -1,5 +1,7 @@
+import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { escapeHtml, layout, STYLES } from "../../src/views/layout.js";
+import { escapeHtml, layout, STYLES, THEME_COLOR } from "../../src/views/layout.js";
+import { APPLE_TOUCH_ICON_PATH, MANIFEST_PATH } from "../../src/auth/paths.js";
 import { PAGE_STYLE_BLOCKS } from "../../src/views/styles.js";
 
 describe("escapeHtml", () => {
@@ -64,6 +66,7 @@ describe("layout", () => {
     "src/routes/home.ts",
     "src/views/cancel.ts",
     "src/views/link-problem.ts",
+    "src/views/offline.ts",
     "src/views/signin.ts",
   ];
 
@@ -154,5 +157,29 @@ describe("layout", () => {
     // If the font request is blocked, this is the whole appearance of the
     // product. It must still be the stack that shipped before M10.
     expect(STYLES).toContain(`"Instrument Sans", ui-sans-serif, system-ui`);
+  });
+});
+
+describe("the installable app's head (M13)", () => {
+  it("links the manifest and the apple-touch-icon on every page", async () => {
+    // Both are needed and neither substitutes for the other: Android reads
+    // the manifest's icon list, and iOS ignores that list completely and
+    // reads only the apple-touch-icon link. Ship one and half your players
+    // get a screenshot of the page as their home-screen icon.
+    const body = await (await SELF.fetch("https://makethe.team/")).text();
+
+    expect(body).toContain(`<link rel="manifest" href="${MANIFEST_PATH}">`);
+    expect(body).toContain(`<link rel="apple-touch-icon" href="${APPLE_TOUCH_ICON_PATH}">`);
+  });
+
+  it("sets a theme colour matching the manifest", async () => {
+    // A mismatch shows as one colour in the task switcher and another in the
+    // browser chrome, on the same app. Asserted against THEME_COLOR rather
+    // than a pasted literal — test/routes/pwa.test.ts asserts the manifest's
+    // theme_color against the same constant, so the two tests can't drift
+    // onto two different "correct" colours.
+    const body = await (await SELF.fetch("https://makethe.team/")).text();
+
+    expect(body).toContain(`<meta name="theme-color" content="${THEME_COLOR}">`);
   });
 });

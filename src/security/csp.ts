@@ -84,6 +84,24 @@ export const FONT_ORIGINS = ["https://fonts.googleapis.com", "https://fonts.gsta
  * - `base-uri 'none'` — no page has any legitimate use for a `<base>`
  *   element; closing this off costs nothing. Also does not fall back to
  *   `default-src`.
+ *
+ * M13. Every directive below is one the header previously omitted, and
+ * omission is not permissive: an unnamed directive falls back to
+ * `default-src`, which is `'none'`.
+ *
+ * - `manifest-src` — the manifest is fetched under its own directive, and a
+ *   refused manifest means the app is simply not installable, reported
+ *   nowhere except a devtools panel nobody has open.
+ * - `worker-src` — a service worker falls back through `child-src` to
+ *   `script-src`, which here is a list of SHA-256 hashes and nothing else, so
+ *   registration fails. This is the same shape of failure as the missing
+ *   `connect-src` documented above: it happens in the browser, before any
+ *   request reaches the Worker.
+ * - `img-src` — needed the moment a page renders an icon, which the offline
+ *   page does.
+ *
+ * All three are `'self'` and must not be widened. There is no CDN in this
+ * project and every one of these URLs is a same-origin absolute path.
  */
 
 async function sha256Base64(text: string): Promise<string> {
@@ -124,13 +142,24 @@ async function buildCspHeader(): Promise<string> {
     `style-src ${sources(styleHashes)} ${FONT_ORIGINS[0]}`,
     // Does not fall back to default-src — see the header comment.
     `font-src ${FONT_ORIGINS[1]}`,
-    // Not 'none' any more, and deliberately not 'unsafe-inline': passkeys are
-    // the one feature that cannot work server-side (WebAuthn is a browser
-    // API), so their two scripts are allowed by hash and nothing else is.
+    // Not 'none' any more, and deliberately not 'unsafe-inline': every block
+    // in SCRIPT_BLOCKS (src/views/scripts.ts) is allowed by hash and nothing
+    // else is. That set started as the two passkey scripts (M5) — the
+    // original reason client JavaScript was allowed on this server-rendered
+    // site at all, WebAuthn having no server-side substitute — and has since
+    // grown to five: the two passkey blocks, the invite-copy and
+    // drag-and-drop enhancements, and SERVICE_WORKER_JS (M13), which ships on
+    // every page rather than being opted into by one. Passkeys are no longer
+    // *why* this directive is non-empty; they are just its first member.
     `script-src ${sources(scriptHashes)}`,
     // The scripts' whole purpose. Without this they execute and then cannot
     // reach a single endpoint — see the header comment.
     "connect-src 'self'",
+    // See the header comment (M13): none of these three fall back to
+    // default-src, and all three must stay exactly 'self'.
+    "manifest-src 'self'",
+    "worker-src 'self'",
+    "img-src 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",

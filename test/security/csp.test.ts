@@ -1,6 +1,14 @@
 import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import {
+  APPLE_TOUCH_ICON_PATH,
+  ICON_192_PATH,
+  ICON_512_PATH,
+  MANIFEST_PATH,
+  OFFLINE_PATH,
+  SERVICE_WORKER_PATH,
+} from "../../src/auth/paths.js";
 import { FONT_ORIGINS } from "../../src/security/csp.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, games, memberships, players } from "../../src/db/schema.js";
@@ -359,11 +367,11 @@ describe("Content-Security-Policy", () => {
 
   /**
    * The QR code is the one thing here that would have failed CSP under an
-   * `<img>`-based implementation — a `data:` or remote image source needs its
-   * own `img-src` allowance, which this policy does not grant. `uqr` renders
-   * an inline `<svg>` instead, so nothing beyond `style-src` and
-   * `script-src` (for the copy-invite button) is needed, and this test
-   * verifies both.
+   * `<img>`-based implementation — a `data:` or remote image source needs
+   * `img-src` to name `data:` or that host explicitly, and `img-src 'self'`
+   * (M13) covers neither. `uqr` renders an inline `<svg>` instead, so nothing
+   * beyond `style-src` and `script-src` (for the copy-invite button) is
+   * needed, and this test verifies both.
    */
   it("game overview (GET /g/:id): fixed directives present, styles covered, QR is inline SVG, and the copy-invite script is allowed by hash", async () => {
     const { gameId, cookie } = await seedOwnedGame();
@@ -372,9 +380,10 @@ describe("Content-Security-Policy", () => {
     expectFixedDirectives(csp);
     const html = await response.text();
     await expectStylesAllowed(csp as string, html);
-    expect(html, "the QR code must be inline SVG, not an <img> a CSP img-src would have to allow").toContain(
-      "<svg",
-    );
+    expect(
+      html,
+      "the QR code must be inline SVG, not an <img> — img-src 'self' would not cover a data: URI",
+    ).toContain("<svg");
     expect(inlineScriptBlocks(html).length, "the copy-invite button ships a script").toBeGreaterThan(0);
     await expectScriptsAllowed(csp as string, html);
   });
@@ -534,6 +543,91 @@ describe("no inline style attribute on any served page", () => {
         html,
         `${name} must not carry an inline style="" attribute — style-src's hashes don't cover it without 'unsafe-hashes'`,
       ).not.toMatch(styleAttribute);
+    }
+  });
+});
+
+describe("the directives the installable app needs (M13)", () => {
+  it("allows the manifest, the service worker and same-origin images", async () => {
+    // Each of these falls back to default-src — which is 'none' — when it is
+    // not named. The failure mode is the one that reached production with
+    // connect-src in M5: the browser refuses before the request leaves the
+    // device, so the Worker logs nothing and every server-side test passes.
+    const header = (await SELF.fetch("https://makethe.team/")).headers.get("content-security-policy");
+
+    expect(header).toContain("manifest-src 'self'");
+    expect(header).toContain("worker-src 'self'");
+    expect(header).toContain("img-src 'self'");
+  });
+
+  it("does not widen anything else to get there", async () => {
+    // The point of a strict policy is that it stays strict. 'self' for
+    // scripts would defeat the hashing entirely, and a wildcard img-src is
+    // the usual way a policy quietly becomes decorative.
+    const header = (await SELF.fetch("https://makethe.team/")).headers.get("content-security-policy") ?? "";
+
+    expect(header).toContain("default-src 'none'");
+    expect(header).not.toContain("'unsafe-inline'");
+    expect(header).not.toContain("img-src *");
+    expect(header).not.toMatch(/script-src[^;]*'self'/);
+  });
+
+  it("serves the service worker under its own policy, not a page's", async () => {
+    // /sw.js is a document, not a page. It inherits nothing, so it says for
+    // itself what it may do — which is run, and reach same-origin URLs.
+    const response = await SELF.fetch("https://makethe.team/sw.js");
+    const header = response.headers.get("content-security-policy") ?? "";
+
+    expect(header).toContain("script-src 'self'");
+    expect(header).toContain("connect-src 'self'");
+  });
+
+  /**
+   * `src/app.ts`'s guard excludes `/sw.js` by path *and* method
+   * (`c.req.method === "GET" && ...`). pwa.ts only registers a GET handler
+   * for this path, so a POST matches no route and falls through to
+   * `app.notFound` — a response that carries no CSP of its own, unlike the
+   * GET above. Without the method check that request would have skipped the
+   * page CSP too, on the strength of a path match alone, and shipped with
+   * none at all.
+   */
+  it("still carries the page CSP on a method the service worker route doesn't handle", async () => {
+    const response = await SELF.fetch("https://makethe.team/sw.js", { method: "POST" });
+    const header = response.headers.get("content-security-policy") ?? "";
+
+    expect(header).toContain("default-src 'none'");
+    expect(header).not.toBe("");
+  });
+
+  /**
+   * Every response the app serves must carry a CSP, not only the twelve pages
+   * `expectFixedDirectives` enumerates above. The middleware in `src/app.ts`
+   * now special-cases exactly one path (`SERVICE_WORKER_PATH`) rather than
+   * "any response that already has a header" — see that file's comment for
+   * why — but the manifest, the three icons and `/offline` all build their
+   * own bare `Response`/`c.body` calls in `src/routes/pwa.ts`, the same shape
+   * `/sw.js` uses. Nothing but this test stood between "the guard only
+   * excludes /sw.js" and one of those other routes silently shipping with no
+   * policy at all, which for an <img>-serving route is invisible everywhere
+   * except a browser that actually loads it.
+   */
+  it("every response — static asset, page and 404 alike — carries a non-empty CSP", async () => {
+    const paths = [
+      MANIFEST_PATH,
+      ICON_192_PATH,
+      ICON_512_PATH,
+      APPLE_TOUCH_ICON_PATH,
+      OFFLINE_PATH,
+      SERVICE_WORKER_PATH,
+      "/",
+      "/no-such-route",
+    ];
+
+    for (const path of paths) {
+      const response = await SELF.fetch(`https://makethe.team${path}`);
+      const header = response.headers.get("content-security-policy");
+      expect(header, `${path} must carry a Content-Security-Policy`).toBeTruthy();
+      expect(header, `${path}'s CSP must not be an empty string`).not.toBe("");
     }
   });
 });

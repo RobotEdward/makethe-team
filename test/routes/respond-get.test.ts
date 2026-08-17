@@ -5,6 +5,7 @@ import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW } from "../support/clock.js";
 
@@ -175,7 +176,11 @@ describe("GET /r/:token — rendering", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(body).toContain("Thursday 7-a-side");
     expect(body).toContain("Oxford Sports Park");
-    expect(body).not.toContain("<script");
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5), so it is stripped before checking that nothing else needing
+    // script has crept onto this one.
+    expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
   });
 
   /**
@@ -616,8 +621,16 @@ describe("GET /r/:token — published teams (BR-35 §5)", () => {
 
 describe("vocabulary and safety", () => {
   it("never uses forbidden vocabulary on the failure page", async () => {
+    // Scoped to the page's own copy, not its script — the site-wide service
+    // worker registration (M13 Task 5) legitimately says "event" and
+    // "addEventListener", and every page carries it now. This test's job was
+    // always the product's *prose*, never implementation vocabulary inside a
+    // <script> tag; stripping script first (the same technique
+    // test/routes/team-publish.test.ts uses to separate "no script" from "no
+    // domain vocabulary") is what keeps that property honest rather than
+    // accidentally depending on this page happening to carry no script.
     const response = await SELF.fetch("https://makethe.team/r/not-a-real-token");
-    const body = (await response.text()).toLowerCase();
+    const body = (await response.text()).replace(/<script[\s\S]*?<\/script>/g, "").toLowerCase();
     for (const word of ["rsvp", "event", "match", "user"]) expect(body).not.toContain(word);
   });
 

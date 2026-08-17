@@ -352,3 +352,26 @@ describe("POST /app/account", () => {
     expect(rows.results.every((row) => row.name !== "Alex Mercer")).toBe(true);
   });
 });
+
+describe("the install section (M13)", () => {
+  it("tells a player how to install with no script at all", async () => {
+    // The baseline, and the whole no-JS rule in one assertion: the manual
+    // route works on every platform — iOS has no install API at all, and
+    // Chrome's menu has the same item — so the server renders it visible and
+    // script only upgrades it to a button where one is possible.
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Add to Home Screen");
+    expect(body).toContain("Share");
+  });
+
+  it("ships the button hidden, for script to reveal", async () => {
+    // [hidden] is honoured with !important by STYLES precisely so a later
+    // display rule cannot un-hide a control whose platform cannot use it.
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toMatch(/<button[^>]*data-install-button[^>]*hidden/);
+  });
+});

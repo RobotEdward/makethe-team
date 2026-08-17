@@ -11,9 +11,9 @@ describe("qrSvg", () => {
   });
 
   it("never references an external resource", () => {
-    // The whole reason this is inline SVG rather than an <img>: the CSP has
-    // no img-src and default-src is 'none', so anything fetched is refused by
-    // the browser (spec §4.2).
+    // The whole reason this is inline SVG rather than an <img>: img-src 'self'
+    // (M13) covers a same-origin path, not a data: URI or a remote host, so
+    // either shape of <img> is still refused by the browser (spec §4.2).
     const svg = qrSvg(url);
     expect(svg).not.toContain("<image");
     expect(svg).not.toContain("href");

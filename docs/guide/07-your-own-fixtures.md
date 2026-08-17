@@ -61,5 +61,19 @@ Underneath is everything you've played, most recent first, twenty fixtures
 deep, across all your games rather than just one. If you've left a game, its
 fixtures aren't in the list: the page shows you the squads you're in.
 
+Further down the account page is an offer to add Make The Team to your home
+screen, with instructions for your device. Installed, it opens straight to
+your fixtures — no browser bar, no address to remember, just an icon like
+any other app.
+
+## When there's no connection
+
+![What the installed app shows if you open it with no signal: a short explanation and nothing that pretends to be live](images/offline.png)
+
+Fixtures change while you're not looking — who's in, how many places are
+left, whether kickoff moved. So if you open the installed app with no signal,
+it doesn't show you a guess from memory: it tells you there's no connection,
+and lets you try again once you have one.
+
 That's the whole product. Set the game up once, share one link, and let the
 emails do the asking.

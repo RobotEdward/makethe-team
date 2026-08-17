@@ -7,6 +7,7 @@ import {
 } from "../../src/views/fixture.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
 import { renderPlayerGamePage } from "../../src/views/player-game.js";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import { fixtureView, type FixtureFacts } from "../../src/domain/fixture-view.js";
 import type { SquadMember } from "../../src/db/queries.js";
@@ -77,7 +78,11 @@ function member(
 
 describe("fixture page", () => {
   it("contains no JavaScript at all (TR-4)", () => {
-    expect(renderFixturePage(BASE)).not.toContain("<script");
+    const html = renderFixturePage(BASE);
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5); stripped first so this keeps proving TR-4 for everything else.
+    expect(html).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(html.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
   });
 
   it("offers two explicit POST buttons, not an auto-submit (TR-15)", () => {
@@ -200,7 +205,15 @@ describe("fixture page", () => {
   });
 
   it("never uses forbidden vocabulary in copy", () => {
-    const html = renderFixturePage(BASE).toLowerCase();
+    // Scoped to the page's own copy, not its script — the site-wide service
+    // worker registration (M13 Task 5) legitimately says "event" and
+    // "addEventListener", and every page carries it now. This test's job was
+    // always the product's *prose*, never implementation vocabulary inside a
+    // <script> tag; stripping script first (the same technique
+    // test/routes/team-publish.test.ts uses to separate "no script" from "no
+    // domain vocabulary") is what keeps that property honest rather than
+    // accidentally depending on this page happening to carry no script.
+    const html = renderFixturePage(BASE).replace(/<script[\s\S]*?<\/script>/g, "").toLowerCase();
     for (const word of ["rsvp", "event", "match"]) expect(html).not.toContain(word);
   });
 
@@ -960,7 +973,10 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
-    expect(html).not.toContain("<script");
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5); stripped first so this keeps proving TR-4 for everything else.
+    expect(html).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(html.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
   });
 });
 

@@ -15,7 +15,13 @@ import {
 } from "../../src/auth/session.js";
 // Not re-exported by `session.ts` — that re-export is the sign-in flow's own
 // paths, and this page is not part of it (`src/auth/paths.ts`).
-import { ACCOUNT_PATH, DELETE_ACCOUNT_PATH, PRIVACY_PATH } from "../../src/auth/paths.js";
+import {
+  ACCOUNT_PATH,
+  DELETE_ACCOUNT_PATH,
+  MANIFEST_PATH,
+  OFFLINE_PATH,
+  PRIVACY_PATH,
+} from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
@@ -30,7 +36,7 @@ import {
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signCancelToken } from "../../src/domain/token.js";
 import type { AppEnv } from "../../src/env.js";
-import { SCRIPT_BLOCKS } from "../../src/views/scripts.js";
+import { SCRIPT_BLOCKS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW as CLOCK_NOW } from "../support/clock.js";
 import { EMAIL_LOOKUP, interferingBinding } from "../support/interference.js";
@@ -50,6 +56,17 @@ import {
 } from "../support/sign-in.js";
 
 const NOT_ALLOWED = "stranger@example.com";
+
+/**
+ * The exact bytes `layout()` emits for the site-wide service worker
+ * registration (M13 Task 5) — `layout.ts` renders `SERVICE_WORKER_JS` as a
+ * bare, attribute-free `<script>` on every page, unconditionally. Every
+ * assertion below that used to read `not.toContain("<script")` predates that
+ * and has to account for it: this constant is what those assertions strip
+ * out first, so the invariant they defend — no *other* script anywhere it
+ * was not explicitly granted — survives unweakened.
+ */
+const SITE_WIDE_SCRIPT_TAG = `<script>${SERVICE_WORKER_JS}</script>`;
 
 /**
  * `requirePlayer`'s 403 body, reached through the guard itself.
@@ -561,7 +578,11 @@ describe("the no-Player exit", () => {
     expect(body).toContain('method="post"');
     expect(body).toContain('href="/"');
     expect(body).not.toMatch(/type=.?password/i);
-    expect(body).not.toContain("<script");
+    // Every page carries the site-wide service worker registration now
+    // (M13 Task 5) — stripping exactly that block first is what lets this
+    // keep asserting "and nothing else", the property it always defended.
+    expect(body).toContain(SITE_WIDE_SCRIPT_TAG);
+    expect(body.replace(SITE_WIDE_SCRIPT_TAG, "")).not.toContain("<script");
   });
 
   it("takes the sign-out button on that page all the way through", async () => {
@@ -623,6 +644,7 @@ describe("no password field anywhere (TR-16)", () => {
     // Stateless pages: no session, no linking outcome, safe to run in any order.
     await capture("home", /Getting a regular game on/, new Request(`${ORIGIN}/`));
     await capture("privacy", /What is held, and why/, new Request(`${ORIGIN}${PRIVACY_PATH}`));
+    await capture("offline", /no connection/i, new Request(`${ORIGIN}${OFFLINE_PATH}`));
     await capture("robots", /User-agent/i, new Request(`${ORIGIN}/robots.txt`));
     await capture("not found", /Not found/, new Request(`${ORIGIN}/nope`));
     await capture("sign-in", /Email me a sign-in link/, new Request(`${ORIGIN}${SIGN_IN_PATH}`));
@@ -922,6 +944,7 @@ describe("no password field anywhere (TR-16)", () => {
       [
         "home",
         "privacy",
+        "offline",
         "robots",
         "not found",
         "sign-in",
@@ -952,8 +975,9 @@ describe("no password field anywhere (TR-16)", () => {
     );
 
     /**
-     * The pages that are *allowed* a `<script>`, and why the assertion below
-     * is not simply "no page has one" any more.
+     * The pages that are *allowed* a page-specific `<script>` beyond the
+     * site-wide one, and why the assertion below is not simply "no page has
+     * one" any more.
      *
      * Until M5 Task 8 this loop asserted `not.toContain("<script")` on every
      * page, which was the strongest available statement while the codebase
@@ -961,19 +985,45 @@ describe("no password field anywhere (TR-16)", () => {
      * became false for the two passkey pages — but deleting the assertion
      * would have given up the property it was really pinning, which is *not*
      * "there is no script" but **"script appears only where it is needed, in
-     * a form a strict CSP can allow, and nothing depends on it"**. So it is
-     * split three ways instead:
+     * a form a strict CSP can allow, and nothing depends on it"**.
      *
-     * - every page *not* named here must still contain no `<script` at all —
-     *   the original assertion, unweakened, over the large majority of pages;
-     * - every page named here must actually carry one (an enhancement that
-     *   silently stopped shipping would otherwise pass);
-     * - and every script that does ship must be a bare `<script>` tag whose
-     *   text is a member of `SCRIPT_BLOCKS`, which is what M4's
-     *   Content-Security-Policy will hash. That closes the hole the type
-     *   system cannot see: `layout()`'s `pageScripts` is typed against the
-     *   enumeration, but a page's `body` is a raw string and could carry a
-     *   `<script>` nobody enumerated.
+     * M13 Task 5 changed what "no script" means for the large majority of
+     * pages again: `layout()` now emits `SERVICE_WORKER_JS` on *every* page,
+     * unconditionally, since registering the worker is an app-wide job and
+     * not something any one page opts into (see that constant's comment in
+     * `src/views/scripts.ts`). `not.toContain("<script")` on a page that
+     * legitimately carries the site-wide registration would fail for a
+     * reason that has nothing to do with the property this test defends, so
+     * the loop below strips exactly that one known-good tag first — the
+     * strip only succeeds if the tag is byte-identical to what
+     * `SERVICE_WORKER_JS` and `layout()` actually produce, so a mutated or
+     * differently-wrapped copy is left behind and still fails the assertion
+     * that follows. That makes the invariant **strictly stronger** than the
+     * one it replaces, not weaker: every page still proves it carries the one
+     * script it is allowed to carry site-wide and nothing else it was not
+     * explicitly granted, and every script anywhere on any page is still
+     * required to be a bare tag whose exact text is a member of
+     * `SCRIPT_BLOCKS` — closing the hole the type system cannot see, since
+     * `layout()`'s `pageScripts` is typed against the enumeration but a
+     * page's `body` is a raw string that could carry a `<script>` nobody
+     * enumerated.
+     *
+     * So it is split four ways:
+     *
+     * - the two pages that are not HTML at all — `robots.txt` and the plain
+     *   `app.notFound` 404 — never reach `layout()` and so never carry even
+     *   the site-wide tag; they keep the original, unconditional "no
+     *   `<script` anywhere" assertion untouched;
+     * - every other page, once the site-wide tag is stripped, must actually
+     *   have had that tag present (the registration silently failing to ship
+     *   would otherwise pass unnoticed);
+     * - every page *not* named in `mayCarryScript`, once the site-wide tag is
+     *   stripped, must contain no `<script` at all — the original assertion,
+     *   unweakened, over the large majority of pages;
+     * - every page named in `mayCarryScript` must additionally carry the
+     *   page-specific enhancement it is listed for, and every script found
+     *   anywhere (site-wide tag included, before it is stripped) must be a
+     *   bare `<script>` tag whose text is a member of `SCRIPT_BLOCKS`.
      *
      * Plus, below the loop, the property that makes "scripting disabled" a
      * single testable condition rather than a per-element question: no page
@@ -985,26 +1035,35 @@ describe("no password field anywhere (TR-16)", () => {
     // while its fixture is still open (see the capture's own note). A
     // cancelled fixture renders no picker and would fail the "must carry"
     // assertion below, correctly.
+    // "account" joined this set in M13 Task 6, for the install section's
+    // beforeinstallprompt/appinstalled upgrade — deliberately granted to this
+    // one page, unlike SERVICE_WORKER_JS's site-wide registration, which
+    // every page already carries and for which adding pages here would gut
+    // the guard rather than exercise it.
     const mayCarryScript = new Set([
       "sign-in",
       "sign-in error",
       "passkeys",
       "game overview",
       "owner fixture",
+      "account",
     ]);
+
+    // The only two captures whose route never calls layout() at all —
+    // `src/routes/robots.ts` and `app.notFound` in `src/app.ts` both answer
+    // with `c.text(...)`, plain text with no `<head>` to link a script into.
+    // Every other capture above is HTML rendered through layout() and so
+    // always carries the site-wide tag.
+    const neverRendersHtml = new Set(["robots", "not found"]);
 
     for (const { name, body, distinctive } of pages) {
       expect(body, `${name} must actually be that page`).toMatch(distinctive);
       expect(body, `${name} must not contain a password field`).not.toMatch(/type=.?password/i);
 
+      // Every `<script>` this page carries — including the site-wide tag
+      // that is about to be stripped — must be a bare, attribute-free tag
+      // whose exact text is an enumerated SCRIPT_BLOCKS member.
       const scripts = [...body.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
-
-      if (!mayCarryScript.has(name)) {
-        expect(body, `${name} must not need JavaScript`).not.toContain("<script");
-        continue;
-      }
-
-      expect(scripts.length, `${name} must carry the enhancement it is listed for`).toBeGreaterThan(0);
       for (const [, attributes, js] of scripts) {
         // No `src` (unreachable under M4's `default-src 'none'`), no `type`,
         // no `nonce`: only a bare inline tag is covered by a SHA-256 hash of
@@ -1015,6 +1074,38 @@ describe("no password field anywhere (TR-16)", () => {
           `${name} ships script that is not in SCRIPT_BLOCKS, so M4's CSP will not hash it`,
         ).toContain(js);
       }
+
+      if (neverRendersHtml.has(name)) {
+        expect(body, `${name} must not need JavaScript`).not.toContain("<script");
+        continue;
+      }
+
+      // The script layout() emits alongside the manifest link is checked on
+      // every catalogued page above; the link itself (test/views/layout.test.ts)
+      // was only ever pinned on "/". Same guarantee, same sweep.
+      expect(body, `${name} must link the web app manifest`).toContain(
+        `<link rel="manifest" href="${MANIFEST_PATH}">`,
+      );
+
+      expect(body, `${name} must register the service worker`).toContain(SITE_WIDE_SCRIPT_TAG);
+      // A plain .replace() only strips the *first* occurrence, so a page
+      // that emitted the site-wide tag twice would still pass "must carry
+      // the page enhancement it is listed for" below on the strength of its
+      // own duplicate rather than the page's actual script — counting first
+      // makes a duplicate fail loudly instead.
+      const siteWideCount = body.split(SITE_WIDE_SCRIPT_TAG).length - 1;
+      expect(siteWideCount, `${name} must carry the site-wide tag exactly once`).toBe(1);
+      const withoutServiceWorker = body.replace(SITE_WIDE_SCRIPT_TAG, "");
+
+      if (!mayCarryScript.has(name)) {
+        expect(withoutServiceWorker, `${name} must not need JavaScript`).not.toContain("<script");
+        continue;
+      }
+
+      expect(
+        withoutServiceWorker.includes("<script"),
+        `${name} must carry the enhancement it is listed for`,
+      ).toBe(true);
     }
 
     for (const { name, body } of pages) {
@@ -1162,12 +1253,40 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "assertion lives in test/routes/leave.test.ts. Deliberately excluded " +
       "from the wrongOrigin check the other POSTs above carry — see the " +
       "handler's own doc comment in src/routes/respond.ts.",
+    "GET /manifest.webmanifest":
+      "never returns HTML on any branch — a JSON body served as " +
+      "application/manifest+json only (src/routes/pwa.ts); no template of " +
+      "its own that could carry a script. Its own field and content-type " +
+      "assertions live in test/routes/pwa.test.ts.",
+    "GET /icon-192.png":
+      "never returns HTML on any branch — a PNG body served as image/png " +
+      "only (src/routes/pwa.ts); no template of its own that could carry a " +
+      "script. Its own status-code and content-type assertions live in " +
+      "test/routes/pwa.test.ts.",
+    "GET /icon-512.png":
+      "never returns HTML on any branch — a PNG body served as image/png " +
+      "only (src/routes/pwa.ts); no template of its own that could carry a " +
+      "script. Its own status-code and content-type assertions live in " +
+      "test/routes/pwa.test.ts.",
+    "GET /apple-touch-icon.png":
+      "never returns HTML on any branch — a PNG body served as image/png " +
+      "only (src/routes/pwa.ts); no template of its own that could carry a " +
+      "script. Its own status-code and content-type assertions live in " +
+      "test/routes/pwa.test.ts.",
+    "GET /sw.js":
+      "never returns HTML on any branch — a JavaScript body served as " +
+      "text/javascript only (src/routes/pwa.ts); no template of its own " +
+      "that could carry an un-enumerated script. Unlike GET /offline, which " +
+      "renders through layout() and is captured as a page above, this route " +
+      "IS the script, and its own content-type/cache-control/hash assertions " +
+      "live in test/routes/service-worker.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
     "GET /robots.txt": "robots",
     "GET /": "home",
     "GET /privacy": "privacy",
+    "GET /offline": "offline",
     "GET /r/:token": "bad respond token",
     "GET /leave/:token": "bad leave token",
     "GET /cancel/:token": "cancel confirm",

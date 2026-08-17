@@ -3,6 +3,7 @@ import {
   DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
+  OFFLINE_PATH,
   PASSKEYS_PATH,
   PRIVACY_PATH,
   SIGN_IN_PATH,
@@ -192,6 +193,13 @@ export const CATALOGUE: CataloguePage[] = [
     note: "The 404. Carries the same CSP as everything else.",
     expectedStatus: 404,
   },
+  {
+    id: "offline",
+    title: "No connection",
+    path: () => OFFLINE_PATH,
+    persona: "anonymous",
+    note: "What an installed app shows when a navigation fails with no network.",
+  },
 ];
 
 /**
@@ -202,4 +210,9 @@ export const CATALOGUE: CataloguePage[] = [
 export const NOT_CATALOGUED = new Map<string, string>([
   ["/robots.txt", "plain text, no document, no CSP surface"],
   ["/sign-in/complete", "a redirect-through, not a page anyone dwells on"],
+  ["/manifest.webmanifest", "JSON, no document, no CSP surface — covered by pwa.spec.ts instead"],
+  ["/icon-192.png", "a binary image, no document, no CSP surface"],
+  ["/icon-512.png", "a binary image, no document, no CSP surface"],
+  ["/apple-touch-icon.png", "a binary image, no document, no CSP surface"],
+  ["/sw.js", "a script with its own standalone CSP, not the page policy — covered by pwa.spec.ts instead"],
 ]);

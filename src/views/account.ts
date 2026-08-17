@@ -6,9 +6,11 @@ import {
   PRIVACY_PATH,
   gamePath,
 } from "../auth/paths.js";
+import { renderInstallSection } from "./install.js";
 import { escapeHtml, layout } from "./layout.js";
+import { INSTALL_JS } from "./scripts.js";
 import { signOutForm } from "./sign-out-form.js";
-import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
+import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, INSTALL_STYLES_CSS } from "./styles.js";
 
 /**
  * One fixture as the account page shows it — already formatted, already
@@ -141,6 +143,8 @@ export function renderAccountPage({
         : `<ul class="fixture-list">${fixtures.map(renderFixture).join("")}</ul>`
     }
 
+    ${renderInstallSection()}
+
     <p><a href="${escapeHtml(DELETE_ACCOUNT_PATH)}">Delete my account and data</a> · <a href="${escapeHtml(PRIVACY_PATH)}">Privacy</a></p>
     <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
     ${signOutForm("Sign out")}
@@ -149,6 +153,7 @@ export function renderAccountPage({
   return layout({
     title: "Your account — Make The Team",
     body,
-    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FORM_CSS],
+    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FORM_CSS, INSTALL_STYLES_CSS],
+    pageScripts: [INSTALL_JS],
   });
 }

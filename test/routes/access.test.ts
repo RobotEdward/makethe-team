@@ -1,5 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 
 describe("holding page", () => {
   it("serves the product name and no signed-in surface", async () => {
@@ -44,7 +45,11 @@ describe("holding page", () => {
 
   it("works with no JavaScript at all", async () => {
     const body = await (await SELF.fetch("https://makethe.team/")).text();
-    expect(body).not.toContain("<script");
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5); stripped first so this keeps proving nothing *else* needs
+    // script.
+    expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
   });
 });
 

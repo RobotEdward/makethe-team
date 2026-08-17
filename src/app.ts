@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { GAMES_PREFIX } from "./auth/paths.js";
+import { GAMES_PREFIX, SERVICE_WORKER_PATH } from "./auth/paths.js";
 import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { account } from "./routes/account.js";
@@ -10,6 +10,7 @@ import { home } from "./routes/home.js";
 import { privacy } from "./routes/privacy.js";
 import { join } from "./routes/join.js";
 import { passkeys } from "./routes/passkeys.js";
+import { pwa } from "./routes/pwa.js";
 import { respond } from "./routes/respond.js";
 import { robots } from "./routes/robots.js";
 import { cspHeader } from "./security/csp.js";
@@ -24,7 +25,27 @@ export function createApp(): Hono<AppEnv> {
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
     c.header("X-Content-Type-Options", "nosniff");
-    c.header("Content-Security-Policy", await cspHeader());
+    // /sw.js is the one response that names its own policy — see
+    // src/routes/pwa.ts. Checked by path, not by whether a
+    // Content-Security-Policy header is already present: a presence check
+    // cannot tell "this route deliberately declared a stricter policy" apart
+    // from "a header arrived here some other way" (src/routes/signin.ts
+    // already copies set-cookie off a Better Auth response; the day
+    // something copies a whole Headers object, a presence check would defer
+    // to whatever came back and fail open, silently). Naming the one path
+    // that opts out means a second route that starts setting its own CSP
+    // gets overwritten here and its own test fails loudly, instead of
+    // silently winning against this middleware.
+    // Method-scoped as well as path-scoped: pwa.ts only registers a GET
+    // handler for /sw.js, so POST /sw.js matches no route and falls through
+    // to app.notFound, which carries no CSP of its own. Without the method
+    // check that request would skip this header too — safe in practice
+    // (app.notFound serves text/plain with nosniff, not a document a script
+    // could run in) but free to close: only the one response that actually
+    // declares its own policy opts out.
+    if (!(c.req.method === "GET" && c.req.path === SERVICE_WORKER_PATH)) {
+      c.header("Content-Security-Policy", await cspHeader());
+    }
   });
 
   // A signed-in player's own data must never be written to a shared or disk
@@ -101,6 +122,10 @@ export function createApp(): Hono<AppEnv> {
   });
 
   app.route("/", robots);
+  // The manifest, the icons and (from Task 3) the service worker. Public and
+  // unauthenticated like robots.txt, and for the same reason: the browser
+  // asks for these before a visitor is anyone.
+  app.route("/", pwa);
   app.route("/", home);
   // Public and ungated on purpose — see src/routes/privacy.ts.
   app.route("/", privacy);

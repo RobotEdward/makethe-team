@@ -1,4 +1,4 @@
-import { AUTH_API_PREFIX, PASSKEYS_PATH, SIGN_IN_COMPLETE_PATH } from "../auth/paths.js";
+import { AUTH_API_PREFIX, PASSKEYS_PATH, SERVICE_WORKER_PATH, SIGN_IN_COMPLETE_PATH } from "../auth/paths.js";
 
 /**
  * Every line of client-side JavaScript this app can emit, in one place.
@@ -426,24 +426,156 @@ export const TEAM_PICKER_JS = `
 `;
 
 /**
+ * Registers the service worker (M13).
+ *
+ * The fifth script block in the project, and the first that every page
+ * carries. It earns its place on the same ground as the passkey ones: there
+ * is no server-side substitute — a service worker can only be registered by
+ * a page, from script.
+ *
+ * Enhancement, not provision. Registration failing for any reason at all —
+ * an old browser, a private window, a corporate policy, a user who has
+ * scripting off — must leave every page exactly as it already was, which is
+ * fully working. Nothing on this site needs the worker to function; it adds
+ * an offline page and makes the app installable.
+ *
+ * The `catch` is deliberately empty rather than logging. A failed
+ * registration is not an error condition for the visitor, and a console error
+ * on every page load would trip the browser-test console gate for something
+ * that is working as designed.
+ *
+ * Deliberately **not** a member of `PAGE_SCRIPT_BLOCKS`: that array is what
+ * `layout()`'s `pageScripts` parameter is typed against, i.e. the set a page
+ * can *opt into*, and this block is never opted into — every page carries it,
+ * the same way every page carries `STYLES` in `src/views/styles.ts` without
+ * being able to opt out. See `SCRIPT_BLOCKS` below for where it actually
+ * joins the enumeration the CSP hashes.
+ *
+ * `window.addEventListener("load", ...)`, the idiom every guide for this API
+ * reaches for, deferring registration off the critical path of the initial
+ * page load. An earlier version of this block dropped the deferral (and,
+ * briefly, tried `window.onload = ...` instead) because both idioms put the
+ * literal substring "event" or "onload" into the served bytes of *every*
+ * page, and two vocabulary-guard tests — `test/routes/respond-get.test.ts`
+ * and `test/views/fixture.test.ts` — happened to ban those words in the
+ * pages they cover. That was the wrong fix: `PASSKEY_SIGN_IN_JS`,
+ * `PASSKEY_REGISTER_JS`, `COPY_INVITE_JS` and `TEAM_PICKER_JS` already ship
+ * `addEventListener` and bare `event` identifiers to real browsers on
+ * `/sign-in`, `/app/passkeys`, `/g/:id` and the owner fixture page, so "no
+ * 'event' anywhere in the served bytes" was never a real site-wide
+ * invariant — only an accident of which pages happened to have both a
+ * vocabulary test and no page script. The two vocabulary tests now strip
+ * `<script>…</script>` before scanning (the same technique
+ * `test/routes/team-publish.test.ts` uses to separate "no script" from
+ * "no domain vocabulary in the copy"), so this block is free to use the
+ * idiomatic form its behaviour actually calls for.
+ */
+export const SERVICE_WORKER_JS = `
+(function () {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("${SERVICE_WORKER_PATH}").catch(function () {});
+  });
+})();
+`;
+
+/**
+ * Upgrades the install section on the account page (M13).
+ *
+ * Feature detection only — never user-agent sniffing. `beforeinstallprompt`
+ * is a Chromium event and its absence is exactly the signal that the manual
+ * instructions are the only route, which is the case on every iPhone.
+ *
+ * Three transitions, all of them subtractive if anything is missing:
+ *   - already installed (display-mode: standalone) → hide the how-to, show
+ *     the confirmation;
+ *   - installable → hide the how-to, show the button, and fire the saved
+ *     prompt on click;
+ *   - neither → change nothing, and the server-rendered instructions stand.
+ *
+ * Unlike `SERVICE_WORKER_JS`, this *is* a member of `PAGE_SCRIPT_BLOCKS`:
+ * the registration above is unconditional, carried by every page, while this
+ * enhancement is opted into by the one page that renders
+ * `renderInstallSection()` (`src/views/install.ts`) — the ordinary case the
+ * enumeration exists for, not the site-wide exception `SERVICE_WORKER_JS` is.
+ *
+ * No `fetch`, so `connect-src` is untouched. If that ever changes, read the
+ * "a hash lets a script run" section at the top of this file first.
+ */
+export const INSTALL_JS = `
+(function () {
+  var section = document.querySelector(".install");
+  if (!section) return;
+
+  var steps = section.querySelector("[data-install-steps]");
+  var intro = section.querySelector("[data-install-instructions]");
+  var button = section.querySelector("[data-install-button]");
+  var done = section.querySelector("[data-install-done]");
+
+  if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
+    if (steps) steps.hidden = true;
+    if (intro) intro.hidden = true;
+    if (done) done.hidden = false;
+    return;
+  }
+
+  var saved = null;
+  window.addEventListener("beforeinstallprompt", function (event) {
+    // Chromium shows its own prompt otherwise, at a moment of its choosing.
+    event.preventDefault();
+    saved = event;
+    if (steps) steps.hidden = true;
+    if (button) button.hidden = false;
+  });
+
+  if (button) {
+    button.addEventListener("click", function () {
+      if (!saved) return;
+      saved.prompt();
+      // A prompt can only be used once. Whatever the player chose, this one
+      // is spent, and holding a stale event would give them a button that
+      // does nothing the second time.
+      saved = null;
+      button.hidden = true;
+      if (steps) steps.hidden = false;
+    });
+  }
+
+  window.addEventListener("appinstalled", function () {
+    if (button) button.hidden = true;
+    if (steps) steps.hidden = true;
+    if (intro) intro.hidden = true;
+    if (done) done.hidden = false;
+  });
+})();
+`;
+
+/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
+ *
+ * `SERVICE_WORKER_JS` is deliberately absent — see its own comment for why.
  */
 export const PAGE_SCRIPT_BLOCKS = [
   PASSKEY_SIGN_IN_JS,
   PASSKEY_REGISTER_JS,
   COPY_INVITE_JS,
   TEAM_PICKER_JS,
+  INSTALL_JS,
 ] as const;
 
 export type PageScriptBlock = (typeof PAGE_SCRIPT_BLOCKS)[number];
 
 /**
- * The complete set of `<script>` blocks the app can ever emit. Unlike
- * `STYLE_BLOCKS` there is no site-wide member: nothing runs on a page that
- * did not ask for it, and no page asks for script unless passkeys need it.
+ * The complete set of `<script>` blocks the app can ever emit — the site-wide
+ * service worker registration plus every page-specific block above. Mirrors
+ * `STYLE_BLOCKS = [STYLES, ...PAGE_STYLE_BLOCKS]` in `src/views/styles.ts`
+ * exactly, including the reason: `layout()` emits `SERVICE_WORKER_JS`
+ * unconditionally (never through `pageScripts`), so it has to be added to
+ * this array by hand rather than arriving automatically the way a
+ * `PAGE_SCRIPT_BLOCKS` member does.
  *
  * **This is the value a CSP's `script-src` hashing must map over** — see the
  * module comment for the exact change M4's `src/security/csp.ts` has to make.
  */
-export const SCRIPT_BLOCKS = [...PAGE_SCRIPT_BLOCKS] as const;
+export const SCRIPT_BLOCKS = [SERVICE_WORKER_JS, ...PAGE_SCRIPT_BLOCKS] as const;

@@ -12,6 +12,7 @@ import {
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { DASHBOARD_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import { insertGame, insertMembership, resetDatabase } from "../support/factories.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
@@ -210,7 +211,11 @@ describe("GET /app", () => {
 
     const body = await (await get(cookie)).text();
 
-    expect(body).not.toContain("<script");
+    // Every page carries the site-wide service worker registration (M13
+    // Task 5); stripped first so this keeps proving nothing *else* needs
+    // script.
+    expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
     expect(body).not.toMatch(/type=.?password/i);
     expect(body).toContain('method="post"');
     expect(body).toContain(`action="${DASHBOARD_PATH}"`);
