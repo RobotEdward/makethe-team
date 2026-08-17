@@ -3,6 +3,7 @@ import {
   attentionKey,
   cancellationKey,
   promotionKey,
+  pushKey,
   reminderKey,
   removalKey,
   welcomeKey,
@@ -71,5 +72,28 @@ describe("removalKey", () => {
     expect(removalKey("m-1", "2026-08-13T12:00:00.000Z")).not.toBe(
       removalKey("m-1", "2026-09-01T09:00:00.000Z"),
     );
+  });
+});
+
+describe("push dedupe keys (M14)", () => {
+  it("namespaces a push key without touching the email one", () => {
+    // The single most dangerous edit in this milestone (spec §9.3). The
+    // obvious implementation — putting the channel in every key — changes
+    // the key of every notification already sent in production, so the next
+    // sweep finds no matching row and re-sends an N-1 reminder to every
+    // player who already had one. Email keys must come out byte-for-byte
+    // identical to what they were before M14 existed.
+    expect(reminderKey("fixture-1", "player-1")).toBe("n1:fixture-1:player-1");
+    expect(pushKey(reminderKey("fixture-1", "player-1"))).toBe("push:n1:fixture-1:player-1");
+  });
+
+  it("cannot collide with any email key", () => {
+    // notification_log.dedupe_key is UNIQUE across the whole table, and that
+    // index is the entire guarantee against a double send. Two channels
+    // sharing a key means one of them is silently dropped by
+    // onConflictDoNothing — at random, forever.
+    const email = reminderKey("f", "p");
+    expect(pushKey(email).startsWith("push:")).toBe(true);
+    expect(email.startsWith("push:")).toBe(false);
   });
 });
