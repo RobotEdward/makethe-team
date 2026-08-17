@@ -534,7 +534,20 @@ export const INVITE_CSS = `
   .card h2 { margin: 0 0 0.6rem; font-size: var(--t-body); }
   .card .actions { margin-top: 0.75rem; }
   .qr-toggle { margin: 0; border: 0; padding: 0; }
-  .qr-toggle summary { font-weight: 600; font-size: var(--t-support); color: var(--mut); cursor: pointer; }
+  /* The padding is the tap target, and it is not decoration. At the support
+     size this control's line box is 1.4rem — 0.875rem against the body's
+     inherited unitless line-height of 1.6, so 22.4px — which is legible but
+     about half the 44px floor, and this is a phone-first page: an owner
+     passing an invite on is standing next to the person taking it. 0.75rem
+     top and bottom brings it to 46.4px.
+     Padding and deliberately NOT min-height with display: flex, which is the
+     obvious way to clear the floor: flex on a summary strips WebKit's native
+     disclosure triangle, and that triangle is the only thing that says this
+     line opens rather than being another piece of grey supporting text. */
+  .qr-toggle summary {
+    padding: 0.75rem 0;
+    font-weight: 600; font-size: var(--t-support); color: var(--mut); cursor: pointer;
+  }
 `;
 
 export const PAGE_STYLE_BLOCKS = [
