@@ -347,8 +347,8 @@ export const SHOTS: Shot[] = [
     shows:
       "A player's own account page: their name in an editable field, then a " +
       "Signing in section reading out their email address under a small caption, " +
-      "a link to manage passkeys, and their last fixtures across every game, " +
-      "most recent first.",
+      "a link to manage passkeys, their last fixtures across every game most " +
+      "recent first, and a section offering to install the app.",
     path: () => "/app/account",
     persona: "organiser",
   },

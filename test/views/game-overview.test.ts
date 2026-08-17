@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { LIFECYCLES, type Lifecycle } from "../../src/domain/lifecycle.js";
 import { fixtureStatusWords } from "../../src/views/fixture.js";
 import { renderGameOverviewPage } from "../../src/views/game-overview.js";
+import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 
 const BASE = {
@@ -137,9 +138,17 @@ describe("the invite card (M12 §4)", () => {
     expect(html).toContain('<details class="qr-toggle">');
     expect(html).toContain("<summary>Show the QR code</summary>");
     // The QR lives inside that details, so a browser with scripting off still
-    // opens it. A second script on this page would mean it does not.
+    // opens it. A second *page* script here would mean it does not — but M13
+    // Task 5 put the site-wide service worker registration on every page, so
+    // the raw <script> count is no longer the right thing to assert (it's now
+    // 2: SERVICE_WORKER_JS plus this page's own). Filtered out the same way
+    // nine other test files on this branch already do (see
+    // test/routes/team-picker.test.ts) so the assertion still means what it
+    // says: exactly one script this page opts into beyond the site-wide one.
     expect(html).toMatch(/<details class="qr-toggle">\s*<summary>Show the QR code<\/summary>\s*<div class="qr">/);
-    expect(html.match(/<script/g) ?? []).toHaveLength(1);
+    const scripts = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+    const ownScripts = scripts.filter(([, , js]) => js !== SERVICE_WORKER_JS);
+    expect(ownScripts).toHaveLength(1);
   });
 
   it("keeps the rotate form an outlined button, not a second filled one", () => {

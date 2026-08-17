@@ -66,6 +66,7 @@ describe("layout", () => {
     "src/routes/home.ts",
     "src/views/cancel.ts",
     "src/views/link-problem.ts",
+    "src/views/offline.ts",
     "src/views/signin.ts",
   ];
 
