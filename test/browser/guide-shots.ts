@@ -26,6 +26,18 @@ export interface Shot {
    * Playwright's strict mode fails the run.
    */
   element?: string;
+  /**
+   * A `<summary>` to click open before the shot is measured and taken.
+   *
+   * M12 §2.4 put the QR code behind a `<details>` disclosure. A closed
+   * `<details>` hides its contents, so an `element` selector pointing inside
+   * one measures a box that is not the thing the chapter is about — the
+   * `invite-qr` shot came back as a photograph of the Replace button and the
+   * top of the squad, with no QR code in it at all, and nothing failed: the
+   * locator resolved, a box came back, a PNG was written. Opening the
+   * disclosure first is what makes the shot show what its caption claims.
+   */
+  expand?: string;
 }
 
 export const CHAPTERS = [
@@ -81,10 +93,13 @@ export const SHOTS: Shot[] = [
     chapter: "02-inviting-your-squad",
     title: "The QR code",
     route: "/g/:id",
-    shows: "The QR code for the same link, for people standing next to you.",
+    shows:
+      "The Show the QR code disclosure on the game page, opened, with the QR " +
+      "code for the same invite link inside it.",
     path: (w) => `/g/${w.gameId}`,
     persona: "organiser",
-    element: ".qr",
+    expand: ".qr-toggle > summary",
+    element: ".qr-toggle",
   },
   {
     id: "join",
@@ -330,9 +345,10 @@ export const SHOTS: Shot[] = [
     title: "Your account",
     route: "/app/account",
     shows:
-      "A player's own account page: their name in an editable field, their email " +
-      "address beside it, a link to manage passkeys, and their last fixtures across " +
-      "every game, most recent first.",
+      "A player's own account page: their name in an editable field, then a " +
+      "Signing in section reading out their email address under a small caption, " +
+      "a link to manage passkeys, and their last fixtures across every game, " +
+      "most recent first.",
     path: () => "/app/account",
     persona: "organiser",
   },

@@ -188,13 +188,23 @@ function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixturePa
  * once it's cancelled, played, or merely scheduled (not yet accepting
  * answers), there is no capacity write for it to make.
  */
+/*
+ * The name box is wrapped in `.field`, not left as a bare label and input:
+ * this page loads `FORM_CSS` and `.guest-form` has no rules of its own, so
+ * without the wrapper the only free-text box on the organiser's fixture page
+ * rendered as the browser's default — a hairline box a third of the width of
+ * every other input in the app, sitting on its own label's line. Found by
+ * looking at the M12 capture; no string assertion can see an unstyled input.
+ */
 function renderGuestForm(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
   if (!takingChanges(params.view)) return "";
   return `<h2>Add a guest</h2>
           <p>Someone playing just this once. They won't be emailed — you'll need to tell them yourself.</p>
           <form method="post" action="${escapeHtml(ownerGuestPath(gameId, fixtureId))}" class="guest-form">
-            <label for="guest-name">Their name</label>
-            <input id="guest-name" name="name" type="text" maxlength="80" required>
+            <div class="field">
+              <label for="guest-name">Their name</label>
+              <input id="guest-name" name="name" type="text" maxlength="80" required>
+            </div>
             <button class="button" type="submit">Add guest</button>
           </form>`;
 }
