@@ -247,6 +247,39 @@ describe("GET /app/account", () => {
     expect(body).not.toContain("Sam Okafor");
   });
 
+  it("still renders a fixture whose stored lifecycle this build has never heard of", async () => {
+    // `fixtures.lifecycle` is `text NOT NULL DEFAULT 'scheduled'` with no
+    // CHECK constraint behind it, so the column can hold a value outside the
+    // union: a legacy row, a hand-applied fix, or a newer deploy writing one
+    // mid-rollout. `fixtureStatusLabel` was a switch with no `default`, so it
+    // returned `undefined`, which the view hands to `escapeHtml` — a 500 on
+    // this whole page, not one odd word in one row. `as never` is how such a
+    // row is written in a test the type system would otherwise forbid.
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    await insertMembership(db, gameId, me);
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "abandoned" as never,
+      kicksOffAt: NEXT_WEEK,
+      venueOverride: "Unknown state",
+    });
+    await insertResponse(db, fixtureId, me, { status: "in" });
+
+    const response = await get(cookie);
+    expect(response.status).toBe(200);
+
+    const body = await response.text();
+    const start = body.indexOf("Unknown state");
+    expect(start, "expected the fixture's row to render at all").toBeGreaterThan(-1);
+    const row = body.slice(start, body.indexOf("</li>", start));
+
+    // Words, not the stored token and not the absence of both.
+    expect(row).toContain("Status unknown");
+    expect(row).not.toContain("abandoned");
+    expect(row).not.toContain("undefined");
+  });
+
   it("shows the pending-erasure banner and its link when one is due", async () => {
     const { cookie } = await signIn();
     const me = await viewerId();

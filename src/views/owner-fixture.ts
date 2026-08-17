@@ -286,7 +286,27 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     // without it the status badge and the capacity bar are markup with no
     // rules behind them, and a bar whose track has no height is invisible
     // rather than broken, so nothing here fails loudly.
-    pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
+    //
+    // The order is load-bearing, not alphabetical, and this is the page it
+    // matters most on: it renders the only squad rows in the app that carry
+    // per-member controls. `SQUAD_STYLES_CSS` and `FORM_CSS` both declare
+    // `ul.squad > li` at identical specificity, so whichever `layout()` emits
+    // last wins — SQUAD_STYLES_CSS lays the row out as flex, FORM_CSS as a
+    // `1fr auto` grid. SQUAD_STYLES_CSS goes first so the grid wins, and it
+    // still contributes the container rule FORM_CSS lacks: the list's top
+    // border. `src/views/game-overview.ts` pins the same pair the same way.
+    //
+    // Measured in a browser rather than reasoned about, because a row here is
+    // not the two-part row that rule was first written for. It is a name,
+    // sometimes a status, sometimes an attribution line, and a control — up
+    // to four children. SQUAD_STYLES_CSS's flex row does not wrap, so at
+    // 390px a row carrying all four ran 50px past the viewport: the page
+    // scrolled sideways and the Out half of the segment sat off-screen. Under
+    // FORM_CSS's grid the same row wraps onto a second line and the page
+    // stays 390px wide. The trade is real and worth naming: a waitlisted
+    // member's row and a guest's row are two lines here rather than one. Two
+    // lines that fit beat one line that is partly off the screen.
+    pageStyles: [SQUAD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS],
     // Gated on the same predicate `renderTeams` picks the picker with, so the
     // enhancement ships exactly where the thing it enhances does. A closed
     // fixture renders the read-only line-ups, which have no form to move a

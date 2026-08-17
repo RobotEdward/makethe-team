@@ -430,14 +430,30 @@ function renderOverCapacity(view: FixtureView): string {
  * have this render "· 0 waiting" as though it were a fact it had checked.
  */
 export function renderStatusLine(view: FixtureView, waitlistCount: number): string {
+  // Total for the same reason `fixtureStatusWords` is, and it matters more
+  // here: `fixtureView` passes a non-`open` lifecycle straight through as
+  // `status`, the column has no CHECK constraint behind it, and this one
+  // function renders the status on four pages including the dashboard. An
+  // unmapped key is `undefined`, `escapeHtml` calls `.replace` on it, and the
+  // page 500s — the identical failure the fallback three lines above exists
+  // to prevent. Same wording, deliberately, rather than a second phrase for
+  // the same admission.
   const label = STATUS_LABEL[view.status];
-  const badge = `<p class="status-badge status-${view.status}">${escapeHtml(label)}</p>`;
+  // The stored value reaches a class attribute, so it is escaped like every
+  // other interpolation (Constraint 6). For a lifecycle this build knows the
+  // output is unchanged; for one it does not, the value is a database string
+  // and not markup.
+  const badge = `<p class="status-badge status-${escapeHtml(view.status)}">${escapeHtml(label ?? UNKNOWN_STATUS_WORDS)}</p>`;
   // No bar on a fixture that is not taking answers. For `cancelled` and
   // `played` the reason is that nobody can join. For `scheduled` it is the
   // distinction `fixtureView`'s own early return already draws for
   // `spotsLeft`: nobody has been asked yet, so an empty bar — amber, because
   // an empty squad is below any minimum — would raise an alarm about a
-  // question the organiser has not put to anybody.
+  // question the organiser has not put to anybody. An unrecognised lifecycle
+  // is guarded the same way and for a stronger reason: the badge has just
+  // admitted the state could not be read, and a bar underneath it would draw
+  // a confident proportion about a fixture nothing is known about.
+  if (label === undefined) return badge;
   if (view.status === "cancelled" || view.status === "played" || view.status === "scheduled") return badge;
 
   // Rounded down to a declared 5% step: the CSP forbids a style attribute, so

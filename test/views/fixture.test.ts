@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { renderFixturePage, renderStatusLine, type FixturePageOptions } from "../../src/views/fixture.js";
+import {
+  fixtureStatusWords,
+  renderFixturePage,
+  renderStatusLine,
+  type FixturePageOptions,
+} from "../../src/views/fixture.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
 import { renderPlayerGamePage } from "../../src/views/player-game.js";
 import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
@@ -1120,5 +1125,85 @@ describe("the capacity bar", () => {
     });
     expect(playerHtml).toContain(`<div class="capacity">`);
     expect(playerHtml).toContain(".capacity .track");
+  });
+});
+
+/**
+ * The same failure `fixtureStatusWords` was made total to prevent, in the
+ * renderer three lines below it. `renderStatusLine` is the status on four
+ * pages — the dashboard, the player's fixture page, the player's game page
+ * and the organiser's fixture page — so an unmapped lifecycle here is four
+ * 500s, not one ugly word.
+ */
+describe("a stored lifecycle this build has never heard of", () => {
+  const KICKOFF = new Date("2026-08-13T18:00:00Z");
+  const NOW = new Date("2026-08-13T09:00:00Z");
+
+  // `fixtures.lifecycle` is `text NOT NULL DEFAULT 'scheduled'` with no CHECK
+  // constraint (migrations/0000_lonely_jack_flag.sql), so the column can hold
+  // this: a legacy row, a hand-applied fix, or a newer deploy writing a
+  // lifecycle mid-rollout. Drizzle's `enum` is a type-level assertion only.
+  // `as never` is how such a row is written in a test the type system would
+  // otherwise forbid.
+  const LEGACY = "abandoned" as never;
+
+  function view(lifecycle: FixtureFacts["lifecycle"]) {
+    return fixtureView(
+      {
+        lifecycle,
+        kicksOffAt: KICKOFF,
+        inCount: 6,
+        minPlayers: 8,
+        maxPlayers: 10,
+        prefersEvenNumbers: false,
+        shortWarningOffsetHours: 12,
+      },
+      NOW,
+    );
+  }
+
+  /** The badge's words, without the class the raw value also lands in. */
+  function words(html: string): string {
+    return html.replace(/<[^>]+>/g, "").trim();
+  }
+
+  it("renders rather than throwing", () => {
+    // Not cosmetic. `STATUS_LABEL[status]` was `undefined`, escapeHtml calls
+    // .replace on it, and the page 500s — the identical failure that took the
+    // organiser's game page down earlier in this branch.
+    expect(() => renderStatusLine(view(LEGACY), 0)).not.toThrow();
+  });
+
+  it("says the state is unknown rather than printing the stored token", () => {
+    const html = renderStatusLine(view(LEGACY), 0);
+    expect(words(html)).toBe("Status unknown");
+    expect(words(html)).not.toContain("abandoned");
+    expect(words(html)).not.toContain("undefined");
+  });
+
+  it("uses the wording the rest of the product already uses for this", () => {
+    // One admission, not two: a second phrase for the same thing is how one
+    // page comes to call an unreadable fixture something another page doesn't.
+    expect(words(renderStatusLine(view(LEGACY), 0))).toBe(fixtureStatusWords(LEGACY));
+  });
+
+  it("draws no capacity bar for a state it could not read", () => {
+    // Guarded the same way `cancelled`, `played` and `scheduled` are, and for
+    // a stronger reason: the badge has just said the state is unknown, and a
+    // bar underneath it would state a confident proportion about a fixture
+    // nothing is known about.
+    const html = renderStatusLine(view(LEGACY), 2);
+    expect(html).not.toContain("capacity");
+    expect(html).not.toContain("w-60");
+    expect(html).not.toContain("waiting");
+    expect(html).toContain("status-badge");
+  });
+
+  it("escapes the stored value where it reaches the class attribute", () => {
+    // The value is a database string, not markup, and it is interpolated
+    // into an attribute (Constraint 6).
+    const html = renderStatusLine(view(`x" onclick="alert(1)` as never), 0);
+    expect(html).not.toContain(`onclick="alert(1)"`);
+    expect(html).toContain("&quot;");
   });
 });

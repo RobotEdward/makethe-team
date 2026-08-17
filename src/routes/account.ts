@@ -393,6 +393,17 @@ function fixtureStatusLabel(status: FixtureStatus): string {
       return "Short of players";
     case "open":
       return "Open for answers";
+    // Total for the same reason `fixtureStatusWords` in `src/views/fixture.ts`
+    // is: `fixtures.lifecycle` is a bare `text NOT NULL DEFAULT 'scheduled'`
+    // with no CHECK constraint behind it, so a legacy row, a hand-applied fix
+    // or a newer deploy writing mid-rollout can hold a value outside this
+    // union. The type is a claim about the schema, not a guarantee about the
+    // rows. Without this the switch falls off its end and returns `undefined`,
+    // which the view hands to `escapeHtml` — this page 500s rather than
+    // printing a word. Worded as the fixture pages word it rather than
+    // inventing a second phrase for the same admission.
+    default:
+      return "Status unknown";
   }
 }
 
