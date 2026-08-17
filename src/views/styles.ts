@@ -197,7 +197,7 @@ export const DASHBOARD_STYLES_CSS = `
     padding: 1.1rem 1rem 1.25rem; margin-bottom: 1rem;
     border: 1px solid var(--line); border-radius: 0.75rem;
   }
-  .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); text-align: center; }
+  .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
   .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: var(--t-lead); }
   .fixture-card .responses { margin-bottom: 0; }
 `;

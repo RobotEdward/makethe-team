@@ -48,6 +48,85 @@ describe("layout", () => {
     expect(centred).toContain(`<main class="centred">`);
   });
 
+  /**
+   * Every file that is allowed to pass `centred: true`, and no others.
+   *
+   * Each of these is a page you read once and leave: the public holding page,
+   * a broken link, the three terminal cancellation outcomes, and the five
+   * terminal sign-in states. None of them has a list, a table, or a row of
+   * anything — nothing an eye has to scan down.
+   *
+   * `src/routes/home.ts` is in here on purpose: the holding page composes its
+   * own layout call from the routes directory rather than a view module, so a
+   * scan restricted to `src/views/` would report it as an offender.
+   */
+  const TERMINAL_CENTRED = [
+    "src/routes/home.ts",
+    "src/views/cancel.ts",
+    "src/views/link-problem.ts",
+    "src/views/signin.ts",
+  ];
+
+  it("centres only pages that are a single statement with nothing to scan", () => {
+    // Spec §2.1. Centring a page that has anything to scan turns a list into a
+    // poster: the eye loses the left edge it was following and every row has
+    // to be re-found. The rule is invisible at review time because a centred
+    // page still renders, still passes every fetch-level test, and only looks
+    // wrong next to the eleven pages that are left-aligned — so it is pinned
+    // here instead.
+    //
+    // Source text rather than rendered HTML: several of these call sites are
+    // behind auth or a signed token, and a test that had to reach them all
+    // would guard whichever ones it could log into. `import.meta.glob` is
+    // resolved by Vite at transform time, so this works inside the workers
+    // pool where `node:fs` does not (same mechanism as scripts.test.ts).
+    // Comments are stripped first so prose mentioning the option cannot make
+    // a file look like an offender.
+    const sources = import.meta.glob("../../src/**/*.ts", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }) as Record<string, string>;
+
+    const offenders = Object.entries(sources)
+      .filter(([, source]) =>
+        source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "").includes("centred: true"),
+      )
+      .map(([path]) => path.replace(/^(\.\.\/)+/, ""))
+      .filter((path) => !TERMINAL_CENTRED.includes(path))
+      .sort();
+
+    expect(
+      offenders,
+      "centred: true is only for a page that is a single statement with " +
+        "nothing to scan (spec §2.1). A scannable page — anything with a " +
+        "list, a table, a form, or repeated rows — must be left-aligned, or " +
+        "it reads as a poster instead of a list. Fix: drop `centred: true` " +
+        "from the file(s) in the diff below. Add a page to TERMINAL_CENTRED only " +
+        "if it is genuinely terminal: one message, one action at most, and " +
+        "nothing the eye has to scan down.",
+    ).toEqual([]);
+  });
+
+  it("finds the terminal centred pages where the enumeration says they are", () => {
+    // Without this, the guard above stays green after a listed file is renamed
+    // or its `centred: true` removed — the enumeration would quietly become a
+    // list of paths that permit nothing, and the real offender it was written
+    // to catch could take one of those names.
+    const sources = import.meta.glob("../../src/**/*.ts", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }) as Record<string, string>;
+
+    const centred = Object.entries(sources)
+      .filter(([, source]) => source.includes("centred: true"))
+      .map(([path]) => path.replace(/^(\.\.\/)+/, ""))
+      .sort();
+
+    expect(centred).toEqual([...TERMINAL_CENTRED].sort());
+  });
+
   it("defines a danger colour in both themes", () => {
     // A token defined only in the light block leaves every danger button
     // invisible-to-unreadable for a dark-mode viewer, and no server-side test
