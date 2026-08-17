@@ -38,7 +38,7 @@
       "title": "The QR code",
       "route": "/g/:id",
       "image": "images/invite-qr.png",
-      "shows": "The QR code for the same link, for people standing next to you."
+      "shows": "The Show the QR code disclosure on the game page, opened, with the QR code for the same invite link inside it."
     },
     {
       "id": "join",
@@ -206,7 +206,7 @@
       "title": "Your account",
       "route": "/app/account",
       "image": "images/account.png",
-      "shows": "A player's own account page: their name in an editable field, their email address beside it, a link to manage passkeys, and their last fixtures across every game, most recent first."
+      "shows": "A player's own account page: their name in an editable field, then a Signing in section reading out their email address under a small caption, a link to manage passkeys, and their last fixtures across every game, most recent first."
     }
   ]
 }

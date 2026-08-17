@@ -38,13 +38,14 @@ Tap **Create the game** and it exists.
 
 ## Your game
 
-![The game page, showing the invite link, a QR code, a squad of fourteen and the fixtures coming up](images/game-overview.png)
+![The game page, showing the invite card, a squad of fourteen and the fixtures coming up](images/game-overview.png)
 
 This page is the game's home, and it's where you'll come back to.
 
 At the top is the name, the pitch and the address, with **Edit this game** for
-when any of that changes. Under **Invite people** is the link to share and the
-same link as a QR code — that's chapter 2.
+when any of that changes. **Invite people** is a card of its own, holding the
+link to share, a **Show the QR code** line that opens the same link as a code
+when you want it, and **Replace this link** — that's chapter 2.
 
 **Squad (14)** lists everyone who has joined. This game has fourteen people in
 it, with jamie marked as the organiser — that's you, because you set it up.
