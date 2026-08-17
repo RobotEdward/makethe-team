@@ -198,7 +198,15 @@ describe("fixture page", () => {
   });
 
   it("never uses forbidden vocabulary in copy", () => {
-    const html = renderFixturePage(BASE).toLowerCase();
+    // Scoped to the page's own copy, not its script — the site-wide service
+    // worker registration (M13 Task 5) legitimately says "event" and
+    // "addEventListener", and every page carries it now. This test's job was
+    // always the product's *prose*, never implementation vocabulary inside a
+    // <script> tag; stripping script first (the same technique
+    // test/routes/team-publish.test.ts uses to separate "no script" from "no
+    // domain vocabulary") is what keeps that property honest rather than
+    // accidentally depending on this page happening to carry no script.
+    const html = renderFixturePage(BASE).replace(/<script[\s\S]*?<\/script>/g, "").toLowerCase();
     for (const word of ["rsvp", "event", "match"]) expect(html).not.toContain(word);
   });
 

@@ -20,11 +20,14 @@ export interface LayoutOptions {
    */
   pageStyles?: readonly PageStyleBlock[];
   /**
-   * Client-side JavaScript for this page alone — in practice, only the
-   * passkey and team-picker enhancements. **Almost every page should leave
-   * this unset**, and a page that sets it must still be completely usable
-   * when the script never runs (see `src/views/scripts.ts` for the whole
-   * argument).
+   * Client-side JavaScript for this page alone. **Almost every page should
+   * leave this unset** — see `PAGE_SCRIPT_BLOCKS` in `src/views/scripts.ts`
+   * for the current, authoritative list of what exists; naming them here too
+   * is exactly the kind of second list that goes stale the next time one is
+   * added or removed (as this comment's own history shows: it named two of
+   * the four current blocks after M9 Task 7 added a third). A page that sets
+   * this must still be completely usable when the script never runs (see
+   * `src/views/scripts.ts` for the whole argument).
    *
    * That "almost every page" is about *this* parameter only. `layout()` also
    * emits `SERVICE_WORKER_JS` on every single page (M13), but not through
@@ -52,6 +55,25 @@ export interface LayoutOptions {
 }
 
 /**
+ * The colour the OS chrome around this app is painted: the browser's address
+ * bar, the task switcher card, and the manifest's `theme_color` once
+ * installed (M13). One export rather than two independently pasted literals
+ * — `src/routes/pwa.ts`'s manifest imports this rather than carrying its own
+ * copy — because a mismatch between the two is exactly the failure this
+ * constant exists to rule out: one colour in the task switcher and another
+ * in the browser chrome, on the same app (see the test in
+ * `test/views/layout.test.ts` this backs).
+ *
+ * Equal to `STYLES`' light-mode `--accent` below, but not derived from it:
+ * `--accent` is inside a template literal, dark-mode included, and the
+ * `theme-color` meta tag and the manifest both take one static value with no
+ * light/dark split of their own — there is no single light-mode substring to
+ * extract from `STYLES` that would be less fragile than stating the value
+ * once, here, and having both `STYLES` and this constant agree on it.
+ */
+export const THEME_COLOR = "#1f6f4a";
+
+/**
  * Shared primitives only: tokens, reset, body/typography, and the handful of
  * controls (buttons, the sign-out form, the generic notice box) reused
  * across otherwise-unrelated pages. Everything specific to one page or one
@@ -63,6 +85,14 @@ export interface LayoutOptions {
  * `style-src` rather than carrying a pasted value, so the hash can never
  * drift from what actually ships. It is one member of `STYLE_BLOCKS` in
  * `src/views/styles.ts`; the CSP must hash every member, not just this one.
+ *
+ * The light-mode `--accent` below is interpolated from `THEME_COLOR` rather
+ * than a second pasted `#1f6f4a` — see that constant's own comment for why
+ * a third literal here would be exactly the drift risk it exists to close
+ * off. The dark-mode `--accent` a few lines down stays its own literal:
+ * `THEME_COLOR` is deliberately the one value the OS chrome and the
+ * manifest use with no light/dark split of their own, so there is nothing
+ * for a *second* theme colour to derive from.
  */
 export const STYLES = `
   :root {
@@ -77,7 +107,7 @@ export const STYLES = `
        paths and page names on purpose — this constant renders on error pages
        and the public holding page too, both of which forbid exactly that. */
     --mut: #635f59; --line: #e3ded4;
-    --accent: #1f6f4a; --accent-fg: #fbfaf8; --accent-mut: #e3efe7;
+    --accent: ${THEME_COLOR}; --accent-fg: #fbfaf8; --accent-mut: #e3efe7;
     --warn: #8a5a10; --warn-bg: #f7ecd8;
     /* Irreversible actions only — call off, remove, leave, erase. Never used
        for anything a person can undo. --warn used to carry both this and
@@ -214,7 +244,7 @@ export function layout({ title, body, pageStyles, pageScripts, centred }: Layout
 <link rel="manifest" href="${MANIFEST_PATH}">
 <!-- iOS reads only this. It ignores the manifest's icon list entirely. -->
 <link rel="apple-touch-icon" href="${APPLE_TOUCH_ICON_PATH}">
-<meta name="theme-color" content="#1f6f4a">
+<meta name="theme-color" content="${THEME_COLOR}">
 <title>${escapeHtml(title)}</title>
 ${styleTags}
 </head>

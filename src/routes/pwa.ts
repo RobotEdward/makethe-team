@@ -9,6 +9,7 @@ import {
 } from "../auth/paths.js";
 import type { AppEnv } from "../env.js";
 import { APPLE_TOUCH_ICON_PNG, ICON_192_PNG, ICON_512_PNG } from "../views/icon-bytes.js";
+import { THEME_COLOR } from "../views/layout.js";
 import { renderOfflinePage } from "../views/offline.js";
 
 /**
@@ -40,7 +41,11 @@ const MANIFEST = {
   scope: "/",
   display: "standalone",
   background_color: "#fbfaf8",
-  theme_color: "#1f6f4a",
+  // Imported from src/views/layout.ts rather than pasted a second time: a
+  // manifest theme_color that drifts from the page's own <meta name=
+  // "theme-color"> shows as one colour in the task switcher and another in
+  // the browser chrome, on the same app (see THEME_COLOR's own comment).
+  theme_color: THEME_COLOR,
   icons: [
     { src: ICON_192_PATH, sizes: "192x192", type: "image/png", purpose: "maskable any" },
     { src: ICON_512_PATH, sizes: "512x512", type: "image/png", purpose: "maskable any" },

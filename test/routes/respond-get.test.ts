@@ -621,8 +621,16 @@ describe("GET /r/:token — published teams (BR-35 §5)", () => {
 
 describe("vocabulary and safety", () => {
   it("never uses forbidden vocabulary on the failure page", async () => {
+    // Scoped to the page's own copy, not its script — the site-wide service
+    // worker registration (M13 Task 5) legitimately says "event" and
+    // "addEventListener", and every page carries it now. This test's job was
+    // always the product's *prose*, never implementation vocabulary inside a
+    // <script> tag; stripping script first (the same technique
+    // test/routes/team-publish.test.ts uses to separate "no script" from "no
+    // domain vocabulary") is what keeps that property honest rather than
+    // accidentally depending on this page happening to carry no script.
     const response = await SELF.fetch("https://makethe.team/r/not-a-real-token");
-    const body = (await response.text()).toLowerCase();
+    const body = (await response.text()).replace(/<script[\s\S]*?<\/script>/g, "").toLowerCase();
     for (const word of ["rsvp", "event", "match", "user"]) expect(body).not.toContain(word);
   });
 

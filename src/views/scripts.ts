@@ -428,9 +428,10 @@ export const TEAM_PICKER_JS = `
 /**
  * Registers the service worker (M13).
  *
- * The third script block in the project, and it earns its place on the same
- * ground as the passkey ones: there is no server-side substitute — a service
- * worker can only be registered by a page, from script.
+ * The fifth script block in the project, and the first that every page
+ * carries. It earns its place on the same ground as the passkey ones: there
+ * is no server-side substitute — a service worker can only be registered by
+ * a page, from script.
  *
  * Enhancement, not provision. Registration failing for any reason at all —
  * an old browser, a private window, a corporate policy, a user who has
@@ -450,37 +451,31 @@ export const TEAM_PICKER_JS = `
  * being able to opt out. See `SCRIPT_BLOCKS` below for where it actually
  * joins the enumeration the CSP hashes.
  *
- * Registers immediately, with no `window.addEventListener("load", ...)` or
- * `window.onload = ...` wrapper deferring it — despite that deferral being
- * the idiom every guide for this API reaches for, and the idiom the other
- * scripts in this file would reach for too. Both were tried and both broke
- * an existing site-wide guard, for reasons that only show up once a script
- * ships on *every* page rather than the one or two it used to be confined
- * to:
- *
- * - `addEventListener("load", ...)` put the substring "event" into the
- *   served bytes of every page, including the anonymous link-failure and
- *   holding pages `test/routes/respond-get.test.ts` and
- *   `test/views/fixture.test.ts` assert never contain that word anywhere —
- *   this product calls it a fixture, never an event.
- * - `window.onload = ...` put the substring "onload" into the same bytes,
- *   which trips a *different* guard: `test/views/fixture.test.ts`'s TR-15
- *   test bans "onload" outright, because on this page specifically it is
- *   the signature of an auto-submitting response button rather than an
- *   explicit click — exactly the anti-pattern TR-15 exists to rule out.
- *
- * Deferred registration exists to keep the worker's own fetch off the
- * critical path for the *initial* page load. That benefit does not apply
- * here: this `<script>` is emitted last, immediately before `</body>`
- * (`layout()` in `src/views/layout.ts`), so by the time it runs the browser
- * has already parsed everything the page needs — registering the worker
- * cannot delay anything this page still has left to do. Losing the deferral
- * costs nothing real and buys freedom from both banned words at once.
+ * `window.addEventListener("load", ...)`, the idiom every guide for this API
+ * reaches for, deferring registration off the critical path of the initial
+ * page load. An earlier version of this block dropped the deferral (and,
+ * briefly, tried `window.onload = ...` instead) because both idioms put the
+ * literal substring "event" or "onload" into the served bytes of *every*
+ * page, and two vocabulary-guard tests — `test/routes/respond-get.test.ts`
+ * and `test/views/fixture.test.ts` — happened to ban those words in the
+ * pages they cover. That was the wrong fix: `PASSKEY_SIGN_IN_JS`,
+ * `PASSKEY_REGISTER_JS`, `COPY_INVITE_JS` and `TEAM_PICKER_JS` already ship
+ * `addEventListener` and bare `event` identifiers to real browsers on
+ * `/sign-in`, `/app/passkeys`, `/g/:id` and the owner fixture page, so "no
+ * 'event' anywhere in the served bytes" was never a real site-wide
+ * invariant — only an accident of which pages happened to have both a
+ * vocabulary test and no page script. The two vocabulary tests now strip
+ * `<script>…</script>` before scanning (the same technique
+ * `test/routes/team-publish.test.ts` uses to separate "no script" from
+ * "no domain vocabulary in the copy"), so this block is free to use the
+ * idiomatic form its behaviour actually calls for.
  */
 export const SERVICE_WORKER_JS = `
 (function () {
   if (!("serviceWorker" in navigator)) return;
-  navigator.serviceWorker.register("${SERVICE_WORKER_PATH}").catch(function () {});
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("${SERVICE_WORKER_PATH}").catch(function () {});
+  });
 })();
 `;
 

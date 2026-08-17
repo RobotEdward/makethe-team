@@ -1,6 +1,6 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { escapeHtml, layout, STYLES } from "../../src/views/layout.js";
+import { escapeHtml, layout, STYLES, THEME_COLOR } from "../../src/views/layout.js";
 import { APPLE_TOUCH_ICON_PATH, MANIFEST_PATH } from "../../src/auth/paths.js";
 import { PAGE_STYLE_BLOCKS } from "../../src/views/styles.js";
 
@@ -94,9 +94,12 @@ describe("the installable app's head (M13)", () => {
 
   it("sets a theme colour matching the manifest", async () => {
     // A mismatch shows as one colour in the task switcher and another in the
-    // browser chrome, on the same app.
+    // browser chrome, on the same app. Asserted against THEME_COLOR rather
+    // than a pasted literal — test/routes/pwa.test.ts asserts the manifest's
+    // theme_color against the same constant, so the two tests can't drift
+    // onto two different "correct" colours.
     const body = await (await SELF.fetch("https://makethe.team/")).text();
 
-    expect(body).toContain('<meta name="theme-color" content="#1f6f4a">');
+    expect(body).toContain(`<meta name="theme-color" content="${THEME_COLOR}">`);
   });
 });

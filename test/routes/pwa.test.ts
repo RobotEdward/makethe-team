@@ -6,6 +6,7 @@ import {
   ICON_512_PATH,
   MANIFEST_PATH,
 } from "../../src/auth/paths.js";
+import { THEME_COLOR } from "../../src/views/layout.js";
 
 const url = (path: string) => `https://makethe.team${path}`;
 
@@ -29,7 +30,11 @@ describe("the web app manifest", () => {
     expect(manifest.start_url).toBe("/app");
     expect(manifest.display).toBe("standalone");
     expect(manifest.background_color).toBe("#fbfaf8");
-    expect(manifest.theme_color).toBe("#1f6f4a");
+    // THEME_COLOR, not a second pasted literal — see that constant's own
+    // comment in src/views/layout.ts for why a mismatch between this and the
+    // page's <meta name="theme-color"> is the exact failure it exists to
+    // rule out. test/views/layout.test.ts asserts the other half.
+    expect(manifest.theme_color).toBe(THEME_COLOR);
   });
 
   it("offers both icon sizes as maskable", async () => {
