@@ -8,7 +8,7 @@ import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
 import { TEAM_PICKER_JS } from "./scripts.js";
-import { FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface OwnerFixtureParams {
   gameId: string;
@@ -245,7 +245,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${problem}
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="venue">${escapeHtml(venueName)}</p>
-    ${renderStatusLine(view)}
+    ${renderStatusLine(view, squad.filter((member) => member.status === "waitlisted").length)}
     ${renderOverCapacity(view, inCount, maxPlayers)}
     ${renderConfirm(gameId, fixtureId, params)}
 
@@ -262,7 +262,11 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   return layout({
     title: `${gameName} — Make The Team`,
     body,
-    pageStyles: [FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
+    // `FIXTURE_STYLES_CSS` because this page renders `renderStatusLine` —
+    // without it the status badge and the capacity bar are markup with no
+    // rules behind them, and a bar whose track has no height is invisible
+    // rather than broken, so nothing here fails loudly.
+    pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
     // Gated on the same predicate `renderTeams` picks the picker with, so the
     // enhancement ships exactly where the thing it enhances does. A closed
     // fixture renders the read-only line-ups, which have no form to move a

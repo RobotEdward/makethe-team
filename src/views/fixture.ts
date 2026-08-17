@@ -364,19 +364,44 @@ function renderOverCapacity(view: FixtureView): string {
 }
 
 /**
- * The status badge and the spots-left line, from `fixtureView` alone.
+ * The status badge and the headcount bar, from `fixtureView` plus the one
+ * count it cannot derive.
  *
- * Exported for the dashboard, which shows the same derived status for each of
- * the viewer's fixtures — one renderer, so `short`/`confirmed`/`full` can only
- * ever be worded and coloured one way across the product (BR-12).
+ * Exported for the dashboard, the owner's fixture page and the player's game
+ * page, which show the same derived status for the same fixture — one
+ * renderer, so `short`/`confirmed`/`full` can only ever be worded and
+ * coloured one way across the product (BR-12).
+ *
+ * The bar replaces "N spots left" (M12 §3.1), whose failure case was "0 spots
+ * left" sitting above two live response buttons: it reads as a closed door,
+ * when the truthful answer is that a yes joins the waitlist. A proportion has
+ * no such zero. The numbers stay in `.spots` beneath the bar so nothing is
+ * lost when the CSS does not load.
+ *
+ * `waitlistCount` is a parameter rather than a `FixtureView` field because
+ * the view is derived from capacity facts alone and does not know it.
+ * Required rather than defaulted, so a caller cannot silently omit it and
+ * have this render "· 0 waiting" as though it were a fact it had checked.
  */
-export function renderStatusLine(view: FixtureView): string {
+export function renderStatusLine(view: FixtureView, waitlistCount: number): string {
   const label = STATUS_LABEL[view.status];
-  const spots =
-    view.status === "cancelled" || view.status === "played"
-      ? ""
-      : `<p class="spots">${view.spotsLeft} ${view.spotsLeft === 1 ? "spot" : "spots"} left</p>`;
-  return `<p class="status-badge status-${view.status}">${escapeHtml(label)}</p>${spots}`;
+  const badge = `<p class="status-badge status-${view.status}">${escapeHtml(label)}</p>`;
+  if (view.status === "cancelled" || view.status === "played") return badge;
+
+  // Rounded down to a declared 5% step: the CSP forbids a style attribute, so
+  // the width can only be one of the classes FIXTURE_STYLES_CSS declares.
+  // `Math.floor(ratio * 20) * 5` reaches 100 only at a genuinely full squad,
+  // and the clamp keeps a 14-of-10 fixture at a full bar rather than an
+  // overflowing one.
+  const ratio = view.maxPlayers === 0 ? 0 : view.inCount / view.maxPlayers;
+  const pct = Math.min(100, Math.floor(ratio * 20) * 5);
+  const short = view.inCount < view.minPlayers ? " short" : "";
+  const waiting = waitlistCount > 0 ? ` · ${waitlistCount} waiting` : "";
+  return `${badge}
+    <div class="capacity">
+      <div class="track"><span class="fill${short} w-${pct}"></span></div>
+      <p class="spots"><span class="count">${view.inCount} of ${view.maxPlayers}</span> in${escapeHtml(waiting)}</p>
+    </div>`;
 }
 
 /**
@@ -427,7 +452,7 @@ function renderButtons(options: FixturePageOptions): string {
  * Exported and called from `renderRow` in `src/views/dashboard.ts` (M10 whole-
  * branch review, Important 2), for the same reason `renderResponseButtons` is
  * shared rather than copied: the dashboard's card already shows
- * `renderStatusLine`'s "0 spots left" directly above the same live "I'm in"
+ * `renderStatusLine`'s full bar directly above the same live "I'm in"
  * button, so it is exactly as capable of the §3.4 misreading as this page —
  * §3.1's whole premise is that the two pages must not be able to disagree
  * about what "in" looks like, and a warning that existed on only one of them
@@ -480,7 +505,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     <p class="venue">${escapeHtml(venueName)}</p>
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
-    ${renderStatusLine(view)}
+    ${renderStatusLine(view, options.waitlistCount)}
     ${renderNudge(view)}
     ${renderOverCapacity(view)}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}

@@ -30,7 +30,7 @@ import { STYLES } from "./layout.js";
 
 /**
  * The single-fixture page's display of a game — venue, kickoff time, status
- * badge, spots left, the viewer's own headline, the read-only notice, and
+ * badge, the capacity bar, the viewer's own headline, the read-only notice, and
  * the two response buttons' layout. Also used by the dashboard (J7, BR-25),
  * which renders one of these per fixture using the *same* renderers
  * (`renderStatusLine`, `viewerHeadlineOpen` in `src/views/fixture.ts`) as the
@@ -48,7 +48,23 @@ export const FIXTURE_STYLES_CSS = `
   }
   .status-badge.status-confirmed { border-color: var(--accent); color: var(--accent); }
   .status-badge.status-short, .status-badge.status-cancelled { border-color: var(--warn); color: var(--warn); }
-  .spots { margin-top: 0.4rem; font-size: var(--t-support); }
+  /* The headcount as a proportion rather than a countdown (M12 §3.1): a bar
+     whose fill is who is there, with the numbers under it so nothing is lost
+     when the CSS does not load. */
+  .capacity { margin-top: 0.6rem; }
+  .capacity .track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .capacity .fill { display: block; height: 100%; background: var(--accent); }
+  .capacity .fill.short { background: var(--warn); }
+  .capacity .spots { margin-top: 0.35rem; font-size: var(--t-support); color: var(--mut); }
+  .capacity .count { font-family: var(--mono); }
+
+  /* The width is a class, never a style attribute. style-src is hashes plus
+     one font origin and no unsafe-hashes, so a style attribute cannot be
+     authorised by a hash: the browser would drop it, the bar would render at
+     zero width, and no fetch-level test — none of which run a CSP engine —
+     would notice. Generated rather than typed so these twenty-one rules
+     cannot drift from the twenty-one 5% steps the renderer can emit. */
+${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${i * 5}%; }`).join("\n")}
 
   .viewer-headline {
     margin-top: 1.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--fg); line-height: 1.3;

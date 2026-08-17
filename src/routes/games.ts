@@ -229,6 +229,10 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
           now,
         ),
         inCount: withSquad.fixture.inCount,
+        // The stored column, not a count of the squad: `squadForViewer` below
+        // returns `null` when the organiser hides the list, and the headcount
+        // line is rendered either way.
+        waitlistCount: withSquad.fixture.waitlistCount,
         squad: squadForViewer(game, withSquad.squad, { isOwner: false }),
         // Read off the viewer's own squad row, taken from the *unfiltered*
         // list — `squadForViewer` above may have returned `null`, and a

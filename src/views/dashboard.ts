@@ -117,7 +117,7 @@ function renderRow(row: DashboardRow): string {
       <h2><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></h2>
       <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
-      ${renderStatusLine(row.view)}
+      ${renderStatusLine(row.view, row.waitlistCount)}
       <p class="${headlineClass}">${escapeHtml(headline)}</p>
       ${renderActions(row)}
       ${renderFullWarning(row.view, { status: row.myStatus }, row.waitlistCount)}

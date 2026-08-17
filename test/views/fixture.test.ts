@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { renderFixturePage, type FixturePageOptions } from "../../src/views/fixture.js";
+import { renderFixturePage, renderStatusLine, type FixturePageOptions } from "../../src/views/fixture.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
-import { SQUAD_STYLES_CSS } from "../../src/views/styles.js";
+import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
+import { fixtureView, type FixtureFacts } from "../../src/domain/fixture-view.js";
 import type { SquadMember } from "../../src/db/queries.js";
 import type { ResponseStatus } from "../../src/domain/response-status.js";
 
@@ -9,7 +10,7 @@ const BASE = {
   gameName: "Thursday 7-a-side",
   venueName: "Oxford Sports Park",
   kicksOffAtLocal: "Thursday 13 August, 19:00",
-  view: { status: "open" as const, flags: [], spotsLeft: 5, needsOwnerAttention: false },
+  view: { status: "open" as const, flags: [], inCount: 9, minPlayers: 10, maxPlayers: 14, spotsLeft: 5, needsOwnerAttention: false },
   squad: [
     {
       playerId: "p1",
@@ -144,7 +145,7 @@ describe("fixture page", () => {
   describe("a waitlisted viewer must never read as confirmed (BR-5, fix round 1)", () => {
     const WAITLISTED_CONFIRMED = {
       ...BASE,
-      view: { status: "confirmed" as const, flags: [], spotsLeft: 0, needsOwnerAttention: false },
+      view: { status: "confirmed" as const, flags: [], inCount: 14, minPlayers: 10, maxPlayers: 14, spotsLeft: 0, needsOwnerAttention: false },
       viewer: { playerId: "p2", status: "waitlisted" as const, waitlistRank: 1 },
     };
 
@@ -186,7 +187,7 @@ describe("fixture page", () => {
   it("shows an uneven fixture as on, with a nudge", () => {
     const html = renderFixturePage({
       ...BASE,
-      view: { status: "confirmed", flags: ["uneven"], spotsLeft: 3, needsOwnerAttention: true },
+      view: { status: "confirmed", flags: ["uneven"], inCount: 11, minPlayers: 10, maxPlayers: 14, spotsLeft: 3, needsOwnerAttention: true },
     });
     expect(html).toMatch(/confirmed|game is on/i);
     expect(html).toMatch(/odd number|one more|uneven/i);
@@ -274,7 +275,7 @@ describe("fixture page", () => {
         it(`renders sensibly for a ${status} viewer when the fixture was ${readOnlyReason}`, () => {
           const html = renderFixturePage({
             ...BASE,
-            view: { status: readOnlyReason, flags: [], spotsLeft: 0, needsOwnerAttention: false },
+            view: { status: readOnlyReason, flags: [], inCount: 14, minPlayers: 10, maxPlayers: 14, spotsLeft: 0, needsOwnerAttention: false },
             viewer: { playerId: "p2", status },
             readOnlyReason,
           });
@@ -293,7 +294,7 @@ describe("fixture page", () => {
     it("tells a player who was in that they were in, in the past tense, when played", () => {
       const html = renderFixturePage({
         ...BASE,
-        view: { status: "played", flags: [], spotsLeft: 0, needsOwnerAttention: false },
+        view: { status: "played", flags: [], inCount: 14, minPlayers: 10, maxPlayers: 14, spotsLeft: 0, needsOwnerAttention: false },
         viewer: { playerId: "p1", status: "in" },
         readOnlyReason: "played",
       });
@@ -304,7 +305,7 @@ describe("fixture page", () => {
     it("tells a player who was in that the fixture was cancelled", () => {
       const html = renderFixturePage({
         ...BASE,
-        view: { status: "cancelled", flags: [], spotsLeft: 0, needsOwnerAttention: false },
+        view: { status: "cancelled", flags: [], inCount: 14, minPlayers: 10, maxPlayers: 14, spotsLeft: 0, needsOwnerAttention: false },
         viewer: { playerId: "p1", status: "in" },
         readOnlyReason: "cancelled",
       });
@@ -314,7 +315,7 @@ describe("fixture page", () => {
     it("gives a pending viewer no headline at all against a terminal fixture", () => {
       const html = renderFixturePage({
         ...BASE,
-        view: { status: "played", flags: [], spotsLeft: 0, needsOwnerAttention: false },
+        view: { status: "played", flags: [], inCount: 14, minPlayers: 10, maxPlayers: 14, spotsLeft: 0, needsOwnerAttention: false },
         viewer: { playerId: "p2", status: "pending" },
         readOnlyReason: "played",
       });
@@ -470,7 +471,7 @@ describe("fixture page", () => {
   it("says a fixture is over capacity", () => {
     const html = renderFixturePage({
       ...BASE,
-      view: { status: "confirmed", flags: ["over_capacity"], spotsLeft: 0, needsOwnerAttention: false },
+      view: { status: "confirmed", flags: ["over_capacity"], inCount: 16, minPlayers: 10, maxPlayers: 14, spotsLeft: 0, needsOwnerAttention: false },
     });
 
     expect(html).toContain("more players in than there are places");
@@ -693,7 +694,7 @@ describe("fixture page", () => {
         venueName: "Oxford Sports Park",
         inCount: 1,
         maxPlayers: 10,
-        view: { status: "open", flags: [], spotsLeft: 5, needsOwnerAttention: false },
+        view: { status: "open", flags: [], inCount: 9, minPlayers: 10, maxPlayers: 14, spotsLeft: 5, needsOwnerAttention: false },
         squad: [
           { playerId: "p-1", name: "Ada", erasedAt: null, status: "in", team: null, waitlistRank: null,
             setBy: null, source: "token", isGuest: false },
@@ -718,7 +719,7 @@ describe("fixture page", () => {
  * where the tap happens: what answering yes would actually do.
  */
 describe("full fixture — states what a yes would do, before the tap", () => {
-  const FULL_VIEW = { status: "confirmed" as const, flags: [], spotsLeft: 0, needsOwnerAttention: false };
+  const FULL_VIEW = { status: "confirmed" as const, flags: [], inCount: 14, minPlayers: 10, maxPlayers: 14, spotsLeft: 0, needsOwnerAttention: false };
 
   it("tells a player what answering yes would do on a full fixture", () => {
     const html = renderFixturePage(optionsWith({
@@ -779,7 +780,7 @@ describe("full fixture — states what a yes would do, before the tap", () => {
 
   it("says nothing when there is still room", () => {
     const html = renderFixturePage(optionsWith({
-      view: { status: "open" as const, flags: [], spotsLeft: 3, needsOwnerAttention: false },
+      view: { status: "open" as const, flags: [], inCount: 11, minPlayers: 10, maxPlayers: 14, spotsLeft: 3, needsOwnerAttention: false },
       waitlistCount: 0,
     }));
     expect(html).not.toContain("The squad is full");
@@ -954,5 +955,84 @@ describe("fixture page — published teams (BR-35 §5)", () => {
     }));
 
     expect(html).not.toContain("<script");
+  });
+});
+
+/**
+ * M12 §3.1. The headcount is a bar showing what is there, not a sentence
+ * counting down to zero — "0 spots left" beside a live "I'm in" button read
+ * as a closed door.
+ */
+describe("the capacity bar", () => {
+  const KICKOFF = new Date("2026-08-13T18:00:00Z");
+  const NOW = new Date("2026-08-13T09:00:00Z"); // inside the short-warning window
+
+  function facts(overrides: Partial<FixtureFacts> = {}): FixtureFacts {
+    return {
+      lifecycle: "open",
+      kicksOffAt: KICKOFF,
+      inCount: 0,
+      minPlayers: 10,
+      maxPlayers: 14,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      ...overrides,
+    };
+  }
+
+  /** The bar's label is split across elements, so assert on what a reader sees. */
+  function text(html: string): string {
+    return html.replace(/<[^>]+>/g, "");
+  }
+
+  it("renders the headcount as a bar whose width is the fill, not the gap", () => {
+    const html = renderStatusLine(fixtureView(facts({ inCount: 6, minPlayers: 8, maxPlayers: 10 }), NOW), 0);
+    expect(html).toContain(`<span class="fill short w-60">`);
+    expect(html).toContain("6 of 10");
+    expect(html).not.toContain("spots left");
+  });
+
+  it("marks a full squad as full rather than as nothing left", () => {
+    const html = renderStatusLine(fixtureView(facts({ inCount: 10, minPlayers: 8, maxPlayers: 10 }), NOW), 2);
+    expect(html).toContain("w-100");
+    expect(html).not.toContain("short");
+    expect(text(html)).toContain("10 of 10 in · 2 waiting");
+  });
+
+  it("says nothing about a waitlist nobody is on", () => {
+    const html = renderStatusLine(fixtureView(facts({ inCount: 10, minPlayers: 8, maxPlayers: 10 }), NOW), 0);
+    expect(html).not.toContain("waiting");
+  });
+
+  it("clamps an over-capacity squad to a full bar", () => {
+    const html = renderStatusLine(fixtureView(facts({ inCount: 14, minPlayers: 8, maxPlayers: 10 }), NOW), 0);
+    expect(html).toContain("w-100");
+  });
+
+  it("declares a rule for every width it can emit", () => {
+    // The silent failure this catches: a width class with no matching rule is
+    // a zero-width bar that no string assertion and no fetch test can see.
+    for (let pct = 0; pct <= 100; pct += 5) {
+      expect(FIXTURE_STYLES_CSS).toContain(`.capacity .fill.w-${pct}`);
+    }
+  });
+
+  it("emits only widths it has declared", () => {
+    // Every reachable headcount, not a sample: a rounding change that produced
+    // w-63 would pass the loop above and still ship an invisible bar.
+    for (let max = 1; max <= 40; max++) {
+      for (let inCount = 0; inCount <= max + 5; inCount++) {
+        const html = renderStatusLine(fixtureView(facts({ inCount, minPlayers: 1, maxPlayers: max }), NOW), 0);
+        const width = /w-(\d+)/.exec(html)?.[1];
+        expect(width).toBeDefined();
+        expect(Number(width) % 5).toBe(0);
+        expect(Number(width)).toBeLessThanOrEqual(100);
+      }
+    }
+  });
+
+  it("shows no bar for a fixture nobody can join", () => {
+    const html = renderStatusLine(fixtureView(facts({ lifecycle: "cancelled" }), NOW), 0);
+    expect(html).not.toContain("capacity");
   });
 });

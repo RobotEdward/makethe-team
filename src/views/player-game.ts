@@ -5,7 +5,7 @@ import type { FixtureView } from "../domain/fixture-view.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
-import { FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface PlayerGameParams {
   gameName: string;
@@ -17,6 +17,13 @@ export interface PlayerGameParams {
     kicksOffAtLocal: string;
     view: FixtureView;
     inCount: number;
+    /**
+     * Passed in rather than counted from `squad`: `squad` is `null` whenever
+     * the organiser has squad visibility off, and the headcount line shows
+     * either way — deriving it here would drop the waiting count on exactly
+     * the games that hide the list.
+     */
+    waitlistCount: number;
     squad: readonly SquadMember[] | null;
     /**
      * From `publishedTeamsFor` — `null` until the organiser publishes, which
@@ -55,7 +62,7 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
       ? `<p>Nothing open yet — you'll get an email the day before the next game.</p>`
       : `
         <p class="kickoff">${escapeHtml(openFixture.kicksOffAtLocal)}</p>
-        ${renderStatusLine(openFixture.view)}
+        ${renderStatusLine(openFixture.view, openFixture.waitlistCount)}
         ${renderPublishedTeamsSection(openFixture.teams, openFixture.squad)}
         <h2>Squad</h2>
         ${renderSquadSection(openFixture.squad, openFixture.inCount, viewerPlayerId)}
@@ -84,9 +91,14 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
   return layout({
     title: `${gameName} — Make The Team`,
     body,
+    // `FIXTURE_STYLES_CSS` because this page renders `renderStatusLine` —
+    // without it the status badge and the capacity bar are markup with no
+    // rules behind them, and a bar whose track has no height is invisible
+    // rather than broken, so nothing here fails loudly.
+    //
     // `TEAM_PICKER_CSS` for the published line-ups — see the same import on
     // the `/r/:token` page for why the owner's block is the right one to
     // reuse rather than a second block styling identical markup.
-    pageStyles: [FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
+    pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
   });
 }
