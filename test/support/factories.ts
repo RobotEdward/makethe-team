@@ -46,6 +46,7 @@ export async function resetDatabase(): Promise<void> {
   await env.DB.exec("DELETE FROM audit_log");
   await env.DB.exec("DELETE FROM notification_log");
   await env.DB.exec("DELETE FROM email_quota");
+  await env.DB.exec("DELETE FROM push_subscriptions");
   await env.DB.exec("DELETE FROM responses");
   await env.DB.exec("DELETE FROM memberships");
   await env.DB.exec("DELETE FROM fixtures");
