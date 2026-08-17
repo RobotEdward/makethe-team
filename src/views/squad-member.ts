@@ -57,15 +57,19 @@ export function renderSquadMemberPage({
       : `<p class="readout-label">Email</p>
          <p>${escapeHtml(email)}</p>`;
 
-  // The captions carry the words the two <h2>s used to, and there are no
-  // headings left below the <h1>. Both sections are a single line each, and a
-  // heading the size of a lead paragraph over one line of text divides the
-  // page into slices instead of naming parts of it — on a page whose whole
-  // content is one person's name and two facts about them.
+  // One <h2> over both readouts, where there used to be one over each.
+  // Two headings the size of a lead paragraph, each introducing a single
+  // line, slice the page instead of naming its parts; none at all is worse
+  // still, because a .readout-label is a plain paragraph and reaches the
+  // accessibility tree as one, so dropping both headings would leave a
+  // screen-reader user nothing to navigate by between the name and the way
+  // out. The captions name each fact; the heading names what the two of them
+  // together are.
   const body = `
     <h1>${escapeHtml(memberName)}</h1>
     <p>In <a href="${escapeHtml(gamePath(gameId))}">${escapeHtml(gameName)}</a>.</p>
 
+    <h2>What we have for them</h2>
     ${emailLine}
 
     <p class="readout-label">In this squad</p>

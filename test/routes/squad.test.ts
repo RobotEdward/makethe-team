@@ -387,6 +387,21 @@ describe("GET /g/:id/squad/:playerId", () => {
     expect(body).toContain("sam@example.com");
   });
 
+  it("puts both facts under exactly one heading", async () => {
+    const { cookie, gameId, memberId } = await ownedGame();
+
+    const body = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/squad/${memberId}`, { headers: { cookie } })
+    ).text();
+
+    // Counted, not merely present. One heading is the answer; two one-line
+    // headings — the stack of dividers the captions replaced — and none at
+    // all, which leaves a screen-reader user nothing below the <h1> to
+    // navigate by, are both failures, and only a count tells all three apart.
+    const headings = [...body.matchAll(/<h2>([^<]*)<\/h2>/g)].map((match) => match[1]);
+    expect(headings).toEqual(["What we have for them"]);
+  });
+
   it("keeps the dashed box for a member who has no email at all", async () => {
     // The absence, not a value — nothing here for the organiser to act on,
     // which is exactly what the box says. Paired with the test above, so
