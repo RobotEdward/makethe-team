@@ -1,5 +1,6 @@
 import { gamePath, ownerFixturePath, ownerGuestPath, ownerGuestRemovePath, ownerResponsePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
+import { RESPONSE_STATUSES } from "../domain/response-status.js";
 import { displayName } from "../domain/display-name.js";
 import { takingChanges, type FixtureView } from "../domain/fixture-view.js";
 import { sideCounts, type TeamId } from "../domain/teams.js";
@@ -115,9 +116,21 @@ function renderMemberControls(gameId: string, fixtureId: string, member: SquadMe
  *    status, guest or member, at any status.
  */
 function renderStatusSpan(member: SquadMember, showControls: boolean): string {
-  const segmentAlreadySaysIt = showControls && !member.isGuest && member.status !== "waitlisted";
+  // A fourth case, and the one that is not a design decision: a status this
+  // build has never heard of. The segment cannot be "already saying it",
+  // because it renders neither half pressed — exactly what it renders for
+  // `pending` — so dropping the span would quietly read as "hasn't answered
+  // yet" about a row nothing is known about. `RESPONSE_STATUSES` is the
+  // canonical list, and `responses.status` has no CHECK constraint behind it.
+  const knownToTheSegment = (RESPONSE_STATUSES as readonly string[]).includes(member.status);
+  const segmentAlreadySaysIt =
+    showControls && !member.isGuest && knownToTheSegment && member.status !== "waitlisted";
   if (segmentAlreadySaysIt) return "";
-  return `<span class="status status-${member.status}">${escapeHtml(squadStatusLabel(member))}</span>`;
+  // The stored value reaches a class attribute, so it is escaped like every
+  // other interpolation (Constraint 6) — the same hole closed in
+  // `renderStatusLine`. For a status this build knows the output is unchanged;
+  // for one it does not, the value is a database string and not markup.
+  return `<span class="status status-${escapeHtml(member.status)}">${escapeHtml(squadStatusLabel(member))}</span>`;
 }
 
 function renderSquadList(

@@ -47,6 +47,20 @@ export function squadStatusLabel(member: SquadMember): string {
       return "Can't make it";
     case "withdrawn":
       return "Withdrawn";
+    // Total for the same reason `fixtureStatusWords` in `src/views/fixture.ts`
+    // is, and against the same schema shape: `responses.status` is a bare
+    // `text NOT NULL DEFAULT 'pending'` with no CHECK constraint
+    // (`migrations/0001_gifted_preak.sql`), so `ResponseStatus` is a claim
+    // about the schema and not a guarantee about the rows — Drizzle's `enum`
+    // is a type-level assertion only.
+    //
+    // Without this the switch falls off its end and returns `undefined`, which
+    // `renderStatusSpan` in `src/views/owner-fixture.ts` hands straight to
+    // `escapeHtml`: `.replace` of `undefined`, and the organiser's fixture
+    // page 500s rather than showing one odd word in one row. Same admission,
+    // worded the same way, as every other unreadable state in the product.
+    default:
+      return "Status unknown";
   }
 }
 

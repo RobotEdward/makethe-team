@@ -119,14 +119,42 @@ describe("a squad row places its control rather than letting the grid guess", ()
     // stretched it across most of the row. The brace is part of each needle:
     // without it a prefix match would accept a rule that had lost its body.
     expect(FORM_CSS).toContain("ul.squad > li > .name, ul.squad > li > .status, ul.squad > li > .set-by { grid-column: 1; }");
-    expect(FORM_CSS).toContain("ul.squad > li > form { grid-column: 2; grid-row: 1 / span 3; align-self: center; }");
+    expect(FORM_CSS).toContain("ul.squad > li > form { grid-column: 2; grid-row: 1; }");
   });
 
-  it("keeps the row gap at zero, which is what the span costs", () => {
-    // The span asks for three row tracks whether or not the text fills them,
-    // and a row gap would be inserted between the empty ones — two gaps added
-    // to every single-line row in the app. The column gap is untouched.
-    expect(FORM_CSS).toContain("align-items: center; gap: 0 0.75rem;");
+  it("keeps the control in the name's own row, not spanning the text beneath it", () => {
+    // Measured, not preferred: a grid item that spans several tracks gives its
+    // height to all of them, so spanning the control across the text rows
+    // inflated the empty tracks under a one-line row and left the name 13px
+    // above the control it belongs to — on the row shape almost every squad
+    // member has. Row 1 puts name and control in the same track, so they are
+    // level in every row shape. `span` must not come back.
+    expect(FORM_CSS).not.toContain("ul.squad > li > form { grid-column: 2; grid-row: 1 / span");
+  });
+});
+
+describe("a squad member's stored status", () => {
+  it("is escaped where it reaches the class attribute", () => {
+    // The same hole that was open in `renderStatusLine`: the value goes into
+    // `class="status status-..."`, and it is a database string, not markup
+    // (Constraint 6). `responses.status` has no CHECK constraint behind it.
+    const html = renderOwnerFixturePage(
+      params({
+        squad: [{ ...BASE.squad[0]!, status: `x" onclick="alert(1)` as never }],
+      }),
+    );
+    expect(html).not.toContain(`onclick="alert(1)"`);
+    expect(html).toContain("&quot;");
+  });
+
+  it("still reads as words when it is a status this build has never heard of", () => {
+    const html = renderOwnerFixturePage(
+      params({ squad: [{ ...BASE.squad[0]!, status: "abandoned" as never }] }),
+    );
+    const text = html.replace(/<[^>]+>/g, "");
+    expect(text).toContain("Status unknown");
+    expect(text).not.toContain("abandoned");
+    expect(text).not.toContain("undefined");
   });
 });
 

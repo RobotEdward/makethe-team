@@ -185,6 +185,21 @@ export function viewerHeadlineOpen(viewer: Pick<FixturePageOptions["viewer"], "s
       // Not expected to reach the page for a withdrawn viewer, but a plain
       // fallback is safer than throwing on a display path.
       return "You're no longer in this squad.";
+    // Total against the same schema shape as the lifecycle lookups above:
+    // `responses.status` is a bare `text NOT NULL DEFAULT 'pending'` with no
+    // CHECK constraint, so a row can hold a status this build cannot read.
+    // `src/views/dashboard.ts` passes the result straight to `escapeHtml`
+    // without the guard this page's own call site has, so without this the
+    // dashboard — the page every signed-in player lands on — 500s.
+    //
+    // Silence, and deliberately not "Status unknown". This is a headline about
+    // *you*: every sentence it can return is a claim about what the reader
+    // themselves answered, and there is no true one to make when the answer
+    // cannot be read. `viewerHeadlineClosed` below already returns "" on
+    // `pending` for that reason, and both call sites skip the element entirely
+    // when the headline is empty.
+    default:
+      return "";
   }
 }
 
@@ -214,6 +229,12 @@ function viewerHeadlineClosed(
       return "";
     case "withdrawn":
       return "You're no longer in this squad.";
+    // Same fallback, same reason as `viewerHeadlineOpen` above. Reached only
+    // through `viewerHeadline`, whose one call site guards on the empty
+    // string — but a fallback that exists only because one caller happens to
+    // check is exactly how the missing one above stayed invisible.
+    default:
+      return "";
   }
 }
 
@@ -380,9 +401,19 @@ export function renderPublishedTeamsSection(
 ): string {
   if (teams === null) return "";
 
+  // The side is a stored value too, and `responses.team` is a bare `text`
+  // column with no CHECK constraint (`migrations/0010_ambiguous_pyro.sql`) —
+  // the same shape as `lifecycle` and `status`, so `names[yourSide]` can be
+  // `undefined` and `escapeHtml` would throw on it. Read the name first and
+  // branch on whether there is one: a side this build cannot name is one it
+  // cannot announce, so it says nothing rather than 500ing the page. Not
+  // "Your side hasn't been picked yet" either — a side *was* picked, and
+  // telling this player it was not would be a confident falsehood where
+  // silence costs nothing.
+  const yourSideName = teams.yourSide === null ? null : (teams.names[teams.yourSide] ?? null);
   const yourSide =
-    teams.yourSide !== null
-      ? `<p class="your-side">You're on ${escapeHtml(teams.names[teams.yourSide])}.</p>`
+    yourSideName !== null
+      ? `<p class="your-side">You're on ${escapeHtml(yourSideName)}.</p>`
       : teams.awaitingSide
         ? `<p class="your-side">Your side hasn't been picked yet.</p>`
         : "";

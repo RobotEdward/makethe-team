@@ -54,7 +54,7 @@ function renderFixture(row: AccountFixtureRow): string {
       <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
       <p class="status-line">${escapeHtml(row.statusLabel)}</p>
-      <p class="viewer-headline">${escapeHtml(row.myStatusLabel)}</p>
+      ${row.myStatusLabel ? `<p class="viewer-headline">${escapeHtml(row.myStatusLabel)}</p>` : ""}
     </li>`;
 }
 

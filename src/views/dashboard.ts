@@ -118,7 +118,7 @@ function renderRow(row: DashboardRow): string {
       <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
       ${renderStatusLine(row.view, row.waitlistCount)}
-      <p class="${headlineClass}">${escapeHtml(headline)}</p>
+      ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
       ${renderActions(row)}
       ${renderFullWarning(row.view, { status: row.myStatus }, row.waitlistCount)}
     </li>`;

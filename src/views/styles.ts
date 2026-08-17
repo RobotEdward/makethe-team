@@ -432,7 +432,7 @@ export const FORM_CSS = `
      columns, so every row has the same shape whatever the name. */
   ul.squad > li {
     display: grid; grid-template-columns: 1fr auto;
-    align-items: center; gap: 0 0.75rem;
+    align-items: center; gap: 0.4rem 0.75rem;
   }
   /* Placement, not auto-placement — the half of the grid this rule was
      missing, and the reason a two-part row looked right while a three-part
@@ -450,24 +450,25 @@ export const FORM_CSS = `
      wearing a different coat.
 
      So the text goes in column 1 and the control in column 2, said out loud.
-     The idiom is .switch-row's above: a fixed span pins the control across
-     the text rows rather than sitting in the first of them, which is what
-     centres it against the whole row. Three is the most text rows this markup
-     can produce (name, status, attribution); a fourth would leave the control
-     centred on the first three rather than misplaced, so this degrades by
-     drifting rather than by breaking.
+     The control sits in row 1 — beside the name, not centred against the
+     stack. That is a measurement, not a preference. A grid item that spans
+     several tracks contributes its height to all of them, so pinning the
+     control across the text rows (the .switch-row idiom above, which is right
+     for its own two-line row) inflates the empty tracks under a one-line row
+     and leaves the name sitting in the top third of it, 13px above the
+     control it belongs to. Every row in a real squad has one line of text, so
+     that was the common case paying for the rare one. In row 1 the name and
+     the control are in the same track, so they are level in every row shape
+     this markup can produce, and any support lines hang beneath the pair.
 
-     The row gap is 0 because of that span: the extra rows the span asks for
-     are real tracks even when empty, and any row gap would be added between
-     them, growing every one-line row by two gaps to no purpose. Nothing is
-     lost — the text pieces below the name are consecutive lines of the same
-     sentence, not separate components, and they keep their own line spacing.
+     Nothing here refers to how many pieces of text a row has, so a fourth
+     piece would stack under the third and change nothing else.
 
      A bare text node (the other-squads list on the leave page) has no class
      to select. It does not need one: it is an anonymous item, and with the
      control pinned to column 2 the only cell left for it is column 1. */
   ul.squad > li > .name, ul.squad > li > .status, ul.squad > li > .set-by { grid-column: 1; }
-  ul.squad > li > form { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  ul.squad > li > form { grid-column: 2; grid-row: 1; }
   ul.squad > li form { margin: 0; }
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */

@@ -6,7 +6,7 @@ import { displayName } from "../domain/display-name.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
-import { TEAM_IDS, teamNames } from "../domain/teams.js";
+import { TEAM_IDS, isTeamId, teamNames } from "../domain/teams.js";
 import { teamsKey } from "./dedupe-key.js";
 import {
   applySendResult,
@@ -101,7 +101,14 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
   const { fixture, game, squad } = withSquad;
 
   const inStatusSquad = squad.filter((member) => member.status === "in");
-  const inSquad = inStatusSquad.filter((member) => member.team !== null);
+  // `isTeamId`, not `!== null`: `responses.team` is a bare `text` column with
+  // no CHECK constraint, so a row can hold a side this build cannot name, and
+  // `names[team]` below would then put a literal "undefined" into the one
+  // sentence this email exists to deliver. A player whose side cannot be read
+  // is in exactly the position the unassigned check below already covers —
+  // there is nothing truthful to tell them — so they fall into the same count
+  // and the same loud log rather than into a broken email.
+  const inSquad = inStatusSquad.filter((member) => isTeamId(member.team));
   const unassignedCount = inStatusSquad.length - inSquad.length;
   if (unassignedCount > 0) {
     // Should be unreachable: the publish route refuses to publish while
@@ -172,7 +179,8 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
       responseTokenSecret,
     );
 
-    // Non-null by the `inSquad` filter above.
+    // A recognised side by the `inSquad` filter above, which is what makes
+    // `names[team]` below total rather than merely type-checked.
     const team = member.team!;
 
     const rendered = renderTeamsEmail({

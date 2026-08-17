@@ -62,6 +62,19 @@ const SQUAD_ORDER: Record<ResponseStatus, number> = {
   withdrawn: 4,
 };
 
+// Where a status this build cannot read sorts. Last, and defined, which is the
+// whole point: `responses.status` is a bare `text NOT NULL` with no CHECK
+// constraint, so a row can hold a value with no entry above, and an unmapped
+// key makes the subtraction below `NaN`. A comparator that returns `NaN` does
+// not throw and does not sort — it hands back an arbitrary order that varies
+// with the input, which is the quietest failure of the family this milestone
+// has been chasing. A number puts such a row somewhere specific instead.
+const UNKNOWN_STATUS_ORDER = 99;
+
+function squadOrder(status: ResponseStatus): number {
+  return SQUAD_ORDER[status] ?? UNKNOWN_STATUS_ORDER;
+}
+
 /**
  * Load a fixture, its game and the current squad in display order.
  *
@@ -140,7 +153,7 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
   }));
 
   squad.sort((a, b) => {
-    const byStatus = SQUAD_ORDER[a.status] - SQUAD_ORDER[b.status];
+    const byStatus = squadOrder(a.status) - squadOrder(b.status);
     if (byStatus !== 0) return byStatus;
     if (a.status === "waitlisted") return (a.waitlistRank ?? 0) - (b.waitlistRank ?? 0);
     // Within `in`, `pending` and `out`, the SQL ORDER BY already put rows in

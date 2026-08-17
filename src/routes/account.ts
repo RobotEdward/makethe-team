@@ -433,6 +433,21 @@ function historyStatusLabel(status: ResponseStatus, isFinished: boolean): string
       // Unreachable: `entitledTo` excludes withdrawn rows. Here so the switch
       // is exhaustive and a new status becomes a typecheck failure.
       return "You withdrew";
+    // Total for the same reason `fixtureStatusLabel` above is, against the
+    // same schema shape: `responses.status` is a bare `text NOT NULL` with no
+    // CHECK constraint behind it. Without this the switch returns `undefined`,
+    // the view hands it to `escapeHtml`, and this page 500s — the second
+    // unguarded lookup in this one file, which is why
+    // `test/stored-lookups.test.ts` now enumerates the class rather than this
+    // being fixed one instance at a time.
+    //
+    // Silence rather than words, matching `viewerHeadlineOpen`: this line is a
+    // claim about what the reader themselves answered, and there is no true
+    // one to make when the answer cannot be read. The fixture's own state
+    // still reads on the row through `fixtureStatusLabel`, so nothing is left
+    // blank that carries information.
+    default:
+      return "";
   }
 }
 
