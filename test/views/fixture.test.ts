@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderFixturePage, renderStatusLine, type FixturePageOptions } from "../../src/views/fixture.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
+import { renderPlayerGamePage } from "../../src/views/player-game.js";
 import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import { fixtureView, type FixtureFacts } from "../../src/domain/fixture-view.js";
 import type { SquadMember } from "../../src/db/queries.js";
@@ -1012,8 +1013,13 @@ describe("the capacity bar", () => {
   it("declares a rule for every width it can emit", () => {
     // The silent failure this catches: a width class with no matching rule is
     // a zero-width bar that no string assertion and no fetch test can see.
+    //
+    // The opening brace is part of the needle, and is what makes the check
+    // real: without it `.w-5` is satisfied by `.w-50`'s rule and `.w-10` by
+    // `.w-100`'s, so the two classes most likely to go missing are the two
+    // this test could not have detected.
     for (let pct = 0; pct <= 100; pct += 5) {
-      expect(FIXTURE_STYLES_CSS).toContain(`.capacity .fill.w-${pct}`);
+      expect(FIXTURE_STYLES_CSS).toContain(`.capacity .fill.w-${pct} {`);
     }
   });
 
@@ -1031,8 +1037,88 @@ describe("the capacity bar", () => {
     }
   });
 
-  it("shows no bar for a fixture nobody can join", () => {
-    const html = renderStatusLine(fixtureView(facts({ lifecycle: "cancelled" }), NOW), 0);
-    expect(html).not.toContain("capacity");
+  it.each(["scheduled", "cancelled", "played"] as const)(
+    "shows no bar on a %s fixture, which is not taking answers",
+    (lifecycle) => {
+      // `cancelled` and `played` because nobody can join. `scheduled` because
+      // nobody has been asked yet: an empty squad is below any minimum, so the
+      // bar would come out amber and read as an alarm about a question the
+      // organiser has not put to anybody.
+      const html = renderStatusLine(fixtureView(facts({ lifecycle, inCount: 0 }), NOW), 0);
+      expect(html).not.toContain("capacity");
+      expect(html).toContain("status-badge");
+    },
+  );
+
+  it("styles the bar on every page that renders it", () => {
+    // The failure this pins: `renderStatusLine` is shared by four pages, but
+    // `.capacity` is declared in one style block, and a page that omits that
+    // block from its `pageStyles` renders a track with no height — an
+    // invisible bar, with every other assertion in this file still passing.
+    // The fixture page and the dashboard are covered by their own suites;
+    // these two had no `FIXTURE_STYLES_CSS` at all before M12.
+    const ownerHtml = renderOwnerFixturePage({
+      gameId: "g-1",
+      gameName: "Thursday 7-a-side",
+      fixtureId: "f-1",
+      kicksOffAtLocal: "Thursday 13 August, 19:00",
+      venueName: "Oxford Sports Park",
+      inCount: 1,
+      maxPlayers: 10,
+      view: fixtureView(
+        {
+          lifecycle: "open",
+          kicksOffAt: KICKOFF,
+          inCount: 1,
+          minPlayers: 8,
+          maxPlayers: 10,
+          prefersEvenNumbers: false,
+          shortWarningOffsetHours: 12,
+        },
+        NOW,
+      ),
+      squad: [
+        { playerId: "p-1", name: "Ada", erasedAt: null, status: "in", team: null, waitlistRank: null,
+          setBy: null, source: "token", isGuest: false },
+      ],
+      viewerPlayerId: "p-1",
+      teamNames: { a: "Reds", b: "Blues" },
+      prefersEvenNumbers: false,
+      teamsPublished: false,
+      teamsNeedAnotherLook: false,
+      announcementOutstanding: false,
+    });
+    expect(ownerHtml).toContain(`<div class="capacity">`);
+    expect(ownerHtml).toContain(".capacity .track");
+
+    const playerHtml = renderPlayerGamePage({
+      gameName: "Thursday 7-a-side",
+      venueName: "Oxford Sports Park",
+      venueAddress: null,
+      timezone: "Europe/London",
+      openFixture: {
+        kicksOffAtLocal: "Thursday 13 August, 19:00",
+        view: fixtureView(
+          {
+            lifecycle: "open",
+            kicksOffAt: KICKOFF,
+            inCount: 1,
+            minPlayers: 8,
+            maxPlayers: 10,
+            prefersEvenNumbers: false,
+            shortWarningOffsetHours: 12,
+          },
+          NOW,
+        ),
+        inCount: 1,
+        waitlistCount: 0,
+        squad: null,
+        teams: null,
+      },
+      upcoming: [],
+      viewerPlayerId: "p-1",
+    });
+    expect(playerHtml).toContain(`<div class="capacity">`);
+    expect(playerHtml).toContain(".capacity .track");
   });
 });

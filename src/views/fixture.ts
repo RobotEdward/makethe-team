@@ -386,7 +386,13 @@ function renderOverCapacity(view: FixtureView): string {
 export function renderStatusLine(view: FixtureView, waitlistCount: number): string {
   const label = STATUS_LABEL[view.status];
   const badge = `<p class="status-badge status-${view.status}">${escapeHtml(label)}</p>`;
-  if (view.status === "cancelled" || view.status === "played") return badge;
+  // No bar on a fixture that is not taking answers. For `cancelled` and
+  // `played` the reason is that nobody can join. For `scheduled` it is the
+  // distinction `fixtureView`'s own early return already draws for
+  // `spotsLeft`: nobody has been asked yet, so an empty bar — amber, because
+  // an empty squad is below any minimum — would raise an alarm about a
+  // question the organiser has not put to anybody.
+  if (view.status === "cancelled" || view.status === "played" || view.status === "scheduled") return badge;
 
   // Rounded down to a declared 5% step: the CSP forbids a style attribute, so
   // the width can only be one of the classes FIXTURE_STYLES_CSS declares.

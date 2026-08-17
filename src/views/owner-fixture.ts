@@ -240,12 +240,22 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
   const problem = params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
 
+  // Counted from the squad this page is about to list, not read from the
+  // stored `fixtures.waitlist_count` column — deliberately, so do not "unify"
+  // the two without reading this. The owner is shown the roster and the number
+  // side by side, and a number that disagreed with the rows immediately below
+  // it is the one error they cannot be asked to reconcile. `squad` is already
+  // the authority for what this page displays; the column is the authority for
+  // `src/views/player-game.ts`, which has no roster to count when the
+  // organiser has squad visibility off. Each surface counts what it shows.
+  const waitlistCount = squad.filter((member) => member.status === "waitlisted").length;
+
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     ${problem}
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="venue">${escapeHtml(venueName)}</p>
-    ${renderStatusLine(view, squad.filter((member) => member.status === "waitlisted").length)}
+    ${renderStatusLine(view, waitlistCount)}
     ${renderOverCapacity(view, inCount, maxPlayers)}
     ${renderConfirm(gameId, fixtureId, params)}
 
