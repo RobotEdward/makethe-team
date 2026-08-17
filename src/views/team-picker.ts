@@ -206,6 +206,16 @@ function renderPublish(params: TeamPickerParams): string {
  * height. Without it, dragging the last name into a column collapsed the pool
  * to nothing and left no target to drag anybody back onto — the undo existed
  * in the markup and not on the screen.
+ *
+ * **"Save teams" is the outlined default, not `.button.primary` (M12 §2.2).**
+ * `renderPublish` below renders a filled button of its own on every fixture
+ * where a pick has been started or published, and both forms are on screen at
+ * once — so a filled Save put two filled accent buttons on one page, with
+ * nothing saying which one mattered. Publish is the one that keeps the fill:
+ * it is the act with a consequence off this page, since it emails the whole
+ * squad and cannot be taken back, while saving tells nobody anything and can
+ * be repeated. Demoting Publish instead would leave the quiet button as the
+ * one that messages everyone.
  */
 export function renderTeamPicker(params: TeamPickerParams): string {
   const { gameId, fixtureId, names, members, counts, uneven, unassignedProblem } = params;
@@ -237,7 +247,7 @@ export function renderTeamPicker(params: TeamPickerParams): string {
             ${unevenNote}
             ${renderColumns(names)}
             <ul class="teams team-drop" id="team-pool" data-team="">${members.map((member) => renderRow(member, names)).join("")}</ul>
-            <button class="button primary" type="submit">Save teams</button>
+            <button class="button" type="submit">Save teams</button>
           </form>
           ${renderPublish(params)}`;
 }

@@ -2,8 +2,9 @@ import { DASHBOARD_PATH } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
+import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
-import { renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
+import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
@@ -34,7 +35,18 @@ export interface PlayerGameParams {
      */
     teams: PublishedTeams | null;
   } | null;
-  upcoming: readonly { kicksOffAt: Date; lifecycle: string }[];
+  /**
+   * `lifecycle` is the stored enum, not a display string — the page maps it
+   * through `fixtureStatusWords`, the same table the organiser's page reads.
+   * Typed as `Lifecycle` rather than the `string` it used to be so a caller
+   * cannot hand this page a value the mapping has no words for; the narrowing
+   * costs no route change, because `listUpcomingFixtures` already returns
+   * `Lifecycle` and both pages are fed from it.
+   *
+   * The type is not what keeps this page up, though — see `fixtureStatusWords`
+   * for why the column can hold a value outside the union whatever this says.
+   */
+  upcoming: readonly { kicksOffAt: Date; lifecycle: Lifecycle }[];
   viewerPlayerId: string;
 }
 
@@ -68,10 +80,14 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
         ${renderSquadSection(openFixture.squad, openFixture.inCount, viewerPlayerId)}
       `;
 
+  // The state in words, never the stored lifecycle: this row used to print
+  // "open" or "scheduled" — a database value — at a player, which is the same
+  // defect the organiser's page had. `fixtureStatusWords` rather than a second
+  // table here, so the two pages cannot come to call one fixture two things.
   const upcomingItems = upcoming
     .map(
       (fixture) =>
-        `<li>${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))} — ${escapeHtml(fixture.lifecycle)}</li>`,
+        `<li>${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))} — ${escapeHtml(fixtureStatusWords(fixture.lifecycle))}</li>`,
     )
     .join("");
 

@@ -198,6 +198,21 @@ describe("GET /g/:id as a member", () => {
     expect((await appFetch(`/g/${gameId}`, cookie)).status).toBe(404);
   });
 
+  /**
+   * The unit test in `test/views/player-game.test.ts` covers every lifecycle;
+   * this is the one assertion that the *route* hands the page a stored
+   * lifecycle for it to word, rather than something already worded — the gap
+   * an `it.each` in a view test cannot see across.
+   */
+  it("names a coming-up fixture's state in words, never the stored value", async () => {
+    const { gameId, cookie } = await seedGameWithOpenFixture({ viewerRole: "player", squadVisibleToPlayers: true });
+
+    const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
+
+    expect(html).toMatch(/<li>[^<]+ — Open for responses<\/li>/);
+    expect(html).not.toMatch(/ — open</);
+  });
+
   it("says so when no fixture is open, and names nobody", async () => {
     const { gameId, cookie } = await seedGameWithNoOpenFixture({ viewerRole: "player" });
 
