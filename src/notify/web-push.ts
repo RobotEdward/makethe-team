@@ -1,0 +1,297 @@
+/**
+ * Web push payload encryption, from the two RFCs, on Web Crypto alone
+ * (M14, spec §14).
+ *
+ * Hand-written because the standard `web-push` package does not run on
+ * Workers — it needs Node's `createECDH` and `createCipheriv`, which
+ * `nodejs_compat` does not cover — and because the Workers-targeted
+ * alternatives are young, low-traffic packages that would sit on the path
+ * handling every player's subscription secrets, in a project with six
+ * runtime dependencies. Everything needed is native: ECDH P-256
+ * `deriveBits`, HKDF `deriveBits`, AES-GCM `encrypt`.
+ *
+ * # Read this before changing anything below
+ *
+ * Every mistake available here fails **silently and remotely**. A wrong
+ * `info` string, the two HKDF stages transposed, a missing padding
+ * delimiter: each produces a well-formed request that some other company's
+ * server rejects, and nothing on this side can tell you why. There is no
+ * error to catch, no log line, no local symptom — just a push that never
+ * arrives on someone's phone. That is why
+ * `test/notify/web-push-encrypt.test.ts` uses RFC 8291 §5's published
+ * vectors and not a fixture this code generated: a fixture we produced
+ * ourselves would agree with any of those bugs.
+ *
+ * If you change this file and that test goes red, do not adjust the test.
+ * RFC 8291 Appendix A lists the intermediates (ecdh_secret, PRK_key, IKM,
+ * PRK, CEK, NONCE); log them in order and the first one that diverges from
+ * the RFC names the line that is wrong.
+ *
+ * The two-stage key derivation is the part that looks redundant and is not:
+ *   1. ECDH gives a shared secret, which is combined with the subscription's
+ *      `auth` secret through HKDF to produce the input keying material. The
+ *      `auth` secret is what makes the result specific to *this
+ *      subscription* rather than to anyone who intercepted the public keys.
+ *   2. That IKM plus the per-message random salt produces the content
+ *      encryption key and the nonce.
+ *
+ * Two references, and they are not interchangeable: RFC 8291 defines the key
+ * derivation (the stage-one `info` and the ECDH), RFC 8188 defines the
+ * `aes128gcm` content encoding (the header framing, the stage-two `info`
+ * strings and the padding delimiter).
+ */
+
+/**
+ * The maximum payload every push service accepts. It is a property of the
+ * services, not of this code — nothing here would break at 4097 bytes, the
+ * request would simply come back rejected — so the check below is a local
+ * failure standing in for a remote one.
+ */
+const MAX_PAYLOAD_BYTES = 4096;
+
+/**
+ * The `rs` field of the aes128gcm header (RFC 8188 §2.1). One record; we
+ * never send more, which is what makes the single `0x02` delimiter below
+ * correct.
+ */
+const RECORD_SIZE = 4096;
+
+/** An uncompressed P-256 point: a 0x04 tag byte plus two 32-byte coordinates. */
+const P256_PUBLIC_KEY_BYTES = 65;
+
+export interface PushSubscriptionKeys {
+  endpoint: string;
+  /** The device's public key, base64url, uncompressed P-256 point. */
+  p256dh: string;
+  /** The shared auth secret, base64url, 16 bytes. */
+  auth: string;
+}
+
+export interface EncryptOptions {
+  /**
+   * Injected only by the RFC vector test. Random in production — a reused
+   * salt with the same keys reuses the AES-GCM nonce, which is the one
+   * catastrophic misuse of that cipher.
+   */
+  salt?: Uint8Array;
+  /**
+   * Injected only by the RFC vector test. Freshly generated otherwise: the
+   * sender keypair here is per-message and ephemeral, and is *not* the VAPID
+   * identity keypair, which is long-lived and used for signing rather than
+   * for ECDH. Confusing the two is a real hazard because both are P-256.
+   */
+  localKeys?: CryptoKeyPair;
+}
+
+/**
+ * Decodes unpadded base64url — the encoding every field of a
+ * `PushSubscription` arrives in.
+ */
+export function base64UrlDecode(value: string): Uint8Array {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  // `atob` rejects an unpadded string, and subscription fields are always
+  // unpadded, so the `=` tail is restored here rather than assumed.
+  const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, "="));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Encodes to unpadded base64url. The `=` padding is stripped because the
+ * push protocol's own fields never carry it; leaving it on would make our
+ * output differ from the RFC's stated result for identical bytes.
+ */
+export function base64UrlEncode(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function concat(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+/**
+ * One HKDF extract-and-expand, returning `length` bytes.
+ *
+ * Web Crypto's HKDF does both phases in a single `deriveBits`, which is why
+ * the RFC's separately-named PRK values do not appear here as variables.
+ * They still exist inside this call, and Appendix A lists them, so if you
+ * are bisecting a wrong result this is the boundary at which to compare.
+ */
+async function hkdf(salt: Uint8Array, ikm: Uint8Array, info: Uint8Array, length: number): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt, info }, key, length * 8);
+  return new Uint8Array(bits);
+}
+
+const utf8 = (text: string) => new TextEncoder().encode(text);
+
+/**
+ * The NUL byte that terminates both HKDF `info` strings. The trailing zero
+ * is *part of the string* per RFC 8291 §3.4 and RFC 8188 §2.2, not a
+ * separator this code adds for tidiness. Omit it and every derived key is
+ * wrong, with no local symptom whatsoever.
+ */
+const NUL = new Uint8Array([0]);
+
+/** The ECDH parameters as the *runtime* wants them — see `ecdhWith`. */
+interface EcdhDeriveBitsParams {
+  name: "ECDH";
+  public: CryptoKey;
+}
+
+/**
+ * The `{ name: "ECDH", public }` argument to `deriveBits`, cast across a
+ * mismatch between workerd and its own type definitions.
+ *
+ * `@cloudflare/workers-types` declares this field as `$public` (its generator
+ * prefixes names that clash with TypeScript's reserved words), while workerd
+ * itself reads `public`, as every other Web Crypto implementation does and as
+ * the WebCrypto spec says. Writing `$public` would typecheck and then derive
+ * from nothing. So the object is built with the name the runtime needs, typed
+ * by the local interface above rather than by `any`, and re-typed only at
+ * this boundary. If a future version of the types drops the `$`, delete this
+ * function and inline the object literal again.
+ *
+ * The RFC vector test is what proves the runtime spelling is the right one:
+ * a wrong field name here cannot reproduce the published ciphertext.
+ */
+function ecdhWith(publicKey: CryptoKey): SubtleCryptoDeriveKeyAlgorithm {
+  const params: EcdhDeriveBitsParams = { name: "ECDH", public: publicKey };
+  return params as unknown as SubtleCryptoDeriveKeyAlgorithm;
+}
+
+/**
+ * The 65 raw bytes of a P-256 public key: the uncompressed point that goes
+ * in the aes128gcm header and into the stage-one `info` string.
+ *
+ * `exportKey` is typed `ArrayBuffer | JsonWebKey` across all its formats, so
+ * the `"raw"` case has to be narrowed. The length is asserted here rather
+ * than trusted because it is the one property of this value the rest of the
+ * function depends on — the header's key-id length byte is derived from it,
+ * and a short key would produce a header a receiver silently misparses.
+ */
+async function exportRawPublicKey(publicKey: CryptoKey): Promise<Uint8Array> {
+  const exported = await crypto.subtle.exportKey("raw", publicKey);
+  if (!(exported instanceof ArrayBuffer)) {
+    throw new Error('exportKey("raw") did not return raw bytes');
+  }
+  const bytes = new Uint8Array(exported);
+  if (bytes.length !== P256_PUBLIC_KEY_BYTES) {
+    throw new Error(`expected a ${P256_PUBLIC_KEY_BYTES}-byte P-256 public key, got ${bytes.length}`);
+  }
+  return bytes;
+}
+
+/**
+ * A fresh P-256 keypair for one message.
+ *
+ * `true` for extractable: the public half has to be exported to go in the
+ * aes128gcm header, and a keypair is extractable as a unit. The private half
+ * never leaves this module.
+ *
+ * The narrowing is not ceremony. `generateKey` is typed
+ * `CryptoKey | CryptoKeyPair` because one signature covers both symmetric
+ * and asymmetric algorithms; ECDH always yields a pair, and checking rather
+ * than casting means a change of algorithm here fails loudly instead of at a
+ * property access on `undefined`.
+ */
+async function generateEphemeralKeyPair(): Promise<CryptoKeyPair> {
+  const generated = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
+    "deriveBits",
+  ]);
+  if (!("privateKey" in generated)) {
+    throw new Error("expected an ECDH key pair from generateKey");
+  }
+  return generated;
+}
+
+/**
+ * Encrypts `payload` for one subscription, returning a complete `aes128gcm`
+ * body ready to POST to the endpoint.
+ *
+ * The returned bytes are the entire request body: no further framing, no
+ * base64. The caller supplies `Content-Encoding: aes128gcm` and the VAPID
+ * `Authorization` header.
+ */
+export async function encryptPayload(
+  subscription: PushSubscriptionKeys,
+  payload: string,
+  options: EncryptOptions = {},
+): Promise<Uint8Array> {
+  const plaintext = utf8(payload);
+  // `+ 1` for the padding delimiter appended below: it is encrypted along
+  // with the payload, so it counts against the limit. Measured in bytes and
+  // not characters — one emoji in a squad name is four of these.
+  if (plaintext.length + 1 > MAX_PAYLOAD_BYTES) {
+    throw new Error(`push payload too large: ${plaintext.length} bytes, limit ${MAX_PAYLOAD_BYTES - 1}`);
+  }
+
+  const receiverPublicRaw = base64UrlDecode(subscription.p256dh);
+  const authSecret = base64UrlDecode(subscription.auth);
+  const salt = options.salt ?? crypto.getRandomValues(new Uint8Array(16));
+
+  const localKeys = options.localKeys ?? (await generateEphemeralKeyPair());
+
+  const receiverPublic = await crypto.subtle.importKey(
+    "raw",
+    receiverPublicRaw,
+    { name: "ECDH", namedCurve: "P-256" },
+    false,
+    // No usages: a public ECDH key derives nothing by itself, it is only
+    // ever the `public` argument to someone else's deriveBits.
+    [],
+  );
+  const senderPublicRaw = await exportRawPublicKey(localKeys.publicKey);
+
+  const sharedSecret = new Uint8Array(
+    await crypto.subtle.deriveBits(ecdhWith(receiverPublic), localKeys.privateKey, 256),
+  );
+
+  // Stage one (RFC 8291 §3.3). The `auth` secret is the salt and the ECDH
+  // output is the keying material — that way round, and swapping them is
+  // undetectable here. The info string's two public keys go **receiver
+  // first, then sender**; transposing them yields a perfectly valid key that
+  // the device cannot reproduce.
+  const ikm = await hkdf(
+    authSecret,
+    sharedSecret,
+    concat(utf8("WebPush: info"), NUL, receiverPublicRaw, senderPublicRaw),
+    32,
+  );
+
+  // Stage two (RFC 8188 §2.2). Note the reversal against stage one: here the
+  // per-message salt is the salt and stage one's output is the keying
+  // material. Both info strings are NUL-terminated (see `NUL`).
+  const contentKey = await hkdf(salt, ikm, concat(utf8("Content-Encoding: aes128gcm"), NUL), 16);
+  const nonce = await hkdf(salt, ikm, concat(utf8("Content-Encoding: nonce"), NUL), 12);
+
+  const key = await crypto.subtle.importKey("raw", contentKey, "AES-GCM", false, ["encrypt"]);
+  // 0x02 is the padding delimiter marking the last record. 0x01 would say
+  // "more records follow" and the receiver would wait for one that never
+  // comes — a payload that decrypts correctly and is still never displayed.
+  const padded = concat(plaintext, new Uint8Array([0x02]));
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, tagLength: 128 }, key, padded),
+  );
+
+  // aes128gcm framing (RFC 8188 §2.1): salt(16) ‖ record size(4, big-endian)
+  // ‖ key id length(1) ‖ key id ‖ ciphertext. The receiver reads the salt and
+  // the sender's public key out of this header, because there is nowhere
+  // else they could come from — the "key id" is, for web push specifically,
+  // the sender's ephemeral public key.
+  const recordSize = new Uint8Array(4);
+  // `false` = big-endian, which is what the RFC's network byte order means.
+  new DataView(recordSize.buffer).setUint32(0, RECORD_SIZE, false);
+
+  return concat(salt, recordSize, new Uint8Array([senderPublicRaw.length]), senderPublicRaw, ciphertext);
+}
