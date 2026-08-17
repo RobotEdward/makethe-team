@@ -141,8 +141,8 @@ export function renderAccountPage({
         : `<ul class="fixture-list">${fixtures.map(renderFixture).join("")}</ul>`
     }
 
-    <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
-    <p><a href="${DASHBOARD_PATH}">Back to your games</a></p>
+    <p><a href="${escapeHtml(DELETE_ACCOUNT_PATH)}">Delete my account and data</a> · <a href="${escapeHtml(PRIVACY_PATH)}">Privacy</a></p>
+    <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
     ${signOutForm("Sign out")}
   `;
 

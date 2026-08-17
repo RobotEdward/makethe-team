@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderDeleteAccountPage, type DeleteAccountPageParams } from "../../src/views/delete-account.js";
+import { FIXTURE_STYLES_CSS } from "../../src/views/styles.js";
 
 const BASE: DeleteAccountPageParams = {
   playerName: "Ada Okafor",
@@ -85,6 +86,27 @@ describe("one filled button per screen", () => {
             },
       );
       expect(html, `${state} must render no button`).not.toContain("<button");
+    }
+  });
+});
+
+/**
+ * §2.5: every page behind a session ends in one back link wearing the
+ * existing `.back-link` class. This page had the link and not the class, so
+ * the 1.5rem that separates it from the block above it was never applied.
+ */
+describe("the back link", () => {
+  it("carries the class, and the block that declares it", () => {
+    const html = renderDeleteAccountPage(BASE);
+    expect(html).toContain(`<p class="back-link">`);
+    expect(html).toContain(FIXTURE_STYLES_CSS);
+    expect(FIXTURE_STYLES_CSS).toContain(".back-link {");
+  });
+
+  it("offers exactly one way back up, in every state this page has", () => {
+    for (const state of STATES) {
+      const html = renderDeleteAccountPage(state.params);
+      expect(html.match(/class="back-link"/g), state.name).toHaveLength(1);
     }
   });
 });

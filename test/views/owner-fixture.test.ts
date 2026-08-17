@@ -105,3 +105,21 @@ describe("the squad row's layout", () => {
     expect(html).toContain(`<div class="capacity">`);
   });
 });
+
+describe("the back link", () => {
+  it("carries the class §2.5 names, and the block that declares it", () => {
+    // The class alone is inert: `.back-link { margin-top: 1.5rem }` lives in
+    // FIXTURE_STYLES_CSS, and without it the link butts against the block
+    // above it.
+    const html = renderOwnerFixturePage(params());
+    expect(html).toContain(`<p class="back-link">`);
+    expect(html).toContain(`href="/g/g-1"`);
+    expect(html).toContain(FIXTURE_STYLES_CSS);
+    expect(FIXTURE_STYLES_CSS).toContain(".back-link {");
+  });
+
+  it("offers exactly one way back up, at the end of the body", () => {
+    const html = renderOwnerFixturePage(params());
+    expect(html.match(/class="back-link"/g)).toHaveLength(1);
+  });
+});

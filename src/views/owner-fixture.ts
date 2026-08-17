@@ -276,7 +276,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     ${renderGuestForm(gameId, fixtureId, params)}
 
-    <p><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
+    <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
   `;
 
   return layout({

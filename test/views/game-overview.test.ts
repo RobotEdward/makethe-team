@@ -321,6 +321,15 @@ describe("the squad list is styled too", () => {
     // Ordering is invisible to every other assertion in this file — this is
     // the only thing standing between that bug and a silent return.
     const html = render({ squad: [{ playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false }] });
-    expect(html.indexOf(SQUAD_STYLES_CSS)).toBeLessThan(html.indexOf(FORM_CSS));
+    const squadAt = html.indexOf(SQUAD_STYLES_CSS);
+    const formAt = html.indexOf(FORM_CSS);
+    // Both presence assertions are load-bearing, and they belong in this test
+    // rather than only in the neighbouring one: `indexOf` returns -1 for an
+    // absent block, and -1 is less than everything, so the order comparison
+    // passes vacuously on a page that ships neither. `test/views/leave.test.ts`
+    // and `test/views/remove-member.test.ts` pair them the same way.
+    expect(squadAt).toBeGreaterThan(-1);
+    expect(formAt).toBeGreaterThan(-1);
+    expect(squadAt).toBeLessThan(formAt);
   });
 });

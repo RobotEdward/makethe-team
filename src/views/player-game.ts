@@ -6,7 +6,7 @@ import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
 import { escapeHtml, layout } from "./layout.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface PlayerGameParams {
   gameName: string;
@@ -80,6 +80,13 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
         ${renderSquadSection(openFixture.squad, openFixture.inCount, viewerPlayerId)}
       `;
 
+  // `ul.fixtures`, never `ul.squad` (spec §4 P1), matching the sibling page
+  // `src/views/game-overview.ts`. This is a list of fixtures, not of people:
+  // sharing the squad class means the next rule written for a squad row
+  // silently restyles the fixture list too, which is exactly what had
+  // happened — these rows were wearing the organiser's person-row layout.
+  // The rules are already in `INVITE_CSS`, added to `pageStyles` below.
+  //
   // The state in words, never the stored lifecycle: this row used to print
   // "open" or "scheduled" — a database value — at a player, which is the same
   // defect the organiser's page had. `fixtureStatusWords` rather than a second
@@ -99,9 +106,9 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     ${fixtureSection}
 
     <h2>Coming up</h2>
-    <ul class="squad">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>
+    <ul class="fixtures">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>
 
-    <p><a href="${DASHBOARD_PATH}">Back to your games</a></p>
+    <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
   `;
 
   return layout({
@@ -115,6 +122,17 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     // `TEAM_PICKER_CSS` for the published line-ups — see the same import on
     // the `/r/:token` page for why the owner's block is the right one to
     // reuse rather than a second block styling identical markup.
-    pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
+    //
+    // `INVITE_CSS` for `ul.fixtures` and nothing else: its other selectors
+    // (`.card`, `.qr-toggle`) are the organiser's invite panel, which this
+    // page never renders, so adding it changes nothing already on the page.
+    //
+    // `SQUAD_STYLES_CSS` before `FORM_CSS`, the order every other page in the
+    // app now uses. It is inert here — this page's squad is a `div.squad` of
+    // chips, never a `ul.squad`, so the row rule the two blocks fight over
+    // matches nothing, and the `.squad` container properties they share carry
+    // identical values. Pinned so the page is not the one place a reader
+    // finds the rule written backwards.
+    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS, TEAM_PICKER_CSS],
   });
 }
