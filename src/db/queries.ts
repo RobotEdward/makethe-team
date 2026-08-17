@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import type { Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseSource, ResponseStatus } from "../domain/response-status.js";
 import type { TeamAssignment, TeamId } from "../domain/teams.js";
 import type { Db } from "./client.js";
@@ -380,7 +381,10 @@ export async function listUpcomingFixtures(
   db: Db,
   gameId: string,
   now: Date,
-): Promise<Array<{ id: string; kicksOffAt: Date; lifecycle: string; inCount: number }>> {
+  // `lifecycle` is the column's own enum, not a widened `string`: the pages
+  // that render these rows map it to words through `fixtureStatusWords`, and
+  // a widened type there means an unmapped value renders as the raw token.
+): Promise<Array<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>> {
   return db
     .select({
       id: fixtures.id,

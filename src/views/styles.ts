@@ -548,6 +548,29 @@ export const INVITE_CSS = `
     padding: 0.75rem 0;
     font-weight: 600; font-size: var(--t-support); color: var(--mut); cursor: pointer;
   }
+
+  /* "Coming up" on the owner's game page: one line per fixture, each a link
+     to it. Its own list rather than DASHBOARD_STYLES_CSS's .fixture-list /
+     .fixture-card, which is the right shape for the dashboard — where a card
+     carries a heading, a status badge, a headline and two response buttons —
+     and the wrong one here, where a row is a date, a state and a count.
+     Borrowing it would put a second, competing card idiom next to the invite
+     .card above and ship this page three rules (.fixture-card h2,
+     .viewer-headline, .responses) for elements it can never render.
+
+     Not ul.squad, which is what this list used to wear. A fixture is not a
+     person, and sharing the class means the next rule written for a squad row
+     silently restyles the fixture list too.
+
+     Scoped ul.fixtures > li for the same reason ul.squad > li is (see the
+     comment there): a bare descendant selector beats a chip's own .chip on
+     specificity, and this app has li elements inside li elements. */
+  .fixtures { list-style: none; margin: 0; padding: 0; text-align: left; border-top: 1px solid var(--line); }
+  ul.fixtures > li { padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line); font-size: var(--t-body); }
+  /* The state and the headcount are context for the date, not peers of it —
+     without the demotion all three read as one undifferentiated run of text
+     and there is nothing to scan down the column for. */
+  .fixtures .detail { color: var(--mut); font-size: var(--t-support); }
 `;
 
 export const PAGE_STYLE_BLOCKS = [

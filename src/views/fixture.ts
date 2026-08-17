@@ -3,6 +3,7 @@ import type { SquadMember } from "../db/queries.js";
 import { displayName } from "../domain/display-name.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
+import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { escapeHtml, layout } from "./layout.js";
 import { ordinal } from "./squad-row.js";
@@ -89,6 +90,24 @@ const STATUS_LABEL: Record<FixtureView["status"], string> = {
   cancelled: "Cancelled",
   played: "Played",
 };
+
+/**
+ * The words for a fixture's *stored* lifecycle, for the pages that list
+ * fixtures rather than render one (the organiser's game page; the member's,
+ * which has the same defect).
+ *
+ * Exported so those pages read this table instead of keeping a second copy of
+ * it. Two copies is how one page starts calling a fixture "open" while
+ * another calls it "Open for responses" — and a page with no mapping at all
+ * prints the stored enum value at whoever is reading it.
+ *
+ * `Lifecycle` is a subset of `FixtureView["status"]`, so it indexes the same
+ * record directly; the derived `short`/`confirmed` judgements are simply not
+ * reachable from a stored value.
+ */
+export function fixtureStatusWords(lifecycle: Lifecycle): string {
+  return STATUS_LABEL[lifecycle];
+}
 
 function viewerHeadline(
   viewer: FixturePageOptions["viewer"],
