@@ -422,6 +422,42 @@ describe("Content-Security-Policy", () => {
  * in for — the same shape as the sibling M5 branch's
  * "no password field anywhere" enumeration in `test/routes/signin.test.ts`.
  */
+describe("the directives the installable app needs (M13)", () => {
+  it("allows the manifest, the service worker and same-origin images", async () => {
+    // Each of these falls back to default-src — which is 'none' — when it is
+    // not named. The failure mode is the one that reached production with
+    // connect-src in M5: the browser refuses before the request leaves the
+    // device, so the Worker logs nothing and every server-side test passes.
+    const header = (await SELF.fetch("https://makethe.team/")).headers.get("content-security-policy");
+
+    expect(header).toContain("manifest-src 'self'");
+    expect(header).toContain("worker-src 'self'");
+    expect(header).toContain("img-src 'self'");
+  });
+
+  it("does not widen anything else to get there", async () => {
+    // The point of a strict policy is that it stays strict. 'self' for
+    // scripts would defeat the hashing entirely, and a wildcard img-src is
+    // the usual way a policy quietly becomes decorative.
+    const header = (await SELF.fetch("https://makethe.team/")).headers.get("content-security-policy") ?? "";
+
+    expect(header).toContain("default-src 'none'");
+    expect(header).not.toContain("'unsafe-inline'");
+    expect(header).not.toContain("img-src *");
+    expect(header).not.toMatch(/script-src[^;]*'self'/);
+  });
+
+  it("serves the service worker under its own policy, not a page's", async () => {
+    // /sw.js is a document, not a page. It inherits nothing, so it says for
+    // itself what it may do — which is run, and reach same-origin URLs.
+    const response = await SELF.fetch("https://makethe.team/sw.js");
+    const header = response.headers.get("content-security-policy") ?? "";
+
+    expect(header).toContain("script-src 'self'");
+    expect(header).toContain("connect-src 'self'");
+  });
+});
+
 describe("no inline style attribute on any served page", () => {
   it("renders no style=\"…\" attribute anywhere (style-src hashes don't cover attributes)", async () => {
     type Page = { name: string; html: string; distinctive: RegExp };

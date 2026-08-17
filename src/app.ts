@@ -25,7 +25,15 @@ export function createApp(): Hono<AppEnv> {
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
     c.header("X-Content-Type-Options", "nosniff");
-    c.header("Content-Security-Policy", await cspHeader());
+    // /sw.js (src/routes/pwa.ts) sets its own, stricter policy before this
+    // middleware runs — it is a document, not a page, and inherits none of
+    // the page policy below. c.header() here would otherwise unconditionally
+    // overwrite it after the fact, silently discarding it: `next()` runs the
+    // route handler first, so without this guard every response — including
+    // one that already named its own CSP — gets this one clobbered on top.
+    if (!c.res.headers.has("Content-Security-Policy")) {
+      c.header("Content-Security-Policy", await cspHeader());
+    }
   });
 
   // A signed-in player's own data must never be written to a shared or disk
