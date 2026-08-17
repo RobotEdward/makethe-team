@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { GAMES_PREFIX } from "./auth/paths.js";
+import { GAMES_PREFIX, SERVICE_WORKER_PATH } from "./auth/paths.js";
 import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { account } from "./routes/account.js";
@@ -25,13 +25,18 @@ export function createApp(): Hono<AppEnv> {
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
     c.header("X-Content-Type-Options", "nosniff");
-    // /sw.js (src/routes/pwa.ts) sets its own, stricter policy before this
-    // middleware runs — it is a document, not a page, and inherits none of
-    // the page policy below. c.header() here would otherwise unconditionally
-    // overwrite it after the fact, silently discarding it: `next()` runs the
-    // route handler first, so without this guard every response — including
-    // one that already named its own CSP — gets this one clobbered on top.
-    if (!c.res.headers.has("Content-Security-Policy")) {
+    // /sw.js is the one response that names its own policy — see
+    // src/routes/pwa.ts. Checked by path, not by whether a
+    // Content-Security-Policy header is already present: a presence check
+    // cannot tell "this route deliberately declared a stricter policy" apart
+    // from "a header arrived here some other way" (src/routes/signin.ts
+    // already copies set-cookie off a Better Auth response; the day
+    // something copies a whole Headers object, a presence check would defer
+    // to whatever came back and fail open, silently). Naming the one path
+    // that opts out means a second route that starts setting its own CSP
+    // gets overwritten here and its own test fails loudly, instead of
+    // silently winning against this middleware.
+    if (c.req.path !== SERVICE_WORKER_PATH) {
       c.header("Content-Security-Policy", await cspHeader());
     }
   });

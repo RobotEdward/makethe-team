@@ -295,7 +295,8 @@ describe("the invite link on /g/:id", () => {
 
     expect(html).toContain(`https://makethe.team/j/${game!.inviteToken}`);
     expect(html).toContain("<svg");
-    // Inline, never fetched — the CSP has no img-src (spec §4.2).
+    // Inline, never fetched — img-src 'self' (M13) would not cover a data:
+    // URI or a remote host anyway (spec §4.2).
     expect(html).not.toContain("<img");
   });
 

@@ -5,13 +5,14 @@ import { escapeHtml } from "./layout.js";
  * A QR code for `text`, as an inline `<svg>` element.
  *
  * **Inline SVG, never an `<img>`, and this is not a style preference.** The
- * Content-Security-Policy sets `default-src 'none'` and names no `img-src`, so
- * an image of any kind — including a `data:` URI — is refused by the browser
- * before it renders. That is exactly the mechanism that left both passkey
- * buttons broken in production while every server-side test passed (the
- * post-mortem in `docs/known-issues.md`). Inline SVG is markup rather than a
- * fetch, so it needs no directive and cannot fail that way. Adding `img-src`
- * to serve one QR code would widen the policy for the whole site.
+ * Content-Security-Policy's `img-src 'self'` (M13) covers a same-origin
+ * absolute path — this site has no such image to point at, and it does not
+ * cover a `data:` URI or a remote host, so an `<img>` built either of those
+ * ways is still refused by the browser before it renders. That is exactly
+ * the mechanism that left both passkey buttons broken in production while
+ * every server-side test passed (the post-mortem in
+ * `docs/known-issues.md`). Inline SVG is markup rather than a fetch, so it
+ * needs no directive at all and cannot fail that way.
  *
  * Encoding comes from `uqr` (MIT, no dependencies) rather than being
  * hand-rolled: QR is Reed–Solomon error correction plus mask selection, and
