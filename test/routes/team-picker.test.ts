@@ -229,6 +229,12 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
       true,
     );
     expect(ownScripts, "the picker page carries exactly the one enhancement").toHaveLength(1);
+    // Guards against layout() emitting the site-wide block twice: the two
+    // assertions above (some() finds it, ownScripts has length 1) would both
+    // still pass if SERVICE_WORKER_JS appeared a second time, since a
+    // duplicate is filtered into neither bucket's failure. Pinning the total
+    // count against ownScripts.length + 1 is what actually catches that.
+    expect(scripts.length, "exactly one site-wide script plus the picker's own").toBe(ownScripts.length + 1);
     // No `src`, no `type`, no `nonce`: only a bare inline tag is covered by a
     // SHA-256 hash of its own text.
     for (const [, attributes] of scripts) {

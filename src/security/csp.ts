@@ -142,9 +142,15 @@ async function buildCspHeader(): Promise<string> {
     `style-src ${sources(styleHashes)} ${FONT_ORIGINS[0]}`,
     // Does not fall back to default-src — see the header comment.
     `font-src ${FONT_ORIGINS[1]}`,
-    // Not 'none' any more, and deliberately not 'unsafe-inline': passkeys are
-    // the one feature that cannot work server-side (WebAuthn is a browser
-    // API), so their two scripts are allowed by hash and nothing else is.
+    // Not 'none' any more, and deliberately not 'unsafe-inline': every block
+    // in SCRIPT_BLOCKS (src/views/scripts.ts) is allowed by hash and nothing
+    // else is. That set started as the two passkey scripts (M5) — the
+    // original reason client JavaScript was allowed on this server-rendered
+    // site at all, WebAuthn having no server-side substitute — and has since
+    // grown to five: the two passkey blocks, the invite-copy and
+    // drag-and-drop enhancements, and SERVICE_WORKER_JS (M13), which ships on
+    // every page rather than being opted into by one. Passkeys are no longer
+    // *why* this directive is non-empty; they are just its first member.
     `script-src ${sources(scriptHashes)}`,
     // The scripts' whole purpose. Without this they execute and then cannot
     // reach a single endpoint — see the header comment.

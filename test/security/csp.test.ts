@@ -564,6 +564,23 @@ describe("the directives the installable app needs (M13)", () => {
   });
 
   /**
+   * `src/app.ts`'s guard excludes `/sw.js` by path *and* method
+   * (`c.req.method === "GET" && ...`). pwa.ts only registers a GET handler
+   * for this path, so a POST matches no route and falls through to
+   * `app.notFound` — a response that carries no CSP of its own, unlike the
+   * GET above. Without the method check that request would have skipped the
+   * page CSP too, on the strength of a path match alone, and shipped with
+   * none at all.
+   */
+  it("still carries the page CSP on a method the service worker route doesn't handle", async () => {
+    const response = await SELF.fetch("https://makethe.team/sw.js", { method: "POST" });
+    const header = response.headers.get("content-security-policy") ?? "";
+
+    expect(header).toContain("default-src 'none'");
+    expect(header).not.toBe("");
+  });
+
+  /**
    * Every response the app serves must carry a CSP, not only the twelve pages
    * `expectFixedDirectives` enumerates above. The middleware in `src/app.ts`
    * now special-cases exactly one path (`SERVICE_WORKER_PATH`) rather than

@@ -86,6 +86,12 @@ pwa.get(OFFLINE_PATH, (c) => c.html(renderOfflinePage()));
  * installed player keeps an old offline page forever, and nothing on this
  * side can tell.
  *
+ * Hashed over the offline HTML *and* the icon bytes, concatenated — both are
+ * `cache.addAll`'d below, so both have to be covered or a change to just the
+ * icon (`src/views/icon.ts`) renames nothing, the old cache survives
+ * `activate`'s cleanup, and every installed player keeps the stale icon
+ * forever with nothing locally able to show it.
+ *
  * Cached for the life of the isolate, like `cspHeader()`, because hashing on
  * every request would be work done thousands of times to produce one answer.
  */
@@ -97,8 +103,11 @@ export function serviceWorkerScript(): Promise<string> {
 }
 
 async function buildServiceWorkerScript(): Promise<string> {
-  const offline = renderOfflinePage();
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(offline));
+  const offlineBytes = new TextEncoder().encode(renderOfflinePage());
+  const cached = new Uint8Array(offlineBytes.length + ICON_192_PNG.length);
+  cached.set(offlineBytes);
+  cached.set(ICON_192_PNG, offlineBytes.length);
+  const digest = await crypto.subtle.digest("SHA-256", cached);
   const version = btoa(String.fromCharCode(...new Uint8Array(digest))).slice(0, 16);
 
   // Written as ES5-flavoured JavaScript on purpose: this string is not
@@ -136,15 +145,45 @@ self.addEventListener("activate", function (event) {
   );
 });
 
-// Pass-through for everything. The only interception is a navigation that
-// fails outright, which gets the offline page. Chrome requires a fetch
-// handler to consider an app installable; it does not require it to cache
-// anything, and this one does not.
+// A navigation that fails outright gets the offline page. Every other
+// same-origin GET checks the cache first and falls through to the network on
+// a miss — the only two entries ever in it are OFFLINE and its icon (see
+// "install" above), so this is not a general cache-first strategy, just the
+// one way the offline page's own <img> (src/views/offline.ts) can be served
+// from the cache instead of a network that, on the one occasion this page is
+// ever shown, is down. Chrome requires a fetch handler to consider an app
+// installable; it does not require it to cache anything, and this one caches
+// nothing beyond what "install" already put there.
 self.addEventListener("fetch", function (event) {
-  if (event.request.mode !== "navigate") return;
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request).catch(function () {
+        // caches.match resolves undefined if OFFLINE was never cached or was
+        // evicted under storage pressure. respondWith(undefined) throws and
+        // hands the browser its own generic error page instead of this
+        // one's — Response.error() keeps the failure a service-worker
+        // failure rather than a silent fallback to the browser's chrome.
+        return caches.match(OFFLINE).then(function (cached) {
+          return cached || Response.error();
+        });
+      })
+    );
+    return;
+  }
+  if (event.request.method !== "GET") return;
+  // Cross-origin requests (the Google Fonts stylesheet and its font files,
+  // the only other GETs any page issues) are deliberately left untouched.
+  // Nothing cross-origin is ever in CACHE, so intercepting them can only
+  // reintroduce a request the browser was already handling correctly — and
+  // in Chromium it does worse than that: routing a cross-origin no-cors
+  // request back out through fetch(event.request) from inside the worker
+  // intermittently fails with net::ERR_FAILED (found by the browser suite,
+  // not by anything server-side, which is exactly what
+  // test/browser/pwa.spec.ts exists to catch).
+  if (event.request.url.indexOf(self.location.origin) !== 0) return;
   event.respondWith(
-    fetch(event.request).catch(function () {
-      return caches.match(OFFLINE);
+    caches.match(event.request).then(function (cached) {
+      return cached || fetch(event.request);
     })
   );
 });

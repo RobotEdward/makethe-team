@@ -105,5 +105,21 @@ test("a failed navigation falls back to the offline page", async ({ page, contex
   await page.goto("/app");
 
   await expect(page.getByRole("heading", { name: "No connection" })).toBeVisible();
+
+  // The heading alone doesn't prove the offline page's own assets survived
+  // offline — before this fix `<img class="offline-mark" src="/icon-192.png">`
+  // (src/views/offline.ts) went to the network on every render, which is
+  // down on the one occasion this page is ever shown, and no assertion here
+  // caught it. `naturalWidth` is 0 for an <img> that failed to load, so this
+  // is the assertion that would have failed against the pre-fix worker,
+  // which cached the icon on install but never served it from the cache.
+  const icon = page.locator("img.offline-mark");
+  await expect(icon).toBeVisible();
+  // No `HTMLImageElement` name — see the module comment: this file's
+  // `tsconfig.json` `lib` carries no DOM types, so the element is narrowed by
+  // hand rather than named.
+  const naturalWidth = await icon.evaluate((el) => (el as unknown as { naturalWidth: number }).naturalWidth);
+  expect(naturalWidth).toBeGreaterThan(0);
+
   await context.setOffline(false);
 });

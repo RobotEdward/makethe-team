@@ -18,6 +18,7 @@ import {
 import {
   ACCOUNT_PATH,
   DELETE_ACCOUNT_PATH,
+  MANIFEST_PATH,
   OFFLINE_PATH,
   PRIVACY_PATH,
 } from "../../src/auth/paths.js";
@@ -1079,7 +1080,21 @@ describe("no password field anywhere (TR-16)", () => {
         continue;
       }
 
+      // The script layout() emits alongside the manifest link is checked on
+      // every catalogued page above; the link itself (test/views/layout.test.ts)
+      // was only ever pinned on "/". Same guarantee, same sweep.
+      expect(body, `${name} must link the web app manifest`).toContain(
+        `<link rel="manifest" href="${MANIFEST_PATH}">`,
+      );
+
       expect(body, `${name} must register the service worker`).toContain(SITE_WIDE_SCRIPT_TAG);
+      // A plain .replace() only strips the *first* occurrence, so a page
+      // that emitted the site-wide tag twice would still pass "must carry
+      // the page enhancement it is listed for" below on the strength of its
+      // own duplicate rather than the page's actual script — counting first
+      // makes a duplicate fail loudly instead.
+      const siteWideCount = body.split(SITE_WIDE_SCRIPT_TAG).length - 1;
+      expect(siteWideCount, `${name} must carry the site-wide tag exactly once`).toBe(1);
       const withoutServiceWorker = body.replace(SITE_WIDE_SCRIPT_TAG, "");
 
       if (!mayCarryScript.has(name)) {

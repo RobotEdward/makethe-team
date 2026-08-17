@@ -36,7 +36,14 @@ export function createApp(): Hono<AppEnv> {
     // that opts out means a second route that starts setting its own CSP
     // gets overwritten here and its own test fails loudly, instead of
     // silently winning against this middleware.
-    if (c.req.path !== SERVICE_WORKER_PATH) {
+    // Method-scoped as well as path-scoped: pwa.ts only registers a GET
+    // handler for /sw.js, so POST /sw.js matches no route and falls through
+    // to app.notFound, which carries no CSP of its own. Without the method
+    // check that request would skip this header too — safe in practice
+    // (app.notFound serves text/plain with nosniff, not a document a script
+    // could run in) but free to close: only the one response that actually
+    // declares its own policy opts out.
+    if (!(c.req.method === "GET" && c.req.path === SERVICE_WORKER_PATH)) {
       c.header("Content-Security-Policy", await cspHeader());
     }
   });
