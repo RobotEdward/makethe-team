@@ -177,12 +177,26 @@ export function renderInvitePage(params: InvitePageParams): string {
     ${squadBlock}
   `;
 
-  // SQUAD_STYLES_CSS first, FORM_CSS second, and the order is load-bearing:
-  // both declare `ul.squad > li` at the same specificity, and `layout()`
-  // emits these in array order, so the later block wins. FORM_CSS's row rule
-  // is the one this page's own forms are written against, and putting
-  // SQUAD_STYLES_CSS after it would hand a squad row's shape back to whichever
-  // block happened to be appended last.
+  // SQUAD_STYLES_CSS first, FORM_CSS second. Both blocks declare
+  // `ul.squad > li` at the same specificity and `layout()` emits them in array
+  // order, so on the organiser's page (`src/views/game-overview.ts`) the order
+  // decides whether a squad row is FORM_CSS's grid or SQUAD_STYLES_CSS's flex.
+  // *This* page renders no `ul.squad` at all — the squad is
+  // `div.squad > ul.chips > li.chip`, the empty state a bare `<p>` — so that
+  // rule matches nothing here and the pin changes nothing rendered today. It
+  // is kept pre-emptively, and only for that: an edit that reintroduces a
+  // `ul.squad` on this page inherits the settled order instead of whichever
+  // block a future caller happens to list last.
+  //
+  // What *is* live here is the block-level `.squad {}` collision, because the
+  // chips' wrapper is a `div.squad`. Both blocks declare `.squad` at (0,1,0):
+  // SQUAD_STYLES_CSS sets `list-style`, `margin`, `padding`, `text-align` and
+  // `border-top`; FORM_CSS sets only `list-style` and `padding`, to the same
+  // values. So FORM_CSS wins the two it repeats and wins nothing by it, and
+  // the three it never mentions survive from SQUAD_STYLES_CSS whatever the
+  // order. The one with a visible effect on a `div` is `border-top` — the rule
+  // above the chip cluster. Reversing these two would render this page
+  // identically; do not read the pin as protecting the border.
   return layout({ title: `Join ${gameName} — Make The Team`, body, pageStyles: [SQUAD_STYLES_CSS, FORM_CSS] });
 }
 

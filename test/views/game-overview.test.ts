@@ -220,6 +220,29 @@ describe("coming up", () => {
     expect(html).toContain('href="/g/g-1/f/f-1"');
   });
 
+  /**
+   * Global Constraint 9's 44px floor. A fixture row measured about 45px, but
+   * the only interactive thing in it is an inline `<a>` whose hit area is its
+   * own line box — roughly 25px. `min-height` does nothing to an inline box,
+   * so `display: flex` is the load-bearing declaration: it blockifies the
+   * anchor, and `flex: 1` makes it fill everything the state and count leave.
+   *
+   * The needle carries its opening brace — a bare selector needle
+   * prefix-matches, which is how a `.w-5` assertion earlier in M12 was
+   * silently satisfied by `.w-50`'s rule.
+   */
+  it("gives the fixture link a real tap target instead of a line box", () => {
+    expect(INVITE_CSS).toContain("ul.fixtures > li > a {");
+    const rule = INVITE_CSS.slice(INVITE_CSS.indexOf("ul.fixtures > li > a {"));
+    const body = rule.slice(0, rule.indexOf("}"));
+    expect(body).toContain("display: flex");
+    expect(body).toContain("min-height: 44px");
+    // Never a bare descendant selector reaching into list items: that is how
+    // `.squad li` captured `li.chip` and beat `.chip` on specificity once.
+    expect(INVITE_CSS).not.toContain(".fixtures a {");
+    expect(INVITE_CSS).not.toContain(".fixtures li {");
+  });
+
   it("says so when there is nothing coming up", () => {
     expect(render()).toContain('<ul class="fixtures"><li>No fixtures scheduled.</li></ul>');
   });

@@ -611,7 +611,26 @@ export const INVITE_CSS = `
      comment there): a bare descendant selector beats a chip's own .chip on
      specificity, and this app has li elements inside li elements. */
   .fixtures { list-style: none; margin: 0; padding: 0; text-align: left; border-top: 1px solid var(--line); }
-  ul.fixtures > li { padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line); font-size: var(--t-body); }
+  /* The row is a flex line so the anchor below can be a flex item that fills
+     it. A row is a date wrapped in the link plus a sibling span of state and
+     count that is not part of it, and blockifying the anchor on its own would
+     drop that span onto a second line — the row would grow from one line to
+     two everywhere, to fix a tap target. min-height rather than the vertical
+     padding this rule used to carry: the padding also applied to the empty
+     state, which has no anchor to carry a height, and the row keeps the ~45px
+     it already had instead of stacking 44px on top of 19px of padding. */
+  ul.fixtures > li {
+    display: flex; align-items: center; gap: 0.75rem; min-height: 44px;
+    padding: 0 0.1rem; border-bottom: 1px solid var(--line); font-size: var(--t-body);
+  }
+  /* Constraint 9's 44px floor, the same shape as ul.owned-games > li > a. An
+     anchor is inline by default and min-height does nothing to an inline box,
+     so the hit area was the link text's own line box — about 25px in a row
+     that already measured 45px, which is the trap: the row looks compliant
+     and the thing you actually tap is not. display: flex blockifies it, and
+     flex: 1 hands it every pixel the state and count do not need, so the
+     empty stretch left of them is part of the link too. */
+  ul.fixtures > li > a { display: flex; align-items: center; flex: 1; min-height: 44px; }
   /* The state and the headcount are context for the date, not peers of it —
      without the demotion all three read as one undifferentiated run of text
      and there is nothing to scan down the column for. */
