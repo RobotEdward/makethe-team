@@ -200,6 +200,51 @@ export const DASHBOARD_STYLES_CSS = `
   .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
   .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: var(--t-lead); }
   .fixture-card .responses { margin-bottom: 0; }
+
+  /* The owned-games section: one row per game the viewer organises, each a
+     link into it (M12 §3.5).
+
+     No comment here may quote that section's heading verbatim. This block is
+     rendered into the page, so a quoted heading is indistinguishable from the
+     real one to the tests that assert an owner-less dashboard never shows it
+     — which is exactly how this comment first broke three of them.
+
+     Without a rule here this is the browser's default bulleted list — discs
+     and a UA indent — sitting directly under a column of bordered fixture
+     cards. It was the last one left in the app: every other list here is
+     either a styled row or a chip.
+
+     The row shape is restated rather than borrowed. Widening ul.squad > li to
+     reach this markup is banned outright (M10 whole-branch review, Critical
+     1): a bare descendant selector is (0,1,1) and beats a chip's own (0,1,0)
+     .chip whatever the block order, and this app nests li inside li. Reusing
+     the .squad class instead would be the same mistake by another route — a
+     game is not a squad member, so the next rule written for a squad row
+     would silently restyle this list too.
+
+     Not .fixture-card either: a card up there carries a heading, a status
+     badge, a headline and two response buttons, and a row down here is a name
+     and nothing else. Borrowing it would put a second, competing card idiom
+     in one column.
+
+     Scoped ul.owned-games > li for the same specificity reason ul.squad > li
+     and ul.fixtures > li are scoped.
+
+     The anchor carries the 44px floor, not the li: the li's padding is not
+     what a finger lands on, and these rows are entirely link. */
+  /* The bottom margin is not decoration: paragraphs get zero margin from the
+     layout's base rule, so the footer's run of account links lands hard
+     against the last row's bottom border and reads as a fourth row of this
+     list. */
+  .owned-games {
+    list-style: none; margin: 0.4rem 0 1.1rem; padding: 0; text-align: left;
+    border-top: 1px solid var(--line);
+  }
+  ul.owned-games > li { border-bottom: 1px solid var(--line); }
+  ul.owned-games > li > a {
+    display: flex; align-items: center; min-height: 44px;
+    padding: 0.4rem 0.1rem; font-size: var(--t-body);
+  }
 `;
 
 /**
