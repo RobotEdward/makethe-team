@@ -365,3 +365,126 @@ export async function encryptPayload(
 
   return concat(salt, recordSize, new Uint8Array([senderPublicRaw.length]), senderPublicRaw, ciphertext);
 }
+
+/**
+ * How long a VAPID JWT is valid for, per `vapidHeaders`'s `exp` claim.
+ * Twelve hours: comfortably inside every push service's ceiling (RFC 8292
+ * doesn't set one, but some services reject anything beyond 24) and short
+ * enough that a leaked header stops being useful well within the day.
+ */
+const VAPID_TOKEN_LIFETIME_SECONDS = 12 * 60 * 60;
+
+export interface VapidKeys {
+  /** base64url, uncompressed P-256 point. Public by design — it ships to every browser. */
+  publicKey: string;
+  signingKey: CryptoKey;
+  /** The `mailto:` a push service contacts about abuse. */
+  subject: string;
+}
+
+/**
+ * Imports the configured VAPID pair.
+ *
+ * `privateKey` is the JWK `d` parameter, base64url — the form
+ * `scripts/generate-vapid-keys.mjs` prints. The `x` and `y` are recovered
+ * from the public key rather than from `d`, because that is the only public
+ * half this function has: nothing here can derive a point from a scalar.
+ *
+ * Whether that makes a mismatched pair fail here or later is not something
+ * to rely on either way. Workerd's own JWK import happens to check that `d`
+ * and `x`/`y` agree and throws a `DataError` first — but the WebCrypto spec
+ * does not require that check, other implementations skip it, and this
+ * function must not be the place a config error is *supposed* to surface:
+ * that guarantee belongs to `assertVapidKeysMatch`, called once at startup,
+ * whose sign-then-verify check works regardless of what any given runtime's
+ * importer bothers to validate.
+ */
+export async function importVapidKeys(publicKey: string, privateKey: string, subject: string): Promise<VapidKeys> {
+  const raw = base64UrlDecode(publicKey);
+  if (raw.length !== P256_PUBLIC_KEY_BYTES || raw[0] !== 0x04) {
+    throw new Error(
+      `VAPID_PUBLIC_KEY is not an uncompressed P-256 point (${P256_PUBLIC_KEY_BYTES} bytes starting 0x04)`,
+    );
+  }
+
+  const signingKey = await crypto.subtle.importKey(
+    "jwk",
+    {
+      kty: "EC",
+      crv: "P-256",
+      d: privateKey,
+      x: base64UrlEncode(raw.slice(1, 33)),
+      y: base64UrlEncode(raw.slice(33, 65)),
+      ext: false,
+    },
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign"],
+  );
+
+  return { publicKey, signingKey, subject };
+}
+
+/**
+ * Proves the configured public and private keys are actually a pair, by
+ * signing a fixed message and verifying it with the public key (spec §10.3).
+ *
+ * Not by deriving the public key from the private one: Web Crypto offers no
+ * such operation, and importing a JWK whose `d` disagrees with its `x`/`y`
+ * is *not* reliably rejected. Sign-then-verify is the check that actually
+ * discriminates.
+ *
+ * Worth the two operations at startup because the failure it catches —
+ * rotating one binding and forgetting the other — produces a 403 from every
+ * push service forever, and produces no local symptom whatsoever.
+ */
+export async function assertVapidKeysMatch(keys: VapidKeys): Promise<void> {
+  const probe = utf8("vapid-key-consistency-probe");
+  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, keys.signingKey, probe);
+  const verifier = await crypto.subtle.importKey(
+    "raw",
+    base64UrlDecode(keys.publicKey),
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["verify"],
+  );
+
+  if (!(await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, verifier, signature, probe))) {
+    throw new Error(
+      "VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY do not match — every push would be refused with 403. " +
+        "Both come from one run of scripts/generate-vapid-keys.mjs; set them together or not at all.",
+    );
+  }
+}
+
+/**
+ * The `Authorization` header for one push (RFC 8292).
+ *
+ * `now` is a parameter rather than `new Date()`, matching `createNotifier`,
+ * so a test can place the expiry anywhere without touching the clock.
+ */
+export async function vapidHeaders(endpoint: string, keys: VapidKeys, now: Date): Promise<Record<string, string>> {
+  const header = base64UrlEncode(utf8(JSON.stringify({ typ: "JWT", alg: "ES256" })));
+  const claims = base64UrlEncode(
+    utf8(
+      JSON.stringify({
+        // The endpoint's origin, never the full URL: the path identifies the
+        // subscription, and some services reject a full-URL audience anyway.
+        aud: new URL(endpoint).origin,
+        exp: Math.floor(now.getTime() / 1000) + VAPID_TOKEN_LIFETIME_SECONDS,
+        sub: keys.subject,
+      }),
+    ),
+  );
+
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    keys.signingKey,
+    utf8(`${header}.${claims}`),
+  );
+
+  return {
+    Authorization: `vapid t=${header}.${claims}.${base64UrlEncode(new Uint8Array(signature))}, k=${keys.publicKey}`,
+    "Content-Encoding": "aes128gcm",
+  };
+}
