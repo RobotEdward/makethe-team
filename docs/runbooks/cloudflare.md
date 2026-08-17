@@ -12,7 +12,7 @@ there**. Two systems deploying one Worker is a failure mode.
 
 ## Worker secrets
 
-Three, all set with `wrangler secret put` and never present in
+Four, all set with `wrangler secret put` and never present in
 `wrangler.jsonc` (which is committed):
 
 | Secret | What it signs or opens | Rotation blast radius |
@@ -20,12 +20,86 @@ Three, all set with `wrangler secret put` and never present in
 | `RESPONSE_TOKEN_SECRET` | `/r/:token` and `/leave/:token` links (TR-13) | Every outstanding response link in every inbox stops working |
 | `CANCEL_TOKEN_SECRET` | `/cancel/:token` owner cancellation links | Outstanding cancel links only — few, and they expire at kickoff |
 | `RESEND_API_KEY` | The Resend API (see `email.md`) | No links affected |
+| `VAPID_PRIVATE_KEY` | Web push notifications (M14) | **Every existing subscription, permanently, and cannot be fixed remotely** |
 
 The first two are deliberately **separate keys**, not one shared key with a
 purpose marker: see `CANCEL_TOKEN_SECRET`'s doc comment in `src/env.ts` for
 the reasoning. Never reuse one value for both — the point is that a leak of
 the widely-minted response key cannot forge a cancellation, and that the
 higher-value key can be rotated without breaking every player's link.
+
+### `VAPID_PRIVATE_KEY` — web push (M14)
+
+**This is the one secret on this page that cannot be regenerated without
+real, unavoidable cost.** The other three can be rotated by generating a new
+random string and setting it; every consequence is contained to this side
+(some links stop working, players get a fresh cancel link, Resend issues a
+new API key). `VAPID_PRIVATE_KEY` is different in kind: its public half is
+baked into every device's push subscription by the browser at the moment
+`PushManager.subscribe()` runs, on Cloudflare's infrastructure and on every
+subscribing device, with no copy kept anywhere this project controls.
+Replace the private key and the public key it must match changes too, so
+every subscription created against the old public key is instantly and
+permanently invalid — there is no "resync" for it.
+
+**Generating it.** Run, locally, once:
+
+```bash
+node scripts/generate-vapid-keys.mjs
+```
+
+This prints a fresh P-256 keypair to the terminal and writes nothing to
+disk. Read the whole output before doing anything else — it repeats the
+custody warning below. `wrangler secret put` is write-only (Cloudflare
+cannot show you a secret's value once set), so **the moment this command's
+output scrolls off your terminal, that is the only copy of the private key
+that will ever exist.** Store it in a long-term secret manager (password
+manager, vault, etc.) *before* setting it as a Worker secret — not after,
+and not "I'll do it in a minute".
+
+**Setting it**, without ever printing the value into shell history or a log:
+
+```bash
+echo -n "<private key>" | npx wrangler secret put VAPID_PRIVATE_KEY
+npx wrangler secret list   # names only; never echoes a value
+```
+
+**Turning push on**, once the key is stored and set (see `PUSH_NOTIFIER` in
+`wrangler.jsonc`, which documents the same two-line change):
+
+1. In `wrangler.jsonc`'s `vars`, change `"PUSH_NOTIFIER"` from `"null"` to
+   `"webpush"`, and add `"VAPID_PUBLIC_KEY"` (the public key the same script
+   printed) and `"VAPID_SUBJECT": "mailto:ops@makethe.team"`.
+2. `echo -n "<private key>" | npx wrangler secret put VAPID_PRIVATE_KEY`, as
+   above, then deploy.
+
+Until both are done, `createNotifier` builds a `NullNotifier` for the push
+leg and never reads either VAPID binding — a deploy cannot send a push or
+leak a key while `PUSH_NOTIFIER` stays `"null"`.
+
+**If the private key is lost anyway** — deleted, an operator's machine
+wiped before it was stored, whatever the cause — there is no support ticket
+or API call that recovers it. Cloudflare secrets are write-only by design,
+and there is no back door. The recovery procedure is a full reset, not a
+fix:
+
+1. Generate a brand-new pair with `node scripts/generate-vapid-keys.mjs`.
+   Store the new private key properly this time, then set it with
+   `wrangler secret put VAPID_PRIVATE_KEY` as above, and put the new public
+   key in `wrangler.jsonc`'s `VAPID_PUBLIC_KEY`.
+2. Delete every row in the `push_subscriptions` table. They are all now
+   permanently undeliverable against the new key — pointing push at the new
+   public key does not "reactivate" them, it just makes every send to them
+   fail with a 403 instead of succeeding silently against the old one, so
+   deleting them is what stops the app from wasting sends and quota trying.
+3. There is no step 3 that restores anyone automatically. Each player who
+   wants push notifications has to open the app again and opt in by hand, on
+   their own device, creating a brand-new subscription against the new
+   public key. Nothing on the server side can do this for them or notify
+   them it needs doing — push is the one channel that cannot bootstrap
+   itself, since the mechanism that would tell someone "please re-subscribe"
+   is the very channel that just broke. Use email (TR-13/N-4 style) to ask
+   players to come back and re-enable it.
 
 > **`CANCEL_TOKEN_SECRET` is not yet set in production.** Nothing mints a
 > cancel token in production until the owner-attention email (N-4) ships, so

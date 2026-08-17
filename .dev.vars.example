@@ -2,6 +2,12 @@
 # Any string works locally; production uses a Worker secret.
 RESPONSE_TOKEN_SECRET=local-development-secret-do-not-use-in-production
 
+# VAPID signing key (JWK `d`, base64url). Only exercised once PUSH_NOTIFIER
+# is "webpush" locally — generate a pair with `node scripts/generate-vapid-keys.mjs`
+# and paste the private half here for local dev. Never the real production
+# key (see docs/runbooks/cloudflare.md — it cannot be rotated cheaply).
+VAPID_PRIVATE_KEY=
+
 # ---------------------------------------------------------------------------
 # Deliberately NOT here: NOTIFIER, BETTER_AUTH_URL, BETTER_AUTH_SECRET,
 # SIGNIN_ALLOWLIST, CANCEL_TOKEN_SECRET.

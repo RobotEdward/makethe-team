@@ -40,7 +40,28 @@
     "EMAIL_FROM": "Make The Team <no-reply@makethe.team>",
     // Not secret — Better Auth's public base URL for issuing links against.
     // BETTER_AUTH_SECRET is a Worker secret (`wrangler secret put`), never here.
-    "BETTER_AUTH_URL": "https://makethe.team"
+    "BETTER_AUTH_URL": "https://makethe.team",
+    // M14 web push ships dark tonight, deliberately. The real VAPID keypair
+    // does not exist yet — only the repo owner can generate it (the public
+    // half is baked into every subscription by the browser at creation time,
+    // and `wrangler secret put` is write-only, so the copy made at
+    // generation is the only copy that will ever exist), and that has not
+    // happened yet. Rather than committing a placeholder key that could be
+    // deployed by mistake, `PUSH_NOTIFIER` is pinned to `"null"`: once
+    // Task 8's router lands, `createNotifier` returns a `NullNotifier` for
+    // the push leg and never reads `VAPID_PUBLIC_KEY` or `VAPID_SUBJECT` at
+    // all, so a deploy from this file cannot send a push or leak a key.
+    // `VAPID_PUBLIC_KEY`/`VAPID_SUBJECT` are deliberately absent below for
+    // the same reason — there is nothing here to leak.
+    //
+    // To turn push on once the real pair exists (see
+    // `docs/runbooks/cloudflare.md` § VAPID_PRIVATE_KEY for the full
+    // procedure), exactly two changes:
+    //   1. Change "PUSH_NOTIFIER" below to "webpush", and add
+    //      "VAPID_PUBLIC_KEY" (the generated public key) and
+    //      "VAPID_SUBJECT": "mailto:ops@makethe.team" to this vars block.
+    //   2. `echo -n "<private key>" | npx wrangler secret put VAPID_PRIVATE_KEY`
+    "PUSH_NOTIFIER": "null"
   },
   "d1_databases": [
     {

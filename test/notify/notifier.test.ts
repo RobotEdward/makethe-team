@@ -25,6 +25,10 @@ function bindings(notifier: string): Bindings {
     BETTER_AUTH_SECRET: "test-secret",
     BETTER_AUTH_URL: "http://localhost:8787",
     SIGNIN_ALLOWLIST: "test-only-not-a-real-address@example.com",
+    PUSH_NOTIFIER: "null",
+    VAPID_PUBLIC_KEY: "test-vapid-public-key",
+    VAPID_SUBJECT: "mailto:ops@makethe.team",
+    VAPID_PRIVATE_KEY: "test-vapid-private-key",
   };
 }
 

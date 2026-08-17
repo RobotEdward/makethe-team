@@ -21,11 +21,14 @@ export default tseslint.config(
   // typescript-eslint disables it, because the compiler already does that job
   // better — so this only bites the plain-JS tooling under `scripts/`, which
   // legitimately runs on Node and uses its globals. Listed explicitly rather
-  // than pulling in the `globals` package for three names.
+  // than pulling in the `globals` package for a handful of names.
+  //
+  // `Buffer` added for `generate-vapid-keys.mjs`'s base64url encoding of the
+  // generated key material — same reasoning as `URL` before it.
   {
     files: ["scripts/**/*.{js,mjs}"],
     languageOptions: {
-      globals: { process: "readonly", console: "readonly", URL: "readonly" },
+      globals: { process: "readonly", console: "readonly", URL: "readonly", Buffer: "readonly" },
     },
   },
   {
