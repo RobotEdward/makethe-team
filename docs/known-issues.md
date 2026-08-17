@@ -73,6 +73,19 @@ behind it and will be found by a person on a phone, if at all. When M6 adds clie
 behaviour, ask what a passing test suite would look like if the feature were entirely
 broken, and if the answer is "exactly like this", add the assertion that would differ.
 
+**Applied to M13.** The installable shell is exactly the shape of surface this
+post-mortem warns about — a service worker that must register, a manifest that must be
+fetched and parsed rather than refused, an offline fallback the browser decides to take
+without asking the Worker — so `test/browser/pwa.spec.ts` (M13 task 7) asks the same
+question of it directly: it registers the service worker and fails on any console message
+naming a CSP violation, fetches `/manifest.webmanifest` through the browser and parses it
+rather than asserting against the Worker's own response, and drives an actual
+`context.setOffline(true)` navigation to prove the fallback fires client-side rather than
+asserting the offline page merely renders when requested directly. `/offline` and five
+other M13 routes (the manifest, both icon sizes, the apple-touch icon and `/sw.js`) were
+also missing from `test/browser/catalogue.ts`, so nothing was CSP-checking any of them
+until this task added them.
+
 ## Accepted breaking changes
 
 | Item | Why accepted |

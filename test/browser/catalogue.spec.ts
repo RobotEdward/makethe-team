@@ -2,11 +2,17 @@ import { readFileSync, readdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
   ACCOUNT_PATH,
+  APPLE_TOUCH_ICON_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
+  ICON_192_PATH,
+  ICON_512_PATH,
+  MANIFEST_PATH,
   NEW_GAME_PATH,
+  OFFLINE_PATH,
   PASSKEYS_PATH,
   PRIVACY_PATH,
+  SERVICE_WORKER_PATH,
   SIGN_IN_COMPLETE_PATH,
   SIGN_IN_PATH,
 } from "../../src/auth/paths.js";
@@ -26,6 +32,12 @@ const CONSTANTS: Record<string, string> = {
   ACCOUNT_PATH,
   NEW_GAME_PATH,
   PRIVACY_PATH,
+  MANIFEST_PATH,
+  ICON_192_PATH,
+  ICON_512_PATH,
+  APPLE_TOUCH_ICON_PATH,
+  OFFLINE_PATH,
+  SERVICE_WORKER_PATH,
 };
 
 /** Which catalogue entry covers which route. */
@@ -38,6 +50,7 @@ const ROUTE_TO_ID = new Map<string, string>([
   [DELETE_ACCOUNT_PATH, "delete-account"],
   [ACCOUNT_PATH, "account"],
   [NEW_GAME_PATH, "new-game"],
+  [OFFLINE_PATH, "offline"],
   ["/g/:id", "game-overview"],
   ["/g/:id/edit", "edit-game"],
   ["/g/:id/f/:fixtureId", "owner-fixture"],

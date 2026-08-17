@@ -336,4 +336,15 @@ export const SHOTS: Shot[] = [
     path: () => "/app/account",
     persona: "organiser",
   },
+  {
+    id: "offline",
+    chapter: "07-your-own-fixtures",
+    title: "No connection",
+    route: "/offline",
+    shows:
+      "What the installed app shows if you open it with no signal: a short " +
+      "explanation and nothing that pretends to be live.",
+    path: () => "/offline",
+    persona: "anonymous",
+  },
 ];

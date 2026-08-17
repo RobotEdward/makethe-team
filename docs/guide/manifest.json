@@ -207,6 +207,14 @@
       "route": "/app/account",
       "image": "images/account.png",
       "shows": "A player's own account page: their name in an editable field, their email address beside it, a link to manage passkeys, and their last fixtures across every game, most recent first."
+    },
+    {
+      "id": "offline",
+      "chapter": "07-your-own-fixtures",
+      "title": "No connection",
+      "route": "/offline",
+      "image": "images/offline.png",
+      "shows": "What the installed app shows if you open it with no signal: a short explanation and nothing that pretends to be live."
     }
   ]
 }
