@@ -106,6 +106,30 @@ describe("the squad row's layout", () => {
   });
 });
 
+describe("a squad row places its control rather than letting the grid guess", () => {
+  it("pins the text to column 1 and the control to column 2, spanning the text rows", () => {
+    // No string assertion can see a layout, so this pins the mechanism rather
+    // than the result — the result was checked by rendering the page at 390px
+    // and reading the geometry back out of the browser.
+    //
+    // What it stands against: `1fr auto` with everything auto-placed is only
+    // right for a two-part row. This page's row can carry a status word and an
+    // attribution line as well, and auto-placement walked the third piece into
+    // column 2 and pushed the control down into column 1, where the 1fr
+    // stretched it across most of the row. The brace is part of each needle:
+    // without it a prefix match would accept a rule that had lost its body.
+    expect(FORM_CSS).toContain("ul.squad > li > .name, ul.squad > li > .status, ul.squad > li > .set-by { grid-column: 1; }");
+    expect(FORM_CSS).toContain("ul.squad > li > form { grid-column: 2; grid-row: 1 / span 3; align-self: center; }");
+  });
+
+  it("keeps the row gap at zero, which is what the span costs", () => {
+    // The span asks for three row tracks whether or not the text fills them,
+    // and a row gap would be inserted between the empty ones — two gaps added
+    // to every single-line row in the app. The column gap is untouched.
+    expect(FORM_CSS).toContain("align-items: center; gap: 0 0.75rem;");
+  });
+});
+
 describe("the back link", () => {
   it("carries the class §2.5 names, and the block that declares it", () => {
     // The class alone is inert: `.back-link { margin-top: 1.5rem }` lives in
