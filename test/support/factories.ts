@@ -1,7 +1,8 @@
 import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
-import { fixtures, games, memberships, players, responses } from "../../src/db/schema.js";
+import { fixtures, games, memberships, players, pushSubscriptions, responses } from "../../src/db/schema.js";
 import type { EmailMessage, Message } from "../../src/notify/notifier.js";
+import { base64UrlEncode } from "../../src/notify/web-push.js";
 import { kickoffIn, NOW } from "./clock.js";
 
 /**
@@ -138,6 +139,53 @@ export async function insertFixture(
     prefersEvenNumbers: true,
     shortWarningOffsetHours: 12,
     durationMinutes: 60,
+    ...overrides,
+  });
+  return id;
+}
+
+/**
+ * A structurally valid `p256dh`/`auth` pair: a real uncompressed P-256 point
+ * and a 16-byte auth secret, both base64url. `encryptPayload` (web-push.ts)
+ * checks both lengths before it will touch a subscription, so junk of the
+ * right length is not enough — `insertSubscription` needs a row
+ * `PushNotifier` can actually encrypt against, not just one that satisfies
+ * the schema.
+ */
+async function generatePushKeys(): Promise<{ p256dh: string; auth: string }> {
+  const generated = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [
+    "deriveBits",
+  ]);
+  if (!("publicKey" in generated)) {
+    throw new Error("expected an ECDH key pair from generateKey");
+  }
+  const raw = await crypto.subtle.exportKey("raw", generated.publicKey);
+  if (!(raw instanceof ArrayBuffer)) {
+    throw new Error('exportKey("raw") did not return raw bytes');
+  }
+  return {
+    p256dh: base64UrlEncode(new Uint8Array(raw)),
+    auth: base64UrlEncode(crypto.getRandomValues(new Uint8Array(16))),
+  };
+}
+
+export type PushSubscriptionInsert = typeof pushSubscriptions.$inferInsert;
+
+/** Register one of a player's devices for push. Returns the subscription id. */
+export async function insertSubscription(
+  db: Db,
+  playerId: string,
+  endpoint: string,
+  overrides: Partial<PushSubscriptionInsert> = {},
+): Promise<string> {
+  const id = crypto.randomUUID();
+  const generatedKeys = await generatePushKeys();
+  await db.insert(pushSubscriptions).values({
+    id,
+    playerId,
+    endpoint,
+    p256dh: generatedKeys.p256dh,
+    auth: generatedKeys.auth,
     ...overrides,
   });
   return id;
