@@ -44,6 +44,13 @@ Each of these has shipped at least once. None is caught by a fetch-level test.
   `.w-50`'s rule. Put the delimiter in the needle (`.w-5 {`).
 - **An order-pinning test passes vacuously when a block is absent** — `indexOf` returns `-1`, and
   `-1 < anything`. Pair it with a presence assertion.
+- **An injected builtin called as a method throws `Illegal invocation`.** A field holding the global
+  `fetch` and called as `this.fetchImpl(...)` gets the instance as its receiver, which a Workers
+  builtin refuses — the request never leaves the isolate. Every push of every type failed this way
+  from M14 until it was found in production `notification_log`. **An arrow-function stub cannot
+  catch it**: its `this` is lexical, so it reads a method call and a free call identically. Stub
+  such a dependency with an ordinary function that checks its receiver, as
+  `test/notify/push-notifier.test.ts` does. Detach before calling (`const send = this.fetchImpl`).
 
 ## Working on a milestone
 
