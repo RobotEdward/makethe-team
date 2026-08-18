@@ -3,6 +3,7 @@ import { GAMES_PREFIX, SERVICE_WORKER_PATH } from "./auth/paths.js";
 import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { account } from "./routes/account.js";
+import { broadcast } from "./routes/broadcast.js";
 import { cancel } from "./routes/cancel.js";
 import { dashboard } from "./routes/dashboard.js";
 import { gamesRoutes } from "./routes/games.js";
@@ -156,6 +157,12 @@ export function createApp(): Hono<AppEnv> {
   app.route("/", push);
   // `/g/*`, behind the game-management session mount above.
   app.route("/", gamesRoutes);
+  // `/g/:id/message` and `/g/:id/f/:fixtureId/message` (M15 Task 8), under
+  // the same `/g/*` prefix as `gamesRoutes` and so behind the same session
+  // mount and `private, no-store` header — these pages show squad membership
+  // and per-fixture responses, exactly the confidentiality argument that
+  // scopes that mount.
+  app.route("/", broadcast);
 
   app.notFound((c) => c.text("Not found", 404));
 

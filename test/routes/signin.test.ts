@@ -800,6 +800,19 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } }),
       );
 
+      // The two quick-message compose pages (M15 Task 8), same owner and
+      // fixture as the capture above.
+      await capture(
+        "message everyone",
+        /Message everyone in/,
+        new Request(`${ORIGIN}/g/${gameId}/message`, { headers: { cookie } }),
+      );
+      await capture(
+        "message squad",
+        /Message the squad for/,
+        new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}/message`, { headers: { cookie } }),
+      );
+
       const cancelToken = await signCancelToken(
         {
           ownerPlayerId: player!.id,
@@ -990,6 +1003,8 @@ describe("no password field anywhere (TR-16)", () => {
         "game overview",
         "game edit",
         "owner fixture",
+        "message everyone",
+        "message squad",
         "squad remove confirm",
         "squad member",
         "invite",
@@ -1348,6 +1363,8 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
     "GET /g/:id/squad/:playerId": "squad member",
     "GET /g/:id/f/:fixtureId": "owner fixture",
+    "GET /g/:id/message": "message everyone",
+    "GET /g/:id/f/:fixtureId/message": "message squad",
     "GET /j/:token": "invite",
     "POST /j/:token": "join outcome",
   };
