@@ -295,6 +295,32 @@ describe("sendPromotionEmail (N-2)", () => {
     expect(await logRows()).toHaveLength(1);
   });
 
+  it("still sends the push on a repeat call when only the push key is new (review fix, Important 3)", async () => {
+    // A player promoted once with no device, who then registers one before
+    // this function is somehow called again for the exact same promotion
+    // (a retried background job, say): the email dedupe key already
+    // conflicts, but the push key is brand new. That push row must still be
+    // sent, not left `queued` forever with nothing to reap it.
+    const { fixtureId } = await seedFixture([{ id: "promoted", name: "Promoted", email: "promoted@example.com" }]);
+    const notifier = new RecordingNotifier();
+
+    const first = await send(fixtureId, notifier, promotion("promoted"));
+    expect(first).toEqual({ kind: "sent" });
+    expect(await logRows()).toHaveLength(1);
+
+    await insertSubscription(db, "promoted", "https://push.example.com/promoted");
+    const second = await send(fixtureId, notifier, promotion("promoted"));
+
+    // The email leg had nothing new happen to it this call.
+    expect(second).toEqual({ kind: "already-logged" });
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const pushRow = rows.find((r) => r.channel === "push");
+    expect(pushRow?.status).toBe("sent");
+    expect(notifier.all.filter((m) => m.channel === "push")).toHaveLength(1);
+  });
+
   it("does send again for a *later* promotion of the same player (N-2 is keyed per promotion, unlike N-4)", async () => {
     const { fixtureId } = await seedFixture([{ id: "promoted", name: "Promoted", email: "promoted@example.com" }]);
     const notifier = new RecordingNotifier();

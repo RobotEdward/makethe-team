@@ -72,7 +72,10 @@ describe("sendRemovedEmail", () => {
     const emailKey = removalKey("m-1", LEFT_AT.toISOString());
     expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
     const pushMessage = notifier.sent.find((m) => m.channel === "push");
-    expect(pushMessage).toMatchObject({ channel: "push", to: playerId });
+    // Sharpened to the real membership id, not PUSH_COPY's gameName
+    // approximation (review fix — the report originally claimed no id was
+    // available here, which was wrong).
+    expect(pushMessage).toMatchObject({ channel: "push", to: playerId, tag: "n7:m-1" });
   });
 
   it("still emails a player with no device at all", async () => {

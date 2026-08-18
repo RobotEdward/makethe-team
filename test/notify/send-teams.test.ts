@@ -156,6 +156,13 @@ describe("sendTeamsEmails (N-9)", () => {
     expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
     const pushMessage = notifier.all.find((m) => m.channel === "push");
     expect(pushMessage).toMatchObject({ channel: "push", to: "alice", tag: `n9:${fixtureId}` });
+    // Not `leaveUrl` (review fix, Important 4): tapping "Teams are up" must
+    // never land on a page whose only control removes the player from the
+    // squad.
+    if (pushMessage?.channel === "push") {
+      expect(pushMessage.url).toContain("/r/");
+      expect(pushMessage.url).not.toContain("/leave/");
+    }
   });
 
   it("still emails an `in` player with no device at all", async () => {

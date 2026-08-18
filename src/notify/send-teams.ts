@@ -5,7 +5,7 @@ import { notificationLog, players, responses } from "../db/schema.js";
 import { displayName } from "../domain/display-name.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
+import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
 import { TEAM_IDS, isTeamId, teamNames } from "../domain/teams.js";
 import { pushKey, teamsKey } from "./dedupe-key.js";
 import {
@@ -237,6 +237,17 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
 
     if (subscribed.has(member.playerId)) {
       const copy = PUSH_COPY.n9(emailPayload);
+      // A response token, exactly as N-1 and N-2 already sign one for their
+      // own push (`sweep/open-and-remind.ts`, `send-promotion.ts`) — not
+      // `leaveUrl`. `leaveUrl`'s only control is a destructive "leave this
+      // game" button and shows nothing about teams; a player tapping "Teams
+      // are up — you're on Reds" must land somewhere that renders the
+      // published teams and their own side, and `GET /r/:token` does exactly
+      // that with no write (review fix, Important 4).
+      const responseToken = await signResponseToken(
+        { playerId: member.playerId, fixtureId, expiresAt: responseTokenExpiry(fixture.kicksOffAt).getTime() },
+        responseTokenSecret,
+      );
       pending.push({
         logId: crypto.randomUUID(),
         dedupeKey: pushKey(dedupeKey),
@@ -246,12 +257,7 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
           to: member.playerId,
           title: copy.title,
           body: copy.body,
-          // `leaveUrl` is the only per-player URL this caller builds — there
-          // is no non-token page showing the recipient's own side today
-          // (BR-33 may hide the rest of the squad even from an authenticated
-          // viewer). Reusing it at least lands on a page that names the
-          // fixture, same as every other caller reusing its one token link.
-          url: leaveUrl,
+          url: `${SITE_ORIGIN}/r/${responseToken}`,
           // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
           // (Task 9) to the real fixture id (Task 13). Two teams-published
           // pushes about the same fixture collapse in the tray; a

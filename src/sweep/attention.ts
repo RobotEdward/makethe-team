@@ -1,4 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
+import { ownerFixturePath } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { getFixtureWithSquad } from "../db/queries.js";
 import { fixtures, games, memberships, notificationLog, players } from "../db/schema.js";
@@ -300,7 +301,14 @@ async function processFixture(
           to: owner.playerId,
           title: copy.title,
           body: copy.body,
-          url: cancelUrl,
+          // The owner's fixture page, not `cancelUrl` (review fix, Important
+          // 4). "You're 2 short" tapping through to "call off this fixture"
+          // is exactly the wrong default action for a notification whose
+          // entire point is to prompt the owner to go find more players —
+          // the fixture page is where they can actually do that, and still
+          // links to cancelling for the owner who decides that's the right
+          // call.
+          url: `${SITE_ORIGIN}${ownerFixturePath(gameId, fixtureId)}`,
           // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
           // (Task 9) to the real fixture id, now that this caller holds one
           // (Task 13).

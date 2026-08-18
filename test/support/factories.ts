@@ -41,65 +41,95 @@ export async function insertGame(db: Db, overrides: Partial<GameInsert> = {}): P
 }
 
 /**
- * Deletes `notification_log` then `fixtures`, retrying the pair if the
- * `fixtures` delete hits a foreign-key violation.
- *
- * Several routes hand a notification send to `ctx.waitUntil()` deliberately
- * (`notifyPromotedPlayer` in `src/routes/respond.ts` is the one every
- * `POST /leave/:token` test exercises, via the promotion it can trigger for
- * the next waitlisted player) — so a previous test's `SELF.fetch()`
- * resolving does not guarantee that background `notification_log` write has
- * already landed. `cloudflare:test` has no public way to drain a
- * service-bound fetch's `waitUntil` queue: `waitOnExecutionContext` only
- * works on a manually created `ExecutionContext` (see `test/index.test.ts`,
- * which uses it for the `scheduled` handler precisely because that path
- * *doesn't* go through `SELF.fetch()`).
- *
- * Without this retry, a straggling insert can land in the gap between this
- * function's own `DELETE FROM notification_log` and `DELETE FROM fixtures`
- * below, re-populating a row that references a fixture this call is about
- * to delete — nondeterministically, since it depends on exactly how many
- * ticks the background send needed to reach its own write. A second pass
- * absorbs it: the straggler is a one-off write from an already-completed
- * request, not a sustained source, so `notification_log` is empty again by
- * the retry.
+ * Every table a test might have written, in foreign-key-safe order (children
+ * before parents).
  */
-async function deleteNotificationLogAndFixtures(): Promise<void> {
-  const MAX_ATTEMPTS = 5;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    await env.DB.exec("DELETE FROM notification_log");
-    try {
-      await env.DB.exec("DELETE FROM fixtures");
-      return;
-    } catch (error) {
-      if (attempt === MAX_ATTEMPTS) throw error;
-    }
-  }
-}
-
-/**
- * Empty every table a test might have written, in foreign-key-safe order.
- * Call from `beforeEach` so tests never inherit another test's rows.
- */
-export async function resetDatabase(): Promise<void> {
-  await env.DB.exec("DELETE FROM audit_log");
-  await env.DB.exec("DELETE FROM email_quota");
-  await env.DB.exec("DELETE FROM push_subscriptions");
-  await env.DB.exec("DELETE FROM responses");
-  await env.DB.exec("DELETE FROM memberships");
-  await deleteNotificationLogAndFixtures();
-  await env.DB.exec("DELETE FROM games");
-  await env.DB.exec("DELETE FROM players");
+const RESET_TABLES = [
+  "audit_log",
+  "notification_log",
+  "email_quota",
+  "push_subscriptions",
+  "responses",
+  "memberships",
+  "fixtures",
+  "games",
+  "players",
   // Better Auth tables (M5). Children before parent: session, account and
   // passkey all hold a FK to user.id (ON DELETE cascade would make this
   // order optional, but delete explicitly rather than relying on it — this
   // project has already been bitten once by a `resetDatabase` that omitted a
   // table and leant on an implicit cascade to cover the gap).
-  await env.DB.exec("DELETE FROM session");
-  await env.DB.exec("DELETE FROM account");
-  await env.DB.exec("DELETE FROM passkey");
-  await env.DB.exec("DELETE FROM verification");
-  await env.DB.exec("DELETE FROM user");
+  "session",
+  "account",
+  "passkey",
+  "verification",
+  "user",
+] as const;
+
+/** Matches the message D1/SQLite reports for a foreign-key violation, however the error object wraps it. */
+function isForeignKeyError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("FOREIGN KEY constraint failed") || message.includes("SQLITE_CONSTRAINT_FOREIGNKEY");
+}
+
+/**
+ * Empty every table a test might have written. Call from `beforeEach` so
+ * tests never inherit another test's rows.
+ *
+ * Several routes hand a notification send to `ctx.waitUntil()`
+ * (`notifyPromotedPlayer` in `src/routes/respond.ts` is the one every
+ * `POST /leave/:token` test exercises, via the promotion it can trigger for
+ * the next waitlisted player), and `cloudflare:test` has no public way to
+ * drain a service-bound fetch's `waitUntil` queue for a test that used
+ * `SELF.fetch()` (`waitOnExecutionContext` only works on a manually created
+ * `ExecutionContext` — see `test/index.test.ts`, which needs it precisely
+ * because the `scheduled` handler path there does *not* go through
+ * `SELF.fetch()`). A previous test's background write can therefore still
+ * be in flight when the next test's `beforeEach` runs, and can re-populate
+ * an already-cleared table (`notification_log`, most often, but also
+ * `audit_log` via a ceiling-deferral row) with a row that references a
+ * table this function has not reached yet — `fixtures` or `players` —
+ * tripping that later `DELETE` on a foreign-key violation.
+ *
+ * `env.DB.batch()` was tried here first, on the theory that its implicit
+ * transaction closes the race outright: every statement in a batch commits
+ * atomically, so no externally-issued write can land between any two of
+ * them. It does close *that* race — but it also makes `resetDatabase`
+ * itself faster, which pulls every following test's own request forward in
+ * wall-clock time relative to the previous test's still-in-flight
+ * background task. That shift turned up a second, unrelated instance of the
+ * same underlying problem: `test/routes/delete-account.test.ts`'s spy on
+ * `ConsoleNotifier.prototype.send` started intermittently capturing a
+ * *previous* test's stray promotion email, because the narrower gap gave
+ * the straggler's `send()` call a better chance of firing while the next
+ * test's spy was installed. `batch()` fixes the specific failure mode this
+ * function was first bitten by; it does not fix the general one, and
+ * changing this function's timing is exactly the kind of change that can
+ * make the general one worse elsewhere. So: the retry from before, kept,
+ * narrowed to only ever swallow a genuine foreign-key violation (anything
+ * else rethrows immediately — this must never mask an unrelated schema or
+ * data bug), logged on every retry so a future flake here is traceable to
+ * this comment rather than a fresh investigation, and covering every table
+ * in one bounded loop rather than one hand-picked pair — the straggler can
+ * land against `players` or `audit_log` exactly as it can against
+ * `fixtures`, and retrying the whole sequence is what actually protects all
+ * of them at once.
+ */
+export async function resetDatabase(): Promise<void> {
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      for (const table of RESET_TABLES) {
+        await env.DB.exec(`DELETE FROM ${table}`);
+      }
+      return;
+    } catch (error) {
+      if (!isForeignKeyError(error) || attempt === MAX_ATTEMPTS) throw error;
+      console.warn(
+        `resetDatabase: retrying after a foreign-key violation, likely a straggling ctx.waitUntil() write from a previous test (attempt ${attempt}/${MAX_ATTEMPTS}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 }
 
 /** The Drizzle handle bound to the test D1 database. */

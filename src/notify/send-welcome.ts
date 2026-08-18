@@ -209,7 +209,14 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
 
   const inserted = await insertQueuedLogRows(db, { fixtureId: null, notificationType: "n6" }, pending);
   const emailEntry = inserted.find((entry) => entry.message.channel === "email");
-  if (!emailEntry) return { kind: "already-logged" };
+  // `inserted.length === 0`, not `!emailEntry`: the email key can conflict
+  // (already logged) while the push key does not — a repeat call after the
+  // player registers a device between two attempts — and that push row was
+  // inserted and must still be sent, not left `queued` forever with nothing
+  // to reap it (review fix, Important 3). `emailOutcome` below stays
+  // `undefined` in that case, so the function still reports `already-logged`
+  // for the email leg even though the push row was sent.
+  if (inserted.length === 0) return { kind: "already-logged" };
 
   let results;
   try {
@@ -227,7 +234,11 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
         .set({ status: "failed", error: reason })
         .where(eq(notificationLog.id, entry.logId));
     }
-    return { kind: "failed", reason };
+    // If no email row was ever inserted this call (only a push row was —
+    // see the guard above), the email leg itself is untouched by this
+    // rejection; reporting `failed` would misattribute a push-only failure
+    // to the email.
+    return emailEntry ? { kind: "failed", reason } : { kind: "already-logged" };
   }
 
   // See `send-promotion.ts` for why every row's own result is applied but

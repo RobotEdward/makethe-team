@@ -113,16 +113,21 @@ export async function sendRemovedEmail(params: SendRemovedEmailParams): Promise<
         to: playerId,
         title: copy.title,
         body: copy.body,
-        // N-7 has no fixture, and no other URL, behind it (`RemovedEmailPayload`
-        // carries none): the dashboard is the only sensible destination left
-        // for a tap, and the only place `PUSH_COPY.n7`'s tag can be sharpened
-        // from — membership id, not fixture id, is what this notification is
-        // actually about, and this caller does not hold one either
-        // (`sendRemovedEmail`'s own caller passes it, but it is not part of
-        // the copy or the tag today). Left as `PUSH_COPY`'s gameName
-        // approximation.
+        // N-7 has no fixture, and no other URL, behind it
+        // (`RemovedEmailPayload` carries none): the dashboard is the only
+        // sensible destination left for a tap.
         url: `${SITE_ORIGIN}${DASHBOARD_PATH}`,
-        tag: copy.tag,
+        // Sharpened to the real membership id (review fix — an earlier
+        // version of this report claimed no id was available here, which
+        // was wrong: `membershipId` is a parameter this function already
+        // receives and already uses for `removalKey`, and the tag is set at
+        // this call site, not inside `PUSH_COPY`, so sharpening it needs no
+        // change to the email payload and touches no TR-20 boundary — same
+        // as n1-n4's sharpening). `PUSH_COPY`'s gameName approximation
+        // collapses two removals from different squads that happen to
+        // share a name — "Thursday 7-a-side" is not a rare one — and a
+        // membership id never does.
+        tag: `n7:${membershipId}`,
         dedupeKey: pushKey(dedupeKey),
       },
     });
@@ -130,7 +135,14 @@ export async function sendRemovedEmail(params: SendRemovedEmailParams): Promise<
 
   const inserted = await insertQueuedLogRows(db, { fixtureId: null, notificationType: "n7" }, pending);
   const emailEntry = inserted.find((entry) => entry.message.channel === "email");
-  if (!emailEntry) return { kind: "already-logged" };
+  // `inserted.length === 0`, not `!emailEntry`: the email key can conflict
+  // (already logged) while the push key does not — a repeat call after the
+  // player registers a device between two attempts — and that push row was
+  // inserted and must still be sent, not left `queued` forever with nothing
+  // to reap it (review fix, Important 3). `emailOutcome` below stays
+  // `undefined` in that case, so the function still reports `already-logged`
+  // for the email leg even though the push row was sent.
+  if (inserted.length === 0) return { kind: "already-logged" };
 
   let results;
   try {
@@ -148,7 +160,11 @@ export async function sendRemovedEmail(params: SendRemovedEmailParams): Promise<
         .set({ status: "failed", error: reason })
         .where(eq(notificationLog.id, entry.logId));
     }
-    return { kind: "failed", reason };
+    // If no email row was ever inserted this call (only a push row was —
+    // see the guard above), the email leg itself is untouched by this
+    // rejection; reporting `failed` would misattribute a push-only failure
+    // to the email.
+    return emailEntry ? { kind: "failed", reason } : { kind: "already-logged" };
   }
 
   // See `send-promotion.ts` for why every row's own result is applied but

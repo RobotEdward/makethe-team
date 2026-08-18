@@ -184,6 +184,12 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
     expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
     const pushMessage = notifier.sent.flat().find((m) => m.channel === "push");
     expect(pushMessage).toMatchObject({ channel: "push", to: ownerIds[0], tag: `n4:${fixtureId}` });
+    // Not `cancelUrl` (review fix, Important 4): "you're 2 short" must not
+    // tap through to "call off this fixture".
+    if (pushMessage?.channel === "push") {
+      expect(pushMessage.url).not.toContain("/cancel/");
+      expect(pushMessage.url).toContain(fixtureId);
+    }
   });
 
   it("still emails an owner with no device at all", async () => {
