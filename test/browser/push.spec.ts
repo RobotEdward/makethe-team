@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { expect, test } from "@playwright/test";
 import { ACCOUNT_PATH, PUSH_SUBSCRIBE_PATH } from "../../src/auth/paths.js";
-import { PUSH_BUTTON_ID } from "../../src/views/scripts.js";
+import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE } from "../../src/views/scripts.js";
 import { observe } from "./observe.js";
 import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
 import { seedWorld, type World } from "./world.js";
@@ -133,18 +133,36 @@ test.describe("the subscribe endpoint", () => {
   }
 });
 
-test("the account page's push affordance stays dark with no VAPID key configured, matching production tonight", async ({
+test("the account page offers the permission button, carrying the configured VAPID key", async ({
   page,
 }) => {
   await signIn(page, TEST_OWNER);
   await page.goto(ACCOUNT_PATH);
 
-  // `renderPermissionButton` (src/views/install.ts) renders nothing at all —
-  // not even a hidden element — once `vapidPublicKey` is undefined. This
-  // environment's `wrangler dev` carries no VAPID vars (see the header
-  // comment above), so this is the honest, currently-true state, not a
-  // hypothetical one.
-  await expect(page.locator(`#${PUSH_BUTTON_ID}`)).toHaveCount(0);
+  // Push went live on 18 August 2026, so `wrangler.jsonc` now carries a real
+  // `VAPID_PUBLIC_KEY` and this `wrangler dev` inherits it. That makes the
+  // *live* affordance the honest thing for a browser to assert, and this test
+  // was rewritten from its dark-state predecessor when the key landed.
+  //
+  // `PUSH_NOTIFIER` is still pinned to "null" in `browser.env`, which is a
+  // separate axis: it governs whether a push is ever *sent*, and pinning it
+  // keeps this suite free of the production secret. The button's presence
+  // depends only on the public key, which is why flipping the notifier alone
+  // does not restore the old assertion.
+  //
+  // The no-key path is still covered, where it can be asserted precisely and
+  // without a browser: `test/routes/account.test.ts` renders the account page
+  // with `VAPID_PUBLIC_KEY` absent and asserts no button and no key attribute.
+  const button = page.locator(`#${PUSH_BUTTON_ID}`);
+  await expect(button).toHaveCount(1);
+
+  // Not merely "an attribute exists": the value is what the browser hands to
+  // `PushManager.subscribe()` as `applicationServerKey`, so a wrong or empty
+  // one fails at the platform with an error this app never sees. Pinned
+  // against the deployed configuration rather than a literal, so rotating the
+  // key does not silently leave this asserting the old one.
+  await expect(button).toHaveAttribute(PUSH_KEY_ATTRIBUTE, /^B[A-Za-z0-9_-]{86}$/);
+
   await expect(page.locator("section.push h2")).toHaveText("Notifications");
 });
 
