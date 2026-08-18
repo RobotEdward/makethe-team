@@ -1,13 +1,12 @@
 import {
   ACCOUNT_PATH,
-  DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
   PASSKEYS_PATH,
   PRIVACY_PATH,
   gamePath,
 } from "../auth/paths.js";
 import { renderInstallSection, renderPushSection, type PushDeviceRow } from "./install.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { INSTALL_JS, PUSH_SUBSCRIBE_JS } from "./scripts.js";
 import { signOutForm } from "./sign-out-form.js";
 import {
@@ -40,6 +39,8 @@ export interface AccountFixtureRow {
 }
 
 export interface AccountPageOptions {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   playerName: string;
   /** Null for a guest, who has no contact details (§2.8, BR-32). */
   email: string | null;
@@ -98,6 +99,7 @@ function renderFixture(row: AccountFixtureRow): string {
  * before the banner existed.
  */
 export function renderAccountPage({
+  nav,
   playerName,
   email,
   fixtures,
@@ -169,11 +171,11 @@ export function renderAccountPage({
     })}
 
     <p><a href="${escapeHtml(DELETE_ACCOUNT_PATH)}">Delete my account and data</a> · <a href="${escapeHtml(PRIVACY_PATH)}">Privacy</a></p>
-    <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
     ${signOutForm("Sign out")}
   `;
 
   return layout({
+    nav,
     title: "Your account — Make The Team",
     body,
     pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FORM_CSS, INSTALL_STYLES_CSS, PUSH_STYLES_CSS],

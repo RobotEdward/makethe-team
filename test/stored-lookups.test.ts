@@ -152,6 +152,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
     column: "responses.status",
     reach: () =>
       renderOwnerFixturePage({
+        nav: { isAdmin: false, current: "games" } as const,
         gameId: "g-1",
         gameName: "Thursday 7-a-side",
         fixtureId: "f-1",
@@ -174,6 +175,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
     column: "responses.status",
     reach: () =>
       renderDashboardPage({
+        nav: { isAdmin: false, current: "games" } as const,
         playerName: "Ada Okafor",
         rows: [
           {

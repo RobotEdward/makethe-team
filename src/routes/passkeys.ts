@@ -2,7 +2,7 @@ import { getAuthenticatorName } from "@better-auth/passkey";
 import { asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { PASSKEYS_PATH } from "../auth/paths.js";
-import { requirePlayer } from "../auth/session.js";
+import { requirePlayer, pageNav } from "../auth/session.js";
 import { getDb } from "../db/client.js";
 import { passkey } from "../db/schema.js";
 import type { AppEnv } from "../env.js";
@@ -43,7 +43,7 @@ passkeys.get(PASSKEYS_PATH, requirePlayer, async (c) => {
     .where(eq(passkey.userId, session.user.id))
     .orderBy(asc(passkey.createdAt));
 
-  return c.html(renderPasskeysPage({ labels: rows.map(labelFor) }));
+  return c.html(renderPasskeysPage({ labels: rows.map(labelFor), nav: pageNav(c, "account") }));
 });
 
 /**

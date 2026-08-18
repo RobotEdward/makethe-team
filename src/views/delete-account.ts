@@ -1,11 +1,10 @@
 import {
   ACCOUNT_PATH,
-  DASHBOARD_PATH,
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
   gamePath,
 } from "../auth/paths.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
 
 /**
@@ -20,6 +19,8 @@ import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
  * different page with a different style budget.
  */
 export interface DeleteAccountPageParams {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   playerName: string;
   /**
    * - `offer` — nothing pending; renders the request button.
@@ -231,10 +232,10 @@ export function renderDeleteAccountPage(params: DeleteAccountPageParams): string
             : pendingBody(params.erasesAtLocal ?? "")
     }
     ${ON_NOBODY_ELSE_S_BEHALF}
-    <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
   `;
 
   return layout({
+    nav: params.nav,
     title: `Delete my data — Make The Team`,
     body,
     // `FIXTURE_STYLES_CSS` is here for `.back-link` alone (§2.5), the same way

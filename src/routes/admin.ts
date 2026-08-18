@@ -7,7 +7,7 @@ import {
   ADMIN_ALLOWLIST_PATH,
   ADMIN_ALLOWLIST_REMOVE_PATH,
 } from "../auth/paths.js";
-import { requireSession } from "../auth/session.js";
+import { requireSession, pageNav } from "../auth/session.js";
 import { foldAsciiCase } from "../auth/sign-in-gate.js";
 import { getDb, type Db } from "../db/client.js";
 import { signupAllowlist, user } from "../db/schema.js";
@@ -64,6 +64,7 @@ async function renderPage(c: Context<AppEnv>, db: Db, error?: string, status: 20
     .orderBy(asc(signupAllowlist.createdAt), asc(signupAllowlist.email));
   return c.html(
     renderAdminAllowlistPage({
+      nav: pageNav(c, "admin"),
       secretEntries: secretEntries(c.env.SIGNIN_ALLOWLIST),
       tableEntries: rows.map((r) => r.email),
       error,

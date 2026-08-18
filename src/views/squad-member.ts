@@ -1,8 +1,10 @@
 import { gamePath } from "../auth/paths.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
 
 export interface SquadMemberPageOptions {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   gameId: string;
   gameName: string;
   /** Already through `displayName` by the caller — never a raw column. */
@@ -33,6 +35,7 @@ export interface SquadMemberPageOptions {
  * question, and only the player themselves can reach it.
  */
 export function renderSquadMemberPage({
+  nav,
   gameId,
   gameName,
   memberName,
@@ -79,6 +82,7 @@ export function renderSquadMemberPage({
   `;
 
   return layout({
+    nav,
     title: `${memberName} — ${gameName} — Make The Team`,
     body,
     pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS],

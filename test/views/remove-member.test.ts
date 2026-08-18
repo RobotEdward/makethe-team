@@ -4,6 +4,7 @@ import { renderRemoveMemberPage } from "../../src/views/remove-member.js";
 import { CANCEL_STYLES_CSS, FORM_CSS } from "../../src/views/styles.js";
 
 const BASE = {
+  nav: { isAdmin: false, current: "games" } as const,
   gameId: "g-1",
   playerId: "p-1",
   gameName: "Thursday 7-a-side",

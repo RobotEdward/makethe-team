@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { notifyPromotedPlayer } from "./respond.js";
 import { DASHBOARD_PATH } from "../auth/paths.js";
-import { requirePlayer } from "../auth/session.js";
+import { requirePlayer, pageNav } from "../auth/session.js";
 import type { ResponseIntent } from "../capacity/types.js";
 import { getDb } from "../db/client.js";
 import { findActionableFixture, listDashboardFixtures } from "../db/dashboard-queries.js";
@@ -69,6 +69,7 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
 
   return c.html(
     renderDashboardPage({
+      nav: pageNav(c, "games"),
       playerName: player.name,
       rows: rows.map((row) => toRow(row, now)),
       ownedGames,

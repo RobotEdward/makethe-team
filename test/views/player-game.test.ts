@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { LIFECYCLES, type Lifecycle } from "../../src/domain/lifecycle.js";
 import { fixtureStatusWords } from "../../src/views/fixture.js";
 import { renderPlayerGamePage, type PlayerGameParams } from "../../src/views/player-game.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
+import { FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 
 const KICKOFF = new Date("2026-03-05T19:00:00Z");
 
 const BASE: PlayerGameParams = {
+  nav: { isAdmin: false, current: "games" } as const,
   gameName: "Thursday 7-a-side",
   venueName: "Venue Name",
   venueAddress: null,
@@ -137,19 +138,11 @@ describe("the coming-up list is a list of fixtures, not of people", () => {
   });
 });
 
-describe("the back link", () => {
-  it("carries the class §2.5 names, and the block that declares it", () => {
-    // The class alone is inert: `.back-link { margin-top: 1.5rem }` lives in
-    // FIXTURE_STYLES_CSS, and without it the link butts against the list above.
+describe("the way back up", () => {
+  it("is the header's Games link, not a body back link (M16)", () => {
     const html = renderPlayerGamePage(params());
-    expect(html).toContain(`<p class="back-link">`);
-    expect(html).toContain(FIXTURE_STYLES_CSS);
-    expect(FIXTURE_STYLES_CSS).toContain(".back-link {");
-  });
-
-  it("offers exactly one way back up, at the end of the body", () => {
-    const html = renderPlayerGamePage(params());
-    expect(html.match(/class="back-link"/g)).toHaveLength(1);
+    expect(html).toContain(`<header class="site-header">`);
+    expect(html).not.toContain(`class="back-link"`);
   });
 });
 

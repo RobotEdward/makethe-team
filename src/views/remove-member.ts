@@ -1,8 +1,10 @@
 import { gamePath, memberRemovePath } from "../auth/paths.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { CANCEL_STYLES_CSS, FORM_CSS } from "./styles.js";
 
 export interface RemoveMemberPageParams {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   gameId: string;
   /** The member being removed. In the form's `action`, so it cannot be omitted. */
   playerId: string;
@@ -87,6 +89,7 @@ export function renderRemoveMemberPage(params: RemoveMemberPageParams): string {
   // FORM_CSS, so neither block can overwrite the other. It follows
   // PAGE_STYLE_BLOCKS' own order so nothing has to be re-derived to read it.
   return layout({
+    nav: params.nav,
     title: `Remove ${memberName} — Make The Team`,
     body,
     pageStyles: [CANCEL_STYLES_CSS, FORM_CSS],

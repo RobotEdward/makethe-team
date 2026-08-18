@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
 import { gamePath, ownerFixturePath } from "../auth/paths.js";
-import { requirePlayer, type Player } from "../auth/session.js";
+import { requirePlayer, type Player, pageNav } from "../auth/session.js";
 import { recordAudit } from "../db/audit.js";
 import { getDb, type Db } from "../db/client.js";
 import {
@@ -156,6 +156,7 @@ broadcast.get("/g/:id/message", requirePlayer, async (c) => {
 
   return c.html(
     renderBroadcastPage({
+      nav: pageNav(c, "games"),
       gameId: game.id,
       gameName: game.name,
       counts: countsForGame(recipients),
@@ -195,6 +196,7 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
 
   return c.html(
     renderBroadcastPage({
+      nav: pageNav(c, "games"),
       gameId: game.id,
       gameName: game.name,
       fixture: {
@@ -310,6 +312,7 @@ async function handleSend(
   const rerender = (values: BroadcastFormValues, extra: Partial<BroadcastPageParams>) =>
     c.html(
       renderBroadcastPage({
+      nav: pageNav(c, "games"),
         gameId: scope.game.id,
         gameName: scope.game.name,
         fixture: scope.fixture ?? undefined,

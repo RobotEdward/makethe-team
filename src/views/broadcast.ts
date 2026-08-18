@@ -6,7 +6,7 @@ import {
 } from "../domain/broadcast-audience.js";
 import { MAX_MESSAGE_LENGTH, MAX_SUBJECT_LENGTH, type BroadcastFormValues } from "../domain/broadcast-form.js";
 import type { FieldError } from "../domain/game-form.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
 
 /**
@@ -17,6 +17,8 @@ import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
  * it, matching `parseBroadcastForm`'s own `scope` split.
  */
 export interface BroadcastPageParams {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   gameId: string;
   gameName: string;
   /** Fixture-scoped only. Absent renders the game-scoped page. */
@@ -170,6 +172,7 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
   `;
 
   return layout({
+    nav: params.nav,
     title: `Message the squad — ${params.gameName} — Make The Team`,
     body,
     pageStyles: [FORM_CSS, FIXTURE_STYLES_CSS],

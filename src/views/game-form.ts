@@ -1,7 +1,7 @@
 import type { FieldError } from "../domain/game-form.js";
 import { supportedTimezones } from "../domain/game-form.js";
 import { WEEKDAYS } from "../domain/recurrence/parse.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FORM_CSS } from "./styles.js";
 
 const WEEKDAY_LABELS: Record<string, string> = {
@@ -87,6 +87,8 @@ function switchRow(row: {
 }
 
 export interface GameFormPageParams {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   /** Where the form posts. Always a same-origin relative path (`form-action 'self'`). */
   action: string;
   heading: string;
@@ -207,5 +209,5 @@ export function renderGameFormPage(params: GameFormPageParams): string {
     </form>
   `;
 
-  return layout({ title: `${heading} — Make The Team`, body, pageStyles: [FORM_CSS] });
+  return layout({ nav: params.nav, title: `${heading} — Make The Team`, body, pageStyles: [FORM_CSS] });
 }

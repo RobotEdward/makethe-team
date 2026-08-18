@@ -1,5 +1,6 @@
 import { and, eq, ne } from "drizzle-orm";
 import { Hono } from "hono";
+import type { PageNav } from "../views/layout.js";
 import type { Context } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
 import {
@@ -9,7 +10,7 @@ import {
   gamePath,
   ownerFixturePath,
 } from "../auth/paths.js";
-import { requirePlayer } from "../auth/session.js";
+import { requirePlayer, pageNav } from "../auth/session.js";
 import { buildAuditInsert, recordAudit } from "../db/audit.js";
 import { getDb } from "../db/client.js";
 import {
@@ -88,6 +89,7 @@ function submittedValues(form: Record<string, unknown>): Record<string, string> 
 gamesRoutes.get(NEW_GAME_PATH, requirePlayer, (c) =>
   c.html(
     renderGameFormPage({
+      nav: pageNav(c, "games"),
       action: NEW_GAME_PATH,
       heading: "Set up a game",
       submitLabel: "Create the game",
@@ -114,6 +116,7 @@ gamesRoutes.post(NEW_GAME_PATH, requirePlayer, async (c) => {
     // 400 would throw away a form somebody just filled in on a phone.
     return c.html(
       renderGameFormPage({
+      nav: pageNav(c, "games"),
         action: NEW_GAME_PATH,
         heading: "Set up a game",
         submitLabel: "Create the game",
@@ -159,6 +162,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
 
   return c.html(
     renderGameOverviewPage({
+      nav: pageNav(c, "games"),
       gameId: game.id,
       gameName: game.name,
       venueName: game.venueName,
@@ -235,6 +239,7 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
 
   return c.html(
     renderPlayerGamePage({
+      nav: pageNav(c, "games"),
       gameName: game.name,
       venueName: game.venueName,
       venueAddress: game.venueAddress,
@@ -285,6 +290,7 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
 
   return c.html(
     renderGameFormPage({
+      nav: pageNav(c, "games"),
       action: gameEditPath(game.id),
       heading: `Edit ${game.name}`,
       submitLabel: "Save changes",
@@ -345,6 +351,7 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
 
     return c.html(
       renderGameFormPage({
+      nav: pageNav(c, "games"),
         action: gameEditPath(game.id),
         heading: `Edit ${game.name}`,
         submitLabel: "Save changes",
@@ -415,6 +422,7 @@ gamesRoutes.get("/g/:id/squad/:playerId", requirePlayer, async (c) => {
 
   return c.html(
     renderSquadMemberPage({
+      nav: pageNav(c, "games"),
       gameId: target.game.id,
       gameName: target.game.name,
       // Never the raw column, and never a literal `null` for the second
@@ -441,6 +449,7 @@ gamesRoutes.get("/g/:id/squad/:playerId/remove", requirePlayer, async (c) => {
   const commitments = await countCommitments(target.db, target.game.id, target.member.playerId);
   return c.html(
     renderRemoveMemberPage({
+      nav: pageNav(c, "games"),
       gameId: target.game.id,
       playerId: target.member.playerId,
       gameName: target.game.name,
@@ -572,6 +581,7 @@ type FixtureRenderExtras = Partial<Pick<OwnerFixtureParams, "confirm" | "problem
  * and the formatted kickoff, so a change to either cannot drift between them.
  */
 function ownerFixtureParams(
+  nav: PageNav,
   withSquad: FixtureWithSquad,
   assignments: readonly TeamAssignment[],
   viewerPlayerId: string,
@@ -580,6 +590,7 @@ function ownerFixtureParams(
 ): OwnerFixtureParams {
   const { fixture, game, squad } = withSquad;
   return {
+    nav,
     gameId: game.id,
     teamNames: teamNames(game),
     prefersEvenNumbers: fixture.prefersEvenNumbers,
@@ -638,7 +649,7 @@ async function renderOwnerFixture(
   ]);
   if (withSquad === null) return c.text("Not found", 404);
   return c.html(
-    renderOwnerFixturePage(ownerFixtureParams(withSquad, assignments, c.get("player")!.id, now, extras)),
+    renderOwnerFixturePage(ownerFixtureParams(pageNav(c, "games"), withSquad, assignments, c.get("player")!.id, now, extras)),
     status,
   );
 }
@@ -1177,6 +1188,7 @@ async function renderSquadRefusal(
   const [squad, upcoming] = await Promise.all([listSquad(db, game.id), listUpcomingFixtures(db, game.id, now)]);
   return c.html(
     renderGameOverviewPage({
+      nav: pageNav(c, "games"),
       gameId: game.id,
       gameName: game.name,
       venueName: game.venueName,

@@ -1,7 +1,13 @@
 import { SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { escapeHtml, layout, STYLES, THEME_COLOR } from "../../src/views/layout.js";
-import { APPLE_TOUCH_ICON_PATH, MANIFEST_PATH } from "../../src/auth/paths.js";
+import {
+  ACCOUNT_PATH,
+  ADMIN_ALLOWLIST_PATH,
+  APPLE_TOUCH_ICON_PATH,
+  DASHBOARD_PATH,
+  MANIFEST_PATH,
+} from "../../src/auth/paths.js";
 import { PAGE_STYLE_BLOCKS } from "../../src/views/styles.js";
 
 describe("escapeHtml", () => {
@@ -181,5 +187,33 @@ describe("the installable app's head (M13)", () => {
     const body = await (await SELF.fetch("https://makethe.team/")).text();
 
     expect(body).toContain(`<meta name="theme-color" content="${THEME_COLOR}">`);
+  });
+});
+
+describe("the signed-in header (M16)", () => {
+  const page = (nav?: import("../../src/views/layout.js").PageNav) =>
+    layout({ title: "T", body: "<h1>B</h1>", nav });
+
+  it("renders no header at all when nav is absent", () => {
+    // The CSS in STYLES names .site-header on every page; the markup is what
+    // must be absent.
+    expect(page()).not.toContain(`<header class="site-header">`);
+  });
+
+  it("offers Games and Account, and marks the current section", () => {
+    const html = page({ isAdmin: false, current: "account" });
+    expect(html).toContain(`<a href="${DASHBOARD_PATH}">Games</a>`);
+    expect(html).toContain(`<a href="${ACCOUNT_PATH}" aria-current="page">Account</a>`);
+    // Exactly one current section — a header marking two is lying about one.
+    // The trailing > keeps STYLES' own a[aria-current="page"] selector out of
+    // the count.
+    expect(html.match(/ aria-current="page">/g)).toHaveLength(1);
+  });
+
+  it("draws the Admin link only for an admin", () => {
+    expect(page({ isAdmin: false, current: "games" })).not.toContain("Admin");
+    expect(page({ isAdmin: true, current: "games" })).toContain(
+      `<a href="${ADMIN_ALLOWLIST_PATH}">Admin</a>`,
+    );
   });
 });

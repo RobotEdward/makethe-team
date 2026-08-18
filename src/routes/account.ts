@@ -8,7 +8,7 @@ import {
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
 } from "../auth/paths.js";
-import { requirePlayer } from "../auth/session.js";
+import { requirePlayer, pageNav } from "../auth/session.js";
 import { recordAudit } from "../db/audit.js";
 import { getDb } from "../db/client.js";
 import { listPlayerFixtureHistory } from "../db/dashboard-queries.js";
@@ -71,6 +71,7 @@ async function renderDeleteAccount(c: Context<AppEnv>, problem?: string) {
     if (row.erasesAt <= now || row.erasureStartedAt !== null) {
       return c.html(
         renderDeleteAccountPage({
+      nav: pageNav(c, "account"),
           playerName: player.name,
           state: "held-up",
           erasesAtLocal,
@@ -87,6 +88,7 @@ async function renderDeleteAccount(c: Context<AppEnv>, problem?: string) {
 
     return c.html(
       renderDeleteAccountPage({
+      nav: pageNav(c, "account"),
         playerName: player.name,
         state: "pending",
         erasesAtLocal,
@@ -100,6 +102,7 @@ async function renderDeleteAccount(c: Context<AppEnv>, problem?: string) {
 
   return c.html(
     renderDeleteAccountPage({
+      nav: pageNav(c, "account"),
       playerName: player.name,
       state: blockingGames.length > 0 ? "sole-organiser" : "offer",
       blockingGames,
@@ -347,6 +350,7 @@ async function renderAccount(c: Context<AppEnv>, problem?: string) {
 
   return c.html(
     renderAccountPage({
+      nav: pageNav(c, "account"),
       playerName: player.name,
       email: player.email,
       fixtures: history.map((fixture) => ({

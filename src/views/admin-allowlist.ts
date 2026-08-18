@@ -1,12 +1,13 @@
 import {
   ADMIN_ALLOWLIST_ADD_PATH,
   ADMIN_ALLOWLIST_REMOVE_PATH,
-  DASHBOARD_PATH,
 } from "../auth/paths.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { ADMIN_ALLOWLIST_CSS, FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
 
 export interface AdminAllowlistPageParams {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   /**
    * Entries from the `SIGNIN_ALLOWLIST` secret, already folded and de-blanked.
    * Shown without a remove button: they live in a Cloudflare secret this
@@ -47,6 +48,7 @@ export function renderAdminAllowlistPage(params: AdminAllowlistPageParams): stri
     : "";
 
   return layout({
+    nav: params.nav,
     title: "Sign-up allow list — Make The Team",
     // FIXTURE_STYLES_CSS is here for `.back-link` alone, the same way
     // `passkeys.ts` carries it. Order follows PAGE_STYLE_BLOCKS' own order.
@@ -63,7 +65,6 @@ export function renderAdminAllowlistPage(params: AdminAllowlistPageParams): stri
         </div>
         <button class="button primary" type="submit">Add</button>
       </form>
-      <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
     `,
   });
 }

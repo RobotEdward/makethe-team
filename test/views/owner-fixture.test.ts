@@ -7,6 +7,7 @@ const KICKOFF = new Date("2026-08-13T18:00:00Z");
 const NOW = new Date("2026-08-13T09:00:00Z");
 
 const BASE: OwnerFixtureParams = {
+  nav: { isAdmin: false, current: "games" } as const,
   gameId: "g-1",
   gameName: "Thursday 7-a-side",
   fixtureId: "f-1",

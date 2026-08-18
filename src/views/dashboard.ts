@@ -1,5 +1,4 @@
 import {
-  ACCOUNT_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
@@ -11,7 +10,7 @@ import {
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import { renderFullWarning, renderResponseButtons, renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
 
@@ -58,6 +57,8 @@ export interface OwnedGame {
 }
 
 export interface DashboardPageOptions {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   playerName: string;
   rows: readonly DashboardRow[];
   /** Games this player is an active Owner of — `listOwnedGames` (J1/M6a). */
@@ -244,6 +245,7 @@ function renderHeldUpErasureBanner(
  * exist without it.
  */
 export function renderDashboardPage({
+  nav,
   playerName,
   rows,
   ownedGames,
@@ -273,12 +275,13 @@ export function renderDashboardPage({
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
     ${renderOwnedGamesSection(ownedGames)}
-    <p><a href="${ACCOUNT_PATH}">Your account</a> · <a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
+    <p><a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
     <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
     ${signOutForm("Sign out")}
   `;
 
   return layout({
+    nav,
     title: "Your games — Make The Team",
     body,
     pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS],

@@ -706,6 +706,7 @@ describe("fixture page", () => {
       // The organiser's page, from the same shared CSS, keeps its `<ul class="squad">` —
       // so `ul.squad > li` still reaches the rows it was written for.
       const ownerParams: OwnerFixtureParams = {
+        nav: { isAdmin: false, current: "games" } as const,
         gameId: "g-1",
         gameName: "Thursday 7-a-side",
         fixtureId: "f-1",
@@ -1079,6 +1080,7 @@ describe("the capacity bar", () => {
     // The fixture page and the dashboard are covered by their own suites;
     // these two had no `FIXTURE_STYLES_CSS` at all before M12.
     const ownerHtml = renderOwnerFixturePage({
+      nav: { isAdmin: false, current: "games" } as const,
       gameId: "g-1",
       gameName: "Thursday 7-a-side",
       fixtureId: "f-1",
@@ -1113,6 +1115,7 @@ describe("the capacity bar", () => {
     expect(ownerHtml).toContain(".capacity .track");
 
     const playerHtml = renderPlayerGamePage({
+      nav: { isAdmin: false, current: "games" } as const,
       gameName: "Thursday 7-a-side",
       venueName: "Oxford Sports Park",
       venueAddress: null,

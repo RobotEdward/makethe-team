@@ -1167,6 +1167,37 @@ describe("no password field anywhere (TR-16)", () => {
       ).toBe(true);
     }
 
+    /**
+     * The signed-in header (M16): exactly the session-bearing pages carry it,
+     * and no public or token-link page does — a "Games" link shown to a
+     * visitor with no session is a bounce to sign-in dressed as navigation.
+     * Membership is pinned both ways so a new page cannot silently ship
+     * without deciding, and `renderHeader`'s own content (the Admin link
+     * appearing only for an admin, aria-current) is pinned in
+     * test/views/layout.test.ts rather than re-derived here.
+     */
+    const HEADER_PAGES = new Set([
+      "dashboard",
+      "passkeys",
+      "delete my data",
+      "account",
+      "admin allow list",
+      "game form",
+      "game overview",
+      "game edit",
+      "owner fixture",
+      "message everyone",
+      "message squad",
+      "squad remove confirm",
+      "squad member",
+    ]);
+    for (const { name, body } of pages) {
+      expect(
+        body.includes(`class="site-header"`),
+        `${name} must ${HEADER_PAGES.has(name) ? "carry" : "not carry"} the signed-in header`,
+      ).toBe(HEADER_PAGES.has(name));
+    }
+
     for (const { name, body } of pages) {
       expect(body, `${name} must attach no inline event handler`).not.toMatch(/\son[a-z]+\s*=/i);
       expect(body, `${name} must contain no javascript: URL`).not.toMatch(/javascript:/i);

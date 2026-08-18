@@ -6,6 +6,7 @@ import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 
 const BASE = {
+  nav: { isAdmin: false, current: "games" } as const,
   gameId: "g-1",
   gameName: "Thursday 7-a-side",
   venueName: "Venue Name",
@@ -267,9 +268,10 @@ describe("coming up", () => {
 });
 
 describe("getting back out", () => {
-  it("offers one way back, styled", () => {
+  it("offers the way back through the header, not a body back link (M16)", () => {
     const html = render();
-    expect(html).toContain('<p class="back-link"><a href="/app">Back to your games</a></p>');
+    expect(html).toContain(`<header class="site-header">`);
+    expect(html).not.toContain(`class="back-link"`);
   });
 
   it("ships the block that styles it", () => {

@@ -1,9 +1,10 @@
-import { DASHBOARD_PATH } from "../auth/paths.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { PASSKEY_REGISTER_JS } from "./scripts.js";
 import { FIXTURE_STYLES_CSS, PASSKEY_STYLES_CSS } from "./styles.js";
 
 export interface PasskeysPageOptions {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   /**
    * The passkeys already registered to the *signed-in* identity, newest last,
    * each already reduced to a label. Deliberately a list of strings and not
@@ -31,7 +32,7 @@ export interface PasskeysPageOptions {
  * and not a lockout, and a delete button is a destructive action that wants
  * its own confirmation design. Noted for a later task.
  */
-export function renderPasskeysPage({ labels }: PasskeysPageOptions): string {
+export function renderPasskeysPage({ labels, nav }: PasskeysPageOptions): string {
   const list =
     labels.length === 0
       ? `<p>You haven't added a passkey yet.</p>`
@@ -40,6 +41,7 @@ export function renderPasskeysPage({ labels }: PasskeysPageOptions): string {
           .join("")}</ul>`;
 
   return layout({
+    nav,
     title: "Passkeys — Make The Team",
     // `FIXTURE_STYLES_CSS` is here for `.back-link` alone (§2.5), the same way
     // `src/views/game-overview.ts` and `src/views/leave.ts` carry it: without
@@ -56,7 +58,6 @@ export function renderPasskeysPage({ labels }: PasskeysPageOptions): string {
         <button class="button primary" type="button" id="passkey-add-button">Add a passkey</button>
         <p class="nudge" id="passkey-problem" hidden></p>
       </div>
-      <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
     `,
   });
 }

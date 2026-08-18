@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import type { Db } from "../db/client.js";
 import { getDb } from "../db/client.js";
-import { players } from "../db/schema.js";
+import { players, user } from "../db/schema.js";
 import type { AppEnv, Bindings } from "../env.js";
-import { layout } from "../views/layout.js";
+import { layout, type NavSection, type PageNav } from "../views/layout.js";
 import { createAuth } from "./factory.js";
 import { SIGN_IN_PATH } from "./paths.js";
 import { signOutForm } from "../views/sign-out-form.js";
@@ -57,6 +57,14 @@ export type AuthSession = NonNullable<
 export interface AppVariables {
   session: AuthSession | null;
   player: Player | null;
+  /**
+   * Whether the signed-in identity holds `user.is_admin` — resolved here so
+   * the page header can decide whether to *draw* the Admin link (M16), and
+   * for nothing stronger. Entitlement to the admin screen itself is re-asked
+   * from the row by every admin handler (TR-18); this flag can render a link,
+   * never open a door. Anonymous requests are `false`.
+   */
+  isAdmin: boolean;
 }
 
 /**
@@ -110,9 +118,10 @@ export const sessionMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   const now = new Date(Date.now());
   const db = getDb(c.env.DB);
 
-  const { session, player } = await resolveSessionAndPlayer(c.env, db, now, c.req.raw.headers);
+  const { session, player, isAdmin } = await resolveSessionAndPlayer(c.env, db, now, c.req.raw.headers);
   c.set("session", session);
   c.set("player", player);
+  c.set("isAdmin", isAdmin);
 
   await next();
 };
@@ -135,10 +144,17 @@ async function resolveSessionAndPlayer(
   db: Db,
   now: Date,
   headers: Headers,
-): Promise<{ session: AuthSession | null; player: Player | null }> {
+): Promise<{ session: AuthSession | null; player: Player | null; isAdmin: boolean }> {
   try {
     const session = (await createAuth(env, db, now).api.getSession({ headers })) ?? null;
-    return { session, player: session === null ? null : await findPlayer(db, session.user.id) };
+    if (session === null) return { session: null, player: null, isAdmin: false };
+    // Two lookups, not a join: `player` and `isAdmin` hang off different
+    // tables and either can be absent without the other being so.
+    return {
+      session,
+      player: await findPlayer(db, session.user.id),
+      isAdmin: await findIsAdmin(db, session.user.id),
+    };
   } catch (error) {
     // Anonymous, and loudly logged. Never the cookie or the token: this repo
     // is public and a session token in a log line is a live credential.
@@ -157,8 +173,18 @@ async function resolveSessionAndPlayer(
         error instanceof Error ? (error.stack ?? error.message) : String(error)
       }`,
     );
-    return { session: null, player: null };
+    return { session: null, player: null, isAdmin: false };
   }
+}
+
+/** The header's Admin-link flag; see `AppVariables.isAdmin` for its limits. */
+async function findIsAdmin(db: Db, authUserId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ isAdmin: user.isAdmin })
+    .from(user)
+    .where(eq(user.id, authUserId))
+    .limit(1);
+  return row?.isAdmin ?? false;
 }
 
 /** The Player this identity owns, or null if none has been linked yet. */
@@ -222,6 +248,17 @@ export async function resolveSessionPlayer(
  * request is an open-redirect surface, and there is no sign-in page to honour
  * it until the next task.
  */
+/**
+ * The header inputs for a page a signed-in handler is about to render:
+ * `isAdmin` as `sessionMiddleware` resolved it, plus which section the page
+ * belongs to. A one-liner, but a shared one — twelve views take a `PageNav`,
+ * and this keeps "read the flag off the context" from being written twelve
+ * slightly different ways.
+ */
+export function pageNav(c: Context<AppEnv>, current: NavSection): PageNav {
+  return { isAdmin: c.get("isAdmin"), current };
+}
+
 export const requireSession: MiddlewareHandler<AppEnv> = async (c, next) => {
   if (!c.get("session")) return c.redirect(SIGN_IN_PATH, 302);
   await next();

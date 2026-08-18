@@ -1,10 +1,40 @@
-import { APPLE_TOUCH_ICON_PATH, MANIFEST_PATH } from "../auth/paths.js";
+import {
+  ACCOUNT_PATH,
+  ADMIN_ALLOWLIST_PATH,
+  APPLE_TOUCH_ICON_PATH,
+  DASHBOARD_PATH,
+  MANIFEST_PATH,
+} from "../auth/paths.js";
 import { SERVICE_WORKER_JS, type PageScriptBlock } from "./scripts.js";
 import type { PageStyleBlock } from "./styles.js";
+
+/** The three destinations the signed-in header offers. */
+export type NavSection = "games" | "account" | "admin";
+
+/**
+ * The signed-in page header's inputs (M16).
+ *
+ * `isAdmin` is display only — it decides whether the Admin link is *drawn*,
+ * never whether the screen behind it answers. The admin handlers re-ask
+ * `user.is_admin` fresh on every request (TR-18), so a stale or forged nav
+ * flag can render a link and nothing more.
+ */
+export interface PageNav {
+  isAdmin: boolean;
+  current: NavSection;
+}
 
 export interface LayoutOptions {
   title: string;
   body: string;
+  /**
+   * Render the signed-in header above `main`. Absent means no header at all —
+   * which is the whole mechanism keeping it off the public and token-link
+   * pages: their visitors often hold no session, and a "Games" link that
+   * bounces to sign-in is worse than no link. Only session-bearing pages
+   * (`/app/*`, `/g/*`) pass this.
+   */
+  nav?: PageNav;
   /**
    * CSS beyond the shared primitives below, specific to this page alone.
    * Zero, one, or more blocks — the dashboard, for instance, passes both the
@@ -142,6 +172,33 @@ export const STYLES = `
      alignments at once — the design review's finding 6. */
   main { max-width: 30rem; width: 100%; text-align: left; }
   main.centred { text-align: center; }
+  /* The signed-in header (M16). Shares main's 30rem column so the name and
+     the page's own content keep one left edge. */
+  /* Two rows, not the default equal split: the header's row hugs its content
+     at the top and main centres in what remains — without this the grid gives
+     each row half the viewport and the header floats mid-air on short pages. */
+  body.with-header { grid-template-rows: auto 1fr; }
+  .site-header {
+    width: 100%; max-width: 30rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    border-bottom: 1px solid var(--line); margin-bottom: 1.5rem;
+  }
+  .site-header .site-name {
+    color: var(--fg); font-weight: 700; text-decoration: none;
+    display: inline-flex; align-items: center; min-height: 44px;
+  }
+  .site-header nav { display: flex; gap: 1.1rem; }
+  /* min-height 44px: the link's whole padded box is the tap target — a bare
+     text link is ~20px, well under the phone floor the buttons obey. */
+  .site-header nav a {
+    color: var(--mut); text-decoration: none; font-weight: 500;
+    display: inline-flex; align-items: center; min-height: 44px;
+  }
+  .site-header nav a[aria-current="page"] {
+    color: var(--fg); font-weight: 600;
+    text-decoration: underline; text-decoration-color: var(--accent);
+    text-decoration-thickness: 2px; text-underline-offset: 0.4em;
+  }
   h1 { font-size: var(--t-title); letter-spacing: -0.02em; margin: 0 0 0.5rem; }
   h2 { font-size: var(--t-lead); margin: 2rem 0 0.6rem; }
   p { color: var(--mut); margin: 0; }
@@ -220,7 +277,22 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function layout({ title, body, pageStyles, pageScripts, centred }: LayoutOptions): string {
+function navLink(href: string, label: string, section: NavSection, current: NavSection): string {
+  return `<a href="${escapeHtml(href)}"${section === current ? ` aria-current="page"` : ""}>${label}</a>`;
+}
+
+function renderHeader(nav: PageNav): string {
+  const links = [
+    navLink(DASHBOARD_PATH, "Games", "games", nav.current),
+    navLink(ACCOUNT_PATH, "Account", "account", nav.current),
+    ...(nav.isAdmin ? [navLink(ADMIN_ALLOWLIST_PATH, "Admin", "admin", nav.current)] : []),
+  ];
+  return `<header class="site-header"><a class="site-name" href="${escapeHtml(
+    DASHBOARD_PATH,
+  )}">Make The Team</a><nav aria-label="Main">${links.join("")}</nav></header>`;
+}
+
+export function layout({ title, body, pageStyles, pageScripts, centred, nav }: LayoutOptions): string {
   const styleTags = [STYLES, ...(pageStyles ?? [])].map((css) => `<style>${css}</style>`).join("\n");
   // No attributes on the tag — not `src`, not `type`, not `nonce`. A bare
   // inline `<script>` is what a CSP SHA-256 hash of the block's exact text
@@ -249,7 +321,7 @@ export function layout({ title, body, pageStyles, pageScripts, centred }: Layout
 <title>${escapeHtml(title)}</title>
 ${styleTags}
 </head>
-<body><main${centred ? ` class="centred"` : ""}>${body}</main>${scriptTags}</body>
+<body${nav === undefined ? "" : ` class="with-header"`}>${nav === undefined ? "" : renderHeader(nav)}<main${centred ? ` class="centred"` : ""}>${body}</main>${scriptTags}</body>
 </html>
 `;
 }

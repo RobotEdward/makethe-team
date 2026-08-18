@@ -13,7 +13,6 @@ import {
   insertSubscription,
   resetDatabase,
 } from "../support/factories.js";
-import { FIXTURE_STYLES_CSS } from "../../src/views/styles.js";
 import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE, PUSH_TOKEN_ATTRIBUTE } from "../../src/views/scripts.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 
@@ -283,16 +282,15 @@ describe("GET /app/account", () => {
     expect(row).not.toContain("undefined");
   });
 
-  it("ends in one back link, wearing the class §2.5 names", async () => {
-    // The link was already here; the class was not, so the 1.5rem that keeps
-    // it off the block above it never applied. This page already carries
-    // FIXTURE_STYLES_CSS, where `.back-link` is declared.
+  it("offers the way back up through the header, not a body back link (M16)", async () => {
+    // The §2.5 back link this page carried duplicated the header's Games
+    // link the moment the header shipped, so it went. The header is the one
+    // way back now — a body link reappearing would mean two.
     const { cookie } = await signIn();
     const body = await (await get(cookie)).text();
 
-    expect(body).toContain(`<p class="back-link">`);
-    expect(body.match(/class="back-link"/g)).toHaveLength(1);
-    expect(body).toContain(FIXTURE_STYLES_CSS);
+    expect(body).toContain(`<header class="site-header">`);
+    expect(body).not.toContain(`class="back-link"`);
   });
 
   it("shows the pending-erasure banner and its link when one is due", async () => {

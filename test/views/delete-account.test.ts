@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderDeleteAccountPage, type DeleteAccountPageParams } from "../../src/views/delete-account.js";
-import { FIXTURE_STYLES_CSS } from "../../src/views/styles.js";
 
 const BASE: DeleteAccountPageParams = {
+  nav: { isAdmin: false, current: "account" } as const,
   playerName: "Ada Okafor",
   state: "offer",
 };
@@ -91,22 +91,15 @@ describe("one filled button per screen", () => {
 });
 
 /**
- * §2.5: every page behind a session ends in one back link wearing the
- * existing `.back-link` class. This page had the link and not the class, so
- * the 1.5rem that separates it from the block above it was never applied.
+ * §2.5's "one way back up" is the header's Games link since M16 — the body
+ * back link this page carried duplicated it and was removed with it.
  */
-describe("the back link", () => {
-  it("carries the class, and the block that declares it", () => {
-    const html = renderDeleteAccountPage(BASE);
-    expect(html).toContain(`<p class="back-link">`);
-    expect(html).toContain(FIXTURE_STYLES_CSS);
-    expect(FIXTURE_STYLES_CSS).toContain(".back-link {");
-  });
-
-  it("offers exactly one way back up, in every state this page has", () => {
+describe("the way back up", () => {
+  it("is the header, in every state this page has", () => {
     for (const state of STATES) {
       const html = renderDeleteAccountPage(state.params);
-      expect(html.match(/class="back-link"/g), state.name).toHaveLength(1);
+      expect(html, state.name).toContain(`<header class="site-header">`);
+      expect(html, state.name).not.toContain(`class="back-link"`);
     }
   });
 });

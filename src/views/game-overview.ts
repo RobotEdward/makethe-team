@@ -1,5 +1,4 @@
 import {
-  DASHBOARD_PATH,
   gameEditPath,
   gameMessagePath,
   joinPath,
@@ -13,12 +12,14 @@ import type { Lifecycle } from "../domain/lifecycle.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
 import { fixtureStatusWords } from "./fixture.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { qrSvg } from "./qr.js";
 import { COPY_INVITE_JS } from "./scripts.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 export interface GameOverviewParams {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   gameId: string;
   gameName: string;
   venueName: string;
@@ -150,10 +151,10 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     <h2>Coming up</h2>
     <ul class="fixtures">${fixtureItems || "<li>No fixtures scheduled.</li>"}</ul>
 
-    <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
   `;
 
   return layout({
+    nav: params.nav,
     title: `${gameName} — Make The Team`,
     body,
     // The order here is load-bearing, not alphabetical. SQUAD_STYLES_CSS and

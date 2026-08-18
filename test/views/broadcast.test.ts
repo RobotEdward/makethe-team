@@ -22,6 +22,7 @@ const VALUES: BroadcastFormValues = {
 };
 
 const BASE: BroadcastPageParams = {
+  nav: { isAdmin: false, current: "games" } as const,
   gameId: "g-1",
   gameName: "Thursday 7-a-side",
   fixture: { id: "f-1", whenLocal: "Thu 20 Aug, 7:00pm" },

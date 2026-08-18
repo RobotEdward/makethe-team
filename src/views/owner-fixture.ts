@@ -11,7 +11,7 @@ import { RESPONSE_STATUSES } from "../domain/response-status.js";
 import { displayName } from "../domain/display-name.js";
 import { takingChanges, type FixtureView } from "../domain/fixture-view.js";
 import { sideCounts, type TeamId } from "../domain/teams.js";
-import { escapeHtml, layout } from "./layout.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
@@ -19,6 +19,8 @@ import { TEAM_PICKER_JS } from "./scripts.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface OwnerFixtureParams {
+  /** The signed-in header (M16); see PageNav in layout.ts. */
+  nav: PageNav;
   gameId: string;
   gameName: string;
   fixtureId: string;
@@ -304,6 +306,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   `;
 
   return layout({
+    nav: params.nav,
     title: `${gameName} — Make The Team`,
     body,
     // `FIXTURE_STYLES_CSS` because this page renders `renderStatusLine` —
