@@ -4,9 +4,16 @@ import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog, players } from "../db/schema.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
-import { welcomeKey } from "./dedupe-key.js";
-import { applySendResult, insertQueuedLogRows, SITE_ORIGIN, type PendingNotification } from "./delivery.js";
+import { pushKey, welcomeKey } from "./dedupe-key.js";
+import {
+  applySendResult,
+  insertQueuedLogRows,
+  playersWithPushSubscriptions,
+  SITE_ORIGIN,
+  type PendingNotification,
+} from "./delivery.js";
 import type { Notifier } from "./notifier.js";
+import { PUSH_COPY } from "./push-copy.js";
 import { renderWelcomeEmail } from "./templates/welcome.js";
 
 /**
@@ -128,7 +135,7 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
   // `scheduled` fixture in the past would be a sweep that has not run — either
   // way, naming it would be wrong.
   const [firstFixture] = await db
-    .select({ kicksOffAt: fixtures.kicksOffAt, venueOverride: fixtures.venueOverride })
+    .select({ id: fixtures.id, kicksOffAt: fixtures.kicksOffAt, venueOverride: fixtures.venueOverride })
     .from(fixtures)
     .where(and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "scheduled"), gte(fixtures.kicksOffAt, now)))
     .orderBy(asc(fixtures.kicksOffAt))
@@ -141,7 +148,8 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
     responseTokenSecret,
   );
 
-  const rendered = renderWelcomeEmail({
+  const dashboardUrl = `${SITE_ORIGIN}${DASHBOARD_PATH}`;
+  const emailPayload = {
     playerName: player.name,
     gameName: game.name,
     venueName: firstFixture?.venueOverride ?? game.venueName,
@@ -149,43 +157,94 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
     // there is nothing scheduled yet — the template has copy for that.
     whenLocal: firstFixture ? formatLocalDateTime(firstFixture.kicksOffAt, game.timezone) : null,
     // Built here, from `SITE_ORIGIN` — never from anything in the request.
-    dashboardUrl: `${SITE_ORIGIN}${DASHBOARD_PATH}`,
+    dashboardUrl,
     leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
-  });
+  };
+  const rendered = renderWelcomeEmail(emailPayload);
 
   const dedupeKey = welcomeKey(membershipId, joinedAt.toISOString());
-  const pending: PendingNotification = {
-    logId: crypto.randomUUID(),
-    dedupeKey,
-    playerId,
-    message: {
-      channel: "email",
-      to: email,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
+  const pending: PendingNotification[] = [
+    {
+      logId: crypto.randomUUID(),
       dedupeKey,
+      playerId,
+      message: {
+        channel: "email",
+        to: email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        dedupeKey,
+      },
     },
-  };
+  ];
 
-  const [inserted] = await insertQueuedLogRows(db, { fixtureId: null, notificationType: "n6" }, [pending]);
-  if (!inserted) return { kind: "already-logged" };
+  // Only a player with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise a player without a phone
+  // would accumulate a `no-recipient` row per join, forever.
+  const subscribed = await playersWithPushSubscriptions(db, [playerId]);
+  if (subscribed.has(playerId)) {
+    const copy = PUSH_COPY.n6(emailPayload);
+    pending.push({
+      logId: crypto.randomUUID(),
+      dedupeKey: pushKey(dedupeKey),
+      playerId,
+      message: {
+        channel: "push",
+        to: playerId,
+        title: copy.title,
+        body: copy.body,
+        url: dashboardUrl,
+        // Sharpened to the real fixture id when there is a first fixture to
+        // name (Task 13) — two welcomes about the same upcoming fixture then
+        // collapse in the tray. N-6 is not fixture-scoped itself (see the
+        // module doc comment), so a squad with nothing `scheduled` yet keeps
+        // `PUSH_COPY`'s gameName approximation; there is no id to sharpen it
+        // with.
+        tag: firstFixture ? `n6:${firstFixture.id}` : copy.tag,
+        dedupeKey: pushKey(dedupeKey),
+      },
+    });
+  }
+
+  const inserted = await insertQueuedLogRows(db, { fixtureId: null, notificationType: "n6" }, pending);
+  const emailEntry = inserted.find((entry) => entry.message.channel === "email");
+  if (!emailEntry) return { kind: "already-logged" };
 
   let results;
   try {
-    results = await notifier.send([inserted.message]);
+    results = await notifier.send(inserted.map((entry) => entry.message));
   } catch (error) {
     // The notifier rejected — e.g. `QuotaNotifier.reserve()` hitting a D1
     // error. Whether the message reached a provider first is unknowable from
-    // here, so the row is left `failed` (ambiguous, never retried), exactly as
-    // the sweep and `send-promotion.ts` do with the same situation.
+    // here, so every row this batch inserted is left `failed` (ambiguous,
+    // never retried), exactly as the sweep and `send-promotion.ts` do with the
+    // same situation.
     const reason = error instanceof Error ? error.message : String(error);
-    await db
-      .update(notificationLog)
-      .set({ status: "failed", error: reason })
-      .where(eq(notificationLog.id, inserted.logId));
+    for (const entry of inserted) {
+      await db
+        .update(notificationLog)
+        .set({ status: "failed", error: reason })
+        .where(eq(notificationLog.id, entry.logId));
+    }
     return { kind: "failed", reason };
   }
 
-  return applySendResult(db, inserted, results[0], now);
+  // See `send-promotion.ts` for why every row's own result is applied but
+  // the function's return value tracks only the email leg.
+  let emailOutcome: WelcomeSendOutcome | undefined;
+  for (let i = 0; i < inserted.length; i++) {
+    const entry = inserted[i];
+    if (!entry) continue;
+    const outcome = await applySendResult(db, entry, results[i], now);
+    if (entry === emailEntry) {
+      emailOutcome =
+        outcome.kind === "sent"
+          ? { kind: "sent" }
+          : outcome.kind === "deferred"
+            ? { kind: "deferred" }
+            : { kind: "failed", reason: outcome.reason };
+    }
+  }
+  return emailOutcome ?? { kind: "already-logged" };
 }
