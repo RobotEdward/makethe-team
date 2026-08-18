@@ -6,8 +6,9 @@ import { auditLog, fixtures, memberships, notificationLog, players } from "../..
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
+import { pushKey, reminderKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
-import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -138,6 +139,42 @@ describe("openAndRemind", () => {
     expect(logRows).toHaveLength(3);
     expect(logRows.every((r) => r.status === "sent")).toBe(true);
     expect(logRows.every((r) => r.providerMessageId !== null)).toBe(true);
+  });
+
+  it("queues a push alongside the email for a player with a device", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const onePlayer = [{ id: "device-player", name: "Player", email: "device-player@example.com" }];
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: onePlayer });
+    await insertSubscription(db, "device-player", "https://push.example.com/device-player");
+    const notifier = new RecordingNotifier();
+
+    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+
+    expect(result.remindersSent).toBe(2);
+    const logRows = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
+    expect(logRows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = reminderKey(fixtureId, "device-player");
+    expect(logRows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.sent.flat().find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: "device-player", tag: `n1:${fixtureId}` });
+  });
+
+  it("still emails a player with no device at all", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const onePlayer = [{ id: "no-device-player", name: "Player", email: "no-device-player@example.com" }];
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: onePlayer });
+    const notifier = new RecordingNotifier();
+
+    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+
+    const logRows = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
+    expect(logRows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("carries a leave link scoped to the game, not the fixture", async () => {

@@ -6,15 +6,17 @@ import { reminderInstant } from "../domain/reminder-time.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
 import type { Notifier } from "../notify/notifier.js";
-import { reminderKey } from "../notify/dedupe-key.js";
+import { pushKey, reminderKey } from "../notify/dedupe-key.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import {
   applySendResult,
   insertQueuedLogRows,
   markOrphanedRowsFailed,
+  playersWithPushSubscriptions,
   SITE_ORIGIN,
   type PendingNotification,
 } from "../notify/delivery.js";
+import { PUSH_COPY } from "../notify/push-copy.js";
 import { renderReminderEmail } from "../notify/templates/reminder.js";
 
 /** One fixture (or game) the sweep could not fully process, and why. */
@@ -271,6 +273,7 @@ async function sendDueReminders(
       if (toBuild.length === 0) continue;
 
       const pending = await buildReminderMessages({
+        db,
         fixture: fixtureRow,
         game: gameRow,
         candidates: toBuild,
@@ -437,18 +440,28 @@ async function existingReminderLog(db: Db, fixtureId: string): Promise<Set<strin
 }
 
 async function buildReminderMessages(params: {
+  db: Db;
   fixture: typeof fixtures.$inferSelect;
   game: typeof games.$inferSelect;
   candidates: ReminderCandidate[];
   responseTokenSecret: string;
   now: Date;
 }): Promise<PendingNotification[]> {
-  const { fixture, game, candidates, responseTokenSecret, now } = params;
+  const { db, fixture, game, candidates, responseTokenSecret, now } = params;
 
   const kicksOffAtLocal = formatLocalDateTime(fixture.kicksOffAt, game.timezone);
   const inCount = fixture.inCount;
   const spotsLeft = Math.max(0, fixture.maxPlayers - fixture.inCount);
   const expiresAt = responseTokenExpiry(fixture.kicksOffAt).getTime();
+
+  // Only a player with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise every player without a phone
+  // would accumulate a `no-recipient` row per reminder, forever. Fetched
+  // once for the whole fixture's candidates rather than per player.
+  const subscribed = await playersWithPushSubscriptions(
+    db,
+    candidates.map((candidate) => candidate.playerId),
+  );
 
   const pending: PendingNotification[] = [];
   for (const candidate of candidates) {
@@ -470,21 +483,24 @@ async function buildReminderMessages(params: {
       responseTokenSecret,
     );
 
-    const rendered = renderReminderEmail({
+    const respondInUrl = `${SITE_ORIGIN}/r/${token}?intent=in`;
+    const emailPayload = {
       playerName: candidate.name,
       gameName: game.name,
       venueName: fixture.venueOverride ?? game.venueName,
       kicksOffAtLocal,
       inCount,
       spotsLeft,
-      respondInUrl: `${SITE_ORIGIN}/r/${token}?intent=in`,
+      respondInUrl,
       respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
       leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
-    });
+    };
+    const rendered = renderReminderEmail(emailPayload);
 
+    const dedupeKey = reminderKey(fixture.id, candidate.playerId);
     pending.push({
       logId: crypto.randomUUID(),
-      dedupeKey: reminderKey(fixture.id, candidate.playerId),
+      dedupeKey,
       playerId: candidate.playerId,
       message: {
         channel: "email",
@@ -492,9 +508,30 @@ async function buildReminderMessages(params: {
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
-        dedupeKey: reminderKey(fixture.id, candidate.playerId),
+        dedupeKey,
       },
     });
+
+    if (subscribed.has(candidate.playerId)) {
+      const copy = PUSH_COPY.n1(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey: pushKey(dedupeKey),
+        playerId: candidate.playerId,
+        message: {
+          channel: "push",
+          to: candidate.playerId,
+          title: copy.title,
+          body: copy.body,
+          url: respondInUrl,
+          // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
+          // (Task 9) to the real fixture id, now that this caller holds one
+          // (Task 13).
+          tag: `n1:${fixture.id}`,
+          dedupeKey: pushKey(dedupeKey),
+        },
+      });
+    }
   }
   return pending;
 }
