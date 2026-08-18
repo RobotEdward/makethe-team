@@ -10,6 +10,7 @@ import {
   insertMembership,
   insertPlayer,
   insertResponse,
+  insertSubscription,
   resetDatabase,
   testDb,
 } from "../support/factories.js";
@@ -224,12 +225,15 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId } = await seedFixture(viewerId);
 
-    // "waitlist" has nobody in `seedFixture` — one `in`, one `pending`, none
-    // `waitlist` — so this is the same zero-recipient shape the compose page
-    // showed at 390px/1280px with the default (empty) audience.
+    // "waitlisted" has nobody in `seedFixture` — one `in`, one `pending` —
+    // so this is the same zero-recipient shape the compose page showed at
+    // 390px/1280px with the default (empty) audience. Spelled exactly as
+    // `BROADCAST_AUDIENCES` spells it: a value the parser does not recognise
+    // would be refused as a *form* error instead, and this case would never
+    // reach the check it is named for.
     const response = await appPost(
       `/g/${gameId}/f/${fixtureId}/message`,
-      { ...VALID_FIELDS, audience: "waitlist" },
+      { ...VALID_FIELDS, audience: "waitlisted" },
       cookie,
     );
     const body = await response.text();
@@ -251,7 +255,7 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     for (let i = 0; i < MAX_BROADCASTS_PER_GAME_PER_DAY + 1; i++) {
       const response = await appPost(
         `/g/${gameId}/f/${fixtureId}/message`,
-        { ...VALID_FIELDS, audience: "waitlist" },
+        { ...VALID_FIELDS, audience: "waitlisted" },
         cookie,
       );
       expect(response.status).toBe(422);
@@ -267,6 +271,84 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     expect(succeeds.status).toBe(303);
     const rows = await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"));
     expect(rows).toHaveLength(1);
+  });
+
+  it("a push-only send to an audience where nobody has a device is refused, spending no send and writing no audit row", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFixture(viewerId);
+
+    // `seedFixture`'s players all have an email and no registered device, so
+    // the audience is not empty — an audience-only check passes here, spends
+    // one of the three daily sends and delivers nothing (spec §5).
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { subject: "Change of time", message: "Kick-off has moved to 7:30.", push: "on", audience: "playing" },
+      cookie,
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(422);
+    expect(body).toContain("Change of time");
+    expect(body).toContain("Kick-off has moved to 7:30.");
+    expect(body).toContain("registered for push");
+    expect(await testDb().select().from(notificationLog)).toEqual([]);
+    expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);
+
+    // The refusal came before the cap's counter, so all three sends remain.
+    const after = await appPost(`/g/${gameId}/f/${fixtureId}/message`, { ...VALID_FIELDS, audience: "playing" }, cookie);
+    await settleSend(1);
+    expect(after.status).toBe(303);
+  });
+
+  it("an email-only send to an audience whose every member is device-only is refused", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFixture(viewerId);
+    const db = testDb();
+
+    // One waitlisted player, no address, one registered device: reachable by
+    // push, and by nothing else.
+    const deviceOnly = await insertPlayer(db, { name: "Device Only", email: null });
+    await insertMembership(db, gameId, deviceOnly);
+    await insertResponse(db, fixtureId, deviceOnly, { status: "waitlisted" });
+    await insertSubscription(db, deviceOnly, "https://push.example/device-only");
+
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { subject: "Change of time", message: "Kick-off has moved to 7:30.", email: "on", audience: "waitlisted" },
+      cookie,
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(422);
+    expect(body).toContain("an email address");
+    expect(await testDb().select().from(notificationLog)).toEqual([]);
+    expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);
+  });
+
+  it("a push-only send to an audience that does have a device goes through", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFixture(viewerId);
+    const db = testDb();
+
+    const withDevice = await insertPlayer(db, { name: "Has Device" });
+    await insertMembership(db, gameId, withDevice);
+    await insertResponse(db, fixtureId, withDevice, { status: "waitlisted" });
+    await insertSubscription(db, withDevice, "https://push.example/has-device");
+
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { subject: "Change of time", message: "Kick-off has moved to 7:30.", push: "on", audience: "waitlisted" },
+      cookie,
+    );
+
+    expect(response.status).toBe(303);
+    const [row] = await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"));
+    const after = JSON.parse(row!.afterJson!) as { channels: { email: boolean; push: boolean }; recipientCount: number };
+    expect(after.channels).toEqual({ email: false, push: true });
+    // The one waitlisted player with a device — not the fixture's other
+    // responders, who are on no ticked channel.
+    expect(after.recipientCount).toBe(1);
+    await settleSend(1);
   });
 
   it("caps at three a day: the third succeeds, the fourth is refused with the cap named", async () => {
@@ -507,6 +589,33 @@ describe("POST /g/:id/message", () => {
     // Owner (with an email from sign-in) plus the one addressable member.
     expect(sent.map((r) => r.playerId).sort()).toEqual([memberId, viewerId].sort());
     for (const r of sent) expect(r.fixtureId).toBeNull();
+  });
+
+  it("counts only who the ticked channels reach on the audit row, not the whole audience", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, memberId } = await seedGame(viewerId);
+    const db = testDb();
+
+    // A third member reachable by push alone: in the squad, and in no email.
+    const deviceOnly = await insertPlayer(db, { name: "Device Only", email: null });
+    await insertMembership(db, gameId, deviceOnly);
+    await insertSubscription(db, deviceOnly, "https://push.example/device-only");
+
+    const response = await appPost(
+      `/g/${gameId}/message`,
+      { subject: "Change of time", message: "Kick-off has moved to 7:30.", email: "on" },
+      cookie,
+    );
+    await settleSend(2);
+
+    expect(response.status).toBe(303);
+    const [row] = await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"));
+    const after = JSON.parse(row!.afterJson!) as { recipientCount: number };
+    // The owner and the ordinary member, both with addresses — three people
+    // are in this squad, and the third is on no channel this send uses.
+    expect(after.recipientCount).toBe(2);
+    const sent = await testDb().select().from(notificationLog);
+    expect(sent.map((r) => r.playerId).sort()).toEqual([memberId, viewerId].sort());
   });
 
   it("404s for a signed-in stranger, sending nothing", async () => {

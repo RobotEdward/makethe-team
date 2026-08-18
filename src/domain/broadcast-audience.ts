@@ -76,9 +76,21 @@ export interface BroadcastCandidate {
   hasDevice: boolean;
 }
 
+/** Which of the two channels an organiser ticked on the compose form. */
+export interface BroadcastChannels {
+  email: boolean;
+  push: boolean;
+}
+
 /**
- * Whether there is any channel this player could actually be reached on
- * (spec §2.1).
+ * Whether this player could actually be reached on the channels the organiser
+ * ticked (spec §2.1, §5).
+ *
+ * Channel-aware rather than channel-agnostic because the difference decides
+ * whether a send reaches anybody: a push-only send to people who have an
+ * address but no registered device produces no message at all, and a check
+ * that only asked "could this player be reached somehow?" would let that send
+ * spend one of the game's three daily broadcasts in silence.
  *
  * A guest is excluded whatever their row holds (BR-32): a guest is somebody an
  * organiser typed in, not somebody who agreed to hear from the product.
@@ -86,11 +98,23 @@ export interface BroadcastCandidate {
  * The `.trim()` matches `send-teams.ts` and `send-welcome.ts` exactly, and is
  * load-bearing for the same reason: an email of `" "` is truthy, and letting
  * it through mints a `queued` row and a `no-recipient` result that
- * `applySendResult` records as `failed` forever.
+ * `applySendResult` records as `failed` forever. It is the same trim
+ * `sendBroadcast`'s own email leg applies, so the count here and the rows it
+ * writes agree.
+ */
+export function isReachableOn(candidate: BroadcastCandidate, channels: BroadcastChannels): boolean {
+  if (candidate.isGuest) return false;
+  if (channels.email && (candidate.email ?? "").trim() !== "") return true;
+  return channels.push && candidate.hasDevice;
+}
+
+/**
+ * Whether there is any channel this player could be reached on at all — the
+ * both-channels case of `isReachableOn`, and what `sendBroadcast` filters by
+ * before splitting the batch into its two legs.
  */
 export function isAddressable(candidate: BroadcastCandidate): boolean {
-  if (candidate.isGuest) return false;
-  return (candidate.email ?? "").trim() !== "" || candidate.hasDevice;
+  return isReachableOn(candidate, { email: true, push: true });
 }
 
 /** Narrow unknown form input to an audience. */

@@ -21,8 +21,16 @@ export interface BroadcastPageParams {
   gameName: string;
   /** Fixture-scoped only. Absent renders the game-scoped page. */
   fixture?: { id: string; whenLocal: string };
-  /** Per-audience recipient counts, for the radio labels and the button. */
+  /** Per-audience recipient counts, for the radio labels. */
   counts: Record<BroadcastAudience, number>;
+  /**
+   * How many people this send, as configured, could actually reach: the
+   * selected audience narrowed by the ticked channels. The button says this
+   * number, and the route writes the same one onto the audit row, so the page
+   * and the record cannot tell different stories. Not derivable from `counts`
+   * — those are channel-agnostic.
+   */
+  reachableCount: number;
   /** What was typed, for re-rendering a refusal. Empty strings on a fresh GET. */
   values: BroadcastFormValues;
   /** Field errors from `parseBroadcastForm`, plus any route-level refusal. */
@@ -33,6 +41,18 @@ export interface BroadcastPageParams {
 
 function count(n: number): string {
   return `${n} ${n === 1 ? "player" : "players"}`;
+}
+
+/**
+ * What the submit button says.
+ *
+ * At zero it names the situation instead of offering "Send to 0 players",
+ * which proposes a no-op. The button stays enabled either way: the server's
+ * 422 refusal is the control, and a disabled button would hide the reason
+ * rather than give it.
+ */
+function sendLabel(reachableCount: number): string {
+  return reachableCount === 0 ? "Nobody to send to" : `Send to ${count(reachableCount)}`;
 }
 
 /**
@@ -99,7 +119,6 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
   const scoped = fixture !== undefined;
   const action = scoped ? fixtureMessagePath(gameId, fixture.id) : gameMessagePath(gameId);
   const backHref = scoped ? ownerFixturePath(gameId, fixture.id) : gamePath(gameId);
-  const recipientCount = scoped ? counts[values.audience] : counts.everyone;
 
   const heading = scoped
     ? `Message the squad for ${gameName} on ${escapeHtml(fixture.whenLocal)}`
@@ -129,7 +148,7 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
       </div>
       ${channelFields(values, errorFor("channels"))}
       <div class="actions">
-        <button class="button primary" type="submit">Send to ${count(recipientCount)}</button>
+        <button class="button primary" type="submit">${sendLabel(params.reachableCount)}</button>
       </div>
     </form>
     <p class="back-link"><a href="${escapeHtml(backHref)}">Back</a></p>

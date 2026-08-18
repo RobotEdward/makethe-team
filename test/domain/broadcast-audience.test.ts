@@ -7,6 +7,7 @@ import {
   audienceSelectsStatus,
   isAddressable,
   isBroadcastAudience,
+  isReachableOn,
   type BroadcastAudience,
 } from "../../src/domain/broadcast-audience.js";
 import { RESPONSE_STATUSES } from "../../src/domain/response-status.js";
@@ -86,6 +87,24 @@ describe("broadcast audiences", () => {
     expect(isAddressable({ isGuest: false, email: null, hasDevice: false })).toBe(false);
     expect(isAddressable({ isGuest: false, email: "", hasDevice: false })).toBe(false);
     expect(isAddressable({ isGuest: false, email: "   ", hasDevice: false })).toBe(false);
+  });
+
+  it("reaches a player only on a channel they actually have, and only one that was ticked", () => {
+    const emailOnly = { isGuest: false, email: "sam@example.com", hasDevice: false };
+    const deviceOnly = { isGuest: false, email: null, hasDevice: true };
+    // The pairs that decide whether a send reaches anybody at all: each of
+    // these `false`s is a broadcast that would otherwise spend one of the
+    // game's three daily sends and deliver nothing.
+    expect(isReachableOn(emailOnly, { email: false, push: true })).toBe(false);
+    expect(isReachableOn(emailOnly, { email: true, push: false })).toBe(true);
+    expect(isReachableOn(deviceOnly, { email: true, push: false })).toBe(false);
+    expect(isReachableOn(deviceOnly, { email: false, push: true })).toBe(true);
+    // The trim applies per channel, not only to the both-channels case.
+    expect(isReachableOn({ isGuest: false, email: "   ", hasDevice: true }, { email: true, push: false })).toBe(false);
+    // BR-32 holds whichever channel is asked for.
+    expect(isReachableOn({ isGuest: true, email: "guest@example.com", hasDevice: true }, { email: true, push: true })).toBe(
+      false,
+    );
   });
 
   it("recognises exactly the audience names, from unknown input", () => {

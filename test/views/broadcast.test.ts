@@ -26,6 +26,7 @@ const BASE: BroadcastPageParams = {
   gameName: "Thursday 7-a-side",
   fixture: { id: "f-1", whenLocal: "Thu 20 Aug, 7:00pm" },
   counts: COUNTS,
+  reachableCount: 12,
   values: VALUES,
 };
 
@@ -56,14 +57,32 @@ describe("renderBroadcastPage", () => {
     expect(html).toMatch(/id="push"[^>]*checked/);
   });
 
-  it("names the count for the selected audience on the submit button", () => {
-    const html = renderBroadcastPage(params({ values: { ...VALUES, audience: "waitlisted" } }));
-    expect(html).toContain("Send to 3 players");
+  it("names the channel-aware reachable count on the submit button, not the audience's own count", () => {
+    // `reachableCount` is the audience narrowed by the ticked channels; the
+    // radio still shows the audience's channel-agnostic 3.
+    const html = renderBroadcastPage(
+      params({ values: { ...VALUES, audience: "waitlisted", push: false }, reachableCount: 2 }),
+    );
+    expect(html).toContain("Send to 2 players");
+    expect(html).not.toContain("Send to 3 players");
+    expect(html).toContain(escapeCount(AUDIENCE_LABELS.waitlisted, 3));
   });
 
-  it("names the count for everyone on the game-scoped submit button", () => {
-    const html = renderBroadcastPage(params({ fixture: undefined }));
+  it("names the reachable count on the game-scoped submit button", () => {
+    const html = renderBroadcastPage(params({ fixture: undefined, reachableCount: 18 }));
     expect(html).toContain("Send to 18 players");
+  });
+
+  it("says one player, not one players", () => {
+    const html = renderBroadcastPage(params({ reachableCount: 1 }));
+    expect(html).toContain("Send to 1 player<");
+  });
+
+  it("proposes no no-op at zero, and leaves the button enabled so the server refusal explains why", () => {
+    const html = renderBroadcastPage(params({ reachableCount: 0 }));
+    expect(html).toContain("Nobody to send to");
+    expect(html).not.toContain("Send to 0 players");
+    expect(html).not.toMatch(/<button[^>]*disabled/);
   });
 
   it("posts to the fixture-scoped action on the fixture page", () => {

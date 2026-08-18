@@ -18,7 +18,9 @@ import {
   FIXTURE_AUDIENCES,
   audienceSelectsStatus,
   isAddressable,
+  isReachableOn,
   type BroadcastAudience,
+  type BroadcastChannels,
 } from "../domain/broadcast-audience.js";
 import { parseBroadcastForm, type BroadcastFormValues } from "../domain/broadcast-form.js";
 import { MAX_BROADCASTS_PER_GAME_PER_DAY, utcDayStart } from "../domain/broadcast-limit.js";
@@ -37,13 +39,25 @@ function capMessage(): string {
 }
 
 /**
- * What the zero-recipient refusal says on the page — see the check in
+ * What the nobody-to-reach refusal says on the page — see the check in
  * `handleSend`. Worded to hold on both scopes: the game scope has no
  * audience picker to point the organiser back at, so this can't say "choose
  * a different audience".
+ *
+ * With both channels ticked, "reachable" and "matches the audience" are the
+ * same set (`isAddressable` is `isReachableOn` on both channels), so that
+ * case says nothing about channels. With one ticked, the audience may be full
+ * of people who simply lack that one channel, and saying "nobody matches this
+ * audience" there would send the organiser to change the wrong control.
+ * `parseBroadcastForm` has already refused a submission with neither ticked,
+ * so one of the two is always true here.
  */
-function noRecipientsMessage(): string {
-  return "Nobody matches this audience, so there is nobody to send this message to.";
+function noRecipientsMessage(channels: BroadcastChannels): string {
+  if (channels.email && channels.push) {
+    return "Nobody matches this audience, so there is nobody to send this message to.";
+  }
+  const missing = channels.email ? "an email address" : "a device registered for push";
+  return `Nobody in this audience has ${missing}, so there is nobody to send this message to.`;
 }
 
 /**
@@ -91,6 +105,31 @@ function countsForFixture(recipients: readonly BroadcastRecipient[]): Record<Bro
   return counts;
 }
 
+/**
+ * How many of `recipients` this send could actually reach: the ones the
+ * audience selects, narrowed by the channels the organiser ticked.
+ *
+ * The number the submit button says and the number the audit row records,
+ * from one pass over the rows already loaded — no second query, because
+ * `BroadcastRecipient` already carries both `email` and `hasDevice`.
+ *
+ * `everyone` selects every row because that audience's rows come from
+ * `listGameRecipients`, which is the membership list itself;
+ * `audienceSelectsStatus` deliberately returns false for it, since it is not
+ * resolved from `responses.status`.
+ */
+function reachableCount(
+  recipients: readonly BroadcastRecipient[],
+  audience: BroadcastAudience,
+  channels: BroadcastChannels,
+): number {
+  return recipients.filter(
+    (recipient) =>
+      (audience === "everyone" || audienceSelectsStatus(audience, recipient.status ?? "")) &&
+      isReachableOn(recipient, channels),
+  ).length;
+}
+
 /** The empty form a fresh `GET` renders: no text, both channels on. */
 function emptyValues(audience: BroadcastAudience): BroadcastFormValues {
   return { subject: "", message: "", email: true, push: true, audience };
@@ -111,13 +150,15 @@ broadcast.get("/g/:id/message", requirePlayer, async (c) => {
   if (game === null) return c.text("Not found", 404);
 
   const recipients = await listGameRecipients(db, game.id);
+  const values = emptyValues("everyone");
 
   return c.html(
     renderBroadcastPage({
       gameId: game.id,
       gameName: game.name,
       counts: countsForGame(recipients),
-      values: emptyValues("everyone"),
+      reachableCount: reachableCount(recipients, values.audience, values),
+      values,
     }),
   );
 });
@@ -148,6 +189,7 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
   const { fixture } = withSquad;
 
   const recipients = await listFixtureRecipients(db, fixtureId);
+  const values = emptyValues(DEFAULT_FIXTURE_AUDIENCE);
 
   return c.html(
     renderBroadcastPage({
@@ -158,7 +200,8 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
         whenLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
       },
       counts: countsForFixture(recipients),
-      values: emptyValues(DEFAULT_FIXTURE_AUDIENCE),
+      reachableCount: reachableCount(recipients, values.audience, values),
+      values,
     }),
   );
 });
@@ -224,7 +267,14 @@ interface SendScope {
   /** Present only for the fixture-scoped route; `null` means "everyone". */
   fixture: { id: string; whenLocal: string } | null;
   formScope: "game" | "fixture";
+  /** Channel-agnostic per-audience counts, for the re-rendered radio labels. */
   counts: Record<BroadcastAudience, number>;
+  /**
+   * The rows those counts were reduced from, kept so the channel-aware count
+   * can be taken once the submitted channels are known — the audience alone
+   * does not decide who a send reaches.
+   */
+  recipients: readonly BroadcastRecipient[];
   redirectTo: string;
 }
 
@@ -237,11 +287,11 @@ interface SendScope {
  * because it is what `countBroadcastsSince` counts — the daily cap (BR-36).
  * Writing it after would let two concurrent submissions each read a count of
  * zero and both send, and the cap would not cap anything. `recipientCount`
- * on that row is computed here, synchronously, from `scope.counts` — the
- * same reduction the `GET` page renders — rather than from the send result,
+ * on that row is computed here, synchronously, by `reachableCount` — the
+ * very number the submit button showed — rather than from the send result,
  * which does not exist yet when this row is written. The row records who the
- * message was *aimed at*; the per-recipient truth of what actually went out
- * lives in `notification_log`.
+ * message was *aimed at* on the channels it was configured for; the
+ * per-recipient truth of what actually went out lives in `notification_log`.
  *
  * `parseBroadcastForm` forces `audience` to `"everyone"` on the `"game"`
  * scope regardless of what was submitted, so reading `parsed.values.audience`
@@ -261,6 +311,7 @@ async function handleSend(
         gameName: scope.game.name,
         fixture: scope.fixture ?? undefined,
         counts: scope.counts,
+        reachableCount: reachableCount(scope.recipients, values.audience, values),
         values,
         ...extra,
       }),
@@ -271,15 +322,17 @@ async function handleSend(
   const parsed = parseBroadcastForm(form, scope.formScope);
   if (!parsed.ok) return rerender(parsed.values, { errors: parsed.errors });
 
-  // Same reduction the GET page's button label reads (`scope.counts` is
-  // `countsForGame`/`countsForFixture`'s output, passed through unchanged),
-  // so a zero-recipient refusal here matches what the organiser saw before
-  // pressing submit — no second query. Before the cap check, not after: the
-  // cap counts sends via `recordAudit` below, and an attempt that reaches
-  // nobody must not spend one of the game's three daily sends.
-  const recipientCount = scope.counts[parsed.values.audience];
+  // The audience narrowed by the submitted channels, from the rows already
+  // loaded — no second query. Channel-aware because the channel-agnostic
+  // count says "12 players" for a push-only send to twelve people of whom
+  // none has registered a device: that send passes an audience-only check,
+  // spends one of the game's three daily broadcasts, writes an audit row and
+  // reaches nobody, which spec §5 names as the one outcome that must not
+  // happen. Before the cap check, not after: the cap counts the `recordAudit`
+  // rows written below, so a refusal here must precede both.
+  const recipientCount = reachableCount(scope.recipients, parsed.values.audience, parsed.values);
   if (recipientCount === 0) {
-    return rerender(parsed.values, { problem: noRecipientsMessage() });
+    return rerender(parsed.values, { problem: noRecipientsMessage(parsed.values) });
   }
 
   const sentToday = await countBroadcastsSince(db, scope.game.id, utcDayStart(now));
@@ -351,6 +404,7 @@ broadcast.post("/g/:id/message", requirePlayer, async (c) => {
       fixture: null,
       formScope: "game",
       counts: countsForGame(recipients),
+      recipients,
       redirectTo: gamePath(game.id),
     },
     now,
@@ -391,6 +445,7 @@ broadcast.post("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
       fixture: { id: fixture.id, whenLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone) },
       formScope: "fixture",
       counts: countsForFixture(recipients),
+      recipients,
       redirectTo: ownerFixturePath(game.id, fixture.id),
     },
     now,
