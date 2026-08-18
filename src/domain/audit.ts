@@ -17,9 +17,10 @@
  * cancelled`, `game.updated`) so that as more entity types gain actions, two
  * unrelated actions never collide on the same bare verb. The `*_email_deferred`
  * deferral actions key on whichever entity the undelivered message was
- * about — a fixture for the sweep-driven ones (N-1, N-2, N-3, N-4, N-9), the
- * game for a broadcast (N-10), whose `entity_id` is that entity's id, not
- * always a fixture's.
+ * about — a fixture for N-1 through N-4 and N-9, the game for the N-10
+ * broadcast — so `entity_id` on one of these rows is not always a fixture's
+ * id. (Which of them fire from the sweep versus a route, and why that
+ * governs `collapseWindowMs`, is explained below, not here.)
  *
  * Extended by M6a, which is the first milestone to audit something that is not
  * a fixture. `entity_type` is a TypeScript-only narrowing — Drizzle's
@@ -76,9 +77,12 @@ export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
  * bounds that (see `src/notify/ceiling-audit.ts`). N-2, N-3 and N-9 fire from
  * routes and are naturally bounded by user action, so they do not pass it.
  *
- * They are five actions rather than one with a type field because their
+ * They are separate actions rather than one with a type field because their
  * severities differ that much: an operator wants to alert on the N-3 one
- * immediately and merely count the N-1 and N-4 ones.
+ * immediately and merely count the N-1 and N-4 ones. (A sixth,
+ * `game.broadcast_email_deferred` for N-10, joined this family in M15 — see
+ * its own comment below, next to `game.broadcast_sent` — on the same
+ * reasoning, not restated here.)
  */
 export const AUDIT_ACTIONS = [
   "fixture.cancelled",
