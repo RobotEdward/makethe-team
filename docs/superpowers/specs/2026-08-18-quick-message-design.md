@@ -262,8 +262,11 @@ product" to "the product and my organiser", and that is a disclosure.
 
 Erasure needs no new handling: `n10` rows are ordinary `notification_log` rows
 keyed on `player_id`, and erasure's handling of that table is not
-notification-type-specific. **To be confirmed against
-`src/domain/erase-player.ts` during implementation rather than assumed here.**
+notification-type-specific. **Confirmed against `src/domain/erase-player.ts`:**
+its only write to `notification_log` nulls `error` on rows matched by
+`eq(notificationLog.playerId, playerId)` alone — no `notification_type` appears
+in the `where` clause — so an `n10` row is covered exactly as an `n1` row is,
+with nothing added for this milestone.
 
 ## 10. Testing
 
@@ -304,3 +307,5 @@ In `docs/superpowers/specs/2026-08-10-make-the-team-design.md`:
 
 A sibling worktree, `../maketheteam-m15`, with its own `npm install`, merged
 fast-forward to `main`.
+
+**Status:** delivered by docs/superpowers/plans/2026-08-18-m15-quick-message.md

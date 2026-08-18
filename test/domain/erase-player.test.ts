@@ -136,23 +136,38 @@ describe("erasePlayer", () => {
   // provider's response body here on a non-2xx, and a provider's validation
   // errors quote the address they rejected. It is the only place in the schema
   // where an email address can appear outside `players.email`.
+  //
+  // Covers both `n1` and `n10` (M15, spec §9): the update matches on
+  // `player_id` alone with no `notification_type` in its `where`, so an
+  // organiser broadcast row is nulled exactly as a reminder row is, with
+  // nothing added for that milestone.
   it("nulls notification_log.error, which can quote the address", async () => {
     const db = testDb();
     const playerId = await insertPlayer(db, { email: "edward@example.test" });
-    await db.insert(notificationLog).values({
-      id: crypto.randomUUID(),
-      dedupeKey: `test:${playerId}`,
-      notificationType: "n1",
-      playerId,
-      status: "failed",
-      error: 'resend batch failed: HTTP 422 {"message":"Invalid `to`: edward@example.test"}',
-    });
+    await db.insert(notificationLog).values([
+      {
+        id: crypto.randomUUID(),
+        dedupeKey: `test:${playerId}`,
+        notificationType: "n1",
+        playerId,
+        status: "failed",
+        error: 'resend batch failed: HTTP 422 {"message":"Invalid `to`: edward@example.test"}',
+      },
+      {
+        id: crypto.randomUUID(),
+        dedupeKey: `test:n10:${playerId}`,
+        notificationType: "n10",
+        playerId,
+        status: "failed",
+        error: 'resend batch failed: HTTP 422 {"message":"Invalid `to`: edward@example.test"}',
+      },
+    ]);
 
     await erasePlayer({ db, playerId, now: NOW, withdraw: noWithdraw });
 
-    const [row] = await db.select().from(notificationLog).where(eq(notificationLog.playerId, playerId));
-    expect(row).toBeDefined();
-    expect(row?.error).toBeNull();
+    const rows = await db.select().from(notificationLog).where(eq(notificationLog.playerId, playerId));
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.error).toBeNull();
   });
 
   it("writes one player.erased audit row attributed to the player themselves", async () => {
