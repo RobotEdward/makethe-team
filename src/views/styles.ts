@@ -394,6 +394,33 @@ export const FORM_CSS = `
   .switch-row label { font-weight: 600; }
   .switch-row .hint { grid-column: 1; font-size: var(--t-support); color: var(--mut); }
   .switch-row input { grid-column: 2; grid-row: 1 / span 2; width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
+  /* The fixture-message audience radios (audienceFields in broadcast.ts).
+     Without this, .field input above turns each radio into a full-width
+     bordered box that centres its own dot, while .field label stacks the
+     caption text on the line beneath it — a viewer cannot tell which dot
+     belongs to which option (M15 review, Critical 1). Own class rather than
+     narrowing .field input: other pages rely on that rule styling a normal
+     text/select/textarea input the usual way.
+     .audience-group label ties .field label at (0,1,1) — the same tie
+     .switch-row label above breaks by coming later in this block; source
+     order, not specificity, is what makes this win. .audience-group
+     input[type=radio] outranks .field input on specificity alone
+     ((0,2,1) vs (0,1,1)), so that half doesn't depend on order. 52px matches
+     .switch-row's touch-target floor: the whole row is the label's hit
+     area, not just the 1.4rem dot. */
+  .audience-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 1rem; }
+  .audience-group.field-invalid { border-color: var(--warn); }
+  .audience-group legend { font-weight: 600; padding: 0 0.3rem; }
+  .audience-group label {
+    display: flex; align-items: center; gap: 0.75rem;
+    min-height: 52px; padding: 0.4rem 0; margin-bottom: 0; font-weight: 400;
+    border-bottom: 1px solid var(--line);
+  }
+  .audience-group label:last-of-type { border-bottom: none; }
+  .audience-group input[type="radio"] {
+    flex: 0 0 auto; width: 1.4rem; height: 1.4rem; padding: 0; border: none;
+    accent-color: var(--accent);
+  }
   details { margin: 1.5rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
   summary { cursor: pointer; font-weight: 600; }
   .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }

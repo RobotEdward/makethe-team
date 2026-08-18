@@ -65,7 +65,7 @@ function audienceFields(
   // that isn't one of the four), so this message must never imply the
   // checked radio is what was actually submitted.
   return `
-    <fieldset class="field${errorMessage ? " field-invalid" : ""}">
+    <fieldset class="field audience-group${errorMessage ? " field-invalid" : ""}">
       <legend>Who gets this message?</legend>
       ${radios}
       ${errorMessage ? `<span class="error" id="audience-error">${escapeHtml(errorMessage)}</span>` : ""}
