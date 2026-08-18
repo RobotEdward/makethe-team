@@ -155,6 +155,19 @@ export const AUDIT_ACTIONS = [
   // them emails anybody.
   "fixture.teams_saved",
   "fixture.teams_published",
+  // M15 (BR-36). One row per broadcast an organiser sends, and the counter the
+  // per-game daily cap is enforced from (`src/domain/broadcast-limit.ts`) —
+  // there is no message table, so these rows are the only record that a send
+  // happened. `after_json` carries the audience, the channels, the recipient
+  // count, the fixture id, and the **subject only**: copying 500 characters of
+  // somebody's prose into a second, longer-lived place is not what an audit
+  // trail is for.
+  "game.broadcast_sent",
+  // The durable half of TR-31's warning for N-10, matching the
+  // `*_email_deferred` family above. A ceiling refusal deletes its
+  // `notification_log` row, so without this there is no evidence anyone was
+  // ever owed the message.
+  "game.broadcast_email_deferred",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
