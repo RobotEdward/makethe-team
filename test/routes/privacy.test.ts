@@ -49,6 +49,18 @@ describe("privacy page", () => {
     }
   });
 
+  it("names the push services on the privacy page", async () => {
+    // Same treatment the Google Fonts IP disclosure already gets, and a
+    // stronger case: this one is per-player, persistent and opted into.
+    // Apple is asserted by name for the same reason Cloudflare/Resend/Google
+    // are above — naming each processor individually is what stops a later
+    // rewrite collapsing them into "our service providers".
+    const body = await (await SELF.fetch(url(PRIVACY_PATH))).text();
+
+    expect(body).toContain("Apple");
+    expect(body).toMatch(/push/i);
+  });
+
   it("states the four things erasure cannot reach", async () => {
     // These come off the list `docs/known-issues.md` kept specifically for this
     // page. They are the admissions a person needs *before* they rely on

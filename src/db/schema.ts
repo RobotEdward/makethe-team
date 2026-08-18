@@ -277,7 +277,11 @@ export const notificationLog = sqliteTable(
  * `p256dh` and `auth` are the device's public key and the shared secret that
  * the payload encryption in `src/notify/web-push.ts` needs. They are not
  * credentials for this system — they are useless without the endpoint — but
- * they are per-device secrets and are deleted with the player (§12).
+ * they are per-device secrets. Every row for a player is deleted the moment
+ * their erasure gets past its pre-check (`erasePlayer`,
+ * `src/domain/erase-player.ts`) — first among the irreversible writes there,
+ * ahead of anything that could fail, so a run that stops half-done still
+ * cannot leave a live endpoint behind (§12).
  */
 export const pushSubscriptions = sqliteTable(
   "push_subscriptions",

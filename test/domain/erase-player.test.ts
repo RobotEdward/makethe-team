@@ -8,6 +8,7 @@ import {
   notificationLog,
   passkey,
   players,
+  pushSubscriptions,
   responses,
   session,
   user,
@@ -19,6 +20,7 @@ import {
   insertMembership,
   insertPlayer,
   insertResponse,
+  insertSubscription,
   resetDatabase,
   testDb,
 } from "../support/factories.js";
@@ -46,6 +48,42 @@ describe("erasePlayer", () => {
     expect(row?.authUserId).toBeNull();
     expect(row?.emailVerifiedAt).toBeNull();
     expect(row?.erasedAt?.getTime()).toBe(NOW.getTime());
+  });
+
+  // The worst thing this feature can do: an orphaned endpoint that still
+  // wakes a real phone after that person asked to be erased. §12's headline
+  // guarantee, so it gets zero-rows-survive rather than a weaker assertion.
+  it("deletes every push subscription belonging to the erased player", async () => {
+    const db = testDb();
+    const playerId = await insertPlayer(db, { name: "Edward Cooper", email: "edward@example.test" });
+    await insertSubscription(db, playerId, "https://push.example.test/device-1");
+    await insertSubscription(db, playerId, "https://push.example.test/device-2");
+
+    const result = await erasePlayer({ db, playerId, now: NOW, withdraw: noWithdraw });
+
+    expect(result.kind).toBe("erased");
+    expect(await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.playerId, playerId))).toHaveLength(
+      0,
+    );
+  });
+
+  // The pre-check refuses before any write happens at all (see the test
+  // below this one), and a subscription is no exception: a blocked erasure
+  // must leave the device just as reachable as it was, because nothing has
+  // actually been erased.
+  it("leaves a device's subscription alone when erasure is blocked at the pre-check", async () => {
+    const db = testDb();
+    const playerId = await insertPlayer(db, { name: "Edward Cooper", email: "edward@example.test" });
+    const soleOwned = await insertGame(db);
+    await insertMembership(db, soleOwned, playerId, { role: "owner" });
+    await insertSubscription(db, playerId, "https://push.example.test/device-1");
+
+    const result = await erasePlayer({ db, playerId, now: NOW, withdraw: noWithdraw });
+
+    expect(result.kind).toBe("blocked");
+    expect(await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.playerId, playerId))).toHaveLength(
+      1,
+    );
   });
 
   // The row must survive: `responses`, `audit_log` and `notification_log` all
