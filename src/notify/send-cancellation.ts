@@ -2,16 +2,18 @@ import type { Db } from "../db/client.js";
 import type { CancellationRecipient } from "../domain/cancel-fixture.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
-import { cancellationKey } from "./dedupe-key.js";
+import { cancellationKey, pushKey } from "./dedupe-key.js";
 import {
   applySendResult,
   insertQueuedLogRows,
   markOrphanedRowsFailed,
+  playersWithPushSubscriptions,
   SITE_ORIGIN,
   type PendingNotification,
 } from "./delivery.js";
 import type { Notifier } from "./notifier.js";
 import { renderCancellationEmail } from "./templates/cancellation.js";
+import { PUSH_COPY } from "./push-copy.js";
 
 /**
  * What one N-3 send pass did, in counts an owner-facing page and a log line
@@ -102,6 +104,15 @@ export async function sendCancellationEmails(
   const kicksOffAtLocal = formatLocalDateTime(fixture.kicksOffAt, game.timezone);
   const venueName = fixture.venueOverride ?? game.venueName;
 
+  // Only a player with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise every player without a phone
+  // would accumulate a `no-recipient` row per cancellation, forever. Fetched
+  // once for the whole batch rather than per recipient.
+  const subscribed = await playersWithPushSubscriptions(
+    db,
+    recipients.map((recipient) => recipient.playerId),
+  );
+
   const pending: PendingNotification[] = [];
   for (const recipient of recipients) {
     // BR-32: a recipient with no usable address is skipped before a message
@@ -127,15 +138,17 @@ export async function sendCancellationEmails(
       { gameId: game.id, playerId: recipient.playerId, expiresAt: leaveTokenExpiry(now).getTime() },
       responseTokenSecret,
     );
+    const leaveUrl = `${SITE_ORIGIN}/leave/${leaveToken}`;
 
-    const rendered = renderCancellationEmail({
+    const emailPayload = {
       playerName: recipient.name,
       gameName: game.name,
       venueName,
       kicksOffAtLocal,
       reason,
-      leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
-    });
+      leaveUrl,
+    };
+    const rendered = renderCancellationEmail(emailPayload);
 
     const dedupeKey = cancellationKey(fixture.id, recipient.playerId);
     pending.push({
@@ -151,6 +164,28 @@ export async function sendCancellationEmails(
         dedupeKey,
       },
     });
+
+    if (subscribed.has(recipient.playerId)) {
+      const copy = PUSH_COPY.n3(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey: pushKey(dedupeKey),
+        playerId: recipient.playerId,
+        message: {
+          channel: "push",
+          to: recipient.playerId,
+          title: copy.title,
+          body: copy.body,
+          url: leaveUrl,
+          // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
+          // (Task 9) to the real fixture id, now that this caller holds one
+          // (M14 Task 13). Two cancellation pushes about the same fixture
+          // collapse in the tray; two about different fixtures never do.
+          tag: `n3:${fixture.id}`,
+          dedupeKey: pushKey(dedupeKey),
+        },
+      });
+    }
   }
 
   if (pending.length === 0) return summary;

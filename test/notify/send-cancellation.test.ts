@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players } from "../../src/db/schema.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
-import { cancellationKey } from "../../src/notify/dedupe-key.js";
+import { cancellationKey, pushKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendCancellationEmails } from "../../src/notify/send-cancellation.js";
-import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -128,6 +128,38 @@ describe("sendCancellationEmails (N-3)", () => {
     expect(rows.map((r) => r.dedupeKey).sort()).toEqual(
       [cancellationKey(fixtureId, "p-in"), cancellationKey(fixtureId, "p-wait")].sort(),
     );
+  });
+
+  it("queues a push alongside the email for a player with a device", async () => {
+    const recipients: Recipient[] = [
+      { playerId: "p-device", name: "Device Player", email: "device@example.com", status: "in" },
+    ];
+    const { gameId, fixtureId } = await seedFixture(recipients);
+    await insertSubscription(db, "p-device", "https://push.example.com/device");
+    const notifier = new RecordingNotifier();
+
+    await send(fixtureId, gameId, notifier, recipients);
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const pushRow = rows.find((r) => r.channel === "push");
+    expect(pushRow?.dedupeKey).toBe(pushKey(cancellationKey(fixtureId, "p-device")));
+
+    const pushMessage = notifier.all.find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: "p-device", tag: `n3:${fixtureId}` });
+  });
+
+  it("still emails a player with no device at all", async () => {
+    const recipients: Recipient[] = [
+      { playerId: "p-in", name: "In Player", email: "in@example.com", status: "in" },
+    ];
+    const { gameId, fixtureId } = await seedFixture(recipients);
+    const notifier = new RecordingNotifier();
+
+    await send(fixtureId, gameId, notifier, recipients);
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("skips a recipient with no usable address, without writing a row (BR-32)", async () => {
