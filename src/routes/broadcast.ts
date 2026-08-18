@@ -37,6 +37,16 @@ function capMessage(): string {
 }
 
 /**
+ * What the zero-recipient refusal says on the page — see the check in
+ * `handleSend`. Worded to hold on both scopes: the game scope has no
+ * audience picker to point the organiser back at, so this can't say "choose
+ * a different audience".
+ */
+function noRecipientsMessage(): string {
+  return "Nobody matches this audience, so there is nobody to send this message to.";
+}
+
+/**
  * Every audience at zero, the shape `BroadcastPageParams.counts` requires
  * even where a scope leaves some of its keys unused — see the two builders
  * below for which keys each actually fills in.
@@ -261,6 +271,17 @@ async function handleSend(
   const parsed = parseBroadcastForm(form, scope.formScope);
   if (!parsed.ok) return rerender(parsed.values, { errors: parsed.errors });
 
+  // Same reduction the GET page's button label reads (`scope.counts` is
+  // `countsForGame`/`countsForFixture`'s output, passed through unchanged),
+  // so a zero-recipient refusal here matches what the organiser saw before
+  // pressing submit — no second query. Before the cap check, not after: the
+  // cap counts sends via `recordAudit` below, and an attempt that reaches
+  // nobody must not spend one of the game's three daily sends.
+  const recipientCount = scope.counts[parsed.values.audience];
+  if (recipientCount === 0) {
+    return rerender(parsed.values, { problem: noRecipientsMessage() });
+  }
+
   const sentToday = await countBroadcastsSince(db, scope.game.id, utcDayStart(now));
   if (sentToday >= MAX_BROADCASTS_PER_GAME_PER_DAY) {
     return rerender(parsed.values, { problem: capMessage() });
@@ -268,7 +289,6 @@ async function handleSend(
 
   const broadcastId = crypto.randomUUID();
   const fixtureId = scope.fixture === null ? null : scope.fixture.id;
-  const recipientCount = scope.counts[parsed.values.audience];
   const channels = { email: parsed.values.email, push: parsed.values.push };
 
   await recordAudit(db, {

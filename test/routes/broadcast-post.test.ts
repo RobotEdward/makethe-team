@@ -220,6 +220,55 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);
   });
 
+  it("a zero-recipient audience refuses at 422, keeping what was typed, writing no audit row and sending nothing", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFixture(viewerId);
+
+    // "waitlist" has nobody in `seedFixture` — one `in`, one `pending`, none
+    // `waitlist` — so this is the same zero-recipient shape the compose page
+    // showed at 390px/1280px with the default (empty) audience.
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { ...VALID_FIELDS, audience: "waitlist" },
+      cookie,
+    );
+    const body = await response.text();
+
+    // No `waitUntil` is registered here either: the check runs before
+    // `recordAudit`/the send, so — like the form-validation refusals above —
+    // nothing here is racing a background task.
+    expect(response.status).toBe(422);
+    expect(body).toContain("Change of time");
+    expect(body).toContain("Kick-off has moved to 7:30.");
+    expect(await testDb().select().from(notificationLog)).toEqual([]);
+    expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);
+  });
+
+  it("a zero-recipient refusal does not spend a daily send: three waitlist attempts still leave all three sends available", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFixture(viewerId);
+
+    for (let i = 0; i < MAX_BROADCASTS_PER_GAME_PER_DAY + 1; i++) {
+      const response = await appPost(
+        `/g/${gameId}/f/${fixtureId}/message`,
+        { ...VALID_FIELDS, audience: "waitlist" },
+        cookie,
+      );
+      expect(response.status).toBe(422);
+    }
+
+    const succeeds = await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { ...VALID_FIELDS, audience: "playing" },
+      cookie,
+    );
+    await settleSend(1);
+
+    expect(succeeds.status).toBe(303);
+    const rows = await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"));
+    expect(rows).toHaveLength(1);
+  });
+
   it("caps at three a day: the third succeeds, the fourth is refused with the cap named", async () => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId } = await seedFixture(viewerId);
