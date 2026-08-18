@@ -1,13 +1,15 @@
 import { env } from "cloudflare:test";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createNotifier } from "../../src/notify/factory.js";
 import { getDb } from "../../src/db/client.js";
+import { emailQuota } from "../../src/db/schema.js";
 import { ConsoleNotifier } from "../../src/notify/console-notifier.js";
 import { NullNotifier } from "../../src/notify/null-notifier.js";
 import { RouterNotifier } from "../../src/notify/router-notifier.js";
-import type { EmailMessage, Notifier } from "../../src/notify/notifier.js";
+import type { EmailMessage, Notifier, PushMessage } from "../../src/notify/notifier.js";
 import type { Bindings } from "../../src/env.js";
-import { resetDatabase } from "../support/factories.js";
+import { insertPlayer, insertSubscription, resetDatabase } from "../support/factories.js";
 
 const NOW = new Date("2026-08-11T09:00:00Z");
 const db = getDb(env.DB);
@@ -299,6 +301,144 @@ describe("createNotifier", () => {
       const broken: Bindings = { ...bindings("console"), PUSH_NOTIFIER: "webpush-but-typoed" };
       expect(() => createNotifier(broken, db, NOW)).toThrow(/webpush-but-typoed/);
       expect(() => createNotifier(broken, db, NOW)).toThrow(/PUSH_NOTIFIER/);
+    });
+
+    // The seam nothing else exercises: `"webpush"` is the only branch that
+    // reads a VAPID binding, wires it through `vapidKeys()`'s three
+    // `requireBinding` calls and the `importVapidKeys` -> `assertVapidKeysMatch`
+    // chain, and constructs a real `PushNotifier`. `PushNotifier`,
+    // `web-push.ts` and `RouterNotifier` are each covered in isolation
+    // elsewhere; this is the only place the whole chain is wired together
+    // from `env`, exactly as `createNotifier` itself does it in production —
+    // and production turns this on tomorrow. The VAPID pair below is the
+    // genuine, matching P-256 pair pinned in `vitest.config.ts` for exactly
+    // this purpose (see its own comment there): real crypto, not a stub.
+    describe('env.PUSH_NOTIFIER === "webpush"', () => {
+      function webpushBindings(): Bindings {
+        return {
+          ...bindings("null"),
+          PUSH_NOTIFIER: "webpush",
+          VAPID_PUBLIC_KEY: env.VAPID_PUBLIC_KEY,
+          VAPID_PRIVATE_KEY: env.VAPID_PRIVATE_KEY,
+          VAPID_SUBJECT: env.VAPID_SUBJECT,
+        };
+      }
+
+      function pushMessage(to: string, overrides: Partial<PushMessage> = {}): PushMessage {
+        return {
+          channel: "push",
+          to,
+          dedupeKey: `n7:fix-1:${crypto.randomUUID()}`,
+          title: "Fixture moved",
+          body: "Kickoff is now 20:00.",
+          url: "https://makethe.team/g/abc/f/def",
+          tag: "fixture:def",
+          ...overrides,
+        };
+      }
+
+      it("builds a working PushNotifier that signs a real VAPID request and encrypts a real aes128gcm body", async () => {
+        const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+        await insertSubscription(db, playerId, "https://push.example/phone");
+
+        let capturedRequest: Request | undefined;
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+          capturedRequest = new Request(input as RequestInfo, init);
+          return new Response(null, { status: 201 });
+        });
+        try {
+          const notifier = createNotifier(webpushBindings(), db, NOW);
+          expect(notifier).toBeInstanceOf(RouterNotifier);
+
+          const [result] = await notifier.send([pushMessage(playerId)]);
+
+          expect(result).toEqual({ ok: true, providerMessageId: null });
+          expect(fetchSpy).toHaveBeenCalledTimes(1);
+          if (capturedRequest === undefined) throw new Error("expected a captured request");
+
+          expect(capturedRequest.url).toBe("https://push.example/phone");
+          // "vapid t=<jwt>, k=<public key>" — proves the signed JWT actually
+          // made it out of createNotifier's wiring, not just that some
+          // Authorization header was set.
+          const authorization = capturedRequest.headers.get("Authorization");
+          expect(authorization).toMatch(/^vapid t=[^,]+, k=.+$/);
+          expect(authorization).toContain(`k=${env.VAPID_PUBLIC_KEY}`);
+
+          // The body is the aes128gcm-encrypted payload, not the plaintext
+          // JSON — the RFC 8188 header alone (salt(16) + rs(4) + idlen(1) +
+          // keyid) is 21+ bytes before a single byte of ciphertext.
+          const body = new Uint8Array(await capturedRequest.arrayBuffer());
+          expect(body.byteLength).toBeGreaterThan(21);
+          const decoded = new TextDecoder().decode(body);
+          expect(decoded).not.toContain("Kickoff is now 20:00");
+        } finally {
+          fetchSpy.mockRestore();
+        }
+      });
+
+      it("memoises the imported VAPID keypair across calls (spec §10.3), reusing it for a second send", async () => {
+        const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+        await insertSubscription(db, playerId, "https://push.example/phone");
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 201 }));
+        try {
+          const bindingsForBoth = webpushBindings();
+          const first = createNotifier(bindingsForBoth, db, NOW);
+          const second = createNotifier(bindingsForBoth, db, NOW);
+
+          const [firstResult] = await first.send([pushMessage(playerId)]);
+          const [secondResult] = await second.send([pushMessage(playerId)]);
+
+          expect(firstResult).toEqual({ ok: true, providerMessageId: null });
+          expect(secondResult).toEqual({ ok: true, providerMessageId: null });
+        } finally {
+          fetchSpy.mockRestore();
+        }
+      });
+    });
+  });
+
+  // Spec §15: "Push consumes no email quota — a regression test, because
+  // this is the whole point of §10.2." The property is already structurally
+  // guaranteed by RouterNotifier routing push around QuotaNotifier entirely
+  // (see router-notifier.ts's doc comment), but nothing asserted it at the
+  // one place an operator would actually notice a regression: the
+  // `email_quota` counter itself.
+  describe("push consumes no email quota (spec §15)", () => {
+    it("sending a batch of push messages leaves the day's email_quota.sent_count unchanged", async () => {
+      const playerA = await insertPlayer(db, { name: "A", email: "a@example.com" });
+      const playerB = await insertPlayer(db, { name: "B", email: "b@example.com" });
+      await insertSubscription(db, playerA, "https://push.example/a");
+      await insertSubscription(db, playerB, "https://push.example/b");
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 201 }));
+      try {
+        const notifier = createNotifier(
+          { ...bindings("console"), PUSH_NOTIFIER: "console" },
+          db,
+          NOW,
+        );
+
+        const pushMessages: PushMessage[] = [playerA, playerB].map((to) => ({
+          channel: "push",
+          to,
+          dedupeKey: `n7:fix-2:${crypto.randomUUID()}`,
+          title: "Fixture moved",
+          body: "Kickoff is now 20:00.",
+          url: "https://makethe.team/g/abc/f/def",
+          tag: "fixture:def",
+        }));
+
+        const results = await notifier.send(pushMessages);
+        expect(results.every((result) => result.ok)).toBe(true);
+
+        const day = NOW.toISOString().slice(0, 10);
+        const rows = await db.select().from(emailQuota).where(eq(emailQuota.day, day));
+        // No row at all is the expected state — nothing ever incremented
+        // the counter for the day, rather than a row that happens to read 0.
+        expect(rows).toHaveLength(0);
+      } finally {
+        fetchSpy.mockRestore();
+      }
     });
   });
 });
