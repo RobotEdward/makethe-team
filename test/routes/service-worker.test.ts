@@ -46,6 +46,26 @@ describe("the service worker", () => {
 
     expect(script).toMatch(/const CACHE = "mtt-[A-Za-z0-9+/=]{16,}";/);
   });
+
+  it("shows a notification and opens its url when tapped", async () => {
+    const script = await (await SELF.fetch(url(SERVICE_WORKER_PATH))).text();
+
+    expect(script).toContain('addEventListener("push"');
+    expect(script).toContain('addEventListener("notificationclick"');
+    // Focus an existing tab rather than opening a second one: a player who
+    // already has the fixture page open does not want two.
+    expect(script).toContain("clients.matchAll");
+  });
+
+  it("survives a push with no payload", async () => {
+    // Some services send an empty push to keep a subscription alive, and
+    // `event.data.json()` throws on it — an uncaught throw in a push handler
+    // shows the browser's own "This site has been updated in the background"
+    // notification, which looks like a bug to the player because it is one.
+    const script = await (await SELF.fetch(url(SERVICE_WORKER_PATH))).text();
+
+    expect(script).toContain("event.data ?");
+  });
 });
 
 describe("the offline page", () => {

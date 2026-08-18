@@ -94,6 +94,14 @@ pwa.get(OFFLINE_PATH, (c) => c.html(renderOfflinePage()));
  *
  * Cached for the life of the isolate, like `cspHeader()`, because hashing on
  * every request would be work done thousands of times to produce one answer.
+ *
+ * The name is deliberately *not* rehashed over `push`/`notificationclick`
+ * (M14 Task 11): this hash names what `install` puts in `CACHE`, and those
+ * two handlers put nothing in it — a browser diffs a service worker byte for
+ * byte on every check-for-update, so a changed handler is still picked up on
+ * its own schedule with no help from a renamed cache. Renaming the cache on
+ * every unrelated script edit would only make `activate`'s cleanup run, and
+ * pointlessly evict, on deploys that changed nothing this cache covers.
  */
 let cachedScript: Promise<string> | undefined;
 
@@ -184,6 +192,43 @@ self.addEventListener("fetch", function (event) {
   event.respondWith(
     caches.match(event.request).then(function (cached) {
       return cached || fetch(event.request);
+    })
+  );
+});
+
+// A push service can send an empty push to keep a subscription alive, with
+// no payload at all — \`event.data\` is then null and \`.json()\` is never
+// reached. An uncaught throw here is not silent: it makes the browser show
+// its own "This site has been updated in the background" notification in
+// place of the one this handler would have shown, which reads as a bug to
+// the player because it is one (M14 spec §9.2).
+self.addEventListener("push", function (event) {
+  var payload = event.data ? event.data.json() : null;
+  if (!payload) return;
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: "${ICON_192_PATH}",
+      badge: "${ICON_192_PATH}",
+      tag: payload.tag,
+      data: { url: payload.url }
+    })
+  );
+});
+
+// Focuses a tab already open on the fixture rather than opening a second
+// one: a player who already has it open does not want a duplicate. Falls
+// back to opening a new window/tab only when no existing client matches.
+self.addEventListener("notificationclick", function (event) {
+  event.notification.close();
+  var target = event.notification.data && event.notification.data.url;
+  if (!target) return;
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (windows) {
+      for (var i = 0; i < windows.length; i++) {
+        if (windows[i].url === target && "focus" in windows[i]) return windows[i].focus();
+      }
+      return self.clients.openWindow(target);
     })
   );
 });

@@ -1,4 +1,10 @@
-import { AUTH_API_PREFIX, PASSKEYS_PATH, SERVICE_WORKER_PATH, SIGN_IN_COMPLETE_PATH } from "../auth/paths.js";
+import {
+  AUTH_API_PREFIX,
+  PASSKEYS_PATH,
+  PUSH_SUBSCRIBE_PATH,
+  SERVICE_WORKER_PATH,
+  SIGN_IN_COMPLETE_PATH,
+} from "../auth/paths.js";
 
 /**
  * Every line of client-side JavaScript this app can emit, in one place.
@@ -551,6 +557,164 @@ export const INSTALL_JS = `
 `;
 
 /**
+ * Asks for notification permission and registers a device (M14 Task 11).
+ *
+ * A page-specific enhancement, unlike `SERVICE_WORKER_JS`: it is opted into
+ * by whichever page renders the permission button — the account page and the
+ * one-time post-response offer, both landing in M14 Task 12 — the same way
+ * `INSTALL_JS` is opted into by the page that renders
+ * `renderInstallSection()`. This block does not itself register the worker;
+ * `SERVICE_WORKER_JS` already does that, unconditionally, on every page.
+ *
+ * # Feature detection, in the order the API actually needs each piece
+ *
+ * `"serviceWorker" in navigator` first — a push subscription is created
+ * through a service worker registration, so there is nothing to do at all
+ * without one, and this is the same guard `SERVICE_WORKER_JS` opens with.
+ * Then `"PushManager" in window`, the Push API itself, and
+ * `typeof Notification === "function"` (not `!== "undefined"`: iOS Safari
+ * defines a non-callable stub before the app is installed to the Home
+ * Screen, so `typeof` alone would pass and `Notification.requestPermission`
+ * would then throw). Any one missing and the button stays exactly as the
+ * server rendered it — hidden, if the caller ships it that way — which is
+ * the same "scripting off and scripting on are the same page" rule every
+ * other block here follows.
+ *
+ * # The permission prompt lives inside the click handler, on both platforms
+ *
+ * `Notification.requestPermission()` is called nowhere but the `click`
+ * listener. Both Chromium and Safari require a user gesture in the same call
+ * stack; calling it from a `load` handler like `SERVICE_WORKER_JS` does
+ * silently fails everywhere, and on iOS the whole `Notification` object does
+ * not exist until the gesture that installed the app already happened, so
+ * there is no earlier moment to call it from even if the platform allowed it.
+ *
+ * # A denied permission cannot be re-requested by the page
+ *
+ * `Notification.requestPermission()` resolves back to `"denied"` immediately
+ * on a browser that already denied it — no prompt, no way for a page to ask
+ * again, ever, short of the visitor opening their own browser settings. A
+ * button that stays present and silently does nothing on every click is
+ * worse than no button, so `"denied"` hides it and swaps in a sentence that
+ * says why, both on load (someone who denied it last visit) and from the
+ * result of a click that resolves `"denied"` for the first time.
+ *
+ * # The key comes from a `data-` attribute, not a hardcoded constant
+ *
+ * `applicationServerKey` has to be the base64url-encoded **public** half of
+ * whichever VAPID pair this deployment is currently signing with
+ * (`VAPID_PUBLIC_KEY` in `src/env.ts`) — baking it into this string, which
+ * `SCRIPT_BLOCKS` hashes once per isolate, would mean rotating the pair
+ * requires a deploy that changes source, when the value is already a
+ * same-origin server response away. Reading it off `data-push-key` on the
+ * button keeps the key exactly as current as the page that rendered it, and
+ * — the point M14's brief calls out by name — lets the *caller* decide not
+ * to render the attribute at all while `VAPID_PUBLIC_KEY` is unset (M14
+ * ships dark: production has no VAPID pair until the owner generates one).
+ * No attribute, no key, nothing this script can subscribe with, so it
+ * returns rather than revealing a button that can only fail.
+ *
+ * # What a click actually does
+ *
+ * Ask for permission; if it is not `"granted"`, stop (denied is handled
+ * above, and a dismissed prompt — neither granted nor denied — just leaves
+ * the button as it was, so a visitor who was not ready can click it again).
+ * Otherwise wait for `navigator.serviceWorker.ready` — `SERVICE_WORKER_JS`
+ * registers on `load` and this script cannot assume that has finished — and
+ * call `pushManager.subscribe`. The resulting subscription's own `toJSON()`
+ * already carries `endpoint` and `keys` in the shape `POST
+ * ${PUSH_SUBSCRIBE_PATH}` expects (`src/routes/push.ts`), so nothing here
+ * reshapes it by hand. `connect-src 'self'` already covers this same-origin
+ * POST — see the module comment's "a hash lets a script run" section before
+ * assuming otherwise.
+ *
+ * A failure anywhere in that chain (subscribe refused, the POST failing, a
+ * network error) re-enables the button and says the attempt didn't work,
+ * matching the diagnosability lesson `docs/known-issues.md` records for the
+ * passkey blocks' original bare `.catch()`.
+ */
+export const PUSH_SUBSCRIBE_JS = `
+(function () {
+  var button = document.getElementById("push-button");
+  var problem = document.getElementById("push-problem");
+  if (!button) return;
+  if (!("serviceWorker" in navigator)) return;
+  if (!("PushManager" in window)) return;
+  if (typeof Notification !== "function") return;
+
+  var key = button.getAttribute("data-push-key");
+  if (!key) return;
+
+  function showDenied() {
+    button.hidden = true;
+    if (problem) {
+      problem.textContent = "Notifications are blocked for this site. You can turn them back on in your browser's site settings.";
+      problem.hidden = false;
+    }
+  }
+
+  if (Notification.permission === "denied") {
+    showDenied();
+    return;
+  }
+
+  button.hidden = false;
+
+  function urlBase64ToUint8Array(base64) {
+    var padding = "====".substring(0, (4 - (base64.length % 4)) % 4);
+    var base64Safe = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+    var raw = atob(base64Safe);
+    var bytes = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return bytes;
+  }
+
+  button.addEventListener("click", function () {
+    if (problem) problem.hidden = true;
+    button.disabled = true;
+
+    Notification.requestPermission().then(function (permission) {
+      if (permission === "denied") {
+        showDenied();
+        return;
+      }
+      if (permission !== "granted") {
+        // Neither granted nor denied: the prompt was dismissed rather than
+        // answered. Nothing was refused, so the button just becomes
+        // clickable again rather than claiming a failure that didn't happen.
+        button.disabled = false;
+        return;
+      }
+
+      navigator.serviceWorker.ready.then(function (registration) {
+        return registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(key)
+        });
+      }).then(function (subscription) {
+        var json = subscription.toJSON();
+        return fetch("${PUSH_SUBSCRIBE_PATH}", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys })
+        });
+      }).then(function (response) {
+        if (!response.ok) throw new Error("subscribe");
+        button.hidden = true;
+      }).catch(function () {
+        button.disabled = false;
+        if (problem) {
+          problem.textContent = "That didn't work. You can try again.";
+          problem.hidden = false;
+        }
+      });
+    });
+  });
+})();
+`;
+
+/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
  *
@@ -562,6 +726,7 @@ export const PAGE_SCRIPT_BLOCKS = [
   COPY_INVITE_JS,
   TEAM_PICKER_JS,
   INSTALL_JS,
+  PUSH_SUBSCRIBE_JS,
 ] as const;
 
 export type PageScriptBlock = (typeof PAGE_SCRIPT_BLOCKS)[number];
