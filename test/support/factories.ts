@@ -41,17 +41,53 @@ export async function insertGame(db: Db, overrides: Partial<GameInsert> = {}): P
 }
 
 /**
+ * Deletes `notification_log` then `fixtures`, retrying the pair if the
+ * `fixtures` delete hits a foreign-key violation.
+ *
+ * Several routes hand a notification send to `ctx.waitUntil()` deliberately
+ * (`notifyPromotedPlayer` in `src/routes/respond.ts` is the one every
+ * `POST /leave/:token` test exercises, via the promotion it can trigger for
+ * the next waitlisted player) — so a previous test's `SELF.fetch()`
+ * resolving does not guarantee that background `notification_log` write has
+ * already landed. `cloudflare:test` has no public way to drain a
+ * service-bound fetch's `waitUntil` queue: `waitOnExecutionContext` only
+ * works on a manually created `ExecutionContext` (see `test/index.test.ts`,
+ * which uses it for the `scheduled` handler precisely because that path
+ * *doesn't* go through `SELF.fetch()`).
+ *
+ * Without this retry, a straggling insert can land in the gap between this
+ * function's own `DELETE FROM notification_log` and `DELETE FROM fixtures`
+ * below, re-populating a row that references a fixture this call is about
+ * to delete — nondeterministically, since it depends on exactly how many
+ * ticks the background send needed to reach its own write. A second pass
+ * absorbs it: the straggler is a one-off write from an already-completed
+ * request, not a sustained source, so `notification_log` is empty again by
+ * the retry.
+ */
+async function deleteNotificationLogAndFixtures(): Promise<void> {
+  const MAX_ATTEMPTS = 5;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    await env.DB.exec("DELETE FROM notification_log");
+    try {
+      await env.DB.exec("DELETE FROM fixtures");
+      return;
+    } catch (error) {
+      if (attempt === MAX_ATTEMPTS) throw error;
+    }
+  }
+}
+
+/**
  * Empty every table a test might have written, in foreign-key-safe order.
  * Call from `beforeEach` so tests never inherit another test's rows.
  */
 export async function resetDatabase(): Promise<void> {
   await env.DB.exec("DELETE FROM audit_log");
-  await env.DB.exec("DELETE FROM notification_log");
   await env.DB.exec("DELETE FROM email_quota");
   await env.DB.exec("DELETE FROM push_subscriptions");
   await env.DB.exec("DELETE FROM responses");
   await env.DB.exec("DELETE FROM memberships");
-  await env.DB.exec("DELETE FROM fixtures");
+  await deleteNotificationLogAndFixtures();
   await env.DB.exec("DELETE FROM games");
   await env.DB.exec("DELETE FROM players");
   // Better Auth tables (M5). Children before parent: session, account and

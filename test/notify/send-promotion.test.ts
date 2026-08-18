@@ -4,11 +4,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
-import { promotionKey } from "../../src/notify/dedupe-key.js";
+import { promotionKey, pushKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendPromotionEmail } from "../../src/notify/send-promotion.js";
-import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -143,6 +143,36 @@ describe("sendPromotionEmail (N-2)", () => {
     const recipients = notifier.all.map((m) => m.to);
     expect(recipients).not.toContain("dropper@example.com");
     expect(recipients).not.toContain("bystander@example.com");
+  });
+
+  it("queues a push alongside the email for a promoted player with a device", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "promoted", name: "Promoted", email: "promoted@example.com" },
+    ]);
+    await insertSubscription(db, "promoted", "https://push.example.com/promoted");
+    const notifier = new RecordingNotifier();
+
+    const outcome = await send(fixtureId, notifier, promotion("promoted"));
+
+    expect(outcome).toEqual({ kind: "sent" });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = promotionKey(fixtureId, "promoted", new Date(NOW.getTime()).toISOString());
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.all.find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: "promoted", tag: `n2:${fixtureId}` });
+  });
+
+  it("still emails a promoted player with no device at all", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "promoted", name: "Promoted", email: "promoted@example.com" },
+    ]);
+    const notifier = new RecordingNotifier();
+
+    await send(fixtureId, notifier, promotion("promoted"));
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("sends the promotion template, addressed and dedupe-keyed to this promotion", async () => {

@@ -4,9 +4,16 @@ import { fixtures, games, notificationLog, players } from "../db/schema.js";
 import type { WaitlistPromotion } from "../capacity/types.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
-import { promotionKey } from "./dedupe-key.js";
-import { applySendResult, insertQueuedLogRows, SITE_ORIGIN, type PendingNotification } from "./delivery.js";
+import { promotionKey, pushKey } from "./dedupe-key.js";
+import {
+  applySendResult,
+  insertQueuedLogRows,
+  playersWithPushSubscriptions,
+  SITE_ORIGIN,
+  type PendingNotification,
+} from "./delivery.js";
 import type { Notifier } from "./notifier.js";
+import { PUSH_COPY } from "./push-copy.js";
 import { renderPromotionEmail } from "./templates/promotion.js";
 
 /**
@@ -118,7 +125,8 @@ export async function sendPromotionEmail(params: SendPromotionEmailParams): Prom
     responseTokenSecret,
   );
 
-  const rendered = renderPromotionEmail({
+  const respondInUrl = `${SITE_ORIGIN}/r/${token}?intent=in`;
+  const emailPayload = {
     playerName: player.name,
     gameName: game.name,
     venueName: fixture.venueOverride ?? game.venueName,
@@ -126,44 +134,95 @@ export async function sendPromotionEmail(params: SendPromotionEmailParams): Prom
     kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
     // Every URL is built here, from `SITE_ORIGIN` and a token this function
     // just signed — never from anything in the request that triggered it.
-    respondInUrl: `${SITE_ORIGIN}/r/${token}?intent=in`,
+    respondInUrl,
     respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
     leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
-  });
+  };
+  const rendered = renderPromotionEmail(emailPayload);
 
   const dedupeKey = promotionKey(fixtureId, promoted.playerId, new Date(promoted.promotedAt).toISOString());
-  const pending: PendingNotification = {
-    logId: crypto.randomUUID(),
-    dedupeKey,
-    playerId: promoted.playerId,
-    message: {
-      channel: "email",
-      to: email,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
+  const pending: PendingNotification[] = [
+    {
+      logId: crypto.randomUUID(),
       dedupeKey,
+      playerId: promoted.playerId,
+      message: {
+        channel: "email",
+        to: email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        dedupeKey,
+      },
     },
-  };
+  ];
 
-  const [inserted] = await insertQueuedLogRows(db, { fixtureId, notificationType: "n2" }, [pending]);
-  if (!inserted) return { kind: "already-logged" };
+  // Only a player with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise a player without a phone
+  // would accumulate a `no-recipient` row per promotion, forever.
+  const subscribed = await playersWithPushSubscriptions(db, [promoted.playerId]);
+  if (subscribed.has(promoted.playerId)) {
+    const copy = PUSH_COPY.n2(emailPayload);
+    pending.push({
+      logId: crypto.randomUUID(),
+      dedupeKey: pushKey(dedupeKey),
+      playerId: promoted.playerId,
+      message: {
+        channel: "push",
+        to: promoted.playerId,
+        title: copy.title,
+        body: copy.body,
+        url: respondInUrl,
+        // Sharpened from PUSH_COPY's gameName+kickoff approximation (Task 9)
+        // to the real fixture id, now that this caller holds one (Task 13).
+        tag: `n2:${fixtureId}`,
+        dedupeKey: pushKey(dedupeKey),
+      },
+    });
+  }
+
+  const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n2" }, pending);
+  const emailEntry = inserted.find((entry) => entry.message.channel === "email");
+  if (!emailEntry) return { kind: "already-logged" };
 
   let results;
   try {
-    results = await notifier.send([inserted.message]);
+    results = await notifier.send(inserted.map((entry) => entry.message));
   } catch (error) {
     // The notifier rejected — e.g. `QuotaNotifier.reserve()` hitting a D1
     // error. Whether the message reached a provider first is unknowable from
-    // here, so the row is left `failed` (ambiguous, never retried), exactly
-    // as the sweep does with the same situation.
+    // here, so every row this batch inserted is left `failed` (ambiguous,
+    // never retried), exactly as the sweep does with the same situation.
     const reason = error instanceof Error ? error.message : String(error);
-    await db
-      .update(notificationLog)
-      .set({ status: "failed", error: reason })
-      .where(eq(notificationLog.id, inserted.logId));
+    for (const entry of inserted) {
+      await db
+        .update(notificationLog)
+        .set({ status: "failed", error: reason })
+        .where(eq(notificationLog.id, entry.logId));
+    }
     return { kind: "failed", reason };
   }
 
-  return applySendResult(db, inserted, results[0], now);
+  // `results` and `inserted` are the same length, in the same order — the
+  // Notifier contract (`src/notify/notifier.ts`). Apply every row's own
+  // result (so a push failure is recorded on the push row, never silently
+  // dropped), but this function's own return value tracks the email leg
+  // only — the push leg has no `PromotionSendOutcome` branch of its own, and
+  // a device-side failure must never turn into a `failed` promotion email
+  // for a caller that never touches push at all.
+  let emailOutcome: PromotionSendOutcome | undefined;
+  for (let i = 0; i < inserted.length; i++) {
+    const entry = inserted[i];
+    if (!entry) continue;
+    const outcome = await applySendResult(db, entry, results[i], now);
+    if (entry === emailEntry) {
+      emailOutcome =
+        outcome.kind === "sent"
+          ? { kind: "sent" }
+          : outcome.kind === "deferred"
+            ? { kind: "deferred" }
+            : { kind: "failed", reason: outcome.reason };
+    }
+  }
+  return emailOutcome ?? { kind: "already-logged" };
 }
