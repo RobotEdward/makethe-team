@@ -29,7 +29,15 @@ export interface SweepFailure {
 
 export interface SweepResult {
   fixturesOpened: number;
+  /**
+   * **Email only.** `src/cron/handler.ts` logs this as an email count
+   * ("sent N") on a failed run, the same reasoning `CancellationSendSummary.sent`'s
+   * doc comment gives at length: folding a push row in here would report an
+   * inflated number of emails sent. See `pushRemindersSent` for the push
+   * leg's own count.
+   */
   remindersSent: number;
+  /** Email only — see `remindersSent`. See `pushRemindersFailed` for the push leg's own count. */
   remindersFailed: number;
   /**
    * Reminders refused by the daily send ceiling (TR-31) and *only* that.
@@ -38,8 +46,13 @@ export interface SweepResult {
    * outcome under a low ceiling — never a failure, and deliberately never
    * mixed with any other reason, so `handleScheduled`'s ceiling warning names
    * the condition it is actually reporting. See `applySendResult` (`src/notify/delivery.ts`).
+   * Email only — the push leg has no daily ceiling and can never produce this outcome.
    */
   remindersDeferred: number;
+  /** The push leg's own `sent` count — informational only, never folded into `remindersSent`. */
+  pushRemindersSent: number;
+  /** The push leg's own `failed` count — informational only, never folded into `remindersFailed`. Also where a push `deferred` outcome lands, since the push leg can't legitimately produce one. */
+  pushRemindersFailed: number;
   guestsSkipped: number;
   /**
    * Every fixture (or game) whose processing failed outright — a bad
@@ -216,6 +229,8 @@ interface RemindResult {
   remindersSent: number;
   remindersFailed: number;
   remindersDeferred: number;
+  pushRemindersSent: number;
+  pushRemindersFailed: number;
   guestsSkipped: number;
   failures: SweepFailure[];
 }
@@ -232,6 +247,8 @@ async function sendDueReminders(
   let remindersSent = 0;
   let remindersFailed = 0;
   let remindersDeferred = 0;
+  let pushRemindersSent = 0;
+  let pushRemindersFailed = 0;
   let guestsSkipped = 0;
 
   for (const fixture of due) {
@@ -303,7 +320,10 @@ async function sendDueReminders(
             .update(notificationLog)
             .set({ status: "failed", error: message })
             .where(eq(notificationLog.id, entry.logId));
-          remindersFailed++;
+          // Split by channel — see `SweepResult.remindersSent`'s doc comment
+          // for why `remindersFailed` must count only the email rows.
+          if (entry.message.channel === "email") remindersFailed++;
+          else pushRemindersFailed++;
         }
         failures.push({ fixtureId: fixture.id, gameId: fixture.gameId, stage: "send", message });
         continue;
@@ -342,19 +362,35 @@ async function sendDueReminders(
           const result = results[applied];
           if (!entry) continue;
           const outcome = await applySendResult(db, entry, result, now);
-          if (outcome.kind === "sent") remindersSent++;
-          else if (outcome.kind === "deferred") {
-            remindersDeferred++;
-            deferredPlayerIds.push(entry.playerId);
-          } else {
+          const isEmail = entry.message.channel === "email";
+          if (outcome.kind === "sent") {
+            if (isEmail) remindersSent++;
+            else pushRemindersSent++;
+          } else if (outcome.kind === "deferred") {
+            // The push leg has no daily ceiling, so this can only
+            // legitimately happen for the email row — a push landing here
+            // regardless is folded into `pushRemindersFailed` rather than
+            // `remindersDeferred`, which is documented as email-only.
+            if (isEmail) {
+              remindersDeferred++;
+              deferredPlayerIds.push(entry.playerId);
+            } else {
+              pushRemindersFailed++;
+            }
+          } else if (isEmail) {
             remindersFailed++;
             sendFailureReasons.push(outcome.reason);
+          } else {
+            pushRemindersFailed++;
           }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const orphaned = inserted.slice(applied);
-        remindersFailed += orphaned.length;
+        for (const entry of orphaned) {
+          if (entry.message.channel === "email") remindersFailed++;
+          else pushRemindersFailed++;
+        }
         await markOrphanedRowsFailed(db, orphaned, `abandoned mid-apply: ${message}`);
         failures.push({
           fixtureId: fixture.id,
@@ -405,7 +441,15 @@ async function sendDueReminders(
     }
   }
 
-  return { remindersSent, remindersFailed, remindersDeferred, guestsSkipped, failures };
+  return {
+    remindersSent,
+    remindersFailed,
+    remindersDeferred,
+    pushRemindersSent,
+    pushRemindersFailed,
+    guestsSkipped,
+    failures,
+  };
 }
 
 
@@ -430,12 +474,31 @@ async function eligiblePlayers(db: Db, fixtureId: string): Promise<ReminderCandi
     .where(and(eq(responses.fixtureId, fixtureId), ne(responses.status, "withdrawn")));
 }
 
-/** Player ids that already have an `n1:` notification_log row for this fixture — sent or failed, both count as done; a `queued` row belongs to a run currently in flight for this same player and also counts. */
+/**
+ * Player ids that already have an `n1:` notification_log row for this
+ * fixture — sent or failed, both count as done; a `queued` row belongs to a
+ * run currently in flight for this same player and also counts.
+ *
+ * Filtered to `channel: "email"` — load-bearing, not tidying. A player's
+ * push row can outlive their email row: a ceiling refusal *deletes* the
+ * email's `queued` row (`applySendResult`) precisely so a later sweep
+ * retries it, but the push leg has no ceiling and its own row survives. If
+ * this query counted either channel as "already told", the surviving push
+ * row would permanently mask the deleted email row on every later tick —
+ * the reminder email would never be retried, while a player with no device
+ * at all keeps getting theirs retried correctly. Do not remove this filter.
+ */
 async function existingReminderLog(db: Db, fixtureId: string): Promise<Set<string>> {
   const rows = await db
     .select({ playerId: notificationLog.playerId })
     .from(notificationLog)
-    .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
+    .where(
+      and(
+        eq(notificationLog.fixtureId, fixtureId),
+        eq(notificationLog.notificationType, "n1"),
+        eq(notificationLog.channel, "email"),
+      ),
+    );
   return new Set(rows.map((r) => r.playerId));
 }
 

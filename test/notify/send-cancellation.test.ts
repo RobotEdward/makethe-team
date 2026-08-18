@@ -138,7 +138,17 @@ describe("sendCancellationEmails (N-3)", () => {
     await insertSubscription(db, "p-device", "https://push.example.com/device");
     const notifier = new RecordingNotifier();
 
-    await send(fixtureId, gameId, notifier, recipients);
+    const summary = await send(fixtureId, gameId, notifier, recipients);
+
+    // Critical to the fix, not incidental: `summary.sent` must stay a pure
+    // email count — `src/routes/cancel.ts` builds "N players have been
+    // emailed" straight from it, and folding the push row in here would
+    // both inflate that number and could send `notEmailed` negative,
+    // silently hiding the "let them know another way" warning from an
+    // owner who still has people with no address to ring (review fix,
+    // Critical 2).
+    expect(summary.sent).toBe(1);
+    expect(summary.pushSent).toBe(1);
 
     const rows = await logRows();
     expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);

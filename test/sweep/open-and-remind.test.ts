@@ -150,7 +150,11 @@ describe("openAndRemind", () => {
 
     const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
 
-    expect(result.remindersSent).toBe(2);
+    // `remindersSent` stays a pure email count (review fix, Critical 2) —
+    // `src/cron/handler.ts` logs it as one — with the push leg's own count
+    // reported separately.
+    expect(result.remindersSent).toBe(1);
+    expect(result.pushRemindersSent).toBe(1);
     const logRows = await db
       .select()
       .from(notificationLog)
@@ -175,6 +179,54 @@ describe("openAndRemind", () => {
       .from(notificationLog)
       .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
     expect(logRows.map((r) => r.channel)).toEqual(["email"]);
+  });
+
+  it("retries a ceiling-deferred email on the next tick even though the player's push already sent (review fix, Critical 1)", async () => {
+    // The push leg has no daily ceiling (`PushNotifier` doc comment), so a
+    // subscribed player's push can succeed on the very tick their email is
+    // refused by the ceiling. `existingReminderLog` must not mistake the
+    // surviving push row for "this player has been told" — if it did, the
+    // deleted (ceiling-refused) email row would never be retried, ever, and
+    // this player would silently never get the reminder email a
+    // no-device player still gets correctly.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const solo = [{ id: "device-player", name: "Player", email: "device-player@example.com" }];
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: solo });
+    await insertSubscription(db, "device-player", "https://push.example.com/device-player");
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add("device-player@example.com");
+    const now = new Date("2026-08-12T09:00:00Z");
+
+    const first = await openAndRemind(db, notifier, now, SECRET);
+    expect(first.remindersSent).toBe(0);
+    expect(first.pushRemindersSent).toBe(1); // the push
+    expect(first.remindersDeferred).toBe(1); // the email
+
+    const afterFirst = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
+    // The ceiling-refused email row was deleted; only the sent push row remains.
+    expect(afterFirst.map((r) => r.channel)).toEqual(["push"]);
+
+    notifier.ceilingFor.delete("device-player@example.com");
+    const second = await openAndRemind(db, notifier, now, SECRET);
+
+    // The email is retried and sent. It must NOT be skipped as "already told"
+    // just because a push row for this player/fixture already exists.
+    expect(second.remindersSent).toBe(1);
+    expect(second.remindersDeferred).toBe(0);
+
+    const afterSecond = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
+    expect(afterSecond.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    expect(afterSecond.every((r) => r.status === "sent")).toBe(true);
+    // The push was not re-sent a second time: UNIQUE(dedupe_key) plus
+    // onConflictDoNothing keep the retry from ever handing PushNotifier a
+    // duplicate message for the same push key.
+    expect(notifier.sent.flat().filter((m) => m.channel === "push")).toHaveLength(1);
   });
 
   it("carries a leave link scoped to the game, not the fixture", async () => {

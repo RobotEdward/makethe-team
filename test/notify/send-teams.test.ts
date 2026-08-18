@@ -120,7 +120,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: 2, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(result).toEqual({ sent: 2, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     expect(notifier.all.map((m) => m.to).sort()).toEqual(["alice@example.com", "bob@example.com"]);
 
     const rows = await logRows();
@@ -146,7 +146,10 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: 2, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    // Email and push are counted separately (review fix, Critical 2) — `sent`
+    // must stay a pure email count, since `src/routes/games.ts`'s
+    // `publishTeams` logs it as one.
+    expect(result).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 1, pushFailed: 0, guestsSkipped: 0 });
     const rows = await logRows();
     expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
     const emailKey = teamsKey(fixtureId, "alice", PUBLISHED_AT.toISOString());
@@ -191,7 +194,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 2 });
+    expect(result).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 2 });
     expect(notifier.all).toHaveLength(1);
     expect(notifier.all[0]?.to).toBe("alice@example.com");
     const rows = await logRows();
@@ -221,8 +224,8 @@ describe("sendTeamsEmails (N-9)", () => {
     const first = await send(fixtureId, notifier, PUBLISHED_AT);
     const second = await send(fixtureId, notifier, new Date(PUBLISHED_AT.getTime() + 60_000));
 
-    expect(first).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
-    expect(second).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(first).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
+    expect(second).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     expect(notifier.all).toHaveLength(2);
 
     const rows = await logRows();
@@ -240,7 +243,7 @@ describe("sendTeamsEmails (N-9)", () => {
     await send(fixtureId, notifier, PUBLISHED_AT);
     const second = await send(fixtureId, notifier, PUBLISHED_AT);
 
-    expect(second).toEqual({ sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(second).toEqual({ sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     expect(notifier.all).toHaveLength(1);
     expect(await logRows()).toHaveLength(1);
   });
@@ -296,7 +299,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     // Named, not counted: these ids are all that survives a ceiling refusal,
     // and the publish route writes them into `audit_log`.
-    expect(result).toEqual({ sent: 1, failed: 0, deferred: 1, deferredPlayerIds: ["bob"], guestsSkipped: 0 });
+    expect(result).toEqual({ sent: 1, failed: 0, deferred: 1, deferredPlayerIds: ["bob"], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     const rows = await logRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]?.playerId).toBe("alice");
@@ -311,7 +314,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: 0, failed: 1, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(result).toEqual({ sent: 0, failed: 1, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     const rows = await logRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: "failed", error: "simulated-provider-failure" });
@@ -364,7 +367,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: SQUAD_SIZE, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(result).toEqual({ sent: SQUAD_SIZE, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     expect(notifier.all).toHaveLength(SQUAD_SIZE);
     const rows = await logRows();
     expect(rows).toHaveLength(SQUAD_SIZE);

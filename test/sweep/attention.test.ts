@@ -173,7 +173,11 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
 
     const result = await run(notifier);
 
-    expect(result.attentionSent).toBe(2);
+    // `attentionSent` stays a pure email count (review fix, Critical 2) —
+    // `src/cron/handler.ts` logs it as one — with the push leg's own count
+    // reported separately.
+    expect(result.attentionSent).toBe(1);
+    expect(result.pushAttentionSent).toBe(1);
     const rows = await attentionRows(fixtureId);
     expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
     const emailKey = attentionKey(fixtureId, ownerIds[0]!);
@@ -471,6 +475,39 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
 });
 
 describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
+  it("retries a ceiling-deferred email on the next tick even though the owner's push already sent (review fix, Critical 1)", async () => {
+    // Same failure mode as N-1's regression test in
+    // test/sweep/open-and-remind.test.ts: the push leg has no daily
+    // ceiling, so a subscribed owner's push can succeed on the very tick
+    // their email is refused by the ceiling. `ownersAlreadyTold` must not
+    // mistake the surviving push row for "this owner has been told" — BR-31
+    // is "once per fixture, ever", and if a surviving push row satisfied it,
+    // the deleted (ceiling-refused) email row would never be retried.
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add("owner@example.com");
+    const { fixtureId, ownerIds } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+    await insertSubscription(db, ownerIds[0]!, "https://push.example.com/owner");
+
+    const first = await run(notifier);
+    expect(first.attentionSent).toBe(0);
+    expect(first.pushAttentionSent).toBe(1); // the push
+    expect(first.attentionDeferred).toBe(1); // the email
+
+    const afterFirst = await attentionRows(fixtureId);
+    expect(afterFirst.map((r) => r.channel)).toEqual(["push"]);
+
+    notifier.ceilingFor.clear();
+    const second = await run(notifier);
+
+    expect(second.attentionSent).toBe(1);
+    expect(second.attentionDeferred).toBe(0);
+
+    const afterSecond = await attentionRows(fixtureId);
+    expect(afterSecond.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    expect(afterSecond.every((r) => r.status === "sent")).toBe(true);
+    expect(notifier.sent.flat().filter((m) => m.channel === "push")).toHaveLength(1);
+  });
+
   it("deletes the log row on a ceiling refusal so the next run retries it", async () => {
     const notifier = new RecordingNotifier();
     notifier.ceilingFor.add("owner@example.com");

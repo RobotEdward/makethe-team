@@ -24,9 +24,18 @@ import { PUSH_COPY } from "./push-copy.js";
  * went out.
  */
 export interface CancellationSendSummary {
-  /** Handed to the notifier and accepted; row `sent`. */
+  /**
+   * Handed to the notifier and accepted; row `sent`. **Email only.**
+   * `src/routes/cancel.ts` builds `emailed`/`notEmailed` straight off this
+   * field ("N players have been emailed" / "let them know another way"), so
+   * it must count exactly the emails that went out — a push row folded in
+   * here would inflate the emailed count for a squad with phones and, worse,
+   * could send `recipients.length - sent` negative and silently hide the
+   * "couldn't be emailed" warning from an owner who still has people to
+   * ring. See `pushSent` for the push leg's own count.
+   */
   sent: number;
-  /** Refused by the daily send ceiling (TR-31); row removed, so a retry is possible — but nothing retries it today. See the route. */
+  /** Refused by the daily send ceiling (TR-31); row removed, so a retry is possible — but nothing retries it today. See the route. Email only — the push leg has no daily ceiling and can never produce this outcome. */
   deferred: number;
   /**
    * Exactly who those deferrals were for. Carried out of here rather than
@@ -36,11 +45,15 @@ export interface CancellationSendSummary {
    * and "how many" does not answer "which of my squad do I have to ring".
    */
   deferredPlayerIds: string[];
-  /** A provider error or a rejected notifier; row left `failed`, never retried (BR-19). */
+  /** A provider error or a rejected notifier; row left `failed`, never retried (BR-19). **Email only** — see `sent`'s doc comment for why the two channels must not be summed together. See `pushFailed` for the push leg's own count. */
   failed: number;
+  /** The push leg's own `sent` count — informational only, never fed into `cancel.ts`'s "N players have been emailed" arithmetic. */
+  pushSent: number;
+  /** The push leg's own `failed` count — informational only. Also where a push `NO_RECIPIENT_REASON` or (hypothetically) `deferred` outcome lands, since neither has a meaningful place in the email-only fields above. */
+  pushFailed: number;
   /** A recipient with no usable address. Permanent, not an error, and deliberately no log row (BR-32). */
   skippedNoRecipient: number;
-  /** A `notification_log` row for this exact key already existed — this player has already been told. */
+  /** A `notification_log` row for this exact key already existed — this player has already been told. Counts rows of either channel: a conflict on the push key alone, with the email key free, is `send-cancellation.ts`'s own concern (both rows are always attempted in the same batch here — see the module doc comment), not a silent gap like the single-recipient senders'. */
   alreadyLogged: number;
   /** One representative reason per distinct failure, for the caller's log line. Never shown to a user. */
   failures: string[];
@@ -96,6 +109,8 @@ export async function sendCancellationEmails(
     deferred: 0,
     deferredPlayerIds: [],
     failed: 0,
+    pushSent: 0,
+    pushFailed: 0,
     skippedNoRecipient: 0,
     alreadyLogged: 0,
     failures: [],
@@ -204,7 +219,12 @@ export async function sendCancellationEmails(
     // retried), exactly as the sweep does with the same situation.
     const message = error instanceof Error ? error.message : String(error);
     await markOrphanedRowsFailed(db, inserted, message);
-    summary.failed += inserted.length;
+    // Split by channel — see `CancellationSendSummary.sent`'s doc comment
+    // for why `failed` must count only the email rows.
+    for (const entry of inserted) {
+      if (entry.message.channel === "email") summary.failed++;
+      else summary.pushFailed++;
+    }
     summary.failures.push(message);
     return summary;
   }
@@ -220,13 +240,29 @@ export async function sendCancellationEmails(
       const entry = inserted[applied];
       if (!entry) continue;
       const outcome = await applySendResult(db, entry, results[applied], now);
-      if (outcome.kind === "sent") summary.sent++;
-      else if (outcome.kind === "deferred") {
-        summary.deferred++;
-        summary.deferredPlayerIds.push(entry.playerId);
+      const isEmail = entry.message.channel === "email";
+      if (outcome.kind === "sent") {
+        if (isEmail) summary.sent++;
+        else summary.pushSent++;
+      } else if (outcome.kind === "deferred") {
+        // The push leg has no daily ceiling (`PushNotifier`'s doc comment),
+        // so this can only legitimately happen for the email row — but a
+        // push landing here regardless is folded into `pushFailed` rather
+        // than `deferred`/`deferredPlayerIds`, which drive the
+        // cancellation-deferral audit row and are documented as email-only.
+        if (isEmail) {
+          summary.deferred++;
+          summary.deferredPlayerIds.push(entry.playerId);
+        } else {
+          summary.pushFailed++;
+        }
       } else {
-        summary.failed++;
-        summary.failures.push(outcome.reason);
+        if (isEmail) {
+          summary.failed++;
+          summary.failures.push(outcome.reason);
+        } else {
+          summary.pushFailed++;
+        }
       }
     }
   } catch (error) {
@@ -236,7 +272,11 @@ export async function sendCancellationEmails(
     const message = error instanceof Error ? error.message : String(error);
     const orphaned = inserted.slice(applied);
     await markOrphanedRowsFailed(db, orphaned, `abandoned mid-apply: ${message}`);
-    summary.failed += orphaned.length;
+    // Split by channel, same as the whole-batch rejection above.
+    for (const entry of orphaned) {
+      if (entry.message.channel === "email") summary.failed++;
+      else summary.pushFailed++;
+    }
     summary.failures.push(`${message} (${orphaned.length} row(s) left unapplied and marked failed)`);
   }
 
