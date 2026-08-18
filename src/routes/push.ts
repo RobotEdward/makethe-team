@@ -5,10 +5,19 @@ import { PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
 import { getDb } from "../db/client.js";
 import { pushSubscriptions } from "../db/schema.js";
 import { verifyResponseToken } from "../domain/token.js";
-import type { AppEnv } from "../env.js";
+import type { AppEnv, Bindings } from "../env.js";
 import { base64UrlDecode } from "../notify/web-push.js";
 
 export const push = new Hono<AppEnv>();
+
+/**
+ * This deployment's own origin, as every other state-changing POST in the
+ * app compares it (`src/routes/account.ts`, `dashboard.ts`, `games.ts`,
+ * `signin.ts`, `join.ts` each carry their own copy of the same helper).
+ */
+function originOf(env: Bindings): string {
+  return new URL(env.BETTER_AUTH_URL).origin;
+}
 
 /** RFC 8291 §3.2: an uncompressed P-256 point is always this many bytes. */
 const P256_PUBLIC_KEY_BYTES = 65;
@@ -128,8 +137,26 @@ function decodedKeysAreValid(keys: SubscriptionKeys): boolean {
  * behind. Two would mean two notifications for every event, forever, with
  * nothing in the product to reveal it (spec §9.1, §9.3's neighbouring
  * warning about dedupe keys is the same shape of bug).
+ *
+ * **The origin check mirrors every other state-changing POST in this app**
+ * (`POST /app/delete`, `POST /app`, `POST /g/new`, …) rather than being
+ * exempt the way `POST /r/:token` is. Not exploitable via the session path
+ * today — Better Auth's cookie is `sameSite: "lax"`, so a cross-site POST
+ * carries no cookie regardless — but `c.req.json()` ignores `Content-Type`,
+ * so without this check a cross-site `<form enctype="text/plain">` could
+ * still reach the handler with a parseable body and a token lifted from the
+ * victim's own inbox link (e.g. pasted into a page an attacker controls),
+ * registering an attacker-controlled endpoint against that player's
+ * notifications. Both callers this route actually has — the account page's
+ * script and the fixture page's script — always send `Origin`, so the check
+ * costs nothing on the paths that matter.
  */
 push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== originOf(c.env)) {
+    return c.text("Forbidden", 403);
+  }
+
   let parsed: unknown;
   try {
     parsed = await c.req.json();
@@ -173,6 +200,17 @@ push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
       // `id` and `createdAt` are deliberately absent: a re-subscribe updates
       // the existing row's keys and owner in place rather than minting a
       // second one, which is the entire point of upserting on `endpoint`.
+      //
+      // `playerId` moving on conflict — transferring ownership of an
+      // existing row rather than refusing the second subscribe — is safe
+      // because of *why* two subscribes can ever collide on the same
+      // endpoint: the endpoint is a high-entropy URL minted by the push
+      // service for one specific browser subscription, never chosen or
+      // guessed by a caller, so a genuine collision only happens when the
+      // same physical browser subscription re-registers (a token holder's
+      // device re-subscribing after they later sign in is the one case that
+      // does this on purpose). There is no way for a second, unrelated
+      // caller to produce the same endpoint and hijack someone else's row.
       set: { playerId, p256dh: subscription.keys.p256dh, auth: subscription.keys.auth, userAgent },
     });
 
@@ -195,8 +233,27 @@ push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
  * merely by `endpoint` alone: an endpoint that exists but belongs to someone
  * else is left untouched and this still answers 204, so the response cannot
  * be used to probe whether a given endpoint is registered to another player.
+ *
+ * **Accepting a token here as well as a session is safe only because an
+ * endpoint value is never disclosed to a token-authenticated caller.** A
+ * token proves the caller was already trusted to register *some* device
+ * against this player — but removal is keyed on the exact endpoint string,
+ * and endpoints are high-entropy push-service URLs a caller has no way to
+ * guess. The only place the product ever shows one is the device list on
+ * `/app/account` (Task 12), which is session-gated — so a forwarded-token
+ * holder can only ever unsubscribe the endpoint they themselves registered
+ * (the one their own browser handed back after subscribing), never a device
+ * registered by someone else. **If any future page ever renders or returns
+ * an endpoint to a token-authenticated caller, this route becomes a
+ * silent-disable primitive for anyone holding that token** — that
+ * dependency must be re-checked before such a page is built.
  */
 push.post(PUSH_UNSUBSCRIBE_PATH, async (c) => {
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== originOf(c.env)) {
+    return c.text("Forbidden", 403);
+  }
+
   const form = await c.req.parseBody();
   const playerId = await resolvePlayerId(c, form as Record<string, unknown>);
   if (!playerId) return c.text("Not found", 404);

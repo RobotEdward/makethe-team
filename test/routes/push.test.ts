@@ -194,8 +194,26 @@ describe("POST /app/push/subscribe", () => {
     expect(response.status).toBe(204);
 
     const [row] = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, sampleSubscription.endpoint));
-    expect(row?.userAgent).not.toBeNull();
-    expect(row!.userAgent!.length).toBeLessThan(longUserAgent.length);
+    // Pinned to the exact cap (`MAX_USER_AGENT_LENGTH` in src/routes/push.ts),
+    // not merely "shorter than the input" — a looser assertion would still
+    // pass for any truncation at all, including one that had silently drifted
+    // to some other length.
+    expect(row?.userAgent).toHaveLength(200);
+    expect(row!.userAgent!).toBe(longUserAgent.slice(0, 200));
+  });
+
+  it("refuses a cross-origin post", async () => {
+    const { cookie } = await signIn();
+    const sampleSubscription = await generateSampleSubscription();
+
+    const response = await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie, origin: "https://evil.example" },
+      body: JSON.stringify({ subscription: sampleSubscription }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await db.select().from(pushSubscriptions)).toHaveLength(0);
   });
 });
 
@@ -244,5 +262,44 @@ describe("POST /app/push/unsubscribe", () => {
     });
 
     expect(response.status).toBe(404);
+  });
+
+  it("removes a device for a player holding a valid response token, and no other player's", async () => {
+    // The symmetric half of the subscribe widening: a device registered via a
+    // forwarded token must be removable by whoever is holding that same
+    // token, not only by someone who has since signed in — safe because an
+    // endpoint is never disclosed to a token-authenticated caller in the
+    // first place (see the doc comment on PUSH_UNSUBSCRIBE_PATH).
+    const { token, playerId } = await seedFixtureWithToken();
+    const stranger = await insertPlayer(db);
+
+    const mine = await insertSubscription(db, playerId, "https://push.example.com/mine");
+    const theirs = await insertSubscription(db, stranger, "https://push.example.com/theirs");
+
+    const response = await SELF.fetch(url(PUSH_UNSUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token, endpoint: "https://push.example.com/mine" }),
+    });
+
+    expect(response.status).toBe(204);
+    const remaining = await db.select().from(pushSubscriptions);
+    expect(remaining.map((row) => row.id)).toEqual([theirs]);
+    expect(remaining.map((row) => row.id)).not.toContain(mine);
+  });
+
+  it("refuses a cross-origin post", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    await insertSubscription(db, me, "https://push.example.com/mine");
+
+    const response = await SELF.fetch(url(PUSH_UNSUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie, origin: "https://evil.example" },
+      body: new URLSearchParams({ endpoint: "https://push.example.com/mine" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await db.select().from(pushSubscriptions)).toHaveLength(1);
   });
 });

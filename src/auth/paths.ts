@@ -269,5 +269,14 @@ export const PUSH_SUBSCRIBE_PATH = `${DASHBOARD_PATH}/push/subscribe`;
  * a device registered via a forwarded token must also be removable by
  * whoever is holding that token, not only by someone who has since signed
  * in.
+ *
+ * **This is safe only because an endpoint value is never disclosed to a
+ * token-authenticated caller.** Removal is keyed on the exact endpoint
+ * string; endpoints are high-entropy push-service URLs a caller cannot
+ * guess, and the only place the product shows one is the session-gated
+ * device list on `/app/account`. A page that ever renders or returns an
+ * endpoint to a token-authenticated caller turns this route into a
+ * silent-disable primitive for anyone holding that token — see the doc
+ * comment on the handler in `src/routes/push.ts` before building one.
  */
 export const PUSH_UNSUBSCRIBE_PATH = `${DASHBOARD_PATH}/push/unsubscribe`;
