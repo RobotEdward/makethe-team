@@ -29,12 +29,9 @@ export const AUDIENCE_LABELS: Record<BroadcastAudience, string> = {
 /**
  * The mapping in the spec's §2 table, and the single place it is written.
  *
- * `status` is `string`, not `ResponseStatus`, deliberately: `responses.status`
- * is `text NOT NULL` with no CHECK constraint, so the TypeScript union is a
- * claim about the schema rather than a guarantee about the rows. An
- * unrecognised value is selected by **no** audience — excluded rather than
- * defaulted into one — because a message reaching someone on the strength of
- * a corrupt row is worse than a message not sent.
+ * Keyed by `ResponseStatus`, not by `string`: a new member added to that
+ * union without a case here is a missing-key error on this `Record` at
+ * typecheck time, rather than a status that silently reaches no audience.
  *
  * `waitlisted` is its own audience rather than being folded into `playing`: a
  * waitlisted player has no slot, and "you're on Reds"-shaped messages must
@@ -42,20 +39,31 @@ export const AUDIENCE_LABELS: Record<BroadcastAudience, string> = {
  * between them is how the slot was released (BR-3), which matters to capacity
  * and to nothing an organiser writes.
  */
+const AUDIENCE_BY_STATUS: Record<ResponseStatus, Exclude<BroadcastAudience, "everyone">> = {
+  in: "playing",
+  waitlisted: "waitlisted",
+  pending: "pending",
+  out: "unavailable",
+  withdrawn: "unavailable",
+};
+
+/**
+ * `status` is `string`, not `ResponseStatus`, deliberately: `responses.status`
+ * is `text NOT NULL` with no CHECK constraint, so the TypeScript union is a
+ * claim about the schema rather than a guarantee about the rows. This is the
+ * "a stored value indexing a lookup table can be `undefined`" case named in
+ * this codebase's working notes — deliberate and safe here, because indexing
+ * `AUDIENCE_BY_STATUS` with an unrecognised value produces `undefined`, which
+ * matches no `BroadcastAudience` and so is selected by **no** audience:
+ * excluded rather than defaulted into one, because a message reaching someone
+ * on the strength of a corrupt row is worse than a message not sent. The
+ * result here is a boolean comparison, never a rendered string, so there is
+ * no `escapeHtml(undefined)` at the end of this path.
+ */
 export function audienceSelectsStatus(audience: BroadcastAudience, status: string): boolean {
-  switch (audience) {
-    // Resolved from memberships, never from response rows.
-    case "everyone":
-      return false;
-    case "playing":
-      return status === "in";
-    case "waitlisted":
-      return status === "waitlisted";
-    case "pending":
-      return status === "pending";
-    case "unavailable":
-      return status === "out" || status === "withdrawn";
-  }
+  // Resolved from memberships, never from response rows.
+  if (audience === "everyone") return false;
+  return AUDIENCE_BY_STATUS[status as ResponseStatus] === audience;
 }
 
 /** Everything the exclusion rule needs to know about one candidate recipient. */
@@ -88,10 +96,3 @@ export function isAddressable(candidate: BroadcastCandidate): boolean {
 export function isBroadcastAudience(value: unknown): value is BroadcastAudience {
   return typeof value === "string" && (BROADCAST_AUDIENCES as readonly string[]).includes(value);
 }
-
-/**
- * Present so a future `ResponseStatus` addition is a typecheck error here
- * rather than a status silently reaching no audience. Referenced by the
- * exhaustiveness case in this module's test.
- */
-export type KnownStatus = ResponseStatus;
