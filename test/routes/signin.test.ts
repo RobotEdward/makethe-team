@@ -1339,6 +1339,22 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "bare 204 with no body for any other caller (src/routes/push.ts); no " +
       "template of its own that could carry an un-enumerated script. Its " +
       "own status-code coverage lives in test/routes/push.test.ts.",
+    "POST /g/:id/message":
+      "on its two HTML-returning branches (a rejected submission, and the " +
+      "daily-cap refusal) it renders through the same renderBroadcastPage as " +
+      "GET /g/:id/message — no template of its own that could carry an " +
+      "un-enumerated script — and its other branches are a plain-text 403 " +
+      "(wrong origin), a plain-text 404 (entitlement failure) or a 303 " +
+      "redirect (src/routes/broadcast.ts); its own status-code coverage " +
+      "lives in test/routes/broadcast-post.test.ts.",
+    "POST /g/:id/f/:fixtureId/message":
+      "on its two HTML-returning branches (a rejected submission, and the " +
+      "daily-cap refusal) it renders through the same renderBroadcastPage as " +
+      "GET /g/:id/f/:fixtureId/message — no template of its own that could " +
+      "carry an un-enumerated script — and its other branches are a " +
+      "plain-text 403 (wrong origin), a plain-text 404 (entitlement " +
+      "failure) or a 303 redirect (src/routes/broadcast.ts); its own " +
+      "status-code coverage lives in test/routes/broadcast-post.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {
