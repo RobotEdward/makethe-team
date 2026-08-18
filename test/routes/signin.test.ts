@@ -644,7 +644,7 @@ describe("no password field anywhere (TR-16)", () => {
     }
 
     // Stateless pages: no session, no linking outcome, safe to run in any order.
-    await capture("home", /Getting a regular game on/, new Request(`${ORIGIN}/`));
+    await capture("home", /<h1>Make The Team</, new Request(`${ORIGIN}/`));
     await capture("privacy", /What is held, and why/, new Request(`${ORIGIN}${PRIVACY_PATH}`));
     await capture("offline", /no connection/i, new Request(`${ORIGIN}${OFFLINE_PATH}`));
     await capture("robots", /User-agent/i, new Request(`${ORIGIN}/robots.txt`));

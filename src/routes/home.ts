@@ -22,7 +22,6 @@ home.get("/", (c) =>
     layout({
       title: "Make The Team",
       body: `<h1>Make The Team</h1>
-             <p>Getting a regular game on, without the group chat.</p>
              <p><a href="${SIGN_IN_PATH}">Sign in</a></p>
              <p><a href="${PRIVACY_PATH}">Privacy</a></p>`,
       centred: true,
