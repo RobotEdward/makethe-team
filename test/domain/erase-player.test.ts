@@ -86,6 +86,39 @@ describe("erasePlayer", () => {
     );
   });
 
+  // The comment at the delete site claims a run that stops half-done still
+  // cannot leave a live subscription behind. Nothing above proves that: both
+  // tests so far only exercise the happy path and the pre-check refusal, so a
+  // future refactor moving the delete into the final `db.batch()` (which the
+  // spec's own "same batch" wording invites) would pass every test that
+  // exists today and reintroduce exactly the failure mode this task closes.
+  // This pins the claim: an open fixture makes `removeMember` call
+  // `withdraw`, and a `withdraw` that throws propagates straight out of
+  // `erasePlayer` — past the removal loop, past `recordBlocked`, past the
+  // final batch — with the subscription delete already having run.
+  it("has already deleted the subscription if the removal loop throws before erasure finishes", async () => {
+    const db = testDb();
+    const playerId = await insertPlayer(db, { name: "Edward Cooper", email: "edward@example.test" });
+    const gameId = await insertGame(db);
+    // A plain player, not an owner: the sole-organiser pre-check must not
+    // block this run before it reaches the removal loop, or `withdraw` is
+    // never called and the test proves nothing about the failure path.
+    await insertMembership(db, gameId, playerId, { role: "player" });
+    await insertFixture(db, gameId, { lifecycle: "open" });
+    await insertSubscription(db, playerId, "https://push.example.test/device-1");
+    const throwingWithdraw = async (): Promise<never> => {
+      throw new Error("Durable Object unreachable");
+    };
+
+    await expect(erasePlayer({ db, playerId, now: NOW, withdraw: throwingWithdraw })).rejects.toThrow(
+      "Durable Object unreachable",
+    );
+
+    expect(await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.playerId, playerId))).toHaveLength(
+      0,
+    );
+  });
+
   // The row must survive: `responses`, `audit_log` and `notification_log` all
   // hold foreign keys to it, and a past fixture that was ten-a-side must still
   // read as ten-a-side.

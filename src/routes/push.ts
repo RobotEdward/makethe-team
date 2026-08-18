@@ -3,7 +3,8 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { ACCOUNT_PATH, PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
 import { getDb } from "../db/client.js";
-import { pushSubscriptions } from "../db/schema.js";
+import type { Db } from "../db/client.js";
+import { players, pushSubscriptions } from "../db/schema.js";
 import { verifyResponseToken } from "../domain/token.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { base64UrlDecode } from "../notify/web-push.js";
@@ -69,6 +70,26 @@ async function resolvePlayerId(c: Context<AppEnv>, body: Record<string, unknown>
   const now = new Date(Date.now());
   const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
   return verification.ok ? verification.payload.playerId : null;
+}
+
+/**
+ * True once `erasePlayer` has run for this id, or the id names nobody at all.
+ *
+ * Checked before registering a device. Erasure deletes sessions
+ * (`src/domain/erase-player.ts`), so the session half of `resolvePlayerId`
+ * cannot hand back an erased player's id — but it cannot revoke a *response
+ * token* already sitting in someone's inbox, and that is the other half. An
+ * old link, opened after the person it named has been erased, would
+ * otherwise register a brand-new `push_subscriptions` row against a player
+ * id nobody should be able to reach any more — the exact residual data
+ * erasure exists to prevent, reintroduced through the one credential it
+ * cannot revoke. No send path would ever notify what this refusal prevents
+ * (nothing sends to an erased player), so what is at stake is residual data
+ * outliving the person who asked to be forgotten, not a woken phone.
+ */
+async function isErasedPlayer(db: Db, playerId: string): Promise<boolean> {
+  const [row] = await db.select({ erasedAt: players.erasedAt }).from(players).where(eq(players.id, playerId));
+  return row === undefined || row.erasedAt !== null;
 }
 
 interface SubscriptionKeys {
@@ -171,6 +192,12 @@ push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
   const playerId = await resolvePlayerId(c, body);
   if (!playerId) return c.text("Not found", 404);
 
+  const db = getDb(c.env.DB);
+  // See `isErasedPlayer`: a response token survives the session it was
+  // minted alongside, so this is the one path erasure's session delete does
+  // not already close.
+  if (await isErasedPlayer(db, playerId)) return c.text("Not found", 404);
+
   const subscription = body["subscription"];
   if (!isSubscriptionInput(subscription)) {
     return c.text('Bad Request: "subscription" must carry an endpoint and keys.p256dh/auth', 400);
@@ -184,7 +211,6 @@ push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
 
   const userAgent = (c.req.header("user-agent") ?? "").slice(0, MAX_USER_AGENT_LENGTH) || null;
 
-  const db = getDb(c.env.DB);
   await db
     .insert(pushSubscriptions)
     .values({

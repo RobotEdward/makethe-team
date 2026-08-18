@@ -13,6 +13,15 @@ import { STYLE_BLOCKS } from "../views/styles.js";
  * Adopted over an objection recorded in the M10 spec §2.4: every page load now
  * discloses the visitor's IP to Google. `/privacy` must say so, and
  * `docs/known-issues.md` carries it on the list that page is written from.
+ *
+ * **This is not the only third party this product discloses (M14, §12).**
+ * Push notifications hand a player's own device's chosen processor — Google,
+ * Apple or Mozilla — the ability to wake it, but that relationship is
+ * negotiated by the browser directly against a service it picks, never
+ * fetched by a page this Worker serves. There is no origin for this file to
+ * name and no directive that would constrain it; the disclosure belongs on
+ * `/privacy` and in `docs/known-issues.md` instead, and lives there. This
+ * comment exists only so the list above does not read as exhaustive.
  */
 export const FONT_ORIGINS = ["https://fonts.googleapis.com", "https://fonts.gstatic.com"] as const;
 

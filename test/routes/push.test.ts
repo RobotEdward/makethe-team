@@ -200,6 +200,26 @@ describe("POST /app/push/subscribe", () => {
     expect(row?.playerId).toBe(playerId);
   });
 
+  it("refuses to register a device for an erased player, even with an otherwise-valid token", async () => {
+    // Erasure deletes sessions, but a response token already sitting in
+    // someone's inbox outlives it — the one credential erasure cannot
+    // revoke. Without this check, opening that old link after the player it
+    // named has been erased would create a brand-new subscription row
+    // against an id nobody should be able to reach any more.
+    const { token, playerId } = await seedFixtureWithToken();
+    await db.update(players).set({ erasedAt: new Date("2026-08-17T09:00:00Z") }).where(eq(players.id, playerId));
+    const sampleSubscription = await generateSampleSubscription();
+
+    const response = await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token, subscription: sampleSubscription }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(await db.select().from(pushSubscriptions)).toHaveLength(0);
+  });
+
   it("refuses a request with neither a session nor a valid token", async () => {
     const sampleSubscription = await generateSampleSubscription();
 

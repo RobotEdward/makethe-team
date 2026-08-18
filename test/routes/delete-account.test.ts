@@ -2,6 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { and, eq, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  ACCOUNT_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
@@ -626,5 +627,11 @@ describe("GET /app/delete — the held-up state", () => {
     expect(body).not.toMatch(/still in your squads/);
     expect(body).not.toContain("Keep my account");
     expect(body).not.toContain(`action="${DELETE_ACCOUNT_CANCEL_PATH}"`);
+    // A started-but-blocked run has already deleted this player's push
+    // subscriptions (§12) along with everything else the removal loop
+    // touched. The page must say so, in the place they're already looking,
+    // with a way back on rather than leaving it to be discovered by absence.
+    expect(body).toMatch(/push notification/i);
+    expect(body).toContain(`href="${ACCOUNT_PATH}"`);
   });
 });
