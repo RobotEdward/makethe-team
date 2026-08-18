@@ -1280,6 +1280,20 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "renders through layout() and is captured as a page above, this route " +
       "IS the script, and its own content-type/cache-control/hash assertions " +
       "live in test/routes/service-worker.test.ts.",
+    "POST /app/push/subscribe":
+      "never returns HTML on any branch — a plain-text 400 (malformed " +
+      "subscription), a plain-text 404 (neither a session nor a valid " +
+      "response token) or a bare 204 with no body only " +
+      "(src/routes/push.ts); no template of its own that could carry an " +
+      "un-enumerated script. Its own status-code coverage lives in " +
+      "test/routes/push.test.ts.",
+    "POST /app/push/unsubscribe":
+      "never returns HTML on any branch — a plain-text 400 (missing " +
+      "endpoint), a plain-text 404 (neither a session nor a valid " +
+      "response token) or a bare 204 with no body only " +
+      "(src/routes/push.ts); no template of its own that could carry an " +
+      "un-enumerated script. Its own status-code coverage lives in " +
+      "test/routes/push.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {

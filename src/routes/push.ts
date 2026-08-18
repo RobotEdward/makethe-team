@@ -1,0 +1,215 @@
+import { and, eq } from "drizzle-orm";
+import { Hono } from "hono";
+import type { Context } from "hono";
+import { PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
+import { getDb } from "../db/client.js";
+import { pushSubscriptions } from "../db/schema.js";
+import { verifyResponseToken } from "../domain/token.js";
+import type { AppEnv } from "../env.js";
+import { base64UrlDecode } from "../notify/web-push.js";
+
+export const push = new Hono<AppEnv>();
+
+/** RFC 8291 §3.2: an uncompressed P-256 point is always this many bytes. */
+const P256_PUBLIC_KEY_BYTES = 65;
+/** The byte an uncompressed point's leading octet must be. */
+const P256_UNCOMPRESSED_PREFIX = 0x04;
+/** RFC 8291 §3.2: the shared auth secret is fixed at 16 bytes. */
+const AUTH_SECRET_BYTES = 16;
+
+/**
+ * `user_agent` exists only so a player can tell "this phone" from "the
+ * tablet" apart in a list (spec §9.1) — a caption, not a record of the
+ * client's real UA string, so there is no reason to store more of it than a
+ * caption ever needs and no reason to trust a client to keep it short.
+ */
+const MAX_USER_AGENT_LENGTH = 200;
+
+/**
+ * The two proofs `PUSH_SUBSCRIBE_PATH` and `PUSH_UNSUBSCRIBE_PATH` accept, and
+ * the widening this route exists to record (spec §4).
+ *
+ * A signed-in player is `c.get("player")`, resolved by `sessionMiddleware`
+ * for every request under `AUTHENTICATED_PREFIX` (this route's mount).
+ * Absent that, a `token` field in the request body is checked against
+ * `verifyResponseToken` — the same signature a fixture link already carries.
+ * A response token already authorises setting that player's availability;
+ * treating it as sufficient to register or remove a device is consistent
+ * with that, and is the only way most players — who never sign in — ever
+ * reach this feature at all.
+ *
+ * **The player id returned here is the only one either handler ever uses.**
+ * It is never read from the request body: a body-supplied player id would
+ * let anyone subscribe, or unsubscribe, on anyone else's behalf, which is a
+ * different and much worse thing than the accepted risk of a forwarded
+ * token (a friend who registers their own phone against the token's player
+ * — the exposure spec §4 names and accepts).
+ *
+ * Returns `null` when neither proof holds, which both handlers turn into a
+ * 404 — this project's established "access denied is a 404, not a 403" rule
+ * (`test/routes/access.test.ts`), so a stranger probing this route learns
+ * nothing about whether a token or a session would have worked.
+ */
+async function resolvePlayerId(c: Context<AppEnv>, body: Record<string, unknown>): Promise<string | null> {
+  const sessionPlayer = c.get("player");
+  if (sessionPlayer) return sessionPlayer.id;
+
+  const token = body["token"];
+  if (typeof token !== "string" || token.length === 0) return null;
+
+  const now = new Date(Date.now());
+  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+  return verification.ok ? verification.payload.playerId : null;
+}
+
+interface SubscriptionKeys {
+  p256dh: string;
+  auth: string;
+}
+
+interface SubscriptionInput {
+  endpoint: string;
+  keys: SubscriptionKeys;
+}
+
+function isSubscriptionInput(value: unknown): value is SubscriptionInput {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate["endpoint"] !== "string") return false;
+  const keys = candidate["keys"];
+  if (typeof keys !== "object" || keys === null) return false;
+  const keyCandidate = keys as Record<string, unknown>;
+  return typeof keyCandidate["p256dh"] === "string" && typeof keyCandidate["auth"] === "string";
+}
+
+/**
+ * `endpoint` must be an absolute `https:` URL — it is handed straight to
+ * `fetch` at send time (`src/notify/web-push.ts`), and a relative or
+ * non-`https:` value would either throw there or, worse, resolve against
+ * something this Worker did not intend to call.
+ */
+function isValidEndpoint(endpoint: string): boolean {
+  try {
+    return new URL(endpoint).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `p256dh` and `auth` go straight into ECDH and HKDF (`encryptPayload` in
+ * `src/notify/web-push.ts`), which guards both lengths and throws — but only
+ * at send time, hours later, inside a cron sweep, for a row that could have
+ * been rejected here at the door. `base64UrlDecode` never throws on its own
+ * (unpadded input is padded before `atob`), but `atob` still throws on a
+ * string outside the base64 alphabet, so this is wrapped rather than trusted
+ * to return.
+ */
+function decodedKeysAreValid(keys: SubscriptionKeys): boolean {
+  let p256dh: Uint8Array;
+  let auth: Uint8Array;
+  try {
+    p256dh = base64UrlDecode(keys.p256dh);
+    auth = base64UrlDecode(keys.auth);
+  } catch {
+    return false;
+  }
+  if (p256dh.length !== P256_PUBLIC_KEY_BYTES || p256dh[0] !== P256_UNCOMPRESSED_PREFIX) return false;
+  if (auth.length !== AUTH_SECRET_BYTES) return false;
+  return true;
+}
+
+/**
+ * Register a device (spec §4, §9.1, §11 state 4).
+ *
+ * **Upsert on `endpoint`** (UNIQUE): a device that re-subscribes — the
+ * browser's own retry, or a player tapping the permission button twice —
+ * produces the identical endpoint, and this must leave exactly one row
+ * behind. Two would mean two notifications for every event, forever, with
+ * nothing in the product to reveal it (spec §9.1, §9.3's neighbouring
+ * warning about dedupe keys is the same shape of bug).
+ */
+push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
+  let parsed: unknown;
+  try {
+    parsed = await c.req.json();
+  } catch {
+    return c.text("Bad Request: expected a JSON body", 400);
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    return c.text("Bad Request: expected a JSON object", 400);
+  }
+  const body = parsed as Record<string, unknown>;
+
+  const playerId = await resolvePlayerId(c, body);
+  if (!playerId) return c.text("Not found", 404);
+
+  const subscription = body["subscription"];
+  if (!isSubscriptionInput(subscription)) {
+    return c.text('Bad Request: "subscription" must carry an endpoint and keys.p256dh/auth', 400);
+  }
+  if (!isValidEndpoint(subscription.endpoint)) {
+    return c.text('Bad Request: "endpoint" must be an absolute https: URL', 400);
+  }
+  if (!decodedKeysAreValid(subscription.keys)) {
+    return c.text('Bad Request: "keys" are not the right shape', 400);
+  }
+
+  const userAgent = (c.req.header("user-agent") ?? "").slice(0, MAX_USER_AGENT_LENGTH) || null;
+
+  const db = getDb(c.env.DB);
+  await db
+    .insert(pushSubscriptions)
+    .values({
+      id: crypto.randomUUID(),
+      playerId,
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+      userAgent,
+    })
+    .onConflictDoUpdate({
+      target: pushSubscriptions.endpoint,
+      // `id` and `createdAt` are deliberately absent: a re-subscribe updates
+      // the existing row's keys and owner in place rather than minting a
+      // second one, which is the entire point of upserting on `endpoint`.
+      set: { playerId, p256dh: subscription.keys.p256dh, auth: subscription.keys.auth, userAgent },
+    });
+
+  return c.body(null, 204);
+});
+
+/**
+ * Remove a device (spec §4, §11). The counterweight to the subscribe
+ * widening: `/app/account` lists every registered device (Task 12) so a
+ * player can revoke one they did not register themselves.
+ *
+ * That list is server-rendered and must work with no JavaScript at all (spec
+ * §11's closing paragraph), so this reads its body with `parseBody` — the
+ * same `application/x-www-form-urlencoded` a plain `<form>` submits — rather
+ * than requiring JSON the way `PUSH_SUBSCRIBE_PATH` does; a subscribe request
+ * can only ever be built by script (only script can produce a
+ * `PushSubscription` to send), but a remove request must not depend on any.
+ *
+ * Scoped by `playerId` as well as `endpoint` in the `DELETE`'s `WHERE`, not
+ * merely by `endpoint` alone: an endpoint that exists but belongs to someone
+ * else is left untouched and this still answers 204, so the response cannot
+ * be used to probe whether a given endpoint is registered to another player.
+ */
+push.post(PUSH_UNSUBSCRIBE_PATH, async (c) => {
+  const form = await c.req.parseBody();
+  const playerId = await resolvePlayerId(c, form as Record<string, unknown>);
+  if (!playerId) return c.text("Not found", 404);
+
+  const endpoint = form["endpoint"];
+  if (typeof endpoint !== "string" || endpoint.length === 0) {
+    return c.text('Bad Request: "endpoint" is required', 400);
+  }
+
+  const db = getDb(c.env.DB);
+  await db
+    .delete(pushSubscriptions)
+    .where(and(eq(pushSubscriptions.endpoint, endpoint), eq(pushSubscriptions.playerId, playerId)));
+
+  return c.body(null, 204);
+});
