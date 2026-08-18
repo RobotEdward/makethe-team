@@ -198,12 +198,22 @@ self.addEventListener("fetch", function (event) {
 
 // A push service can send an empty push to keep a subscription alive, with
 // no payload at all — \`event.data\` is then null and \`.json()\` is never
-// reached. An uncaught throw here is not silent: it makes the browser show
-// its own "This site has been updated in the background" notification in
-// place of the one this handler would have shown, which reads as a bug to
-// the player because it is one (M14 spec §9.2).
+// reached. A push service can just as easily send a payload that is present
+// but not valid JSON — a plain-text body, a truncated one — and \`.json()\`
+// throws on that just as readily as on the missing case. Either way, an
+// uncaught throw here is not silent: it makes the browser show its own
+// "This site has been updated in the background" notification in place of
+// the one this handler would have shown, which reads as a bug to the player
+// because it is one (M14 spec §9.2). The \`try\` covers both: a missing
+// \`event.data\` never calls \`.json()\` at all, and a present-but-malformed
+// one has its throw caught right here instead of escaping the listener.
 self.addEventListener("push", function (event) {
-  var payload = event.data ? event.data.json() : null;
+  var payload = null;
+  try {
+    payload = event.data ? event.data.json() : null;
+  } catch (e) {
+    return;
+  }
   if (!payload) return;
   event.waitUntil(
     self.registration.showNotification(payload.title, {

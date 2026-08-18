@@ -557,6 +557,31 @@ export const INSTALL_JS = `
 `;
 
 /**
+ * The DOM contract `PUSH_SUBSCRIBE_JS` reads from, exported by name rather
+ * than left as string literals inside the block below (M14 Task 11 review,
+ * finding 2).
+ *
+ * `PUSH_SUBSCRIBE_JS`'s own markup lives on whichever page opts into it —
+ * Task 12's account page and post-response offer — and that markup was, on
+ * the first pass, a set of ids and an attribute name typed independently in
+ * two files that agree only by convention. A typo on either side —
+ * `id="notify-button"` where the script reads `push-button` — would
+ * typecheck, lint and pass every test that does not specifically assert the
+ * two strings match, and leave the affordance permanently, silently inert.
+ * Importing these three constants at both call sites turns that mismatch
+ * into a compile error instead.
+ */
+export const PUSH_BUTTON_ID = "push-button";
+/** Where `PUSH_SUBSCRIBE_JS` explains a denial or a failed subscribe attempt. */
+export const PUSH_PROBLEM_ID = "push-problem";
+/**
+ * The attribute `PUSH_SUBSCRIBE_JS` reads the VAPID public key from. Not
+ * present at all is a valid, intended state (see the "data-" section below) —
+ * whoever renders the button decides whether to emit it.
+ */
+export const PUSH_KEY_ATTRIBUTE = "data-push-key";
+
+/**
  * Asks for notification permission and registers a device (M14 Task 11).
  *
  * A page-specific enhancement, unlike `SERVICE_WORKER_JS`: it is opted into
@@ -606,10 +631,10 @@ export const INSTALL_JS = `
  * (`VAPID_PUBLIC_KEY` in `src/env.ts`) — baking it into this string, which
  * `SCRIPT_BLOCKS` hashes once per isolate, would mean rotating the pair
  * requires a deploy that changes source, when the value is already a
- * same-origin server response away. Reading it off `data-push-key` on the
- * button keeps the key exactly as current as the page that rendered it, and
- * — the point M14's brief calls out by name — lets the *caller* decide not
- * to render the attribute at all while `VAPID_PUBLIC_KEY` is unset (M14
+ * same-origin server response away. Reading it off `PUSH_KEY_ATTRIBUTE` on
+ * the button keeps the key exactly as current as the page that rendered it,
+ * and — the point M14's brief calls out by name — lets the *caller* decide
+ * not to render the attribute at all while `VAPID_PUBLIC_KEY` is unset (M14
  * ships dark: production has no VAPID pair until the owner generates one).
  * No attribute, no key, nothing this script can subscribe with, so it
  * returns rather than revealing a button that can only fail.
@@ -635,14 +660,14 @@ export const INSTALL_JS = `
  */
 export const PUSH_SUBSCRIBE_JS = `
 (function () {
-  var button = document.getElementById("push-button");
-  var problem = document.getElementById("push-problem");
+  var button = document.getElementById("${PUSH_BUTTON_ID}");
+  var problem = document.getElementById("${PUSH_PROBLEM_ID}");
   if (!button) return;
   if (!("serviceWorker" in navigator)) return;
   if (!("PushManager" in window)) return;
   if (typeof Notification !== "function") return;
 
-  var key = button.getAttribute("data-push-key");
+  var key = button.getAttribute("${PUSH_KEY_ATTRIBUTE}");
   if (!key) return;
 
   function showDenied() {

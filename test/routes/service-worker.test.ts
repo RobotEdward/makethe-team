@@ -1,8 +1,71 @@
 import { SELF } from "cloudflare:test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { OFFLINE_PATH, SERVICE_WORKER_PATH } from "../../src/auth/paths.js";
 
 const url = (path: string) => `https://makethe.team${path}`;
+
+/**
+ * A minimal `self` stand-in that captures listeners the served script
+ * registers, so the tests below can actually *call* `push` and
+ * `notificationclick` rather than only grep the served text for their
+ * names.
+ *
+ * This exists because a substring assertion like `expect(script).toContain(
+ * "event.data ?")` proves the guard is present in the source, not that it
+ * behaves — it would keep passing even if the guard covered the wrong case
+ * (M14 Task 11 review, finding 1: the original guard only caught a *missing*
+ * `event.data`, not a *present but malformed* one, and the substring test
+ * could not have told the difference either way). Actually invoking the
+ * listener with a `event.data.json()` that throws is the only way to prove
+ * the handler survives it.
+ *
+ * Deliberately narrow: only the handful of worker globals the `push` and
+ * `notificationclick` listeners touch are stubbed. The other listeners
+ * (`install`, `activate`, `fetch`) are registered here too, since they are
+ * unconditional top-level `self.addEventListener` calls in the same script,
+ * but nothing below invokes them — `test/browser/pwa.spec.ts` is what
+ * exercises those against a real browser.
+ */
+interface FakeServiceWorkerGlobal {
+  addEventListener: (type: string, handler: (event: unknown) => void) => void;
+  location: { origin: string };
+  registration: { showNotification: ReturnType<typeof vi.fn> };
+  clients: { matchAll: ReturnType<typeof vi.fn>; openWindow: ReturnType<typeof vi.fn> };
+  skipWaiting: () => Promise<void>;
+}
+
+function loadListeners(script: string): {
+  listeners: Record<string, (event: unknown) => void>;
+  self: FakeServiceWorkerGlobal;
+} {
+  const listeners: Record<string, (event: unknown) => void> = {};
+  const fakeSelf: FakeServiceWorkerGlobal = {
+    addEventListener: (type, handler) => {
+      listeners[type] = handler;
+    },
+    location: { origin: "https://makethe.team" },
+    registration: { showNotification: vi.fn() },
+    clients: { matchAll: vi.fn().mockResolvedValue([]), openWindow: vi.fn().mockResolvedValue(undefined) },
+    skipWaiting: () => Promise.resolve(),
+  };
+
+  // The served text is data, not a module — this is the browser's own
+  // execution model for a service worker (a plain script evaluated with
+  // `self` as the global), reproduced just enough to register its
+  // listeners. `caches` and `fetch` are stubbed as no-ops: the top level of
+  // the script never calls either, only the `install`/`fetch` listener
+  // bodies do, and nothing here invokes those.
+  // `new Function` is the only way to actually run text served as a script;
+  // this project's eslint config carries no `no-new-func` rule to disable.
+  const run = new Function("self", "caches", "fetch", script) as (
+    self: FakeServiceWorkerGlobal,
+    caches: unknown,
+    fetch: unknown,
+  ) => void;
+  run(fakeSelf, {}, () => Promise.resolve());
+
+  return { listeners, self: fakeSelf };
+}
 
 describe("the service worker", () => {
   it("is served as JavaScript from the root, so it can control every page", async () => {
@@ -47,24 +110,103 @@ describe("the service worker", () => {
     expect(script).toMatch(/const CACHE = "mtt-[A-Za-z0-9+/=]{16,}";/);
   });
 
-  it("shows a notification and opens its url when tapped", async () => {
+  it("registers a push and a notificationclick listener", async () => {
+    // A cheap smoke check only — it proves the two listeners are wired up,
+    // not that they behave correctly. The behavioural tests below actually
+    // call them.
     const script = await (await SELF.fetch(url(SERVICE_WORKER_PATH))).text();
 
     expect(script).toContain('addEventListener("push"');
     expect(script).toContain('addEventListener("notificationclick"');
-    // Focus an existing tab rather than opening a second one: a player who
-    // already has the fixture page open does not want two.
-    expect(script).toContain("clients.matchAll");
+  });
+
+  it("shows a notification built from the push payload", async () => {
+    const script = await (await SELF.fetch(url(SERVICE_WORKER_PATH))).text();
+    const { listeners, self } = loadListeners(script);
+
+    const event = {
+      data: { json: () => ({ title: "Saturday 5-a-side", body: "You're in", tag: "fixture-1", url: "/g/1" }) },
+      waitUntil: (promise: Promise<unknown>) => promise,
+    };
+    listeners.push!(event);
+    // `showNotification` is called from inside `event.waitUntil`, which this
+    // fake resolves synchronously, so it has already run by the time
+    // `listeners.push!` returns.
+    await Promise.resolve();
+
+    expect(self.registration.showNotification).toHaveBeenCalledWith(
+      "Saturday 5-a-side",
+      expect.objectContaining({ body: "You're in", tag: "fixture-1", data: { url: "/g/1" } }),
+    );
   });
 
   it("survives a push with no payload", async () => {
     // Some services send an empty push to keep a subscription alive, and
-    // `event.data.json()` throws on it — an uncaught throw in a push handler
-    // shows the browser's own "This site has been updated in the background"
-    // notification, which looks like a bug to the player because it is one.
+    // `event.data` is then `null` — `.json()` is never reached.
     const script = await (await SELF.fetch(url(SERVICE_WORKER_PATH))).text();
+    const { listeners, self } = loadListeners(script);
 
-    expect(script).toContain("event.data ?");
+    const event = { data: null, waitUntil: vi.fn() };
+
+    expect(() => listeners.push!(event)).not.toThrow();
+    expect(self.registration.showNotification).not.toHaveBeenCalled();
+    expect(event.waitUntil).not.toHaveBeenCalled();
+  });
+
+  it("survives a push whose payload is not valid JSON", async () => {
+    // A payload can be *present* but malformed — a plain-text body, a
+    // truncated one — and `event.data.json()` throws on that exactly as
+    // readily as it does on a missing payload (M14 Task 11 review, finding
+    // 1). Both must leave the listener without an uncaught throw: that is
+    // what stops the browser showing its own generic "This site has been
+    // updated in the background" notification in place of this app's.
+    const script = await (await SELF.fetch(url(SERVICE_WORKER_PATH))).text();
+    const { listeners, self } = loadListeners(script);
+
+    const event = {
+      data: {
+        json: () => {
+          throw new SyntaxError("Unexpected token in JSON");
+        },
+      },
+      waitUntil: vi.fn(),
+    };
+
+    expect(() => listeners.push!(event)).not.toThrow();
+    expect(self.registration.showNotification).not.toHaveBeenCalled();
+    expect(event.waitUntil).not.toHaveBeenCalled();
+  });
+
+  it("focuses an existing tab on the notification's url rather than opening a second one", async () => {
+    const script = await (await SELF.fetch(url(SERVICE_WORKER_PATH))).text();
+    const { listeners, self } = loadListeners(script);
+
+    const matchingClient = { url: "https://makethe.team/g/1", focus: vi.fn() };
+    self.clients.matchAll.mockResolvedValue([{ url: "https://makethe.team/g/2", focus: vi.fn() }, matchingClient]);
+
+    const event = {
+      notification: { close: vi.fn(), data: { url: "https://makethe.team/g/1" } },
+      waitUntil: (promise: Promise<unknown>) => promise,
+    };
+    await listeners.notificationclick!(event);
+
+    expect(matchingClient.focus).toHaveBeenCalled();
+    expect(self.clients.openWindow).not.toHaveBeenCalled();
+  });
+
+  it("opens a new window when no existing tab matches the notification's url", async () => {
+    const script = await (await SELF.fetch(url(SERVICE_WORKER_PATH))).text();
+    const { listeners, self } = loadListeners(script);
+
+    self.clients.matchAll.mockResolvedValue([{ url: "https://makethe.team/g/2", focus: vi.fn() }]);
+
+    const event = {
+      notification: { close: vi.fn(), data: { url: "https://makethe.team/g/1" } },
+      waitUntil: (promise: Promise<unknown>) => promise,
+    };
+    await listeners.notificationclick!(event);
+
+    expect(self.clients.openWindow).toHaveBeenCalledWith("https://makethe.team/g/1");
   });
 });
 
