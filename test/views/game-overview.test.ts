@@ -157,6 +157,14 @@ describe("the invite card (M12 §4)", () => {
     expect(card).not.toContain("button primary");
     expect(card).not.toContain("button danger");
   });
+
+  it("offers a way to message the whole squad, beside the invite actions (M15 Task 10)", () => {
+    // Inside the existing `.actions` form rather than a group of its own —
+    // the invite card's rotate button is this page's one primary action, so
+    // the broadcast link must not carry `button primary` either.
+    const card = cardOf(render())!;
+    expect(card).toContain(`<a class="button" href="/g/g-1/message">Message everyone</a>`);
+  });
 });
 
 describe("destructive controls", () => {

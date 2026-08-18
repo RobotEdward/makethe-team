@@ -1,4 +1,11 @@
-import { gamePath, ownerFixturePath, ownerGuestPath, ownerGuestRemovePath, ownerResponsePath } from "../auth/paths.js";
+import {
+  fixtureMessagePath,
+  gamePath,
+  ownerFixturePath,
+  ownerGuestPath,
+  ownerGuestRemovePath,
+  ownerResponsePath,
+} from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { RESPONSE_STATUSES } from "../domain/response-status.js";
 import { displayName } from "../domain/display-name.js";
@@ -288,6 +295,10 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${renderTeams(params)}
 
     ${renderGuestForm(gameId, fixtureId, params)}
+
+    <div class="actions">
+      <a class="button" href="${escapeHtml(fixtureMessagePath(gameId, fixtureId))}">Message players</a>
+    </div>
 
     <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
   `;

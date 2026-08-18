@@ -175,3 +175,14 @@ describe("the back link", () => {
     expect(html.match(/class="back-link"/g)).toHaveLength(1);
   });
 });
+
+describe("the message-players link (M15 Task 10)", () => {
+  it("links to the fixture-scoped compose page, as a secondary button", () => {
+    // Not `.button primary` — publishing teams is this page's one primary
+    // action (`renderPublish` in `src/views/team-picker.ts`), so a second
+    // filled button here would leave nothing saying which one mattered.
+    const html = renderOwnerFixturePage(params());
+    expect(html).toContain(`<a class="button" href="/g/g-1/f/f-1/message">Message players</a>`);
+    expect(html).not.toContain(`<a class="button primary"`);
+  });
+});

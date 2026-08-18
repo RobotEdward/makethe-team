@@ -1,6 +1,7 @@
 import {
   DASHBOARD_PATH,
   gameEditPath,
+  gameMessagePath,
   joinPath,
   memberDetailPath,
   memberRemovePath,
@@ -135,6 +136,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       </details>
       <form class="actions" method="post" action="${escapeHtml(`/g/${gameId}/invite/rotate`)}">
         <button class="button" type="submit">Replace this link</button>
+        <a class="button" href="${escapeHtml(gameMessagePath(gameId))}">Message everyone</a>
       </form>
     </div>
 

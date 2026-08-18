@@ -152,3 +152,16 @@ describe("the back link", () => {
     expect(html.match(/class="back-link"/g)).toHaveLength(1);
   });
 });
+
+describe("the organiser's quick-message links (M15 Task 10)", () => {
+  // The compose links belong on the owner's two pages
+  // (`src/views/game-overview.ts`, `src/views/owner-fixture.ts`) — this page
+  // is what a squad member, not the organiser, is shown, and it renders with
+  // no `gameId` or `fixtureId` to build such a link from at all.
+  it("never offers a way to message the squad", () => {
+    const html = renderPlayerGamePage(params());
+    expect(html).not.toContain("Message everyone");
+    expect(html).not.toContain("Message players");
+    expect(html).not.toMatch(/\/message"/);
+  });
+});
