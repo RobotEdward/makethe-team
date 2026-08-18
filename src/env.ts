@@ -79,6 +79,60 @@ export interface Bindings {
    * value it actually receives.
    */
   SIGNIN_ALLOWLIST: string | undefined;
+  /**
+   * Which push implementation to use: `"webpush"`, `"console"` or `"null"`.
+   * A var, not a secret — set in `wrangler.jsonc`. Deliberately independent
+   * of `NOTIFIER`: email and web push are different channels with different
+   * failure modes, and forcing one switch to cover both would mean the only
+   * way to ship push dark (see `PUSH_NOTIFIER: "null"` below) is to also
+   * turn email off, which has nothing to do with it.
+   *
+   * `wrangler.jsonc` ships this as `"null"` until the real VAPID pair
+   * exists: with the notifier at `"null"`, `createNotifier` never reads
+   * `VAPID_PUBLIC_KEY` or `VAPID_PRIVATE_KEY` for the push leg, so an
+   * unfinished or missing key pair cannot be deployed by accident. See the
+   * comment beside `PUSH_NOTIFIER` in `wrangler.jsonc` for the two-line
+   * change that turns it on.
+   */
+  PUSH_NOTIFIER: string;
+  /**
+   * base64url-encoded P-256 public key (the VAPID "application server key").
+   * A var, not a secret: the browser's Push API requires this value to be
+   * handed to `PushManager.subscribe()` client-side, so it ships to every
+   * subscribing browser by design — there is nothing to protect by hiding it
+   * server-side. Not present in `wrangler.jsonc` while `PUSH_NOTIFIER` is
+   * `"null"` (see above); added alongside `VAPID_PRIVATE_KEY` when push
+   * actually goes live.
+   */
+  VAPID_PUBLIC_KEY: string;
+  /**
+   * The `mailto:` address push services may contact about this application
+   * server if it misbehaves (RFC 8292 §2). A var, not a secret. Same
+   * deploy-dark rule as `VAPID_PUBLIC_KEY` above: absent from
+   * `wrangler.jsonc` until `PUSH_NOTIFIER` is switched on.
+   */
+  VAPID_SUBJECT: string;
+  /**
+   * The VAPID signing key — the JWK `d` member, base64url, of the P-256
+   * private key whose public half is `VAPID_PUBLIC_KEY`. Set with
+   * `wrangler secret put VAPID_PRIVATE_KEY`; generated with
+   * `scripts/generate-vapid-keys.mjs`, which prints the pair once and writes
+   * nothing to disk.
+   *
+   * This is the one secret in this file that **cannot be rotated cheaply**,
+   * unlike `RESPONSE_TOKEN_SECRET` or `CANCEL_TOKEN_SECRET` above, both of
+   * which can be regenerated and simply invalidate some in-flight links.
+   * The public half of a VAPID pair is baked into every device subscription
+   * by the browser at the moment `PushManager.subscribe()` runs — a
+   * subscription *is*, in part, a promise to that specific public key. Lose
+   * or rotate the private key and every existing subscription becomes
+   * permanently undeliverable (a 403 from the push service, forever); there
+   * is no re-signing or re-issuing it from this side, at any price. Recovery
+   * is: generate a new pair, delete every `push_subscriptions` row, and wait
+   * for each player to open the app again and opt in by hand, on their own
+   * phone. See `docs/runbooks/cloudflare.md` for the full procedure.
+   */
+  VAPID_PRIVATE_KEY: string;
 }
 
 /**

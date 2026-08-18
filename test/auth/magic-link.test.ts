@@ -4,7 +4,7 @@ import { createAuth, isSignInAllowlisted } from "../../src/auth/factory.js";
 import { getDb } from "../../src/db/client.js";
 import { emailQuota } from "../../src/db/schema.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
-import { resetDatabase } from "../support/factories.js";
+import { requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const BASE_URL = "http://localhost:8787";
 const NOW = new Date("2026-08-11T09:00:00Z");
@@ -78,7 +78,7 @@ describe("magic link issuance", () => {
     expect(response.status).toBe(200);
     expect(notifier.sent).toHaveLength(1);
 
-    const message = notifier.sent[0]!;
+    const message = requireEmailMessage(notifier.sent[0]!);
     expect(message.channel).toBe("email");
     expect(message.to).toBe("someone@example.com");
     expect(message.subject).toBe("Your sign-in link");

@@ -4,11 +4,11 @@ import { chunk, INSERT_CHUNK_SIZE } from "../../src/db/chunk.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
-import { teamsKey } from "../../src/notify/dedupe-key.js";
+import { pushKey, teamsKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendTeamsEmails } from "../../src/notify/send-teams.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -101,7 +101,7 @@ async function logRows() {
 
 /** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
 function leaveTokenFrom(message: Message | undefined): string {
-  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
   if (!match?.[1]) throw new Error("no /leave/ link found in message html");
   return match[1];
 }
@@ -120,7 +120,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: 2, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(result).toEqual({ sent: 2, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     expect(notifier.all.map((m) => m.to).sort()).toEqual(["alice@example.com", "bob@example.com"]);
 
     const rows = await logRows();
@@ -135,6 +135,46 @@ describe("sendTeamsEmails (N-9)", () => {
         teamsKey(fixtureId, "bob", PUBLISHED_AT.toISOString()),
       ].sort(),
     );
+  });
+
+  it("queues a push alongside the email for an `in` player with a device", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "alice", name: "Alice", email: "alice@example.com", team: "a" },
+    ]);
+    await insertSubscription(db, "alice", "https://push.example.com/alice");
+    const notifier = new RecordingNotifier();
+
+    const result = await send(fixtureId, notifier);
+
+    // Email and push are counted separately (review fix, Critical 2) — `sent`
+    // must stay a pure email count, since `src/routes/games.ts`'s
+    // `publishTeams` logs it as one.
+    expect(result).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 1, pushFailed: 0, guestsSkipped: 0 });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = teamsKey(fixtureId, "alice", PUBLISHED_AT.toISOString());
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.all.find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: "alice", tag: `n9:${fixtureId}` });
+    // Not `leaveUrl` (review fix, Important 4): tapping "Teams are up" must
+    // never land on a page whose only control removes the player from the
+    // squad.
+    if (pushMessage?.channel === "push") {
+      expect(pushMessage.url).toContain("/r/");
+      expect(pushMessage.url).not.toContain("/leave/");
+    }
+  });
+
+  it("still emails an `in` player with no device at all", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "alice", name: "Alice", email: "alice@example.com", team: "a" },
+    ]);
+    const notifier = new RecordingNotifier();
+
+    await send(fixtureId, notifier);
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("carries a leave link scoped to the game", async () => {
@@ -161,7 +201,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 2 });
+    expect(result).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 2 });
     expect(notifier.all).toHaveLength(1);
     expect(notifier.all[0]?.to).toBe("alice@example.com");
     const rows = await logRows();
@@ -191,8 +231,8 @@ describe("sendTeamsEmails (N-9)", () => {
     const first = await send(fixtureId, notifier, PUBLISHED_AT);
     const second = await send(fixtureId, notifier, new Date(PUBLISHED_AT.getTime() + 60_000));
 
-    expect(first).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
-    expect(second).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(first).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
+    expect(second).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     expect(notifier.all).toHaveLength(2);
 
     const rows = await logRows();
@@ -210,7 +250,7 @@ describe("sendTeamsEmails (N-9)", () => {
     await send(fixtureId, notifier, PUBLISHED_AT);
     const second = await send(fixtureId, notifier, PUBLISHED_AT);
 
-    expect(second).toEqual({ sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(second).toEqual({ sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     expect(notifier.all).toHaveLength(1);
     expect(await logRows()).toHaveLength(1);
   });
@@ -227,12 +267,12 @@ describe("sendTeamsEmails (N-9)", () => {
 
     await send(fixtureId, notifier);
 
-    const aliceMessage = notifier.all.find((m) => m.to === "alice@example.com");
-    expect(aliceMessage?.html).toContain("Bibs");
-    expect(aliceMessage?.text).toContain("Bibs");
+    const aliceMessage = requireEmailMessage(notifier.all.find((m) => m.to === "alice@example.com")!);
+    expect(aliceMessage.html).toContain("Bibs");
+    expect(aliceMessage.text).toContain("Bibs");
     // Alice's own side is always named, but nobody else's name reaches her copy.
-    expect(aliceMessage?.html).not.toContain("Bob");
-    expect(aliceMessage?.text).not.toContain("Bob");
+    expect(aliceMessage.html).not.toContain("Bob");
+    expect(aliceMessage.text).not.toContain("Bob");
   });
 
   it("shows both full line-ups, including the recipient's own name, when the game shares the squad", async () => {
@@ -247,11 +287,11 @@ describe("sendTeamsEmails (N-9)", () => {
 
     await send(fixtureId, notifier);
 
-    const aliceMessage = notifier.all.find((m) => m.to === "alice@example.com");
-    expect(aliceMessage?.html).toContain("Bibs");
-    expect(aliceMessage?.html).toContain("Skins");
-    expect(aliceMessage?.html).toContain("Alice");
-    expect(aliceMessage?.html).toContain("Bob");
+    const aliceMessage = requireEmailMessage(notifier.all.find((m) => m.to === "alice@example.com")!);
+    expect(aliceMessage.html).toContain("Bibs");
+    expect(aliceMessage.html).toContain("Skins");
+    expect(aliceMessage.html).toContain("Alice");
+    expect(aliceMessage.html).toContain("Bob");
   });
 
   it("removes the row after a daily-ceiling refusal, so a later publish can retry", async () => {
@@ -266,7 +306,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     // Named, not counted: these ids are all that survives a ceiling refusal,
     // and the publish route writes them into `audit_log`.
-    expect(result).toEqual({ sent: 1, failed: 0, deferred: 1, deferredPlayerIds: ["bob"], guestsSkipped: 0 });
+    expect(result).toEqual({ sent: 1, failed: 0, deferred: 1, deferredPlayerIds: ["bob"], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     const rows = await logRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]?.playerId).toBe("alice");
@@ -281,7 +321,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: 0, failed: 1, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(result).toEqual({ sent: 0, failed: 1, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     const rows = await logRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: "failed", error: "simulated-provider-failure" });
@@ -334,7 +374,7 @@ describe("sendTeamsEmails (N-9)", () => {
 
     const result = await send(fixtureId, notifier);
 
-    expect(result).toEqual({ sent: SQUAD_SIZE, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    expect(result).toEqual({ sent: SQUAD_SIZE, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
     expect(notifier.all).toHaveLength(SQUAD_SIZE);
     const rows = await logRows();
     expect(rows).toHaveLength(SQUAD_SIZE);

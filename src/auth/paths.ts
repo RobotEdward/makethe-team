@@ -248,3 +248,35 @@ export const ICON_512_PATH = "/icon-512.png";
  * `<link rel="apple-touch-icon">`. This path exists for that link alone.
  */
 export const APPLE_TOUCH_ICON_PATH = "/apple-touch-icon.png";
+
+/**
+ * Register a device for push (M14, spec §4).
+ *
+ * Under `DASHBOARD_PATH` so it sits behind the session mount — but unlike
+ * every other route on that prefix, a session is not the only proof this
+ * route accepts. A **valid response token** is deliberately sufficient too:
+ * the token already authorises setting that player's availability, and most
+ * players never sign in at all, so confining push to the signed-in minority
+ * would be most of the reason not to build it. `src/routes/push.ts` reads
+ * the player id from whichever of the two proofs was presented — session or
+ * token — and never from the request body.
+ */
+export const PUSH_SUBSCRIBE_PATH = `${DASHBOARD_PATH}/push/subscribe`;
+
+/**
+ * Remove a registered device (M14, spec §4). A sibling of
+ * `PUSH_SUBSCRIBE_PATH`, accepting the same two proofs for the same reason —
+ * a device registered via a forwarded token must also be removable by
+ * whoever is holding that token, not only by someone who has since signed
+ * in.
+ *
+ * **This is safe only because an endpoint value is never disclosed to a
+ * token-authenticated caller.** Removal is keyed on the exact endpoint
+ * string; endpoints are high-entropy push-service URLs a caller cannot
+ * guess, and the only place the product shows one is the session-gated
+ * device list on `/app/account`. A page that ever renders or returns an
+ * endpoint to a token-authenticated caller turns this route into a
+ * silent-disable primitive for anyone holding that token — see the doc
+ * comment on the handler in `src/routes/push.ts` before building one.
+ */
+export const PUSH_UNSUBSCRIBE_PATH = `${DASHBOARD_PATH}/push/unsubscribe`;

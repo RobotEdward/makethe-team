@@ -85,6 +85,13 @@
       "when": 1786825519363,
       "tag": "0011_mute_brother_voodoo",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787003784323,
+      "tag": "0012_great_arclight",
+      "breakpoints": true
     }
   ]
 }

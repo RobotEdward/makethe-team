@@ -2,7 +2,16 @@ import { and, eq, sql } from "drizzle-orm";
 import { buildAuditInsert } from "../db/audit.js";
 import type { Db } from "../db/client.js";
 import { listActiveMemberships } from "../db/queries.js";
-import { account, notificationLog, passkey, players, session, user, verification } from "../db/schema.js";
+import {
+  account,
+  notificationLog,
+  passkey,
+  players,
+  pushSubscriptions,
+  session,
+  user,
+  verification,
+} from "../db/schema.js";
 import type { WithdrawMemberOutcome } from "../capacity/types.js";
 import { isLastActiveOwner } from "./last-owner.js";
 import { removeMember, type FixturePromotion } from "./remove-member.js";
@@ -135,8 +144,9 @@ async function recordBlocked(
  * between the check and the removal loop can still produce a late `blocked`;
  * see the comment inside the loop.
  *
- * Past that pre-check, the rest of the function — the removal loop, the
- * Better Auth deletes, and the final anonymising `db.batch()` — is not one
+ * Past that pre-check, the rest of the function — the push-subscription
+ * delete, the removal loop, the Better Auth deletes, and the final
+ * anonymising `db.batch()` — is not one
  * atomic unit either: D1 has no interactive transaction spanning Durable
  * Object calls and multiple `db.batch()`s, so a failure partway through
  * leaves real, resumable partial progress rather than a rollback. That is
@@ -195,6 +205,20 @@ export async function erasePlayer(params: ErasePlayerParams): Promise<ErasePlaye
     .update(players)
     .set({ erasureStartedAt: player.erasureStartedAt ?? now, erasureBlockedAt: null })
     .where(eq(players.id, playerId));
+
+  // Every device this player registered for push (§12), deleted here — first
+  // among the irreversible writes, before the removal loop below makes any
+  // Durable Object call that could fail or refuse. An orphaned endpoint that
+  // still wakes a real phone after erasure was asked for is the worst thing
+  // this feature can do, so it must not be able to survive a run that stops
+  // half-done: nothing after this point can put it back, and nothing before
+  // it could plausibly fail. The removal loop can still return `blocked` on a
+  // late race (see the comment inside it) and leave the player un-erased —
+  // that is the one case where this delete runs "early" relative to the rest
+  // of the erasure, and that is the direction of error worth accepting: a
+  // device falls silent for a player who turns out not to be erased yet,
+  // rather than staying reachable for one who is.
+  await db.delete(pushSubscriptions).where(eq(pushSubscriptions.playerId, playerId));
 
   // Leave every squad. The player is their own actor, exactly as `POST
   // /leave/:token` treats a leaver, so the audit trail reads as "they left".
@@ -288,6 +312,12 @@ export async function erasePlayer(params: ErasePlayerParams): Promise<ErasePlaye
         email: null,
         authUserId: null,
         emailVerifiedAt: null,
+        // Not an identifier on its own, but it is timestamp evidence of this
+        // player's own activity (when they were shown the push opt-in offer)
+        // and clearing it follows `emailVerifiedAt` above for the same class
+        // of reason: erasure should not leave behind an activity timestamp
+        // that outlives everything else about the person it was about.
+        pushOfferedAt: null,
         erasedAt: now,
       })
       .where(eq(players.id, playerId)),

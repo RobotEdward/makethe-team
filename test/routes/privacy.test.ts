@@ -49,6 +49,25 @@ describe("privacy page", () => {
     }
   });
 
+  it("names the push services on the privacy page", async () => {
+    // Same treatment the Google Fonts IP disclosure already gets, and a
+    // stronger case: this one is per-player, persistent and opted into. Named
+    // individually for the same reason as the processor test above — a
+    // rewrite to "whichever push service your device uses" would drop Mozilla
+    // silently while still satisfying a bare `toContain("Apple")` (Google is
+    // already present via the fonts paragraph, and "push" via any prose).
+    const body = await (await SELF.fetch(url(PRIVACY_PATH))).text();
+
+    for (const processor of ["Google", "Apple", "Mozilla"]) {
+      expect(body, `${processor} must be named as a push processor on the privacy page`).toContain(processor);
+    }
+    // The two substantive claims, not just the vocabulary: that the endpoint
+    // is a lasting way to reach the device, and that the device — not this
+    // product — is what picks the processor.
+    expect(body).toMatch(/persistent identifier/i);
+    expect(body).toMatch(/your device (chooses|choos)|choice is your device's/i);
+  });
+
   it("states the four things erasure cannot reach", async () => {
     // These come off the list `docs/known-issues.md` kept specifically for this
     // page. They are the admissions a person needs *before* they rely on

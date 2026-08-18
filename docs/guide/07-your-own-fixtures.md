@@ -44,7 +44,7 @@ old way.
 
 ## Your account
 
-![A player's own account page: their name in an editable field, their email address beside it, a link to manage passkeys, and their last fixtures across every game, most recent first](images/account.png)
+![A player's own account page: their name in an editable field, their email address beside it, a link to manage passkeys, a notifications section, and their last fixtures across every game, most recent first](images/account.png)
 
 There's a page for you as well as for your games. **Your account** — linked
 from your games list — has your name on it, and changing it there changes it
@@ -65,6 +65,12 @@ Further down the account page is an offer to add Make The Team to your home
 screen, with instructions for your device. Installed, it opens straight to
 your fixtures — no browser bar, no address to remember, just an icon like
 any other app.
+
+Below that is **Notifications**, where a supported device can be turned on
+to get a push notification here instead of waiting for an email — a fixture
+opening, a reminder, a place freeing up on the waitlist. Devices you've
+turned this on for are listed underneath, each with its own **Remove**, so
+you can turn a phone off without touching any of the others.
 
 ## When there's no connection
 

@@ -10,9 +10,11 @@ import {
   insertMembership,
   insertPlayer,
   insertResponse,
+  insertSubscription,
   resetDatabase,
 } from "../support/factories.js";
 import { FIXTURE_STYLES_CSS } from "../../src/views/styles.js";
+import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE, PUSH_TOKEN_ATTRIBUTE } from "../../src/views/scripts.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
@@ -373,5 +375,86 @@ describe("the install section (M13)", () => {
     const body = await (await get(cookie)).text();
 
     expect(body).toMatch(/<button[^>]*data-install-button[^>]*hidden/);
+  });
+});
+
+describe("the notification permission and device list (M14 Task 12)", () => {
+  it("lists the player's registered devices with a way to remove each", async () => {
+    // The counterweight to accepting token-based registration (spec §4): a
+    // player must be able to see and revoke a subscription they did not make.
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    await insertSubscription(db, me, "https://push.example/endpoint-1", {
+      userAgent: "This phone",
+    });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("This phone");
+    expect(body).toMatch(/<form[^>]*action="\/app\/push\/unsubscribe"/);
+    expect(body).toContain(`value="https://push.example/endpoint-1"`);
+  });
+
+  it("says so, without a form, when no device is registered", async () => {
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("No devices registered yet.");
+    expect(body).not.toMatch(/action="\/app\/push\/unsubscribe"/);
+  });
+
+  it("escapes an untrusted user-agent caption rather than trusting it", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    await insertSubscription(db, me, "https://push.example/endpoint-2", {
+      userAgent: "<script>alert(1)</script>",
+    });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("<script>alert(1)</script>");
+    expect(body).toContain("&lt;script&gt;");
+  });
+
+  it("ships the permission button hidden, with the VAPID key on it, for script to reveal", async () => {
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).toMatch(
+      new RegExp(`<button[^>]*id="${PUSH_BUTTON_ID}"[^>]*${PUSH_KEY_ATTRIBUTE}="[^"]+"[^>]*hidden`),
+    );
+  });
+
+  it("never carries a push token — the account page's button relies on the session, not a token (M14 Task 12 review, Finding 2/5)", async () => {
+    // The mirror image of the response-confirmation offer, which always
+    // carries one: this page's caller is signed in, `resolvePlayerId` in
+    // `src/routes/push.ts` reads the session, and `renderPushSection`'s own
+    // type has no way to be handed a token at all (unlike `renderPushOffer`).
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain(`${PUSH_TOKEN_ATTRIBUTE}="`);
+  });
+
+  it("renders no button at all when no VAPID key is configured (M14 ships dark)", async () => {
+    // Production has no VAPID_PUBLIC_KEY right now — see wrangler.jsonc's own
+    // comment on PUSH_NOTIFIER. A button with no key to subscribe with is a
+    // control that can only fail, and this deployment must not ship one.
+    const previousKey = env.VAPID_PUBLIC_KEY;
+    // @ts-expect-error — genuinely absent at runtime despite the honestly-
+    // dishonest `string` type; see `Bindings.VAPID_PUBLIC_KEY`'s own comment.
+    env.VAPID_PUBLIC_KEY = undefined;
+    try {
+      const { cookie } = await signIn();
+      const body = await (await get(cookie)).text();
+
+      expect(body).not.toContain(`id="${PUSH_BUTTON_ID}"`);
+      // `PUSH_KEY_ATTRIBUTE`'s name itself still appears in the script body —
+      // `PUSH_SUBSCRIBE_JS` reads it off the button by name at runtime — so
+      // this checks the *attribute*, not the bare string.
+      expect(body).not.toContain(`${PUSH_KEY_ATTRIBUTE}="`);
+    } finally {
+      env.VAPID_PUBLIC_KEY = previousKey;
+    }
   });
 });

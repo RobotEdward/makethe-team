@@ -163,6 +163,26 @@ longer "somebody forgets to write it down" but "somebody changes one of these an
 the page saying the old thing". `test/routes/privacy.test.ts` pins each admission, so that
 change fails a test rather than shipping quietly.
 
+**M14 adds a fourth processor to the same disclosure, on the same page.** Turning push
+notifications on hands an endpoint — the subscription record in `push_subscriptions`
+(spec §9.1) — to whichever of Google, Apple or Mozilla runs the push service on the
+player's own device. That choice is the device's, made by the browser or OS at the moment
+push is turned on; this product neither picks it nor can change it. The endpoint lets this
+app wake that specific device with a notification, and the endpoint's mere existence is
+itself a persistent identifier for it, held by a company that is neither us nor the player.
+Adopted over the same kind of objection recorded for Google Fonts above: unlike the fonts
+disclosure, which is imposed on every visitor regardless of what they want, this one is
+opted into and per-player — but it is more personal while it lasts, since it is tied to a
+specific person's device rather than an anonymous page load, and it persists until that
+device is removed. It is disclosed under "Who else sees it" on `/privacy`, and it is
+removed the moment it should be: `erasePlayer` (`src/domain/erase-player.ts`) deletes every
+`push_subscriptions` row for a player before anything else in the erasure sequence that
+could fail, so a run that stops half-done still cannot leave a live endpoint behind — see
+that function's comments, and `test/domain/erase-player.test.ts`'s zero-rows-survive
+assertion. What would remove this disclosure entirely: nothing short of dropping push
+notifications as a feature, since the third-party dependency is inherent to the Web Push
+standard, not an implementation choice made here.
+
 1. **`triggers.crons` sits at the top level of `wrangler.jsonc`**, which is correct while
    production is the only environment — but it is inherited, so adding a staging
    environment would silently give it both cron schedules. TR-9 exists precisely to stop

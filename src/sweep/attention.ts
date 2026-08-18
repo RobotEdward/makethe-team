@@ -1,4 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
+import { ownerFixturePath } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { getFixtureWithSquad } from "../db/queries.js";
 import { fixtures, games, memberships, notificationLog, players } from "../db/schema.js";
@@ -6,15 +7,17 @@ import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { cancelTokenExpiry, signCancelToken } from "../domain/token.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
-import { attentionKey } from "../notify/dedupe-key.js";
+import { attentionKey, pushKey } from "../notify/dedupe-key.js";
 import {
   applySendResult,
   insertQueuedLogRows,
   markOrphanedRowsFailed,
+  playersWithPushSubscriptions,
   SITE_ORIGIN,
   type PendingNotification,
 } from "../notify/delivery.js";
 import type { Notifier } from "../notify/notifier.js";
+import { PUSH_COPY } from "../notify/push-copy.js";
 import { renderAttentionEmail, type AttentionProblem } from "../notify/templates/attention.js";
 
 /** One fixture the attention step could not fully process, and why. */
@@ -28,18 +31,45 @@ export interface AttentionFailure {
 export interface AttentionResult {
   /** Fixtures `fixtureView` said need their owner's attention on this run. */
   fixturesNeedingAttention: number;
+  /**
+   * **Email only.** `src/cron/handler.ts` logs this as an email count on a
+   * failed run, the same reasoning `CancellationSendSummary.sent`'s doc
+   * comment gives at length: folding a push row in here would report an
+   * inflated number of emails sent. See `pushAttentionSent` for the push
+   * leg's own count.
+   */
   attentionSent: number;
+  /** Email only — see `attentionSent`. See `pushAttentionFailed` for the push leg's own count. */
   attentionFailed: number;
   /**
    * Refused by the daily send ceiling (TR-31) and *only* that — never mixed
    * with any other reason, so the handler's warning names the condition it is
    * actually reporting. The `notification_log` row is removed, so the next
    * sweep run retries it; an `audit_log` row records that it happened at all.
+   * Email only — the push leg has no daily ceiling and can never produce
+   * this outcome.
    */
   attentionDeferred: number;
+  /** The push leg's own `sent` count — informational only, never folded into `attentionSent`. */
+  pushAttentionSent: number;
+  /** The push leg's own `failed` count — informational only, never folded into `attentionFailed`. Also where a push `deferred` outcome lands, since the push leg can't legitimately produce one. */
+  pushAttentionFailed: number;
   /** Owners with no usable address, or who are guests. Permanent, not a failure, no log row (BR-32). */
   ownersSkippedNoRecipient: number;
-  /** Owners who already have an `n4` row for this fixture — told once, ever (BR-31). */
+  /**
+   * Owners who already have an `n4` row for this fixture — told once, ever
+   * (BR-31). Counts rows of *either* channel: the increment at `:245` (an
+   * owner already in `ownersAlreadyTold`'s result) is email-only by
+   * construction — that check runs before a push row for the owner is ever
+   * built — but the increment at `:325` (`pending.length - inserted.length`,
+   * a dedupe-key conflict on insert) counts whichever of the owner's email
+   * and push rows collided, which may be one or both. Mirrors the same
+   * caveat on `CancellationSendSummary.alreadyLogged` in
+   * `send-cancellation.ts`, for the same reason: both owner and email rows
+   * are always attempted together here, so a push-only conflict is this
+   * file's own concern, not a silent gap the field's callers need to worry
+   * about.
+   */
   alreadyLogged: number;
   failures: AttentionFailure[];
 }
@@ -111,6 +141,8 @@ export async function sendOwnerAttention(params: SendOwnerAttentionParams): Prom
     attentionSent: 0,
     attentionFailed: 0,
     attentionDeferred: 0,
+    pushAttentionSent: 0,
+    pushAttentionFailed: 0,
     ownersSkippedNoRecipient: 0,
     alreadyLogged: 0,
     failures: [],
@@ -211,6 +243,15 @@ async function processFixture(
   const nonResponders = squad.filter((member) => member.status === "pending").map((member) => member.name);
   const expiresAt = cancelTokenExpiry(fixture.kicksOffAt).getTime();
 
+  // Only an owner with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise every owner without a phone
+  // would accumulate a `no-recipient` row on every sweep tick this fixture
+  // keeps needing attention, forever.
+  const subscribed = await playersWithPushSubscriptions(
+    db,
+    owners.map((owner) => owner.playerId),
+  );
+
   const pending: PendingNotification[] = [];
   for (const owner of owners) {
     if (alreadyLogged.has(owner.playerId)) {
@@ -230,7 +271,8 @@ async function processFixture(
       cancelTokenSecret,
     );
 
-    const rendered = renderAttentionEmail({
+    const cancelUrl = `${SITE_ORIGIN}/cancel/${token}`;
+    const emailPayload = {
       ownerName: owner.name,
       gameName: game.name,
       venueName: fixture.venueOverride ?? game.venueName,
@@ -241,9 +283,10 @@ async function processFixture(
       nonResponders,
       // Every URL is server-constructed, from `SITE_ORIGIN` and a token this
       // function just signed.
-      cancelUrl: `${SITE_ORIGIN}/cancel/${token}`,
+      cancelUrl,
       ceilingReached,
-    });
+    };
+    const rendered = renderAttentionEmail(emailPayload);
 
     const dedupeKey = attentionKey(fixtureId, owner.playerId);
     pending.push({
@@ -259,6 +302,34 @@ async function processFixture(
         dedupeKey,
       },
     });
+
+    if (subscribed.has(owner.playerId)) {
+      const copy = PUSH_COPY.n4(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey: pushKey(dedupeKey),
+        playerId: owner.playerId,
+        message: {
+          channel: "push",
+          to: owner.playerId,
+          title: copy.title,
+          body: copy.body,
+          // The owner's fixture page, not `cancelUrl` (review fix, Important
+          // 4). "You're 2 short" tapping through to "call off this fixture"
+          // is exactly the wrong default action for a notification whose
+          // entire point is to prompt the owner to go find more players —
+          // the fixture page is where they can actually do that, and still
+          // links to cancelling for the owner who decides that's the right
+          // call.
+          url: `${SITE_ORIGIN}${ownerFixturePath(gameId, fixtureId)}`,
+          // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
+          // (Task 9) to the real fixture id, now that this caller holds one
+          // (Task 13).
+          tag: `n4:${fixtureId}`,
+          dedupeKey: pushKey(dedupeKey),
+        },
+      });
+    }
   }
 
   if (pending.length === 0) return;
@@ -278,7 +349,12 @@ async function processFixture(
     // owner being told, nor retirement from running afterwards.
     const message = error instanceof Error ? error.message : String(error);
     await markOrphanedRowsFailed(db, inserted, message);
-    result.attentionFailed += inserted.length;
+    // Split by channel — see `AttentionResult.attentionSent`'s doc comment
+    // for why `attentionFailed` must count only the email rows.
+    for (const entry of inserted) {
+      if (entry.message.channel === "email") result.attentionFailed++;
+      else result.pushAttentionFailed++;
+    }
     result.failures.push({ fixtureId, gameId, stage: "send", message });
     return;
   }
@@ -291,13 +367,26 @@ async function processFixture(
       const entry = inserted[applied];
       if (!entry) continue;
       const outcome = await applySendResult(db, entry, results[applied], now);
-      if (outcome.kind === "sent") result.attentionSent++;
-      else if (outcome.kind === "deferred") {
-        result.attentionDeferred++;
-        deferredPlayerIds.push(entry.playerId);
-      } else {
+      const isEmail = entry.message.channel === "email";
+      if (outcome.kind === "sent") {
+        if (isEmail) result.attentionSent++;
+        else result.pushAttentionSent++;
+      } else if (outcome.kind === "deferred") {
+        // The push leg has no daily ceiling, so this can only legitimately
+        // happen for the email row — a push landing here regardless is
+        // folded into `pushAttentionFailed` rather than `attentionDeferred`,
+        // which is documented as email-only.
+        if (isEmail) {
+          result.attentionDeferred++;
+          deferredPlayerIds.push(entry.playerId);
+        } else {
+          result.pushAttentionFailed++;
+        }
+      } else if (isEmail) {
         result.attentionFailed++;
         sendFailureReasons.push(outcome.reason);
+      } else {
+        result.pushAttentionFailed++;
       }
     }
   } catch (error) {
@@ -306,7 +395,10 @@ async function processFixture(
     // those owners, mark them failed, or count them.
     const message = error instanceof Error ? error.message : String(error);
     const orphaned = inserted.slice(applied);
-    result.attentionFailed += orphaned.length;
+    for (const entry of orphaned) {
+      if (entry.message.channel === "email") result.attentionFailed++;
+      else result.pushAttentionFailed++;
+    }
     await markOrphanedRowsFailed(db, orphaned, `abandoned mid-apply: ${message}`);
     result.failures.push({
       fixtureId,
@@ -401,11 +493,27 @@ async function activeOwners(
  * actually makes "once per owner per fixture, ever" true against a concurrent
  * run. This exists so the common case does not sign a cancel token and render
  * an email that `onConflictDoNothing` would immediately discard.
+ *
+ * Filtered to `channel: "email"` — load-bearing, not tidying, for the same
+ * reason `existingReminderLog` in `src/sweep/open-and-remind.ts` filters the
+ * same way. The push leg has no daily ceiling, so a ceiling-deferred email's
+ * `queued` row can be deleted (`applySendResult`) while that owner's push
+ * row, sent independently, survives. BR-31 says "once per fixture, ever" —
+ * counting a surviving push row as having told the owner would satisfy that
+ * with a notification they may never have seen, and permanently suppress
+ * the email this function exists to eventually get out. Do not remove this
+ * filter.
  */
 async function ownersAlreadyTold(db: Db, fixtureId: string): Promise<Set<string>> {
   const rows = await db
     .select({ playerId: notificationLog.playerId })
     .from(notificationLog)
-    .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n4")));
+    .where(
+      and(
+        eq(notificationLog.fixtureId, fixtureId),
+        eq(notificationLog.notificationType, "n4"),
+        eq(notificationLog.channel, "email"),
+      ),
+    );
   return new Set(rows.map((row) => row.playerId));
 }

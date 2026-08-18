@@ -26,7 +26,7 @@ import { PRIVACY_STYLES_CSS } from "./styles.js";
 export const PRIVACY_CONTACT = "privacy@makethe.team";
 
 /** Shown at the foot of the page and changed whenever the content is. */
-export const PRIVACY_LAST_UPDATED = "16 August 2026";
+export const PRIVACY_LAST_UPDATED = "18 August 2026";
 
 interface Entry {
   what: string;
@@ -56,8 +56,12 @@ const HELD: readonly Entry[] = [
     why: "To keep you signed in, and to let you back in without a password. Passkeys are stored as public keys — the private half never leaves your device.",
   },
   {
-    what: "A record of the email we sent you, and whether it was delivered.",
+    what: "A record of the emails and push notifications we sent you, and whether each was delivered.",
     why: "So that a reminder is never sent twice, and so a failure can be found and explained rather than silently dropped.",
+  },
+  {
+    what: "If you turn on notifications: the subscription your browser creates for your device, so we can send to it — not your name or email, and nothing readable by anyone but the push service that delivers it.",
+    why: "To send you a push notification instead of, or alongside, an email — the same events, delivered to your device rather than your inbox. Removing the device (from your own page) or erasing your account deletes this immediately.",
   },
   {
     what: "A record of who changed what — including who marked you in or out, and who removed you from a squad.",
@@ -119,6 +123,7 @@ export function renderPrivacyPage(): string {
     <h2>Who else sees it</h2>
     <p><strong>Other people in your squad.</strong> Your name and your answer are shown to the rest of the squad, because that is the point. An organiser can turn that off for their game, in which case players see only the count — but you can always see your own answer and your own side.</p>
     <p><strong>Three companies, doing three jobs.</strong> Cloudflare hosts the product and stores its database. Resend delivers the email. Google serves the two typefaces the pages are set in — which means Google is told your IP address every time you open a page here, before you have done anything at all. Nobody is sent your data to use for their own purposes, and nothing here is sold, shared for advertising, or used to train anything.</p>
+    <p><strong>If you turn on push notifications, one more company sees something: whichever of Google, Apple or Mozilla runs the push service on the device you turned it on for.</strong> That choice is your device's, not ours — it is decided by the browser or phone you say yes on, and we have no way to pick a different one; for many people it will be Google again, the same company named above, on a different device and for a different reason. Saying yes hands that company a subscription: an address that lets this app wake that specific device with a notification. It carries no name and no email address, but it is a standing way to reach that device, and the subscription's mere existence is itself a persistent identifier for it, held by whichever company your device chose. This disclosure is not imposed the way the font one above is — it happens only if you turn push on, and only for the device you turned it on for — but it is more personal while it lasts: it is tied to you, it persists until you remove that device or turn push off, and erasing your account deletes it along with everything else.</p>
 
     <h2>How long it is kept</h2>
     <p>Your account and your answers are kept for as long as you have an account. You can end that yourself at any time — see below.</p>

@@ -76,6 +76,27 @@ export default defineConfig(async () => {
             // gets a string rather than undefined. Obviously fake, and
             // deliberately an address nobody can receive mail at.
             SIGNIN_ALLOWLIST: "test-only-not-a-real-address@example.com",
+            // A genuine, matching P-256 pair, generated solely so the VAPID
+            // suite (test/notify/web-push-vapid.test.ts and friends) can
+            // exercise real crypto — `importVapidKeys` and
+            // `assertVapidKeysMatch` require an actual matching pair, and a
+            // fake string would make every test that imports or verifies a
+            // VAPID key a lie. Committed on purpose, same reasoning as
+            // RESPONSE_TOKEN_SECRET above: this pair is thrown away, used
+            // nowhere but this test suite, and must never be promoted to
+            // any real environment — `wrangler.jsonc` ships PUSH_NOTIFIER as
+            // "null" for exactly that reason (see the comment there).
+            VAPID_PUBLIC_KEY:
+              "BDY7Ytp1fZgT2ZNYBTiqf9FvM4SzUzXwlHFgapnG304tIvOSM3-CmETbiNrnKbyxZfcJnNrgd4veSxpM8DP35wA",
+            VAPID_PRIVATE_KEY: "1y3AP6Fz1fqpUW0z8__fXXNvSk8GUa-GPLemnI3ZMrw",
+            VAPID_SUBJECT: "mailto:ops@makethe.team",
+            // Pinned to "null" for the same reason NOTIFIER is pinned above:
+            // wrangler.jsonc also says "null" right now, but a test suite
+            // should not depend on that coincidence — a future flip of the
+            // production var must not silently change what the suite
+            // exercises. Tests that want the webpush path construct
+            // createNotifier's push leg, or web-push.ts directly, themselves.
+            PUSH_NOTIFIER: "null",
           },
         },
       }),

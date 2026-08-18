@@ -5,20 +5,32 @@ import { notificationLog, players, responses } from "../db/schema.js";
 import { displayName } from "../domain/display-name.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
+import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
 import { TEAM_IDS, isTeamId, teamNames } from "../domain/teams.js";
-import { teamsKey } from "./dedupe-key.js";
+import { pushKey, teamsKey } from "./dedupe-key.js";
 import {
   applySendResult,
   insertQueuedLogRows,
   markOrphanedRowsFailed,
+  playersWithPushSubscriptions,
   SITE_ORIGIN,
   type PendingNotification,
 } from "./delivery.js";
 import type { Notifier } from "./notifier.js";
+import { PUSH_COPY } from "./push-copy.js";
 import { renderTeamsEmail } from "./templates/teams.js";
 
-/** What one publish's worth of N-9 sends did, in aggregate. */
+/**
+ * What one publish's worth of N-9 sends did, in aggregate.
+ *
+ * `sent`/`failed`/`deferred` are **email only** — `src/routes/games.ts`'s
+ * `publishTeams` logs these as an email count (`"teams email (N-9) failed
+ * for N player(s)"`), the same reasoning `CancellationSendSummary.sent`'s
+ * doc comment gives at length: folding a push row into these would inflate
+ * what is reported as an email figure, and the push leg has no daily
+ * ceiling so it can never legitimately produce `deferred` at all. See
+ * `pushSent`/`pushFailed` for the push leg's own counts.
+ */
 export interface TeamsSendResult {
   sent: number;
   failed: number;
@@ -34,6 +46,10 @@ export interface TeamsSendResult {
    * squad turns up not knowing".
    */
   deferredPlayerIds: string[];
+  /** The push leg's own `sent` count — informational only, never folded into `sent` above. */
+  pushSent: number;
+  /** The push leg's own `failed` count — informational only, never folded into `failed` above. Also where a push `deferred` outcome lands, since the push leg can't legitimately produce one. */
+  pushFailed: number;
   /** BR-32: guests, and anyone with no usable address. Not a log row (see the guard below). */
   guestsSkipped: number;
 }
@@ -96,7 +112,7 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
     // `c.executionCtx.waitUntil`, after the organiser's own response has
     // already been sent, so there is no caller left to hand a rejection to.
     console.error(`sendTeamsEmails: fixture ${fixtureId} not found`);
-    return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 };
+    return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 };
   }
   const { fixture, game, squad } = withSquad;
 
@@ -156,6 +172,15 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
   const venueName = fixture.venueOverride ?? game.venueName;
   const publishedAtIso = publishedAt.toISOString();
 
+  // Only a player with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise every player without a phone
+  // would accumulate a `no-recipient` row per publish, forever. Fetched once
+  // for the whole squad rather than per recipient.
+  const subscribed = await playersWithPushSubscriptions(
+    db,
+    inSquad.map((member) => member.playerId),
+  );
+
   let guestsSkipped = 0;
   const pending: PendingNotification[] = [];
 
@@ -178,20 +203,22 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
       { gameId: game.id, playerId: member.playerId, expiresAt: leaveTokenExpiry(now).getTime() },
       responseTokenSecret,
     );
+    const leaveUrl = `${SITE_ORIGIN}/leave/${leaveToken}`;
 
     // A recognised side by the `inSquad` filter above, which is what makes
     // `names[team]` below total rather than merely type-checked.
     const team = member.team!;
 
-    const rendered = renderTeamsEmail({
+    const emailPayload = {
       playerName: member.name,
       gameName: game.name,
       venueName,
       whenLocal,
       yourSideName: names[team],
       lineUps,
-      leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
-    });
+      leaveUrl,
+    };
+    const rendered = renderTeamsEmail(emailPayload);
 
     const dedupeKey = teamsKey(fixtureId, member.playerId, publishedAtIso);
     pending.push({
@@ -207,12 +234,51 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
         dedupeKey,
       },
     });
+
+    if (subscribed.has(member.playerId)) {
+      const copy = PUSH_COPY.n9(emailPayload);
+      // A response token, exactly as N-1 and N-2 already sign one for their
+      // own push (`sweep/open-and-remind.ts`, `send-promotion.ts`) — not
+      // `leaveUrl`. `leaveUrl`'s only control is a destructive "leave this
+      // game" button and shows nothing about teams; a player tapping "Teams
+      // are up — you're on Reds" must land somewhere that renders the
+      // published teams and their own side, and `GET /r/:token` does exactly
+      // that with no write (review fix, Important 4).
+      const responseToken = await signResponseToken(
+        { playerId: member.playerId, fixtureId, expiresAt: responseTokenExpiry(fixture.kicksOffAt).getTime() },
+        responseTokenSecret,
+      );
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey: pushKey(dedupeKey),
+        playerId: member.playerId,
+        message: {
+          channel: "push",
+          to: member.playerId,
+          title: copy.title,
+          body: copy.body,
+          url: `${SITE_ORIGIN}/r/${responseToken}`,
+          // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
+          // (Task 9) to the real fixture id (Task 13). Two teams-published
+          // pushes about the same fixture collapse in the tray; a
+          // re-publish after a late drop-out is a genuinely new fixture
+          // state but still the same fixture id, so it also collapses —
+          // consistent with the email side, where a re-publish is a new
+          // `dedupeKey` (via `publishedAt`) but still describes "the
+          // current teams for this fixture", which is what the tray should
+          // show once, not stack.
+          tag: `n9:${fixtureId}`,
+          dedupeKey: pushKey(dedupeKey),
+        },
+      });
+    }
   }
 
-  if (pending.length === 0) return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped };
+  const empty = { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped };
+  if (pending.length === 0) return empty;
 
   const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n9" }, pending);
-  if (inserted.length === 0) return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped };
+  if (inserted.length === 0) return empty;
 
   let results;
   try {
@@ -230,7 +296,18 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
         .set({ status: "failed", error: reason })
         .where(eq(notificationLog.id, entry.logId));
     }
-    return { sent: 0, failed: inserted.length, deferred: 0, deferredPlayerIds: [], guestsSkipped };
+    // Split by channel — see `TeamsSendResult.sent`'s doc comment for why
+    // `failed` must count only the email rows.
+    const emailCount = inserted.filter((entry) => entry.message.channel === "email").length;
+    return {
+      sent: 0,
+      failed: emailCount,
+      deferred: 0,
+      deferredPlayerIds: [],
+      pushSent: 0,
+      pushFailed: inserted.length - emailCount,
+      guestsSkipped,
+    };
   }
 
   // `results` and `inserted` are the same length, in the same order — the
@@ -241,6 +318,8 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
   let sent = 0;
   let failed = 0;
   let deferred = 0;
+  let pushSent = 0;
+  let pushFailed = 0;
   const deferredPlayerIds: string[] = [];
   let applied = 0;
   try {
@@ -249,19 +328,37 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
       const result = results[applied];
       if (!entry) continue;
       const outcome = await applySendResult(db, entry, result, now);
-      if (outcome.kind === "sent") sent++;
-      else if (outcome.kind === "deferred") {
-        deferred++;
-        deferredPlayerIds.push(entry.playerId);
+      const isEmail = entry.message.channel === "email";
+      if (outcome.kind === "sent") {
+        if (isEmail) sent++;
+        else pushSent++;
+      } else if (outcome.kind === "deferred") {
+        // The push leg has no daily ceiling, so this can only legitimately
+        // happen for the email row — a push landing here regardless is
+        // folded into `pushFailed` rather than `deferred`, which is
+        // documented as email-only and drives the publish-deferral audit
+        // row.
+        if (isEmail) {
+          deferred++;
+          deferredPlayerIds.push(entry.playerId);
+        } else {
+          pushFailed++;
+        }
+      } else if (isEmail) {
+        failed++;
+      } else {
+        pushFailed++;
       }
-      else failed++;
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const orphaned = inserted.slice(applied);
-    failed += orphaned.length;
+    for (const entry of orphaned) {
+      if (entry.message.channel === "email") failed++;
+      else pushFailed++;
+    }
     await markOrphanedRowsFailed(db, orphaned, `abandoned mid-apply: ${message}`);
   }
 
-  return { sent, failed, deferred, deferredPlayerIds, guestsSkipped };
+  return { sent, failed, deferred, deferredPlayerIds, pushSent, pushFailed, guestsSkipped };
 }

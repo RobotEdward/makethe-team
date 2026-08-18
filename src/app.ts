@@ -10,6 +10,7 @@ import { home } from "./routes/home.js";
 import { privacy } from "./routes/privacy.js";
 import { join } from "./routes/join.js";
 import { passkeys } from "./routes/passkeys.js";
+import { push } from "./routes/push.js";
 import { pwa } from "./routes/pwa.js";
 import { respond } from "./routes/respond.js";
 import { robots } from "./routes/robots.js";
@@ -147,6 +148,12 @@ export function createApp(): Hono<AppEnv> {
   // no middleware of its own: the session mount and `private, no-store` above
   // are exactly what a page naming a pending erasure needs.
   app.route("/", account);
+  // `/app/push/subscribe` and `/app/push/unsubscribe` (M14). Same prefix, but
+  // deliberately not gated on `requirePlayer`: a response token is also
+  // sufficient proof here — see the doc comments on `PUSH_SUBSCRIBE_PATH` and
+  // `src/routes/push.ts`. The session mount above still resolves
+  // `c.get("player")` for whichever caller has one.
+  app.route("/", push);
   // `/g/*`, behind the game-management session mount above.
   app.route("/", gamesRoutes);
 

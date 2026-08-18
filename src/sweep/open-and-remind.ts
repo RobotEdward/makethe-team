@@ -6,15 +6,17 @@ import { reminderInstant } from "../domain/reminder-time.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
 import type { Notifier } from "../notify/notifier.js";
-import { reminderKey } from "../notify/dedupe-key.js";
+import { pushKey, reminderKey } from "../notify/dedupe-key.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import {
   applySendResult,
   insertQueuedLogRows,
   markOrphanedRowsFailed,
+  playersWithPushSubscriptions,
   SITE_ORIGIN,
   type PendingNotification,
 } from "../notify/delivery.js";
+import { PUSH_COPY } from "../notify/push-copy.js";
 import { renderReminderEmail } from "../notify/templates/reminder.js";
 
 /** One fixture (or game) the sweep could not fully process, and why. */
@@ -27,7 +29,15 @@ export interface SweepFailure {
 
 export interface SweepResult {
   fixturesOpened: number;
+  /**
+   * **Email only.** `src/cron/handler.ts` logs this as an email count
+   * ("sent N") on a failed run, the same reasoning `CancellationSendSummary.sent`'s
+   * doc comment gives at length: folding a push row in here would report an
+   * inflated number of emails sent. See `pushRemindersSent` for the push
+   * leg's own count.
+   */
   remindersSent: number;
+  /** Email only — see `remindersSent`. See `pushRemindersFailed` for the push leg's own count. */
   remindersFailed: number;
   /**
    * Reminders refused by the daily send ceiling (TR-31) and *only* that.
@@ -36,8 +46,13 @@ export interface SweepResult {
    * outcome under a low ceiling — never a failure, and deliberately never
    * mixed with any other reason, so `handleScheduled`'s ceiling warning names
    * the condition it is actually reporting. See `applySendResult` (`src/notify/delivery.ts`).
+   * Email only — the push leg has no daily ceiling and can never produce this outcome.
    */
   remindersDeferred: number;
+  /** The push leg's own `sent` count — informational only, never folded into `remindersSent`. */
+  pushRemindersSent: number;
+  /** The push leg's own `failed` count — informational only, never folded into `remindersFailed`. Also where a push `deferred` outcome lands, since the push leg can't legitimately produce one. */
+  pushRemindersFailed: number;
   guestsSkipped: number;
   /**
    * Every fixture (or game) whose processing failed outright — a bad
@@ -46,12 +61,25 @@ export interface SweepResult {
    * run. One broken fixture must never silence every other Game's reminder
    * on that run (mirrors `materialiseFixtures`).
    *
-   * A per-message send failure lands here too, not just in
-   * `remindersFailed`: a total provider outage that failed every reminder
-   * would otherwise leave an integer in a log line as its only trace, and
-   * `handleScheduled` — which rejects only on a non-empty `failures` — would
-   * report the invocation as a clean run. That is precisely the failure mode
-   * this project already fixed once for materialisation.
+   * A per-message *email* send failure lands here too, not just in
+   * `remindersFailed`: a total email provider outage that failed every
+   * reminder would otherwise leave an integer in a log line as its only
+   * trace, and `handleScheduled` — which rejects only on a non-empty
+   * `failures` — would report the invocation as a clean run. That is
+   * precisely the failure mode this project already fixed once for
+   * materialisation.
+   *
+   * This escalation is email-only, deliberately, since Task 13: a per-message
+   * push failure is folded into `pushRemindersFailed` only and never reaches
+   * `failures` (see the `isEmail` branches below). A total push outage is
+   * therefore *not* a cron failure the way a total email outage is — push is
+   * best-effort and purely additional on top of email, which every reminder
+   * still goes out on regardless of push's health, so failing the whole
+   * invocation over a push outage would run the invariant backwards: it
+   * would make the cron unhealthy over the channel nobody depends on, while
+   * staying healthy is exactly what lets email keep going out unaffected.
+   * `pushRemindersFailed` remains the record of it; see the `console.warn`
+   * below for where an operator would actually notice.
    */
   failures: SweepFailure[];
 }
@@ -214,6 +242,8 @@ interface RemindResult {
   remindersSent: number;
   remindersFailed: number;
   remindersDeferred: number;
+  pushRemindersSent: number;
+  pushRemindersFailed: number;
   guestsSkipped: number;
   failures: SweepFailure[];
 }
@@ -230,6 +260,8 @@ async function sendDueReminders(
   let remindersSent = 0;
   let remindersFailed = 0;
   let remindersDeferred = 0;
+  let pushRemindersSent = 0;
+  let pushRemindersFailed = 0;
   let guestsSkipped = 0;
 
   for (const fixture of due) {
@@ -271,6 +303,7 @@ async function sendDueReminders(
       if (toBuild.length === 0) continue;
 
       const pending = await buildReminderMessages({
+        db,
         fixture: fixtureRow,
         game: gameRow,
         candidates: toBuild,
@@ -300,7 +333,10 @@ async function sendDueReminders(
             .update(notificationLog)
             .set({ status: "failed", error: message })
             .where(eq(notificationLog.id, entry.logId));
-          remindersFailed++;
+          // Split by channel — see `SweepResult.remindersSent`'s doc comment
+          // for why `remindersFailed` must count only the email rows.
+          if (entry.message.channel === "email") remindersFailed++;
+          else pushRemindersFailed++;
         }
         failures.push({ fixtureId: fixture.id, gameId: fixture.gameId, stage: "send", message });
         continue;
@@ -339,19 +375,35 @@ async function sendDueReminders(
           const result = results[applied];
           if (!entry) continue;
           const outcome = await applySendResult(db, entry, result, now);
-          if (outcome.kind === "sent") remindersSent++;
-          else if (outcome.kind === "deferred") {
-            remindersDeferred++;
-            deferredPlayerIds.push(entry.playerId);
-          } else {
+          const isEmail = entry.message.channel === "email";
+          if (outcome.kind === "sent") {
+            if (isEmail) remindersSent++;
+            else pushRemindersSent++;
+          } else if (outcome.kind === "deferred") {
+            // The push leg has no daily ceiling, so this can only
+            // legitimately happen for the email row — a push landing here
+            // regardless is folded into `pushRemindersFailed` rather than
+            // `remindersDeferred`, which is documented as email-only.
+            if (isEmail) {
+              remindersDeferred++;
+              deferredPlayerIds.push(entry.playerId);
+            } else {
+              pushRemindersFailed++;
+            }
+          } else if (isEmail) {
             remindersFailed++;
             sendFailureReasons.push(outcome.reason);
+          } else {
+            pushRemindersFailed++;
           }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const orphaned = inserted.slice(applied);
-        remindersFailed += orphaned.length;
+        for (const entry of orphaned) {
+          if (entry.message.channel === "email") remindersFailed++;
+          else pushRemindersFailed++;
+        }
         await markOrphanedRowsFailed(db, orphaned, `abandoned mid-apply: ${message}`);
         failures.push({
           fixtureId: fixture.id,
@@ -402,7 +454,23 @@ async function sendDueReminders(
     }
   }
 
-  return { remindersSent, remindersFailed, remindersDeferred, guestsSkipped, failures };
+  if (pushRemindersFailed > 0) {
+    // A total push outage never reaches `failures` (see that field's doc
+    // comment above), and never should — but it must not be silent either.
+    // This is the operator-visible trace of it: a warning, not an error,
+    // since email reminders for this run were unaffected.
+    console.warn(`openAndRemind: ${pushRemindersFailed} push reminder(s) failed to send this run`);
+  }
+
+  return {
+    remindersSent,
+    remindersFailed,
+    remindersDeferred,
+    pushRemindersSent,
+    pushRemindersFailed,
+    guestsSkipped,
+    failures,
+  };
 }
 
 
@@ -427,28 +495,57 @@ async function eligiblePlayers(db: Db, fixtureId: string): Promise<ReminderCandi
     .where(and(eq(responses.fixtureId, fixtureId), ne(responses.status, "withdrawn")));
 }
 
-/** Player ids that already have an `n1:` notification_log row for this fixture — sent or failed, both count as done; a `queued` row belongs to a run currently in flight for this same player and also counts. */
+/**
+ * Player ids that already have an `n1:` notification_log row for this
+ * fixture — sent or failed, both count as done; a `queued` row belongs to a
+ * run currently in flight for this same player and also counts.
+ *
+ * Filtered to `channel: "email"` — load-bearing, not tidying. A player's
+ * push row can outlive their email row: a ceiling refusal *deletes* the
+ * email's `queued` row (`applySendResult`) precisely so a later sweep
+ * retries it, but the push leg has no ceiling and its own row survives. If
+ * this query counted either channel as "already told", the surviving push
+ * row would permanently mask the deleted email row on every later tick —
+ * the reminder email would never be retried, while a player with no device
+ * at all keeps getting theirs retried correctly. Do not remove this filter.
+ */
 async function existingReminderLog(db: Db, fixtureId: string): Promise<Set<string>> {
   const rows = await db
     .select({ playerId: notificationLog.playerId })
     .from(notificationLog)
-    .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
+    .where(
+      and(
+        eq(notificationLog.fixtureId, fixtureId),
+        eq(notificationLog.notificationType, "n1"),
+        eq(notificationLog.channel, "email"),
+      ),
+    );
   return new Set(rows.map((r) => r.playerId));
 }
 
 async function buildReminderMessages(params: {
+  db: Db;
   fixture: typeof fixtures.$inferSelect;
   game: typeof games.$inferSelect;
   candidates: ReminderCandidate[];
   responseTokenSecret: string;
   now: Date;
 }): Promise<PendingNotification[]> {
-  const { fixture, game, candidates, responseTokenSecret, now } = params;
+  const { db, fixture, game, candidates, responseTokenSecret, now } = params;
 
   const kicksOffAtLocal = formatLocalDateTime(fixture.kicksOffAt, game.timezone);
   const inCount = fixture.inCount;
   const spotsLeft = Math.max(0, fixture.maxPlayers - fixture.inCount);
   const expiresAt = responseTokenExpiry(fixture.kicksOffAt).getTime();
+
+  // Only a player with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise every player without a phone
+  // would accumulate a `no-recipient` row per reminder, forever. Fetched
+  // once for the whole fixture's candidates rather than per player.
+  const subscribed = await playersWithPushSubscriptions(
+    db,
+    candidates.map((candidate) => candidate.playerId),
+  );
 
   const pending: PendingNotification[] = [];
   for (const candidate of candidates) {
@@ -470,21 +567,24 @@ async function buildReminderMessages(params: {
       responseTokenSecret,
     );
 
-    const rendered = renderReminderEmail({
+    const respondInUrl = `${SITE_ORIGIN}/r/${token}?intent=in`;
+    const emailPayload = {
       playerName: candidate.name,
       gameName: game.name,
       venueName: fixture.venueOverride ?? game.venueName,
       kicksOffAtLocal,
       inCount,
       spotsLeft,
-      respondInUrl: `${SITE_ORIGIN}/r/${token}?intent=in`,
+      respondInUrl,
       respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
       leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
-    });
+    };
+    const rendered = renderReminderEmail(emailPayload);
 
+    const dedupeKey = reminderKey(fixture.id, candidate.playerId);
     pending.push({
       logId: crypto.randomUUID(),
-      dedupeKey: reminderKey(fixture.id, candidate.playerId),
+      dedupeKey,
       playerId: candidate.playerId,
       message: {
         channel: "email",
@@ -492,9 +592,30 @@ async function buildReminderMessages(params: {
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
-        dedupeKey: reminderKey(fixture.id, candidate.playerId),
+        dedupeKey,
       },
     });
+
+    if (subscribed.has(candidate.playerId)) {
+      const copy = PUSH_COPY.n1(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey: pushKey(dedupeKey),
+        playerId: candidate.playerId,
+        message: {
+          channel: "push",
+          to: candidate.playerId,
+          title: copy.title,
+          body: copy.body,
+          url: respondInUrl,
+          // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
+          // (Task 9) to the real fixture id, now that this caller holds one
+          // (Task 13).
+          tag: `n1:${fixture.id}`,
+          dedupeKey: pushKey(dedupeKey),
+        },
+      });
+    }
   }
   return pending;
 }

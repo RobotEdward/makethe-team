@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players } from "../../src/db/schema.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
-import { welcomeKey } from "../../src/notify/dedupe-key.js";
+import { pushKey, welcomeKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendWelcomeEmail } from "../../src/notify/send-welcome.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
@@ -56,11 +56,18 @@ interface Joined {
   gameId: string;
   playerId: string;
   membershipId: string;
+  /** The next `scheduled` fixture's id, when `withFixtures` seeded one — their "first" fixture (BR-2). */
+  firstFixtureId: string | null;
 }
 
-async function insertFixture(gameId: string, kicksOffAt: Date, lifecycle: "scheduled" | "open" | "cancelled") {
+async function insertFixture(
+  gameId: string,
+  kicksOffAt: Date,
+  lifecycle: "scheduled" | "open" | "cancelled",
+): Promise<string> {
+  const id = crypto.randomUUID();
   await db.insert(fixtures).values({
-    id: crypto.randomUUID(),
+    id,
     gameId,
     kicksOffAt,
     lifecycle,
@@ -70,6 +77,7 @@ async function insertFixture(gameId: string, kicksOffAt: Date, lifecycle: "sched
     shortWarningOffsetHours: 12,
     durationMinutes: 60,
   });
+  return id;
 }
 
 /**
@@ -90,12 +98,13 @@ async function seedJoin(
   await db.insert(players).values({ id: playerId, name: "Alex", email });
   await db.insert(memberships).values({ id: membershipId, gameId, playerId, active: true, joinedAt });
 
+  let firstFixtureId: string | null = null;
   if (withFixtures) {
     await insertFixture(gameId, ALREADY_OPEN, "open");
-    await insertFixture(gameId, NEXT_SCHEDULED, "scheduled");
+    firstFixtureId = await insertFixture(gameId, NEXT_SCHEDULED, "scheduled");
   }
 
-  return { gameId, playerId, membershipId };
+  return { gameId, playerId, membershipId, firstFixtureId };
 }
 
 function send(joined: Joined, notifier: Notifier, joinedAt: Date = JOINED_AT) {
@@ -113,7 +122,7 @@ function send(joined: Joined, notifier: Notifier, joinedAt: Date = JOINED_AT) {
 
 /** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
 function leaveTokenFrom(message: Message | undefined): string {
-  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
   if (!match?.[1]) throw new Error("no /leave/ link found in message html");
   return match[1];
 }
@@ -136,7 +145,7 @@ describe("sendWelcomeEmail (N-6)", () => {
     expect(outcome).toEqual({ kind: "sent" });
     expect(notifier.all).toHaveLength(1);
     expect(notifier.all[0]?.to).toBe("joiner@example.com");
-    expect(notifier.all[0]?.subject).toContain("Thursday 7-a-side");
+    expect(requireEmailMessage(notifier.all[0]!).subject).toContain("Thursday 7-a-side");
 
     const rows = await logRows();
     expect(rows).toHaveLength(1);
@@ -147,6 +156,32 @@ describe("sendWelcomeEmail (N-6)", () => {
       status: "sent",
       dedupeKey: welcomeKey(joined.membershipId, JOINED_AT.toISOString()),
     });
+  });
+
+  it("queues a push alongside the email for a player with a device, tagged to their first fixture", async () => {
+    const joined = await seedJoin();
+    await insertSubscription(db, joined.playerId, "https://push.example.com/joiner");
+    const notifier = new RecordingNotifier();
+
+    const outcome = await send(joined, notifier);
+
+    expect(outcome).toEqual({ kind: "sent" });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = welcomeKey(joined.membershipId, JOINED_AT.toISOString());
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.all.find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: joined.playerId, tag: `n6:${joined.firstFixtureId}` });
+  });
+
+  it("still emails a player with no device at all", async () => {
+    const joined = await seedJoin();
+    const notifier = new RecordingNotifier();
+
+    await send(joined, notifier);
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("carries a leave link scoped to the game, not any fixture", async () => {
@@ -167,12 +202,12 @@ describe("sendWelcomeEmail (N-6)", () => {
 
     await send(joined, notifier);
 
-    const message = notifier.all[0];
+    const message = requireEmailMessage(notifier.all[0]!);
     // 20 August is the next `scheduled` fixture; 13 August is already `open`,
     // and the joiner has no `pending` response row for it.
-    expect(message?.text).toContain("20 August");
-    expect(message?.text).not.toContain("13 August");
-    expect(message?.html).toContain("https://makethe.team/app");
+    expect(message.text).toContain("20 August");
+    expect(message.text).not.toContain("13 August");
+    expect(message.html).toContain("https://makethe.team/app");
   });
 
   it("stays honest, and still sends, when the game has no scheduled fixture yet", async () => {
@@ -182,8 +217,9 @@ describe("sendWelcomeEmail (N-6)", () => {
     const outcome = await send(joined, notifier);
 
     expect(outcome).toEqual({ kind: "sent" });
-    expect(notifier.all[0]?.text).not.toContain("null");
-    expect(notifier.all[0]?.html).not.toContain("null");
+    const noFixtureMessage = requireEmailMessage(notifier.all[0]!);
+    expect(noFixtureMessage.text).not.toContain("null");
+    expect(noFixtureMessage.html).not.toContain("null");
   });
 
   it("returns already-logged for a repeated send with the same joinedAt", async () => {

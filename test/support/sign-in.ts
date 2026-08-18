@@ -6,6 +6,7 @@ import { SIGN_IN_PATH } from "../../src/auth/paths.js";
 import { ConsoleNotifier } from "../../src/notify/console-notifier.js";
 import type { Message } from "../../src/notify/notifier.js";
 import type { Bindings } from "../../src/env.js";
+import { requireEmailMessage } from "./factories.js";
 
 /**
  * The browser journey through sign-in, shared by every suite that needs a real
@@ -79,7 +80,7 @@ export async function askForLink(app: ReturnType<typeof createApp>, email: strin
 /** The `/api/auth/magic-link/verify` URL out of the message that was sent. */
 export function linkIn(sent: Message[]): string {
   expect(sent).toHaveLength(1);
-  const match = /https?:\/\/[^\s"]*magic-link\/verify\?[^\s"]*/.exec(sent[0]!.text);
+  const match = /https?:\/\/[^\s"]*magic-link\/verify\?[^\s"]*/.exec(requireEmailMessage(sent[0]!).text);
   expect(match, "the email must carry a verification link").not.toBeNull();
   return match![0];
 }

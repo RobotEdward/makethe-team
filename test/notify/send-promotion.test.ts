@@ -4,11 +4,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
-import { promotionKey } from "../../src/notify/dedupe-key.js";
+import { promotionKey, pushKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendPromotionEmail } from "../../src/notify/send-promotion.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -115,7 +115,7 @@ async function logRows() {
 
 /** Pulls the token out of a `/leave/<token>` URL embedded in a message's HTML. */
 function leaveTokenFrom(message: Message | undefined): string {
-  const match = message?.html.match(/\/leave\/([^"]+)"/);
+  const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
   if (!match?.[1]) throw new Error("no /leave/ link found in message html");
   return match[1];
 }
@@ -145,22 +145,52 @@ describe("sendPromotionEmail (N-2)", () => {
     expect(recipients).not.toContain("bystander@example.com");
   });
 
+  it("queues a push alongside the email for a promoted player with a device", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "promoted", name: "Promoted", email: "promoted@example.com" },
+    ]);
+    await insertSubscription(db, "promoted", "https://push.example.com/promoted");
+    const notifier = new RecordingNotifier();
+
+    const outcome = await send(fixtureId, notifier, promotion("promoted"));
+
+    expect(outcome).toEqual({ kind: "sent" });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = promotionKey(fixtureId, "promoted", new Date(NOW.getTime()).toISOString());
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.all.find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: "promoted", tag: `n2:${fixtureId}` });
+  });
+
+  it("still emails a promoted player with no device at all", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "promoted", name: "Promoted", email: "promoted@example.com" },
+    ]);
+    const notifier = new RecordingNotifier();
+
+    await send(fixtureId, notifier, promotion("promoted"));
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
+  });
+
   it("sends the promotion template, addressed and dedupe-keyed to this promotion", async () => {
     const { fixtureId } = await seedFixture([{ id: "promoted", name: "Promoted", email: "promoted@example.com" }]);
     const notifier = new RecordingNotifier();
 
     await send(fixtureId, notifier, promotion("promoted"));
 
-    const message = notifier.all[0];
-    expect(message?.subject).toContain("Thursday 7-a-side");
-    expect(message?.subject.toLowerCase()).toMatch(/you.re in/);
-    expect(message?.html).toContain("Oxford Sports Park");
-    expect(message?.text).toContain("Oxford Sports Park");
-    expect(message?.dedupeKey).toBe(promotionKey(fixtureId, "promoted", NOW.toISOString()));
+    const message = requireEmailMessage(notifier.all[0]!);
+    expect(message.subject).toContain("Thursday 7-a-side");
+    expect(message.subject.toLowerCase()).toMatch(/you.re in/);
+    expect(message.html).toContain("Oxford Sports Park");
+    expect(message.text).toContain("Oxford Sports Park");
+    expect(message.dedupeKey).toBe(promotionKey(fixtureId, "promoted", NOW.toISOString()));
     // Every link is server-built against the site's own origin — nothing in
     // this path takes a URL from a request.
-    expect(message?.html).toContain("https://makethe.team/r/");
-    expect(message?.html).toContain("https://makethe.team/leave/");
+    expect(message.html).toContain("https://makethe.team/r/");
+    expect(message.html).toContain("https://makethe.team/leave/");
   });
 
   it("carries a leave link scoped to the game, not the fixture", async () => {
@@ -263,6 +293,32 @@ describe("sendPromotionEmail (N-2)", () => {
     expect(second).toEqual({ kind: "already-logged" });
     expect(notifier.all).toHaveLength(1);
     expect(await logRows()).toHaveLength(1);
+  });
+
+  it("still sends the push on a repeat call when only the push key is new (review fix, Important 3)", async () => {
+    // A player promoted once with no device, who then registers one before
+    // this function is somehow called again for the exact same promotion
+    // (a retried background job, say): the email dedupe key already
+    // conflicts, but the push key is brand new. That push row must still be
+    // sent, not left `queued` forever with nothing to reap it.
+    const { fixtureId } = await seedFixture([{ id: "promoted", name: "Promoted", email: "promoted@example.com" }]);
+    const notifier = new RecordingNotifier();
+
+    const first = await send(fixtureId, notifier, promotion("promoted"));
+    expect(first).toEqual({ kind: "sent" });
+    expect(await logRows()).toHaveLength(1);
+
+    await insertSubscription(db, "promoted", "https://push.example.com/promoted");
+    const second = await send(fixtureId, notifier, promotion("promoted"));
+
+    // The email leg had nothing new happen to it this call.
+    expect(second).toEqual({ kind: "already-logged" });
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const pushRow = rows.find((r) => r.channel === "push");
+    expect(pushRow?.status).toBe("sent");
+    expect(notifier.all.filter((m) => m.channel === "push")).toHaveLength(1);
   });
 
   it("does send again for a *later* promotion of the same player (N-2 is keyed per promotion, unlike N-4)", async () => {

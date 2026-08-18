@@ -1,7 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import type { Db } from "../db/client.js";
-import { notificationLog } from "../db/schema.js";
+import { notificationLog, pushSubscriptions } from "../db/schema.js";
 import type { NotificationType } from "./dedupe-key.js";
 import type { Message, SendResult } from "./notifier.js";
 import { DAILY_CEILING_REASON, NOTIFIER_CONTRACT_VIOLATION_REASON } from "./quota.js";
@@ -79,7 +79,11 @@ export async function insertQueuedLogRows(
           notificationType: params.notificationType,
           fixtureId: params.fixtureId,
           playerId: entry.playerId,
-          channel: "email" as const,
+          // Taken from the message, not assumed. Until M14 there was one
+          // channel and this was hardcoded; filing a push under "email"
+          // would make the two indistinguishable in the log and break the
+          // per-channel dedupe the keys were namespaced for.
+          channel: entry.message.channel,
           status: "queued" as const,
         })),
       )
@@ -208,4 +212,36 @@ export async function markOrphanedRowsFailed(
       `could not mark ${orphaned.length} orphaned queued notification_log row(s) as failed (${orphaned.map((entry) => entry.logId).join(", ")}): ${reason}`,
     );
   }
+}
+
+/**
+ * Which of `playerIds` have at least one registered device (M14 Task 13,
+ * spec §9.3 rule 1).
+ *
+ * Every caller that builds both an `EmailMessage` and a `PushMessage` for a
+ * batch of players must consult this first, and only add a `PushMessage` for
+ * a player it names: `PushNotifier.send` returns `NO_RECIPIENT_REASON` for a
+ * player with no subscriptions (`push-notifier.ts`), and `applySendResult`
+ * (above) records that as `failed` forever — so building a `PushMessage` for
+ * every player regardless would leave every player without a device
+ * accumulating one dead `notification_log` row per notification, forever.
+ *
+ * Chunked at `INSERT_CHUNK_SIZE`, like every other multi-row query in this
+ * module, so a squad or sweep batch large enough to exceed D1's bound
+ * parameter ceiling (`src/db/chunk.ts`) still works.
+ */
+export async function playersWithPushSubscriptions(
+  db: Db,
+  playerIds: readonly string[],
+): Promise<Set<string>> {
+  const found = new Set<string>();
+  for (const batch of chunk(playerIds, INSERT_CHUNK_SIZE)) {
+    if (batch.length === 0) continue;
+    const rows = await db
+      .selectDistinct({ playerId: pushSubscriptions.playerId })
+      .from(pushSubscriptions)
+      .where(inArray(pushSubscriptions.playerId, batch));
+    rows.forEach((row) => found.add(row.playerId));
+  }
+  return found;
 }

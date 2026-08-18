@@ -34,7 +34,7 @@ import {
   verification,
 } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { signCancelToken } from "../../src/domain/token.js";
+import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import type { AppEnv } from "../../src/env.js";
 import { SCRIPT_BLOCKS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
@@ -749,6 +749,28 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}${ACCOUNT_PATH}`, { headers: { cookie } }),
       );
 
+      // The response-confirmation page's one-time push offer (M14 Task 12,
+      // spec §11), reached the only way it can ever appear: a real `POST
+      // /r/:token` with `intent=in`, from the same player's own response
+      // token. `env.RESPONSE_TOKEN_SECRET` is the test-only secret every
+      // token test signs against (`vitest.config.ts`). No cookie at all —
+      // this is the one page carrying `PUSH_SUBSCRIBE_JS` that a signed-out
+      // token holder reaches, so it is captured that way rather than with
+      // the signed-in cookie every other capture above carries.
+      const offerToken = await signResponseToken(
+        { playerId: player!.id, fixtureId, expiresAt: kickoff.getTime() + 86_400_000 },
+        env.RESPONSE_TOKEN_SECRET,
+      );
+      await capture(
+        "response offer",
+        /Get these on your phone/,
+        new Request(`${ORIGIN}/r/${offerToken}`, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+          body: "intent=in",
+        }),
+      );
+
       // M4's owner-cancellation pages. Both render HTML, so both are captured
       // rather than excused — the confirmation page in particular is the one
       // that takes free text from an owner, which is why the CSP this suite
@@ -957,6 +979,7 @@ describe("no password field anywhere (TR-16)", () => {
         "passkeys",
         "delete my data",
         "account",
+        "response offer",
         "link conflict (409)",
         "ambiguous email (500)",
         "email held by a guest (500)",
@@ -1040,6 +1063,11 @@ describe("no password field anywhere (TR-16)", () => {
     // one page, unlike SERVICE_WORKER_JS's site-wide registration, which
     // every page already carries and for which adding pages here would gut
     // the guard rather than exercise it.
+    // "response offer" joined this set in M14 Task 12, for the one-time push
+    // offer on the response-confirmation page — the account page's own
+    // `PUSH_SUBSCRIBE_JS` grant above extends to the one other page that can
+    // ever render the same button (spec §11's "it appears in exactly two
+    // places").
     const mayCarryScript = new Set([
       "sign-in",
       "sign-in error",
@@ -1047,6 +1075,7 @@ describe("no password field anywhere (TR-16)", () => {
       "game overview",
       "owner fixture",
       "account",
+      "response offer",
     ]);
 
     // The only two captures whose route never calls layout() at all —
@@ -1280,6 +1309,21 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "renders through layout() and is captured as a page above, this route " +
       "IS the script, and its own content-type/cache-control/hash assertions " +
       "live in test/routes/service-worker.test.ts.",
+    "POST /app/push/subscribe":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), " +
+      "a plain-text 400 (malformed subscription), a plain-text 404 " +
+      "(neither a session nor a valid response token) or a bare 204 with " +
+      "no body only (src/routes/push.ts); no template of its own that " +
+      "could carry an un-enumerated script. Its own status-code coverage " +
+      "lives in test/routes/push.test.ts.",
+    "POST /app/push/unsubscribe":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), " +
+      "a plain-text 400 (missing endpoint), a plain-text 404 (neither a " +
+      "session nor a valid response token), a 303 redirect to /app/account " +
+      "for the form-encoded caller (M14 Task 12 review, Finding 3), or a " +
+      "bare 204 with no body for any other caller (src/routes/push.ts); no " +
+      "template of its own that could carry an un-enumerated script. Its " +
+      "own status-code coverage lives in test/routes/push.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {

@@ -40,7 +40,31 @@
     "EMAIL_FROM": "Make The Team <no-reply@makethe.team>",
     // Not secret — Better Auth's public base URL for issuing links against.
     // BETTER_AUTH_SECRET is a Worker secret (`wrangler secret put`), never here.
-    "BETTER_AUTH_URL": "https://makethe.team"
+    "BETTER_AUTH_URL": "https://makethe.team",
+    // M14 web push, live. The VAPID keypair was generated 18 August 2026 and
+    // the private half set with `wrangler secret put VAPID_PRIVATE_KEY`.
+    //
+    // `VAPID_PUBLIC_KEY` is a var and not a secret on purpose: the browser
+    // needs it as `applicationServerKey` for every `PushManager.subscribe()`,
+    // so it ships to every device that turns notifications on. It is public
+    // by construction, and nothing is gained by hiding it.
+    //
+    // These two must always change together. The public half is baked into
+    // every subscription at creation time, so replacing the pair invalidates
+    // every existing subscription permanently — see
+    // `docs/runbooks/cloudflare.md` § VAPID_PRIVATE_KEY, which carries the
+    // recovery procedure and the reason this is the one secret here that
+    // cannot be rotated cheaply.
+    //
+    // `PUSH_NOTIFIER` must not be set to "webpush" unless the secret is
+    // already in place: `requireBinding` runs at notifier construction, and
+    // `createNotifier` is built on eight paths including the cron handler, so
+    // vars-without-secret takes down cancellation, team publishing, joining,
+    // erasure scheduling *and* the whole sweep — including reminder emails,
+    // which have nothing to do with push.
+    "PUSH_NOTIFIER": "webpush",
+    "VAPID_PUBLIC_KEY": "BO6-1kl28K1JKC39scUluuKn7U4k41eMSjpMqZtG8I34bevIPe-fufdRKne5Ld573cFfHAbpiwGkI32xH46oZrA",
+    "VAPID_SUBJECT": "mailto:ops@makethe.team"
   },
   "d1_databases": [
     {

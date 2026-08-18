@@ -21,8 +21,17 @@ export const players = sqliteTable(
     isGuest: integer("is_guest", { mode: "boolean" }).notNull().default(false),
     // Nullable link to Better Auth's own user table, populated on first sign-in (TR-30).
     authUserId: text("auth_user_id"),
-    notificationChannel: text("notification_channel", { enum: ["email"] }).notNull().default("email"),
+    notificationChannel: text("notification_channel", { enum: ["email", "push"] })
+      .notNull()
+      .default("email"),
     emailVerifiedAt: integer("email_verified_at", { mode: "timestamp_ms" }),
+    /**
+     * When the one-time contextual push offer was shown (M14, spec §11). Stamped
+     * on display, never cleared: the offer is made once in the product's
+     * lifetime, and `/app/account` is the permanent route back for anyone who
+     * dismissed it.
+     */
+    pushOfferedAt: integer("push_offered_at", { mode: "timestamp_ms" }),
     /**
      * When a requested erasure becomes due (§2.1). Set by `POST /app/delete`,
      * cleared by `POST /app/delete/cancel`, and read by the hourly sweep.
@@ -247,7 +256,7 @@ export const notificationLog = sqliteTable(
     // Nullable: N-6 (welcome) is not fixture-scoped (§2.8).
     fixtureId: text("fixture_id").references(() => fixtures.id),
     playerId: text("player_id").notNull().references(() => players.id),
-    channel: text("channel", { enum: ["email"] }).notNull().default("email"),
+    channel: text("channel", { enum: ["email", "push"] }).notNull().default("email"),
     status: text("status", { enum: NOTIFICATION_STATUSES }).notNull().default("queued"),
     providerMessageId: text("provider_message_id"),
     sentAt: integer("sent_at", { mode: "timestamp_ms" }),
@@ -255,6 +264,43 @@ export const notificationLog = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [uniqueIndex("notification_log_dedupe_key_unique").on(t.dedupeKey)],
+);
+
+/**
+ * One registered device (M14, spec §9.1). A player may have several.
+ *
+ * `endpoint` is unique because a device that re-subscribes produces the same
+ * endpoint URL, so registration is an upsert. Without the constraint a player
+ * who taps the button twice gets every notification twice and nothing here
+ * would reveal it.
+ *
+ * `p256dh` and `auth` are the device's public key and the shared secret that
+ * the payload encryption in `src/notify/web-push.ts` needs. They are not
+ * credentials for this system — they are useless without the endpoint — but
+ * they are per-device secrets. Every row for a player is deleted the moment
+ * their erasure gets past its pre-check (`erasePlayer`,
+ * `src/domain/erase-player.ts`) — first among the irreversible writes there,
+ * ahead of anything that could fail, so a run that stops half-done still
+ * cannot leave a live endpoint behind (§12).
+ */
+export const pushSubscriptions = sqliteTable(
+  "push_subscriptions",
+  {
+    id: text("id").primaryKey(),
+    playerId: text("player_id").notNull().references(() => players.id),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    /** Only so a player can tell one device from another in a list. */
+    userAgent: text("user_agent"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+    lastSuccessAt: integer("last_success_at", { mode: "timestamp_ms" }),
+    lastFailureAt: integer("last_failure_at", { mode: "timestamp_ms" }),
+  },
+  (t) => [
+    uniqueIndex("push_subscriptions_endpoint_unique").on(t.endpoint),
+    index("push_subscriptions_player_idx").on(t.playerId),
+  ],
 );
 
 export const emailQuota = sqliteTable("email_quota", {

@@ -1,4 +1,5 @@
 import {
+  ACCOUNT_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
@@ -172,7 +173,7 @@ function heldUpBody(
       : `<p>It runs on the hour, so it should happen shortly on its own. You don't need to do anything.</p>`;
 
   const ending = started
-    ? `<p>It has already begun. You've been taken out of some or all of your squads, and the places you'd given up have gone to whoever was waiting for them — that part can't be undone, so this can't be stopped now. It will finish once the way is clear.</p>`
+    ? `<p>It has already begun. You've been taken out of some or all of your squads, and the places you'd given up have gone to whoever was waiting for them — that part can't be undone, so this can't be stopped now. It will finish once the way is clear. It has also turned off push notifications on any device you'd set them up on: if you want them back while this is held up, turn them on again from <a href="${escapeHtml(ACCOUNT_PATH)}">your account page</a>.</p>`
     : `
     <form method="post" action="${escapeHtml(DELETE_ACCOUNT_CANCEL_PATH)}">
       <button class="button primary" type="submit">Keep my account</button>

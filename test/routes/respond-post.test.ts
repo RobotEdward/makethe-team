@@ -7,6 +7,7 @@ import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW } from "../support/clock.js";
+import { PUSH_KEY_ATTRIBUTE, PUSH_TOKEN_ATTRIBUTE } from "../../src/views/scripts.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
@@ -208,6 +209,98 @@ describe("POST /r/:token — recording a plain response", () => {
     expect(body).toContain(`method="post"`);
     expect(body).toContain(`name="intent" value="in"`);
     expect(body).toContain(`name="intent" value="out"`);
+  });
+});
+
+describe("POST /r/:token — the one-time push offer (M14 Task 12, spec §11)", () => {
+  it("offers push once, after a player says they are in", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+
+    const first = await postIntent(await tokenFor(fixtureId, playerId), "in");
+    expect(await first.text()).toContain("Get these on your phone");
+
+    const second = await postIntent(await tokenFor(fixtureId, playerId), "in");
+    expect(await second.text()).not.toContain("Get these on your phone");
+
+    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    expect(row?.pushOfferedAt).not.toBeNull();
+  });
+
+  it("carries the response token on the offer's button, so a signed-out visitor's subscribe can actually work (M14 Task 12 review, Finding 2)", async () => {
+    // This page's entire audience is signed out — `resolvePlayerId` in
+    // `src/routes/push.ts` needs a session *or* a body `token`, and there is
+    // no session here at all. Without this attribute the button would 404 on
+    // every click for every player who ever sees this offer.
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+    const token = await tokenFor(fixtureId, playerId);
+
+    const body = await (await postIntent(token, "in")).text();
+
+    expect(body).toContain(`${PUSH_TOKEN_ATTRIBUTE}="${token}"`);
+    expect(body).toMatch(new RegExp(`<button[^>]*${PUSH_KEY_ATTRIBUTE}="[^"]+"[^>]*${PUSH_TOKEN_ATTRIBUTE}="[^"]+"`));
+  });
+
+  it("never offers push for a response that lands as 'out'", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+
+    const body = await (await postIntent(await tokenFor(fixtureId, playerId), "out")).text();
+    expect(body).not.toContain("Get these on your phone");
+
+    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    expect(row?.pushOfferedAt).toBeNull();
+  });
+
+  it("never offers push to a player who lands on the waitlist instead of in (BR-5)", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture({ maxPlayers: 1, squadSize: 2 });
+    const [fillerId, latecomerId] = playerIds as [string, string];
+    await setResponse(fixtureId, fillerId, "in");
+
+    const body = await (await postIntent(await tokenFor(fixtureId, latecomerId), "in")).text();
+    expect(body).toMatch(/waitlist/i);
+    expect(body).not.toContain("Get these on your phone");
+
+    const [row] = await db.select().from(players).where(eq(players.id, latecomerId));
+    expect(row?.pushOfferedAt).toBeNull();
+  });
+
+  it("never offers push, and never spends it, while no VAPID key is configured (M14 ships dark)", async () => {
+    // Production has no VAPID_PUBLIC_KEY at all right now — wrangler.jsonc's
+    // own comment on PUSH_NOTIFIER. Burning the once-ever offer on a request
+    // that could never have shown a working button would mean nobody who
+    // said "in" tonight is ever offered push again once the real key exists.
+    const previousKey = env.VAPID_PUBLIC_KEY;
+    // @ts-expect-error — genuinely absent at runtime despite the honestly-
+    // dishonest `string` type; see `Bindings.VAPID_PUBLIC_KEY`'s own comment.
+    env.VAPID_PUBLIC_KEY = undefined;
+    try {
+      const { fixtureId, playerIds } = await seedOpenFixture();
+      const [playerId] = playerIds as [string];
+
+      const body = await (await postIntent(await tokenFor(fixtureId, playerId), "in")).text();
+      expect(body).not.toContain("Get these on your phone");
+
+      const [row] = await db.select().from(players).where(eq(players.id, playerId));
+      expect(row?.pushOfferedAt).toBeNull();
+    } finally {
+      env.VAPID_PUBLIC_KEY = previousKey;
+    }
+  });
+
+  it("never puts a device on the response-confirmation page's push section (the security invariant on PUSH_UNSUBSCRIBE_PATH)", async () => {
+    // The page this offer renders on is token-authenticated, and an endpoint
+    // must never reach a token holder who does not already have it —
+    // `src/auth/paths.ts`'s doc comment on PUSH_UNSUBSCRIBE_PATH explains
+    // why. This is the negative-space proof: whatever this page shows, it
+    // must never be a form that posts an `endpoint`.
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+
+    const body = await (await postIntent(await tokenFor(fixtureId, playerId), "in")).text();
+    expect(body).not.toMatch(/action="\/app\/push\/unsubscribe"/);
+    expect(body).not.toContain('name="endpoint"');
   });
 });
 

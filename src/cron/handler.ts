@@ -250,6 +250,8 @@ async function runAttentionStep(
       attentionSent: 0,
       attentionFailed: 0,
       attentionDeferred: 0,
+      pushAttentionSent: 0,
+      pushAttentionFailed: 0,
       ownersSkippedNoRecipient: 0,
       alreadyLogged: 0,
       failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],

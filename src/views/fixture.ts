@@ -5,10 +5,12 @@ import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
+import { renderPushOffer } from "./install.js";
 import { escapeHtml, layout } from "./layout.js";
+import { PUSH_SUBSCRIBE_JS } from "./scripts.js";
 import { ordinal } from "./squad-row.js";
 import { renderTeamSides } from "./team-picker.js";
-import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, PUSH_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 /**
  * Why this page is read-only, if it is.
@@ -80,6 +82,29 @@ export interface FixturePageOptions {
   teams: PublishedTeams | null;
   /** Set when there is nothing this viewer can do here: render read-only, no buttons. */
   readOnlyReason?: ReadOnlyReason;
+  /**
+   * The one-time push offer (M14 Task 12, spec §11) — present only when the
+   * caller has already decided to show it and stamped
+   * `players.push_offered_at` on this same request. `src/routes/respond.ts`'s
+   * `POST /r/:token` handler is the only place that ever sets this: it is
+   * gated on the response just recorded being `"in"` and on
+   * `push_offered_at` having been null a moment ago, both re-checked there
+   * because this view has no database access of its own to check them with.
+   *
+   * **Rendered with `renderPushOffer`, never `renderPushSection`.**
+   * `renderPushOffer`'s own type (`PushOfferOptions` in
+   * `src/views/install.ts`) has no `devices` field at all — the whole of the
+   * invariant `PUSH_UNSUBSCRIBE_PATH` depends on (`src/auth/paths.ts`): this
+   * is a token-authenticated page, and an endpoint disclosed here would let
+   * a forwarded token silently switch off a device it never registered. Do
+   * not switch this call site to `renderPushSection`, and do not add a
+   * `devices` field anywhere reachable from this type (M14 Task 12 review,
+   * Finding 5 — the split exists specifically so this cannot compile). The
+   * token `renderPushOffer` puts on the button is `options.token` — the same
+   * one already authenticating this whole page — rather than a second copy
+   * carried on this field.
+   */
+  pushOffer?: { vapidPublicKey: string };
 }
 
 const STATUS_LABEL: Record<FixtureView["status"], string> = {
@@ -588,7 +613,8 @@ function renderReadOnlyNotice(reason: ReadOnlyReason): string {
  * `renderResponseButtons`.
  */
 export function renderFixturePage(options: FixturePageOptions): string {
-  const { gameName, venueName, kicksOffAtLocal, view, squad, inCount, viewer, readOnlyReason } = options;
+  const { gameName, venueName, kicksOffAtLocal, view, squad, inCount, viewer, readOnlyReason, pushOffer, token } =
+    options;
   const teams = options.teams ?? null;
 
   const headline = viewerHeadline(viewer, readOnlyReason);
@@ -608,6 +634,21 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${renderNudge(view)}
     ${renderOverCapacity(view)}
     ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}
+    ${
+      pushOffer === undefined
+        ? ""
+        : renderPushOffer({
+            heading: "Get these on your phone",
+            // Says nothing about "your account" — this page's whole audience
+            // is signed out (M14 Task 12 review, minors), so there is no
+            // usable link to promise them one. "Your phone's notification
+            // settings" is true and reachable for every reader here.
+            intro:
+              "Get a push notification instead of waiting for an email — reminders, and a place freeing up if you're ever on a waitlist. You can turn this off any time from your phone's notification settings.",
+            vapidPublicKey: pushOffer.vapidPublicKey,
+            token,
+          })
+    }
     ${renderPublishedTeamsSection(teams, squad)}
     <h2>Squad</h2>
     ${renderSquadSection(squad, inCount, viewer.playerId)}
@@ -622,7 +663,16 @@ export function renderFixturePage(options: FixturePageOptions): string {
     // how the two pages start looking like different products. Included
     // unconditionally: a stylesheet that appeared and disappeared with the
     // fixture's publish state is a harder thing to reason about than a few
-    // unused rules.
-    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS],
+    // unused rules. `PUSH_STYLES_CSS` joins it on the same grounds — the
+    // one-time offer is the rare case, not the common one.
+    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS, PUSH_STYLES_CSS],
+    // Unlike the styles above, the script is opted in only when the markup
+    // that needs it exists: `pushOffer` is the one thing on this page that is
+    // not always rendered the way `.install`'s hidden elements always are on
+    // the account page, and a page carrying `PUSH_SUBSCRIBE_JS` with no
+    // button in its DOM for it to find is exactly the gap
+    // `test/routes/signin.test.ts`'s "must carry the enhancement it is
+    // listed for" assertion exists to catch.
+    pageScripts: pushOffer === undefined ? undefined : [PUSH_SUBSCRIBE_JS],
   });
 }

@@ -3,10 +3,11 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { auditLog, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { attentionKey, pushKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { verifyCancelToken } from "../../src/domain/token.js";
 import { sendOwnerAttention } from "../../src/sweep/attention.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-cancel-secret";
@@ -155,14 +156,50 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
 
     expect(result.attentionSent).toBe(1);
     expect(notifier.sent.flat()).toHaveLength(1);
-    const message = notifier.sent.flat()[0];
-    expect(message?.to).toBe("owner@example.com");
-    expect(message?.dedupeKey).toBe(`n4:${fixtureId}:${ownerIds[0]}`);
-    expect(message?.text).toContain("2 players short");
+    const message = requireEmailMessage(notifier.sent.flat()[0]!);
+    expect(message.to).toBe("owner@example.com");
+    expect(message.dedupeKey).toBe(`n4:${fixtureId}:${ownerIds[0]}`);
+    expect(message.text).toContain("2 players short");
 
     const rows = await attentionRows(fixtureId);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("sent");
+  });
+
+  it("queues a push alongside the email for an owner with a device", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId, ownerIds } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, pending: 3 });
+    await insertSubscription(db, ownerIds[0]!, "https://push.example.com/owner");
+
+    const result = await run(notifier);
+
+    // `attentionSent` stays a pure email count (review fix, Critical 2) —
+    // `src/cron/handler.ts` logs it as one — with the push leg's own count
+    // reported separately.
+    expect(result.attentionSent).toBe(1);
+    expect(result.pushAttentionSent).toBe(1);
+    const rows = await attentionRows(fixtureId);
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = attentionKey(fixtureId, ownerIds[0]!);
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.sent.flat().find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: ownerIds[0], tag: `n4:${fixtureId}` });
+    // Not `cancelUrl` (review fix, Important 4): "you're 2 short" must not
+    // tap through to "call off this fixture".
+    if (pushMessage?.channel === "push") {
+      expect(pushMessage.url).not.toContain("/cancel/");
+      expect(pushMessage.url).toContain(fixtureId);
+    }
+  });
+
+  it("still emails an owner with no device at all", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, pending: 3 });
+
+    await run(notifier);
+
+    const rows = await attentionRows(fixtureId);
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("does not email while the fixture is still outside the warning window", async () => {
@@ -198,9 +235,9 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
     const result = await run(notifier);
 
     expect(result.attentionSent).toBe(1);
-    const message = notifier.sent.flat()[0];
-    expect(message?.text).toContain("odd number");
-    expect(message?.text).not.toContain("short");
+    const message = requireEmailMessage(notifier.sent.flat()[0]!);
+    expect(message.text).toContain("odd number");
+    expect(message.text).not.toContain("short");
   });
 
   it("does not email an even, sufficient fixture inside the window", async () => {
@@ -336,7 +373,8 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
 
     await run(notifier);
 
-    const text = notifier.sent.flat()[0]?.text ?? "";
+    const firstSent = notifier.sent.flat()[0];
+    const text = firstSent ? requireEmailMessage(firstSent).text : "";
     const match = /https:\/\/makethe\.team\/cancel\/([\w.-]+)/.exec(text);
     expect(match).not.toBeNull();
 
@@ -443,6 +481,39 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
 });
 
 describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
+  it("retries a ceiling-deferred email on the next tick even though the owner's push already sent (review fix, Critical 1)", async () => {
+    // Same failure mode as N-1's regression test in
+    // test/sweep/open-and-remind.test.ts: the push leg has no daily
+    // ceiling, so a subscribed owner's push can succeed on the very tick
+    // their email is refused by the ceiling. `ownersAlreadyTold` must not
+    // mistake the surviving push row for "this owner has been told" — BR-31
+    // is "once per fixture, ever", and if a surviving push row satisfied it,
+    // the deleted (ceiling-refused) email row would never be retried.
+    const notifier = new RecordingNotifier();
+    notifier.ceilingFor.add("owner@example.com");
+    const { fixtureId, ownerIds } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8 });
+    await insertSubscription(db, ownerIds[0]!, "https://push.example.com/owner");
+
+    const first = await run(notifier);
+    expect(first.attentionSent).toBe(0);
+    expect(first.pushAttentionSent).toBe(1); // the push
+    expect(first.attentionDeferred).toBe(1); // the email
+
+    const afterFirst = await attentionRows(fixtureId);
+    expect(afterFirst.map((r) => r.channel)).toEqual(["push"]);
+
+    notifier.ceilingFor.clear();
+    const second = await run(notifier);
+
+    expect(second.attentionSent).toBe(1);
+    expect(second.attentionDeferred).toBe(0);
+
+    const afterSecond = await attentionRows(fixtureId);
+    expect(afterSecond.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    expect(afterSecond.every((r) => r.status === "sent")).toBe(true);
+    expect(notifier.sent.flat().filter((m) => m.channel === "push")).toHaveLength(1);
+  });
+
   it("deletes the log row on a ceiling refusal so the next run retries it", async () => {
     const notifier = new RecordingNotifier();
     notifier.ceilingFor.add("owner@example.com");
@@ -517,7 +588,7 @@ describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
 
     await run(notifier, NOW, true);
 
-    expect(notifier.sent.flat()[0]?.text).toContain("daily email limit");
+    expect(requireEmailMessage(notifier.sent.flat()[0]!).text).toContain("daily email limit");
   });
 
   it("says nothing about the limit when it is not biting", async () => {
@@ -526,6 +597,6 @@ describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
 
     await run(notifier, NOW, false);
 
-    expect(notifier.sent.flat()[0]?.text).not.toContain("daily email limit");
+    expect(requireEmailMessage(notifier.sent.flat()[0]!).text).not.toContain("daily email limit");
   });
 });

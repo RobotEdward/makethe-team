@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { emailQuota } from "../../src/db/schema.js";
-import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
+import type { EmailMessage, Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON, NO_RECIPIENT_REASON, QuotaNotifier } from "../../src/notify/quota.js";
 import { resetDatabase } from "../support/factories.js";
 
@@ -11,7 +11,7 @@ const db = getDb(env.DB);
 const DAY_ONE = new Date("2026-08-11T08:59:59.999Z");
 const DAY_TWO = new Date("2026-08-12T00:00:00.000Z");
 
-function message(overrides: Partial<Message> = {}): Message {
+function message(overrides: Partial<EmailMessage> = {}): EmailMessage {
   return {
     channel: "email",
     to: "player@example.com",
@@ -27,7 +27,7 @@ function message(overrides: Partial<Message> = {}): Message {
  * simulating a guest slipping past whatever upstream filtering should have
  * caught it (BR-32, TR-32). `Message.to` is typed `string`, so this cast is
  * deliberate: it exercises the runtime boundary check, not the type system. */
-function guestMessage(overrides: Partial<Message> = {}): Message {
+function guestMessage(overrides: Partial<EmailMessage> = {}): Message {
   return message({ to: null as unknown as string, ...overrides });
 }
 

@@ -2,11 +2,11 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { notificationLog } from "../../src/db/schema.js";
-import { erasureScheduledKey } from "../../src/notify/dedupe-key.js";
+import { erasureScheduledKey, pushKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendErasureScheduledEmail } from "../../src/notify/send-erasure-scheduled.js";
-import { insertPlayer, resetDatabase } from "../support/factories.js";
+import { insertPlayer, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const NOW = new Date("2026-08-12T09:00:00Z");
@@ -68,7 +68,7 @@ describe("sendErasureScheduledEmail (N-8)", () => {
     expect(outcome).toEqual({ kind: "sent" });
     expect(notifier.all).toHaveLength(1);
     expect(notifier.all[0]?.to).toBe("alex@example.com");
-    expect(notifier.all[0]?.text).toContain("14 August");
+    expect(requireEmailMessage(notifier.all[0]!).text).toContain("14 August");
 
     const rows = await logRows();
     expect(rows).toHaveLength(1);
@@ -82,14 +82,41 @@ describe("sendErasureScheduledEmail (N-8)", () => {
     });
   });
 
+  it("queues a push alongside the email for a player with a device", async () => {
+    const playerId = await insertPlayer(db, { name: "Alex", email: "alex@example.com" });
+    await insertSubscription(db, playerId, "https://push.example.com/alex");
+    const notifier = new RecordingNotifier();
+
+    const outcome = await send(playerId, notifier);
+
+    expect(outcome).toEqual({ kind: "sent" });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = erasureScheduledKey(playerId, ERASES_AT.toISOString());
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.all.find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: playerId });
+  });
+
+  it("still emails a player with no device at all", async () => {
+    const playerId = await insertPlayer(db, { name: "Alex", email: "alex@example.com" });
+    const notifier = new RecordingNotifier();
+
+    await send(playerId, notifier);
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
+  });
+
   it("carries a sign-in link, not a token link", async () => {
     const playerId = await insertPlayer(db, { email: "alex@example.com" });
     const notifier = new RecordingNotifier();
 
     await send(playerId, notifier);
 
-    expect(notifier.all[0]?.html).toContain("https://makethe.team/sign-in");
-    expect(notifier.all[0]?.text).toContain("https://makethe.team/sign-in");
+    const message = requireEmailMessage(notifier.all[0]!);
+    expect(message.html).toContain("https://makethe.team/sign-in");
+    expect(message.text).toContain("https://makethe.team/sign-in");
   });
 
   it("skips a guest without writing a row (BR-32)", async () => {

@@ -121,3 +121,22 @@ export function erasureScheduledKey(playerId: string, erasesAt: string): string 
 export function teamsKey(fixtureId: string, playerId: string, publishedAt: string): string {
   return `n9:${fixtureId}:${playerId}:${publishedAt}`;
 }
+
+/**
+ * The push channel's dedupe key for a notification whose email key is
+ * `emailKey` (M14, spec §9.3).
+ *
+ * A prefix on the existing key, deliberately, rather than a channel segment
+ * inside every key builder. `notification_log.dedupe_key` is UNIQUE across
+ * the whole table, so both channels needed separating — but rewriting the
+ * *existing* keys would mean the first sweep after deploy looks up a key
+ * that has never been written, finds nothing, and re-sends an N-1 reminder
+ * to every player who has already had one.
+ *
+ * Every email key in this module therefore stays exactly as it was, and push
+ * takes a namespace of its own. Nothing already in the table can collide
+ * with anything new.
+ */
+export function pushKey(emailKey: string): string {
+  return `push:${emailKey}`;
+}

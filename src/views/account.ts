@@ -6,11 +6,17 @@ import {
   PRIVACY_PATH,
   gamePath,
 } from "../auth/paths.js";
-import { renderInstallSection } from "./install.js";
+import { renderInstallSection, renderPushSection, type PushDeviceRow } from "./install.js";
 import { escapeHtml, layout } from "./layout.js";
-import { INSTALL_JS } from "./scripts.js";
+import { INSTALL_JS, PUSH_SUBSCRIBE_JS } from "./scripts.js";
 import { signOutForm } from "./sign-out-form.js";
-import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, INSTALL_STYLES_CSS } from "./styles.js";
+import {
+  DASHBOARD_STYLES_CSS,
+  FIXTURE_STYLES_CSS,
+  FORM_CSS,
+  INSTALL_STYLES_CSS,
+  PUSH_STYLES_CSS,
+} from "./styles.js";
 
 /**
  * One fixture as the account page shows it — already formatted, already
@@ -42,6 +48,14 @@ export interface AccountPageOptions {
   problem?: string;
   /** Set when this player has an erasure pending — already formatted (M7b). */
   erasesAtLocal?: string;
+  /** This player's own registered devices (M14 Task 12, spec §11). */
+  pushDevices: readonly PushDeviceRow[];
+  /**
+   * base64url VAPID public key, or `undefined` while none is configured —
+   * see `PushSectionOptions.vapidPublicKey` in `src/views/install.ts` for
+   * why that renders no button at all rather than a broken one.
+   */
+  vapidPublicKey: string | undefined;
 }
 
 /**
@@ -89,6 +103,8 @@ export function renderAccountPage({
   fixtures,
   problem,
   erasesAtLocal,
+  pushDevices,
+  vapidPublicKey,
 }: AccountPageOptions): string {
   const problemNotice = problem === undefined ? "" : `<p class="problem">${escapeHtml(problem)}</p>`;
 
@@ -144,6 +160,13 @@ export function renderAccountPage({
     }
 
     ${renderInstallSection()}
+    ${renderPushSection({
+      heading: "Notifications",
+      intro:
+        "Get a push notification here instead of waiting for an email — a fixture opening, a reminder, a place freeing up on the waitlist.",
+      vapidPublicKey,
+      devices: pushDevices,
+    })}
 
     <p><a href="${escapeHtml(DELETE_ACCOUNT_PATH)}">Delete my account and data</a> · <a href="${escapeHtml(PRIVACY_PATH)}">Privacy</a></p>
     <p class="back-link"><a href="${escapeHtml(DASHBOARD_PATH)}">Back to your games</a></p>
@@ -153,7 +176,15 @@ export function renderAccountPage({
   return layout({
     title: "Your account — Make The Team",
     body,
-    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FORM_CSS, INSTALL_STYLES_CSS],
-    pageScripts: [INSTALL_JS],
+    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FORM_CSS, INSTALL_STYLES_CSS, PUSH_STYLES_CSS],
+    // `PUSH_SUBSCRIBE_JS` is opted in unconditionally, even while
+    // `vapidPublicKey` is `undefined` and no button exists for it to find —
+    // matching `INSTALL_JS`'s own doc comment: the guard is inside the
+    // script (`if (!button) return;`), and `SCRIPT_BLOCKS` membership is a
+    // static, per-block fact rather than something that could vary by
+    // request. See the module comment on `src/views/scripts.ts` for why a
+    // conditional page-script array is not how this project decides what a
+    // page may carry.
+    pageScripts: [INSTALL_JS, PUSH_SUBSCRIBE_JS],
   });
 }

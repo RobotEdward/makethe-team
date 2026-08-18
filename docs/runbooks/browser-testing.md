@@ -217,3 +217,127 @@ Both checks matter for the same reason the rest of this document exists: each
 failure mode is invisible from a server or a headless browser. A wrong or
 missing `apple-touch-icon` link fails silently — iOS falls back to a
 screenshot of the page, and nothing anywhere logs that it did.
+
+## What this suite cannot prove: push delivery itself (M14)
+
+`test/browser/push.spec.ts` proves three things, all in a real Chromium: the
+account page's "Turn on notifications" affordance renders nothing at all
+while no VAPID key is configured — the honest, currently-true state of this
+project's own `wrangler dev` and of production tonight, not a hypothetical
+one — so a broken deployment can never ship a button that could never have
+worked; `POST /app/push/subscribe`, reached the way the real button reaches
+it (a `fetch` issued from inside a loaded page, not a bare HTTP client),
+rejects a malformed subscription with no CSP violation in the way; and the
+account page's device list, together with its plain-`<form>` Remove control,
+renders and actually removes a row with JavaScript switched off. `/app/account`
+— the one page that always carries push UI, dark state or not — already runs
+through `console-gate.spec.ts`'s CSP/console sweep as part of the catalogue,
+so this file adds no duplicate of that check. (`/r/:token`'s GET, also
+catalogued, is not push UI at all here: the one-time offer is rendered only
+by the POST response handler, and only when a VAPID key exists — see
+`resolvePushOffer` in `src/routes/respond.ts` — so in this environment, where
+one never does, the catalogued GET never shows it. That gating is Vitest's to
+prove, precisely, in `test/routes/respond-post.test.ts`.)
+
+That is everything Playwright can prove, and it stops well short of "push
+notifications work." **Nothing in this repository's test suite, browser or
+Vitest, can assert that a real device receives a push, that a tap opens the
+right fixture, or that removing a device on `/app/account` stops delivery to
+it.** Chromium exposes no CDP domain for a synthetic `push` event delivered
+through a real service-worker registration the way `WebAuthn.addVirtualAuthenticator`
+exposes one for passkeys — the closest available substitute,
+`self.dispatchEvent(new PushEvent(...))` run inside the worker via
+`page.evaluate`, only proves the handler *runs*, which Task 11's
+`test/routes/service-worker.test.ts` already does more precisely and without
+a browser at all — it executes the served script text (`src/routes/pwa.ts`)
+against a stubbed `self`. Real delivery — Cloudflare's edge, through Google's
+or Apple's push service, onto a real lock screen — has no test double worth
+writing, only a real phone.
+
+**This is a documented manual gate, and it must block the production deploy
+that turns push on** (`PUSH_NOTIFIER: "webpush"` in `wrangler.jsonc`), not an
+assumption folded into "the suite is green." Run it once, after the VAPID
+keypair exists and is deployed (`docs/runbooks/cloudflare.md`'s
+`VAPID_PRIVATE_KEY` section — do that first; nothing below works against a
+deployment still pinned to `PUSH_NOTIFIER: "null"`), and again after any
+change that touches `src/notify/push-notifier.ts`, `src/notify/push-copy.ts`,
+the push/notificationclick handling in `src/routes/pwa.ts` (served as
+`/sw.js`), or the VAPID keys themselves.
+
+**Android (Chrome).**
+
+1. Install the app (see the M13 checklist above) and open it.
+2. On `/app/account`, tap **Turn on notifications** and grant the OS
+   permission prompt. The button disappears (`PUSH_SUBSCRIBE_JS` only ever
+   sets `button.hidden = true` on success — it does not re-render the page).
+   **Reload the page.** The device now appears in **Your devices** with a
+   caption, because that list is server-rendered at page load — confirms the
+   subscribe round-trip succeeded, not merely that the browser accepted the
+   permission. Without the reload it still reads "No devices registered
+   yet.", which looks like a failed subscribe even when it worked.
+3. From another signed-in identity (or as the game's organiser), trigger
+   anything that sends this player a push — cancelling a fixture they are in,
+   or promoting them off a waitlist are the two easiest to arrange on demand.
+   A reminder email would also do it, but is slower to arrange than an
+   organiser action taken right now.
+4. **Confirm the notification arrives** — on the lock screen or in the
+   notification shade, within a few seconds. If nothing arrives inside a
+   couple of minutes, treat it as a failure rather than "still in flight":
+   web push over FCM is not normally slow.
+5. **Tap it, and confirm it opens the right fixture** — not the app's home
+   screen, not a blank tab, the specific `/g/:id/f/:fixtureId` (or `/r/:token`)
+   the event was about. This is `notificationclick`'s job in
+   `src/routes/pwa.ts` (served as `/sw.js`), and it is the one behaviour Task
+   11's stubbed-`self` test cannot watch a real browser actually perform.
+6. Back on `/app/account`, tap **Remove** next to that device. The row
+   disappears immediately (a real `<form>` `303` round-trip — confirmed
+   automatically by `push.spec.ts` above).
+7. Repeat step 3. **Confirm nothing arrives this time.** This is the step
+   most likely to be skipped because step 6's row disappearing *looks* like
+   proof enough — it proves the database row is gone, not that the push
+   service has stopped trying to deliver to it. Only a second, deliberately
+   provoked non-event proves that.
+
+**iPhone (Safari).**
+
+Repeat the same seven steps. iOS Safari's web push (16.4+) has its own
+failure modes Android does not:
+
+- The permission prompt only appears for an app already added to the home
+  screen (Share → **Add to Home Screen**) and opened from there — granting
+  notification permission from a Safari *tab* silently does nothing useful,
+  and presents as step 2 above simply not offering the OS prompt at all.
+- A notification tap on iOS can open the installed app fresh rather than
+  resuming a backgrounded instance; step 5's "opens the right fixture" check
+  still applies to wherever it lands, but do not read a fresh launch as a
+  bug on its own.
+- If the app was ever removed and reinstalled, or if notification permission
+  was ever explicitly denied and iOS is asked again, iOS does not always
+  re-offer the prompt through the same route — checking `Settings → [app
+  name] → Notifications` directly is the reliable way to see or reset the
+  current permission when step 2 seems stuck.
+
+**What a failure at each step actually means**, so a failed run is
+diagnosable rather than just "push doesn't work":
+
+- **Step 2 never shows a device on `/app/account`.** The subscribe POST
+  failed or was never sent — check `PUSH_NOTIFIER` is really `"webpush"` on
+  the deployment under test (not `"null"`), and check the browser's own
+  console for a CSP or network error `push.spec.ts`'s malformed-request test
+  would have caught for a request shape, but not for a wrong or missing key.
+- **Step 4 never arrives, but step 2 succeeded.** Either the push service
+  refused the send (`last_failure_at` on the `push_subscriptions` row, per
+  `src/notify/push-notifier.ts`'s doc comment, is the place to look first) or
+  the event that was supposed to trigger it did not actually fire — confirm
+  independently (an email for the same event, or the fixture's own state)
+  that the event happened at all before concluding push itself is broken.
+- **Step 5 opens the wrong place, or nothing.** `notificationclick` in
+  `src/routes/pwa.ts` (served as `/sw.js`), or the `url` field on the
+  `PushMessage` that produced it (`src/notify/push-copy.ts`) — not the
+  subscribe path, which steps 2–4 having worked already rules out.
+- **Step 7 still delivers.** The device row was removed from the wrong
+  player, or a second row for the same physical device still exists (the
+  upsert-on-`endpoint` behaviour `src/routes/push.ts` documents is what is
+  supposed to prevent this) — check `push_subscriptions` for the player
+  directly rather than trusting the account page's own list, which is
+  reading the same table the bug would be in.

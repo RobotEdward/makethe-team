@@ -99,7 +99,7 @@ export const CATALOGUE: CataloguePage[] = [
     // renders with rows rather than as its empty state, which is the version
     // worth putting in front of a browser and a CSP.
     persona: "owner",
-    note: "A player's own record: their name (editable), their email (not), how they sign in, and their last 20 fixtures across every game.",
+    note: "A player's own record: their name (editable), their email (not), how they sign in, their push notification devices (M14), and their last 20 fixtures across every game.",
   },
   {
     id: "new-game",
