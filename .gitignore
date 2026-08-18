@@ -13,3 +13,6 @@ worker-configuration.d.ts
 test-results/
 playwright-report/
 test/browser/screenshots/
+
+# Cloudflare API token for wrangler --remote (never committed)
+.cf-token

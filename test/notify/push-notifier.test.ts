@@ -87,6 +87,28 @@ function statusByEndpoint(map: Record<string, number>): typeof fetch {
   }) as typeof fetch;
 }
 
+/**
+ * A `fetch` stand-in that behaves like the *real* one about `this`.
+ *
+ * Workers' global `fetch` is a builtin that must be called with `this` as
+ * `globalThis` (or with no receiver at all); calling it as a method of some
+ * other object throws `TypeError: Illegal invocation`. Every other stub in
+ * this file is an arrow function, whose `this` is lexical and therefore
+ * indifferent to how it is invoked — which is exactly why this defect
+ * reached production with a green suite. This one is an ordinary function
+ * in a strict-mode module, so `this` is `undefined` when it is called as a
+ * free function and the receiver when it is called as a method, the same
+ * distinction the builtin makes.
+ */
+function receiverCheckingFetch(status: number): typeof fetch {
+  return function (this: unknown) {
+    if (this !== undefined) {
+      throw new TypeError("Illegal invocation: function called with incorrect `this` reference");
+    }
+    return Promise.resolve(new Response(null, { status }));
+  } as typeof fetch;
+}
+
 describe("PushNotifier", () => {
   beforeEach(resetDatabase);
 
@@ -176,6 +198,21 @@ describe("PushNotifier", () => {
 
     expect(result?.ok).toBe(false);
     expect(await db.select().from(pushSubscriptions)).toHaveLength(1);
+  });
+
+  it("calls the injected fetch as a free function, never as a method of itself", async () => {
+    // Production passes the global `fetch` in unbound (`factory.ts`). Calling
+    // it as `this.fetchImpl(...)` gives it the PushNotifier as its receiver,
+    // and a Workers builtin refuses that with "Illegal invocation" before a
+    // byte leaves the isolate — so every push of every type failed, silently,
+    // from the day web push shipped until this test was written.
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/phone");
+    const notifier = new PushNotifier(db, keys, receiverCheckingFetch(201), NOW);
+
+    const [result] = await notifier.send([pushMessageFor(playerId)]);
+
+    expect(result?.ok).toBe(true);
   });
 
   it("stamps last_success_at on a device that accepted the push", async () => {

@@ -171,7 +171,16 @@ export class PushNotifier implements Notifier {
   ): Promise<{ id: string; delivered: boolean; gone: boolean; error: string }> {
     try {
       const body = await encryptPayload(subscription, payload);
-      const response = await this.fetchImpl(subscription.endpoint, {
+      // Detached from `this` before it is called. `fetchImpl` is a free
+      // function, and production hands in the Workers global `fetch`, which
+      // is a builtin that throws `TypeError: Illegal invocation` unless its
+      // receiver is `globalThis` — `this.fetchImpl(...)` would give it this
+      // notifier instead, failing every push of every type before a byte
+      // left the isolate. A stub written as an arrow function cannot see the
+      // difference, which is why the suite stayed green through it; the test
+      // that pins this uses an ordinary function that checks its receiver.
+      const send = this.fetchImpl;
+      const response = await send(subscription.endpoint, {
         method: "POST",
         headers: {
           ...(await vapidHeaders(subscription.endpoint, keys, this.now)),
