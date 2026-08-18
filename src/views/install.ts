@@ -1,6 +1,6 @@
 import { PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
 import { escapeHtml } from "./layout.js";
-import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE, PUSH_PROBLEM_ID } from "./scripts.js";
+import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE, PUSH_PROBLEM_ID, PUSH_TOKEN_ATTRIBUTE } from "./scripts.js";
 
 /**
  * "Add to your home screen" (M13, spec §11).
@@ -65,33 +65,43 @@ export interface PushDeviceRow {
   userAgent: string | null;
 }
 
-export interface PushSectionOptions {
-  heading: string;
-  intro: string;
-  /**
-   * base64url VAPID public key for this deployment, or `undefined` when none
-   * is configured. M14 ships dark — production has no `VAPID_PUBLIC_KEY` at
-   * all until the owner generates the real pair — so `undefined` renders no
-   * button and no `data-push-key` attribute at all: `PUSH_SUBSCRIBE_JS`
-   * already returns early with no key to read, and a button that can only
-   * fail must not exist rather than exist and do nothing (spec §11 state 5's
-   * reasoning, applied one state earlier).
-   */
-  vapidPublicKey: string | undefined;
-  /**
-   * The player's own registered devices, listed with a way to remove each.
-   *
-   * **`undefined` on every token-authenticated page, always.** This is the
-   * whole of the security invariant `PUSH_UNSUBSCRIBE_PATH` depends on
-   * (`src/auth/paths.ts`, `src/routes/push.ts`): a token holder must never
-   * be shown an endpoint they do not already hold, because a token is also
-   * accepted as proof on the unsubscribe route, and an endpoint disclosed
-   * here would turn that acceptance into a way to silently switch off a
-   * stranger's notifications. `/app/account` — session-gated — is the only
-   * caller that may pass an array (even an empty one); the one-time offer on
-   * `/r/:token` must pass `undefined` and nothing else, forever.
-   */
-  devices?: readonly PushDeviceRow[];
+/**
+ * The permission button and its problem paragraph — the one piece shared by
+ * `renderPushSection` and `renderPushOffer` below (M14 Task 12 review,
+ * Finding 5). Not exported: the two callers differ in exactly what a
+ * `devices` field would let a caller do wrong, which is the reason this was
+ * split into two functions rather than one with an optional `devices?`
+ * parameter in the first place, and a third, more general entry point would
+ * reopen that hole.
+ *
+ * **The button ships `hidden`, exactly like `data-install-button` above.**
+ * The server has no way to know a visitor's `Notification.permission` — that
+ * lives only in the browser — so it cannot choose between state 3 (ask),
+ * state 4 (already granted) or state 5 (denied) at render time. Feature
+ * detection is entirely `PUSH_SUBSCRIBE_JS`'s job: it reveals the button
+ * unless permission is already `"denied"`, in which case it leaves the
+ * button hidden and fills `PUSH_PROBLEM_ID` instead. With scripting off the
+ * button and the problem text both stay hidden and silent — never a control
+ * that cannot work.
+ *
+ * `token`, when given, rides along as `${PUSH_TOKEN_ATTRIBUTE}` — see that
+ * constant's own doc comment in `src/views/scripts.ts` for why the offer's
+ * button is otherwise unusable for its entire, signed-out audience (Finding
+ * 2). The account page never passes one: its caller is signed in, and
+ * `resolvePlayerId` in `src/routes/push.ts` already reads the session.
+ */
+function renderPermissionButton(vapidPublicKey: string | undefined, token: string | undefined): string {
+  if (vapidPublicKey === undefined) return "";
+  const tokenAttribute = token === undefined ? "" : ` ${PUSH_TOKEN_ATTRIBUTE}="${escapeHtml(token)}"`;
+  return `
+    <button
+      class="button primary"
+      type="button"
+      id="${PUSH_BUTTON_ID}"
+      ${PUSH_KEY_ATTRIBUTE}="${escapeHtml(vapidPublicKey)}"${tokenAttribute}
+      hidden
+    >Turn on notifications</button>
+    <p class="nudge" id="${PUSH_PROBLEM_ID}" hidden></p>`;
 }
 
 /**
@@ -114,57 +124,108 @@ function renderPushDevice(device: PushDeviceRow): string {
     </li>`;
 }
 
+export interface PushSectionOptions {
+  heading: string;
+  intro: string;
+  /**
+   * base64url VAPID public key for this deployment, or `undefined` when none
+   * is configured. M14 ships dark — production has no `VAPID_PUBLIC_KEY` at
+   * all until the owner generates the real pair — so `undefined` renders no
+   * button and no `data-push-key` attribute at all: `PUSH_SUBSCRIBE_JS`
+   * already returns early with no key to read, and a button that can only
+   * fail must not exist rather than exist and do nothing (spec §11 state 5's
+   * reasoning, applied one state earlier).
+   */
+  vapidPublicKey: string | undefined;
+  /**
+   * The player's own registered devices, listed with a way to remove each.
+   * **Required, deliberately** — not `readonly PushDeviceRow[] | undefined`
+   * (M14 Task 12 review, Finding 5). An optional field's default is
+   * "nothing was passed", which is indistinguishable at the call site from a
+   * caller that deliberately chose to show no devices, and Finding 2 showed
+   * exactly how an unexercised optional silently goes wrong here. Only this
+   * function — called from the session-gated `/app/account` alone — can
+   * express a devices list at all; `renderPushOffer` below has no parameter
+   * that could ever hold one. See the security invariant on
+   * `PUSH_UNSUBSCRIBE_PATH` in `src/auth/paths.ts` for why that split
+   * matters: an endpoint must never reach a token-authenticated caller, and
+   * a type that cannot express "devices" on that caller's page is a
+   * property, not just a habit.
+   */
+  devices: readonly PushDeviceRow[];
+}
+
 /**
- * Notification permission and the device list — spec §11's states 3-5, the
- * half of the five-state component M14 Task 12 adds. States 1-2 (install)
- * are `renderInstallSection` above; the two functions are meant to read as
- * one coherent panel on `/app/account` rather than two competing ones, which
- * is why `PUSH_STYLES_CSS` in `src/views/styles.ts` echoes `.install`'s own
- * spacing and border rather than inventing a second look.
+ * Notification permission and the device list — spec §11's states 3-5, on
+ * the one page that may ever show both: `/app/account`, session-gated. The
+ * one-time offer on `/r/:token` is `renderPushOffer` below, not this
+ * function — that page must never be able to express a devices list, which
+ * is why the two are separate exports rather than one function with an
+ * optional parameter (M14 Task 12 review, Finding 5).
  *
- * **The button ships `hidden`, exactly like `data-install-button` above.**
- * The server has no way to know a visitor's `Notification.permission` — that
- * lives only in the browser — so it cannot choose between state 3 (ask),
- * state 4 (already granted) or state 5 (denied) at render time. Feature
- * detection is entirely `PUSH_SUBSCRIBE_JS`'s job: it reveals the button
- * unless permission is already `"denied"`, in which case it leaves the
- * button hidden and fills `PUSH_PROBLEM_ID` instead. With scripting off the
- * button and the problem text both stay hidden and silent — never a control
- * that cannot work — and the device list below, being plain server-rendered
- * markup, is the one part of this component that is not asking a browser API
- * anything and so needs no script to be complete.
+ * States 1-2 (install) are `renderInstallSection` above. The two sections
+ * currently render as two separate boxes on `/app/account` rather than one
+ * merged panel — `PUSH_STYLES_CSS` in `src/views/styles.ts` intentionally
+ * echoes `.install`'s own spacing and border so the two at least *look*
+ * related, but they remain two `<section>` elements, and a future task may
+ * choose to fold them into one.
  */
 export function renderPushSection({ heading, intro, vapidPublicKey, devices }: PushSectionOptions): string {
+  const deviceHeading = "<h3>Your devices</h3>";
   const deviceList =
-    devices === undefined
-      ? ""
-      : `
-        <h3>Your devices</h3>
-        ${
-          devices.length === 0
-            ? `<p class="read-only">No devices registered yet.</p>`
-            : `<ul class="push-device-list">${devices.map(renderPushDevice).join("")}</ul>`
-        }`;
-
-  const button =
-    vapidPublicKey === undefined
-      ? ""
-      : `
-        <button
-          class="button primary"
-          type="button"
-          id="${PUSH_BUTTON_ID}"
-          ${PUSH_KEY_ATTRIBUTE}="${escapeHtml(vapidPublicKey)}"
-          hidden
-        >Turn on notifications</button>
-        <p class="nudge" id="${PUSH_PROBLEM_ID}" hidden></p>`;
+    devices.length === 0
+      ? `<p class="read-only">No devices registered yet.</p>`
+      : `<ul class="push-device-list">${devices.map(renderPushDevice).join("")}</ul>`;
 
   return `
     <section class="push">
       <h2>${escapeHtml(heading)}</h2>
       <p>${escapeHtml(intro)}</p>
-      ${button}
+      ${renderPermissionButton(vapidPublicKey, undefined)}
+      ${deviceHeading}
       ${deviceList}
+    </section>
+  `;
+}
+
+export interface PushOfferOptions {
+  heading: string;
+  intro: string;
+  /** See `PushSectionOptions.vapidPublicKey` — the same M14-ships-dark rule. */
+  vapidPublicKey: string | undefined;
+  /**
+   * The same response token that authenticated this page (`/r/:token`).
+   * `renderPermissionButton` puts it on the button as `${PUSH_TOKEN_ATTRIBUTE}`
+   * so `PUSH_SUBSCRIBE_JS` can send it back on the subscribe POST —
+   * `resolvePlayerId` in `src/routes/push.ts` accepts a session **or** a
+   * token, and this page's entire audience is signed out, so without the
+   * token there is no proof at all and the route 404s (M14 Task 12 review,
+   * Finding 2). Required rather than optional: every real caller of this
+   * page has one — it is the token in the URL — and a hole here is exactly
+   * the failure mode that got missed the first time.
+   */
+  token: string;
+}
+
+/**
+ * The one-time push offer on the response-confirmation page (spec §11).
+ *
+ * **No `devices` parameter exists on this type, at all.** This is a
+ * token-authenticated page — anyone holding the response link in `/r/:token`
+ * reaches it, not only the player it names — and `PUSH_UNSUBSCRIBE_PATH`'s
+ * whole safety argument (`src/auth/paths.ts`) depends on an endpoint value
+ * never being disclosed to a token-authenticated caller. `renderPushSection`
+ * above is the only function in this module that can render a devices list,
+ * and it is called from nowhere but `/app/account`. Do not add a `devices`
+ * field to `PushOfferOptions` — see `src/views/fixture.ts`'s
+ * `FixturePageOptions.pushOffer` doc comment before changing anything here.
+ */
+export function renderPushOffer({ heading, intro, vapidPublicKey, token }: PushOfferOptions): string {
+  return `
+    <section class="push">
+      <h2>${escapeHtml(heading)}</h2>
+      <p>${escapeHtml(intro)}</p>
+      ${renderPermissionButton(vapidPublicKey, token)}
     </section>
   `;
 }

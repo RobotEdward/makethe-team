@@ -1319,10 +1319,11 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "POST /app/push/unsubscribe":
       "never returns HTML on any branch — a plain-text 403 (wrong origin), " +
       "a plain-text 400 (missing endpoint), a plain-text 404 (neither a " +
-      "session nor a valid response token) or a bare 204 with no body " +
-      "only (src/routes/push.ts); no template of its own that could carry " +
-      "an un-enumerated script. Its own status-code coverage lives in " +
-      "test/routes/push.test.ts.",
+      "session nor a valid response token), a 303 redirect to /app/account " +
+      "for the form-encoded caller (M14 Task 12 review, Finding 3), or a " +
+      "bare 204 with no body for any other caller (src/routes/push.ts); no " +
+      "template of its own that could carry an un-enumerated script. Its " +
+      "own status-code coverage lives in test/routes/push.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {

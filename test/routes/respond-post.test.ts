@@ -7,6 +7,7 @@ import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW } from "../support/clock.js";
+import { PUSH_KEY_ATTRIBUTE, PUSH_TOKEN_ATTRIBUTE } from "../../src/views/scripts.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
@@ -224,6 +225,21 @@ describe("POST /r/:token — the one-time push offer (M14 Task 12, spec §11)", 
 
     const [row] = await db.select().from(players).where(eq(players.id, playerId));
     expect(row?.pushOfferedAt).not.toBeNull();
+  });
+
+  it("carries the response token on the offer's button, so a signed-out visitor's subscribe can actually work (M14 Task 12 review, Finding 2)", async () => {
+    // This page's entire audience is signed out — `resolvePlayerId` in
+    // `src/routes/push.ts` needs a session *or* a body `token`, and there is
+    // no session here at all. Without this attribute the button would 404 on
+    // every click for every player who ever sees this offer.
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+    const token = await tokenFor(fixtureId, playerId);
+
+    const body = await (await postIntent(token, "in")).text();
+
+    expect(body).toContain(`${PUSH_TOKEN_ATTRIBUTE}="${token}"`);
+    expect(body).toMatch(new RegExp(`<button[^>]*${PUSH_KEY_ATTRIBUTE}="[^"]+"[^>]*${PUSH_TOKEN_ATTRIBUTE}="[^"]+"`));
   });
 
   it("never offers push for a response that lands as 'out'", async () => {

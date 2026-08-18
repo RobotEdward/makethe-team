@@ -616,12 +616,13 @@ export const INSTALL_STYLES_CSS = `
 
 /**
  * The notification permission button and device list (M14 Task 12,
- * `renderPushSection` in `src/views/install.ts`) — spec §11's states 3-5.
- * Echoes `.install`'s own box and spacing on purpose rather than inventing a
- * second look, so the two read as one coherent panel on `/app/account`
- * (the doc comment on `renderPushSection` explains why) even though they
- * come from separate functions and, on the one-time offer, only this block
- * ever appears at all.
+ * `renderPushSection` / `renderPushOffer` in `src/views/install.ts`) — spec
+ * §11's states 3-5. Echoes `.install`'s own box and spacing on purpose
+ * rather than inventing a second look, so the two are visually consistent —
+ * but they remain **two separate boxes** on `/app/account`, not one merged
+ * panel (M14 Task 12 review, minors: an earlier version of this comment
+ * overclaimed "one coherent panel"; a future task may actually merge them,
+ * but nothing here does yet).
  */
 export const PUSH_STYLES_CSS = `
   .push { margin-top: 2rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 0.7rem; }

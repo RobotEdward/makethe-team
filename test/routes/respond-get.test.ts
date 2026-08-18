@@ -641,3 +641,36 @@ describe("vocabulary and safety", () => {
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
   });
 });
+
+/**
+ * The security-invariant coverage this suite was missing (M14 Task 12
+ * review, Finding 4): `test/routes/respond-post.test.ts` already proves the
+ * `POST` branch never discloses an endpoint or an unsubscribe form, but
+ * `GET /r/:token` renders through the exact same `renderFixtureForViewer` /
+ * `renderFixturePage` path (`src/routes/respond.ts`) and had no assertion of
+ * its own. `GET` never sets `pushOffer` at all (see that function's own doc
+ * comment on why), so this also stands as regression coverage for that: a
+ * future change that started passing one on `GET` would make this fail
+ * before it could ever leak a device list on a token page.
+ *
+ * **Any future token-authenticated page should carry the same pair of
+ * assertions.** The rule they check — no `/app/push/unsubscribe` form, no
+ * `endpoint` field — is the whole of the safety argument behind
+ * `PUSH_UNSUBSCRIBE_PATH` (see its own doc comment in `src/auth/paths.ts`),
+ * and it has no type-level enforcement outside `src/views/fixture.ts` and
+ * `src/views/install.ts`'s `renderPushOffer` split (M14 Task 12 review,
+ * Finding 5) — a *new* token page written from scratch, rather than reusing
+ * `renderFixturePage`, would not inherit either.
+ */
+describe("the push section never discloses a device (M14 Task 12 review, Finding 4)", () => {
+  it("GET /r/:token never renders an unsubscribe form or an endpoint field", async () => {
+    const { fixtureId, playerId } = await seedRespondableFixture();
+    await db.update(responses).set({ status: "in" }).where(eq(responses.playerId, playerId));
+    const token = await tokenFor(fixtureId, playerId);
+
+    const body = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(body).not.toMatch(/action="\/app\/push\/unsubscribe"/);
+    expect(body).not.toContain('name="endpoint"');
+  });
+});

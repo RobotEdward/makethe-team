@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
+import { ACCOUNT_PATH, PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
 import { getDb } from "../db/client.js";
 import { pushSubscriptions } from "../db/schema.js";
 import { verifyResponseToken } from "../domain/token.js";
@@ -223,16 +223,35 @@ push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
  * player can revoke one they did not register themselves.
  *
  * That list is server-rendered and must work with no JavaScript at all (spec
- * §11's closing paragraph), so this reads its body with `parseBody` — the
- * same `application/x-www-form-urlencoded` a plain `<form>` submits — rather
- * than requiring JSON the way `PUSH_SUBSCRIBE_PATH` does; a subscribe request
- * can only ever be built by script (only script can produce a
- * `PushSubscription` to send), but a remove request must not depend on any.
+ * §11's closing paragraph), so the primary, load-bearing shape is a plain
+ * `<form>`'s `application/x-www-form-urlencoded` body, read with
+ * `parseBody` — unlike `PUSH_SUBSCRIBE_PATH`, which requires JSON because a
+ * subscribe request can only ever be built by script (only script can
+ * produce a `PushSubscription` to send). A JSON body is also accepted, for a
+ * hypothetical future script-driven remove — nothing in this product sends
+ * one today — read with `c.req.json()` on exactly the same two fields
+ * (`endpoint`, `token`).
  *
  * Scoped by `playerId` as well as `endpoint` in the `DELETE`'s `WHERE`, not
  * merely by `endpoint` alone: an endpoint that exists but belongs to someone
- * else is left untouched and this still answers 204, so the response cannot
- * be used to probe whether a given endpoint is registered to another player.
+ * else is left untouched and this still answers the same way, so the
+ * response cannot be used to probe whether a given endpoint is registered to
+ * another player.
+ *
+ * **The plain-form caller gets a `303` to `ACCOUNT_PATH`, not a bare `204`**
+ * (M14 Task 12 review, Finding 3). A `204` leaves an ordinary
+ * `<form method="post">` submission exactly where it was, per HTML's own
+ * form-submission rules — no reload, no navigation — so with scripting off a
+ * player who clicks Remove sees the same row still sitting there and no sign
+ * anything happened, even though the delete really did run. A `303` back to
+ * the page that rendered the form re-fetches the device list from the
+ * database it actually changed, which is the only way this is observably
+ * "the row is gone" rather than "the row is gone, but only the server knows
+ * it." **`Content-Type`, not the caller's proof (session vs. token),
+ * decides which body-reading branch runs and which response shape comes
+ * back** — a JSON caller gets the bare `204` every other route in this file
+ * answers with, on the assumption that a script posting JSON reads the
+ * response itself and has no "current page" to leave stale.
  *
  * **Accepting a token here as well as a session is safe only because an
  * endpoint value is never disclosed to a token-authenticated caller.** A
@@ -254,11 +273,29 @@ push.post(PUSH_UNSUBSCRIBE_PATH, async (c) => {
     return c.text("Forbidden", 403);
   }
 
-  const form = await c.req.parseBody();
-  const playerId = await resolvePlayerId(c, form as Record<string, unknown>);
+  // See this handler's doc comment: `Content-Type` decides both how the body
+  // is read and which response shape comes back on success.
+  const contentType = c.req.header("content-type") ?? "";
+  const isFormPost =
+    contentType.startsWith("application/x-www-form-urlencoded") || contentType.startsWith("multipart/form-data");
+
+  let body: Record<string, unknown>;
+  if (isFormPost) {
+    body = (await c.req.parseBody()) as Record<string, unknown>;
+  } else {
+    let parsed: unknown;
+    try {
+      parsed = await c.req.json();
+    } catch {
+      parsed = {};
+    }
+    body = typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  }
+
+  const playerId = await resolvePlayerId(c, body);
   if (!playerId) return c.text("Not found", 404);
 
-  const endpoint = form["endpoint"];
+  const endpoint = body["endpoint"];
   if (typeof endpoint !== "string" || endpoint.length === 0) {
     return c.text('Bad Request: "endpoint" is required', 400);
   }
@@ -268,5 +305,5 @@ push.post(PUSH_UNSUBSCRIBE_PATH, async (c) => {
     .delete(pushSubscriptions)
     .where(and(eq(pushSubscriptions.endpoint, endpoint), eq(pushSubscriptions.playerId, playerId)));
 
-  return c.body(null, 204);
+  return isFormPost ? c.redirect(ACCOUNT_PATH, 303) : c.body(null, 204);
 });

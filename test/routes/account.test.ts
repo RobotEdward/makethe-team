@@ -14,7 +14,7 @@ import {
   resetDatabase,
 } from "../support/factories.js";
 import { FIXTURE_STYLES_CSS } from "../../src/views/styles.js";
-import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE } from "../../src/views/scripts.js";
+import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE, PUSH_TOKEN_ATTRIBUTE } from "../../src/views/scripts.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
@@ -423,6 +423,17 @@ describe("the notification permission and device list (M14 Task 12)", () => {
     expect(body).toMatch(
       new RegExp(`<button[^>]*id="${PUSH_BUTTON_ID}"[^>]*${PUSH_KEY_ATTRIBUTE}="[^"]+"[^>]*hidden`),
     );
+  });
+
+  it("never carries a push token — the account page's button relies on the session, not a token (M14 Task 12 review, Finding 2/5)", async () => {
+    // The mirror image of the response-confirmation offer, which always
+    // carries one: this page's caller is signed in, `resolvePlayerId` in
+    // `src/routes/push.ts` reads the session, and `renderPushSection`'s own
+    // type has no way to be handed a token at all (unlike `renderPushOffer`).
+    const { cookie } = await signIn();
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain(`${PUSH_TOKEN_ATTRIBUTE}="`);
   });
 
   it("renders no button at all when no VAPID key is configured (M14 ships dark)", async () => {

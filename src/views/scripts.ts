@@ -568,7 +568,7 @@ export const INSTALL_JS = `
  * `id="notify-button"` where the script reads `push-button` — would
  * typecheck, lint and pass every test that does not specifically assert the
  * two strings match, and leave the affordance permanently, silently inert.
- * Importing these three constants at both call sites turns that mismatch
+ * Importing these four constants at both call sites turns that mismatch
  * into a compile error instead.
  */
 export const PUSH_BUTTON_ID = "push-button";
@@ -580,6 +580,20 @@ export const PUSH_PROBLEM_ID = "push-problem";
  * whoever renders the button decides whether to emit it.
  */
 export const PUSH_KEY_ATTRIBUTE = "data-push-key";
+/**
+ * The attribute `PUSH_SUBSCRIBE_JS` reads a response token from (M14 Task 12
+ * review, Finding 2). Absent on the account page, which relies on the
+ * session `resolvePlayerId` already reads (`src/routes/push.ts`) — that page
+ * renders no token at all, on purpose, so there is nothing here to leak
+ * beyond what a signed-in visitor's own session already proves. Present on
+ * the response-confirmation page's one-time offer: that page's entire
+ * audience is signed out (a `/r/:token` visitor), so without a token in the
+ * subscribe POST, `resolvePlayerId` finds neither a session nor a body
+ * `token` and answers 404 — the offer's button could never have worked, and
+ * the once-ever prompt would already have been spent on it by the time the
+ * click happened.
+ */
+export const PUSH_TOKEN_ATTRIBUTE = "data-push-token";
 
 /**
  * Asks for notification permission and registers a device (M14 Task 11).
@@ -647,11 +661,24 @@ export const PUSH_KEY_ATTRIBUTE = "data-push-key";
  * Otherwise wait for `navigator.serviceWorker.ready` — `SERVICE_WORKER_JS`
  * registers on `load` and this script cannot assume that has finished — and
  * call `pushManager.subscribe`. The resulting subscription's own `toJSON()`
- * already carries `endpoint` and `keys` in the shape `POST
- * ${PUSH_SUBSCRIBE_PATH}` expects (`src/routes/push.ts`), so nothing here
- * reshapes it by hand. `connect-src 'self'` already covers this same-origin
- * POST — see the module comment's "a hash lets a script run" section before
- * assuming otherwise.
+ * carries `endpoint` and `keys`, wrapped under a `subscription` key in the
+ * POST body — the shape `POST ${PUSH_SUBSCRIBE_PATH}` actually reads
+ * (`isSubscriptionInput`/`body["subscription"]` in `src/routes/push.ts`).
+ * **This wrapping is load-bearing and was missing for the whole of M14 Task
+ * 12** (review Finding 1): the route 400s on anything else, so every
+ * subscribe attempt failed silently behind this script's own `.catch()`
+ * until it was added — `connect-src 'self'` making the `fetch` reachable at
+ * all was never the problem, the two ends were simply describing different
+ * bodies. `test/routes/push.test.ts` now runs this exact block (not a
+ * hand-built payload) against the real route, so the two cannot drift apart
+ * silently again.
+ *
+ * `${PUSH_TOKEN_ATTRIBUTE}` rides along in the same body, only when the
+ * button carries one: the account page's button never does (its caller is
+ * signed in, and `resolvePlayerId` in `src/routes/push.ts` reads the
+ * session), while the response-confirmation offer's button always does — see
+ * that constant's own doc comment for why omitting it there means the whole
+ * offer 404s.
  *
  * A failure anywhere in that chain (subscribe refused, the POST failing, a
  * network error) re-enables the button and says the attempt didn't work,
@@ -669,6 +696,8 @@ export const PUSH_SUBSCRIBE_JS = `
 
   var key = button.getAttribute("${PUSH_KEY_ATTRIBUTE}");
   if (!key) return;
+
+  var token = button.getAttribute("${PUSH_TOKEN_ATTRIBUTE}");
 
   function showDenied() {
     button.hidden = true;
@@ -718,11 +747,13 @@ export const PUSH_SUBSCRIBE_JS = `
         });
       }).then(function (subscription) {
         var json = subscription.toJSON();
+        var body = { subscription: { endpoint: json.endpoint, keys: json.keys } };
+        if (token) body.token = token;
         return fetch("${PUSH_SUBSCRIBE_PATH}", {
           method: "POST",
           credentials: "same-origin",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys })
+          body: JSON.stringify(body)
         });
       }).then(function (response) {
         if (!response.ok) throw new Error("subscribe");

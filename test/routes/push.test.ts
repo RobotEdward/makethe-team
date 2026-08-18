@@ -1,13 +1,20 @@
 import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../../src/auth/paths.js";
+import { ACCOUNT_PATH, PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import { players, pushSubscriptions } from "../../src/db/schema.js";
 import { signResponseToken } from "../../src/domain/token.js";
 import { base64UrlEncode } from "../../src/notify/web-push.js";
 import { insertFixture, insertGame, insertMembership, insertPlayer, insertSubscription, resetDatabase } from "../support/factories.js";
 import { kickoffIn } from "../support/clock.js";
+import {
+  PUSH_BUTTON_ID,
+  PUSH_KEY_ATTRIBUTE,
+  PUSH_PROBLEM_ID,
+  PUSH_SUBSCRIBE_JS,
+  PUSH_TOKEN_ATTRIBUTE,
+} from "../../src/views/scripts.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
@@ -66,6 +73,91 @@ async function postSubscription(subscription: unknown, cookie: string) {
     headers: { "content-type": "application/json", cookie },
     body: JSON.stringify({ subscription }),
   });
+}
+
+/**
+ * Runs the real, shipped `PUSH_SUBSCRIBE_JS` — not a hand-built stand-in for
+ * it — against a minimally faked browser, and captures the exact `fetch`
+ * call it makes to `PUSH_SUBSCRIBE_PATH` (M14 Task 12 review, Finding 1).
+ *
+ * This is the boundary test the review asked for: `test/routes/push.test.ts`
+ * used to build `{ subscription }` payloads by hand, and the script's own
+ * `{ endpoint, keys }` body — which the route 400s on — was never checked
+ * against the route it is actually posted to. Running the script's own text
+ * closes that gap structurally: a future edit to `PUSH_SUBSCRIBE_JS` that
+ * reshapes the body again fails *this* test, not just a hand-authored one
+ * that could silently drift alongside it.
+ *
+ * Only `document`, `navigator`, `window`, `Notification`, `fetch` and `atob`
+ * are faked — every name the script's own module comment lists as what it
+ * touches — via `new Function(...)`, which evaluates the block with these as
+ * local parameters rather than real globals (this test runs inside
+ * workerd/miniflare, which has none of `document`/`window`/`Notification`
+ * to begin with). The permission is pre-`"granted"` and
+ * `pushManager.subscribe` resolves to a canned subscription whose `toJSON()`
+ * is exactly what a real `PushSubscription` returns, so the only thing left
+ * for the script to decide is the shape of the body it builds and posts.
+ */
+async function captureSubscribeFetch(
+  vapidKey: string,
+  token: string | undefined,
+  subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+): Promise<{ url: string; init: RequestInit }> {
+  const attributes: Record<string, string> = { [PUSH_KEY_ATTRIBUTE]: vapidKey };
+  if (token !== undefined) attributes[PUSH_TOKEN_ATTRIBUTE] = token;
+
+  let clickHandler: (() => void) | null = null;
+  const button = {
+    hidden: true,
+    disabled: false,
+    getAttribute: (name: string) => attributes[name] ?? null,
+    addEventListener: (type: string, handler: () => void) => {
+      if (type === "click") clickHandler = handler;
+    },
+  };
+  const problem = { hidden: true, textContent: "" };
+  const elements: Record<string, unknown> = {
+    [PUSH_BUTTON_ID]: button,
+    [PUSH_PROBLEM_ID]: problem,
+  };
+  const document = { getElementById: (id: string) => elements[id] ?? null };
+  const navigator = {
+    serviceWorker: {
+      ready: Promise.resolve({
+        pushManager: { subscribe: async () => ({ toJSON: () => subscription }) },
+      }),
+    },
+  };
+  const window = { PushManager: function PushManager() {} };
+  const Notification = Object.assign(function Notification() {}, {
+    permission: "default",
+    requestPermission: async () => "granted",
+  });
+
+  let resolveCaptured!: (value: { url: string; init: RequestInit }) => void;
+  const captured = new Promise<{ url: string; init: RequestInit }>((resolve) => {
+    resolveCaptured = resolve;
+  });
+  const fetchStub = async (fetchUrl: string, init: RequestInit) => {
+    resolveCaptured({ url: fetchUrl, init });
+    return { ok: true };
+  };
+
+  // Running the shipped script text under controlled fakes is the whole
+  // point of this helper — see its own doc comment.
+  new Function("document", "navigator", "window", "Notification", "fetch", "atob", PUSH_SUBSCRIBE_JS)(
+    document,
+    navigator,
+    window,
+    Notification,
+    fetchStub,
+    globalThis.atob,
+  );
+
+  if (!clickHandler) throw new Error("PUSH_SUBSCRIBE_JS did not attach a click handler to the button");
+  (clickHandler as () => void)();
+
+  return captured;
 }
 
 beforeEach(resetDatabase);
@@ -217,8 +309,57 @@ describe("POST /app/push/subscribe", () => {
   });
 });
 
+describe("PUSH_SUBSCRIBE_JS's actual wire format (M14 Task 12 review, Finding 1)", () => {
+  it("posts a body the real route accepts, for a signed-in visitor with no token", async () => {
+    const { cookie } = await signIn();
+    const sampleSubscription = await generateSampleSubscription();
+
+    const { url: fetchUrl, init } = await captureSubscribeFetch(
+      env.VAPID_PUBLIC_KEY,
+      undefined,
+      sampleSubscription,
+    );
+    expect(fetchUrl).toBe(PUSH_SUBSCRIBE_PATH);
+    expect(init.method).toBe("POST");
+
+    const response = await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: init.body as string,
+    });
+
+    expect(response.status).toBe(204);
+    const me = await viewerId();
+    const rows = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.playerId, me));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.endpoint).toBe(sampleSubscription.endpoint);
+  });
+
+  it("posts a body the real route accepts, with a token, for the response-confirmation offer's signed-out visitor (Finding 2)", async () => {
+    const { token, playerId } = await seedFixtureWithToken();
+    const sampleSubscription = await generateSampleSubscription();
+
+    const { init } = await captureSubscribeFetch(env.VAPID_PUBLIC_KEY, token, sampleSubscription);
+
+    const response = await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: init.body as string,
+    });
+
+    expect(response.status).toBe(204);
+    const rows = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.playerId, playerId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.endpoint).toBe(sampleSubscription.endpoint);
+  });
+});
+
 describe("POST /app/push/unsubscribe", () => {
-  it("removes only the caller's own device", async () => {
+  it("removes only the caller's own device, and sends the browser back to the account page (M14 Task 12 review, Finding 3)", async () => {
+    // `redirect: "manual"` so this inspects the 303 itself rather than
+    // following it — a plain 204 here would leave a no-JS <form> submission
+    // on the same page with the still-listed row, per HTML's own
+    // form-submission rules (see the doc comment on this route).
     const { cookie } = await signIn();
     const me = await viewerId();
     const stranger = await insertPlayer(db);
@@ -230,15 +371,17 @@ describe("POST /app/push/unsubscribe", () => {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", cookie },
       body: new URLSearchParams({ endpoint: "https://push.example.com/mine" }),
+      redirect: "manual",
     });
 
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(ACCOUNT_PATH);
     const remaining = await db.select().from(pushSubscriptions);
     expect(remaining.map((row) => row.id)).toEqual([theirs]);
     expect(remaining.map((row) => row.id)).not.toContain(mine);
   });
 
-  it("is a no-op, not an error, for an endpoint registered to somebody else", async () => {
+  it("is a no-op, not an error, for an endpoint registered to somebody else, and still redirects", async () => {
     const { cookie } = await signIn();
     const stranger = await insertPlayer(db);
     const theirs = await insertSubscription(db, stranger, "https://push.example.com/theirs");
@@ -247,9 +390,11 @@ describe("POST /app/push/unsubscribe", () => {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded", cookie },
       body: new URLSearchParams({ endpoint: "https://push.example.com/theirs" }),
+      redirect: "manual",
     });
 
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(ACCOUNT_PATH);
     const remaining = await db.select().from(pushSubscriptions);
     expect(remaining.map((row) => row.id)).toEqual([theirs]);
   });
@@ -280,9 +425,10 @@ describe("POST /app/push/unsubscribe", () => {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ token, endpoint: "https://push.example.com/mine" }),
+      redirect: "manual",
     });
 
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(303);
     const remaining = await db.select().from(pushSubscriptions);
     expect(remaining.map((row) => row.id)).toEqual([theirs]);
     expect(remaining.map((row) => row.id)).not.toContain(mine);
@@ -301,5 +447,26 @@ describe("POST /app/push/unsubscribe", () => {
 
     expect(response.status).toBe(403);
     expect(await db.select().from(pushSubscriptions)).toHaveLength(1);
+  });
+
+  it("accepts a JSON body too, and keeps a bare 204 for it (M14 Task 12 review, Finding 3)", async () => {
+    // No script in this product sends this shape today — the account page's
+    // Remove button is a plain `<form>` — but the Content-Type gate itself
+    // needs a real, reachable branch to prove: a regression that redirects
+    // *every* caller (form or not) would fail here.
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const mine = await insertSubscription(db, me, "https://push.example.com/mine");
+
+    const response = await SELF.fetch(url(PUSH_UNSUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ endpoint: "https://push.example.com/mine" }),
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(204);
+    const remaining = await db.select().from(pushSubscriptions);
+    expect(remaining.map((row) => row.id)).not.toContain(mine);
   });
 });
