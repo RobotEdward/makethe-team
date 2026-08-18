@@ -61,12 +61,25 @@ export interface SweepResult {
    * run. One broken fixture must never silence every other Game's reminder
    * on that run (mirrors `materialiseFixtures`).
    *
-   * A per-message send failure lands here too, not just in
-   * `remindersFailed`: a total provider outage that failed every reminder
-   * would otherwise leave an integer in a log line as its only trace, and
-   * `handleScheduled` — which rejects only on a non-empty `failures` — would
-   * report the invocation as a clean run. That is precisely the failure mode
-   * this project already fixed once for materialisation.
+   * A per-message *email* send failure lands here too, not just in
+   * `remindersFailed`: a total email provider outage that failed every
+   * reminder would otherwise leave an integer in a log line as its only
+   * trace, and `handleScheduled` — which rejects only on a non-empty
+   * `failures` — would report the invocation as a clean run. That is
+   * precisely the failure mode this project already fixed once for
+   * materialisation.
+   *
+   * This escalation is email-only, deliberately, since Task 13: a per-message
+   * push failure is folded into `pushRemindersFailed` only and never reaches
+   * `failures` (see the `isEmail` branches below). A total push outage is
+   * therefore *not* a cron failure the way a total email outage is — push is
+   * best-effort and purely additional on top of email, which every reminder
+   * still goes out on regardless of push's health, so failing the whole
+   * invocation over a push outage would run the invariant backwards: it
+   * would make the cron unhealthy over the channel nobody depends on, while
+   * staying healthy is exactly what lets email keep going out unaffected.
+   * `pushRemindersFailed` remains the record of it; see the `console.warn`
+   * below for where an operator would actually notice.
    */
   failures: SweepFailure[];
 }
@@ -439,6 +452,14 @@ async function sendDueReminders(
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  if (pushRemindersFailed > 0) {
+    // A total push outage never reaches `failures` (see that field's doc
+    // comment above), and never should — but it must not be silent either.
+    // This is the operator-visible trace of it: a warning, not an error,
+    // since email reminders for this run were unaffected.
+    console.warn(`openAndRemind: ${pushRemindersFailed} push reminder(s) failed to send this run`);
   }
 
   return {

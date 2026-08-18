@@ -56,8 +56,12 @@ const HELD: readonly Entry[] = [
     why: "To keep you signed in, and to let you back in without a password. Passkeys are stored as public keys — the private half never leaves your device.",
   },
   {
-    what: "A record of the email we sent you, and whether it was delivered.",
+    what: "A record of the emails and push notifications we sent you, and whether each was delivered.",
     why: "So that a reminder is never sent twice, and so a failure can be found and explained rather than silently dropped.",
+  },
+  {
+    what: "If you turn on notifications: the subscription your browser creates for your device, so we can send to it — not your name or email, and nothing readable by anyone but the push service that delivers it.",
+    why: "To send you a push notification instead of, or alongside, an email — the same events, delivered to your device rather than your inbox. Removing the device (from your own page) or erasing your account deletes this immediately.",
   },
   {
     what: "A record of who changed what — including who marked you in or out, and who removed you from a squad.",

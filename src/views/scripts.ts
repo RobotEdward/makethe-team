@@ -765,6 +765,19 @@ export const PUSH_SUBSCRIBE_JS = `
           problem.hidden = false;
         }
       });
+    }).catch(function () {
+      // Notification.requestPermission() itself rejecting (rather than
+      // resolving to "denied") is rare, but not guarded by the inner
+      // subscribe chain's own .catch above — that one only covers
+      // serviceWorker.ready onward. Without this, a rejection here leaves
+      // button.disabled = true (set just above) permanently, with no
+      // message shown — a dead control, which is exactly what this block
+      // exists to prevent.
+      button.disabled = false;
+      if (problem) {
+        problem.textContent = "That didn't work. You can try again.";
+        problem.hidden = false;
+      }
     });
   });
 })();

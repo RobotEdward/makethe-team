@@ -268,9 +268,13 @@ the push/notificationclick handling in `src/routes/pwa.ts` (served as
 
 1. Install the app (see the M13 checklist above) and open it.
 2. On `/app/account`, tap **Turn on notifications** and grant the OS
-   permission prompt. The button disappears and the device appears in
-   **Your devices** with a caption — confirms the subscribe round-trip
-   succeeded, not merely that the browser accepted the permission.
+   permission prompt. The button disappears (`PUSH_SUBSCRIBE_JS` only ever
+   sets `button.hidden = true` on success — it does not re-render the page).
+   **Reload the page.** The device now appears in **Your devices** with a
+   caption, because that list is server-rendered at page load — confirms the
+   subscribe round-trip succeeded, not merely that the browser accepted the
+   permission. Without the reload it still reads "No devices registered
+   yet.", which looks like a failed subscribe even when it worked.
 3. From another signed-in identity (or as the game's organiser), trigger
    anything that sends this player a push — cancelling a fixture they are in,
    or promoting them off a waitlist are the two easiest to arrange on demand.

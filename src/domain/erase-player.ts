@@ -312,6 +312,12 @@ export async function erasePlayer(params: ErasePlayerParams): Promise<ErasePlaye
         email: null,
         authUserId: null,
         emailVerifiedAt: null,
+        // Not an identifier on its own, but it is timestamp evidence of this
+        // player's own activity (when they were shown the push opt-in offer)
+        // and clearing it follows `emailVerifiedAt` above for the same class
+        // of reason: erasure should not leave behind an activity timestamp
+        // that outlives everything else about the person it was about.
+        pushOfferedAt: null,
         erasedAt: now,
       })
       .where(eq(players.id, playerId)),

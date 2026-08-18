@@ -56,7 +56,20 @@ export interface AttentionResult {
   pushAttentionFailed: number;
   /** Owners with no usable address, or who are guests. Permanent, not a failure, no log row (BR-32). */
   ownersSkippedNoRecipient: number;
-  /** Owners who already have an `n4` row for this fixture — told once, ever (BR-31). */
+  /**
+   * Owners who already have an `n4` row for this fixture — told once, ever
+   * (BR-31). Counts rows of *either* channel: the increment at `:245` (an
+   * owner already in `ownersAlreadyTold`'s result) is email-only by
+   * construction — that check runs before a push row for the owner is ever
+   * built — but the increment at `:325` (`pending.length - inserted.length`,
+   * a dedupe-key conflict on insert) counts whichever of the owner's email
+   * and push rows collided, which may be one or both. Mirrors the same
+   * caveat on `CancellationSendSummary.alreadyLogged` in
+   * `send-cancellation.ts`, for the same reason: both owner and email rows
+   * are always attempted together here, so a push-only conflict is this
+   * file's own concern, not a silent gap the field's callers need to worry
+   * about.
+   */
   alreadyLogged: number;
   failures: AttentionFailure[];
 }

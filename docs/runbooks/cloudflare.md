@@ -77,6 +77,17 @@ Until both are done, `createNotifier` builds a `NullNotifier` for the push
 leg and never reads either VAPID binding — a deploy cannot send a push or
 leak a key while `PUSH_NOTIFIER` stays `"null"`.
 
+**This order matters, and it is not merely a push-leg risk.** `requireBinding`
+runs synchronously at construction for all three VAPID bindings, and
+`createNotifier` is called from eight sites, including the cron handler — so
+a deploy that ships `wrangler.jsonc`'s `vars` (step 1: `PUSH_NOTIFIER` flipped
+to `"webpush"`, plus `VAPID_PUBLIC_KEY`/`VAPID_SUBJECT`) *before*
+`VAPID_PRIVATE_KEY` exists as a secret makes `createNotifier` throw at
+construction for every caller — cancel, publish-teams, remove-member, join,
+erasure scheduling, and the entire cron sweep, so no reminder emails go out
+at all, not just push. Before deploying the `wrangler.jsonc` vars, run
+`npx wrangler secret list` and confirm `VAPID_PRIVATE_KEY` is already there.
+
 **If the private key is lost anyway** — deleted, an operator's machine
 wiped before it was stored, whatever the cause — there is no support ticket
 or API call that recovers it. Cloudflare secrets are write-only by design,
