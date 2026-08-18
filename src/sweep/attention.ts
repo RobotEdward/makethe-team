@@ -6,15 +6,17 @@ import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { cancelTokenExpiry, signCancelToken } from "../domain/token.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
-import { attentionKey } from "../notify/dedupe-key.js";
+import { attentionKey, pushKey } from "../notify/dedupe-key.js";
 import {
   applySendResult,
   insertQueuedLogRows,
   markOrphanedRowsFailed,
+  playersWithPushSubscriptions,
   SITE_ORIGIN,
   type PendingNotification,
 } from "../notify/delivery.js";
 import type { Notifier } from "../notify/notifier.js";
+import { PUSH_COPY } from "../notify/push-copy.js";
 import { renderAttentionEmail, type AttentionProblem } from "../notify/templates/attention.js";
 
 /** One fixture the attention step could not fully process, and why. */
@@ -211,6 +213,15 @@ async function processFixture(
   const nonResponders = squad.filter((member) => member.status === "pending").map((member) => member.name);
   const expiresAt = cancelTokenExpiry(fixture.kicksOffAt).getTime();
 
+  // Only an owner with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise every owner without a phone
+  // would accumulate a `no-recipient` row on every sweep tick this fixture
+  // keeps needing attention, forever.
+  const subscribed = await playersWithPushSubscriptions(
+    db,
+    owners.map((owner) => owner.playerId),
+  );
+
   const pending: PendingNotification[] = [];
   for (const owner of owners) {
     if (alreadyLogged.has(owner.playerId)) {
@@ -230,7 +241,8 @@ async function processFixture(
       cancelTokenSecret,
     );
 
-    const rendered = renderAttentionEmail({
+    const cancelUrl = `${SITE_ORIGIN}/cancel/${token}`;
+    const emailPayload = {
       ownerName: owner.name,
       gameName: game.name,
       venueName: fixture.venueOverride ?? game.venueName,
@@ -241,9 +253,10 @@ async function processFixture(
       nonResponders,
       // Every URL is server-constructed, from `SITE_ORIGIN` and a token this
       // function just signed.
-      cancelUrl: `${SITE_ORIGIN}/cancel/${token}`,
+      cancelUrl,
       ceilingReached,
-    });
+    };
+    const rendered = renderAttentionEmail(emailPayload);
 
     const dedupeKey = attentionKey(fixtureId, owner.playerId);
     pending.push({
@@ -259,6 +272,27 @@ async function processFixture(
         dedupeKey,
       },
     });
+
+    if (subscribed.has(owner.playerId)) {
+      const copy = PUSH_COPY.n4(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey: pushKey(dedupeKey),
+        playerId: owner.playerId,
+        message: {
+          channel: "push",
+          to: owner.playerId,
+          title: copy.title,
+          body: copy.body,
+          url: cancelUrl,
+          // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
+          // (Task 9) to the real fixture id, now that this caller holds one
+          // (Task 13).
+          tag: `n4:${fixtureId}`,
+          dedupeKey: pushKey(dedupeKey),
+        },
+      });
+    }
   }
 
   if (pending.length === 0) return;

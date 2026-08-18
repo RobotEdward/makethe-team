@@ -3,10 +3,11 @@ import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { auditLog, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { attentionKey, pushKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { verifyCancelToken } from "../../src/domain/token.js";
 import { sendOwnerAttention } from "../../src/sweep/attention.js";
-import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-cancel-secret";
@@ -163,6 +164,32 @@ describe("sendOwnerAttention (N-4, BR-31)", () => {
     const rows = await attentionRows(fixtureId);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("sent");
+  });
+
+  it("queues a push alongside the email for an owner with a device", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId, ownerIds } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, pending: 3 });
+    await insertSubscription(db, ownerIds[0]!, "https://push.example.com/owner");
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(2);
+    const rows = await attentionRows(fixtureId);
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = attentionKey(fixtureId, ownerIds[0]!);
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.sent.flat().find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: ownerIds[0], tag: `n4:${fixtureId}` });
+  });
+
+  it("still emails an owner with no device at all", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, pending: 3 });
+
+    await run(notifier);
+
+    const rows = await attentionRows(fixtureId);
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("does not email while the fixture is still outside the warning window", async () => {
