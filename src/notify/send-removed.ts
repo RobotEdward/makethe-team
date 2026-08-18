@@ -1,9 +1,17 @@
 import { eq } from "drizzle-orm";
+import { DASHBOARD_PATH } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { games, notificationLog, players } from "../db/schema.js";
-import { removalKey } from "./dedupe-key.js";
-import { applySendResult, insertQueuedLogRows, type PendingNotification } from "./delivery.js";
+import { pushKey, removalKey } from "./dedupe-key.js";
+import {
+  applySendResult,
+  insertQueuedLogRows,
+  playersWithPushSubscriptions,
+  SITE_ORIGIN,
+  type PendingNotification,
+} from "./delivery.js";
 import type { Notifier } from "./notifier.js";
+import { PUSH_COPY } from "./push-copy.js";
 import { renderRemovedEmail } from "./templates/removed.js";
 
 /**
@@ -70,41 +78,94 @@ export async function sendRemovedEmail(params: SendRemovedEmailParams): Promise<
   // whose FK points at this game — so it is reported rather than branched on.
   if (!game) return { kind: "failed", reason: "game-not-found" };
 
-  const rendered = renderRemovedEmail({ playerName: player.name, gameName: game.name });
+  const emailPayload = { playerName: player.name, gameName: game.name };
+  const rendered = renderRemovedEmail(emailPayload);
 
   const dedupeKey = removalKey(membershipId, leftAt.toISOString());
-  const pending: PendingNotification = {
-    logId: crypto.randomUUID(),
-    dedupeKey,
-    playerId,
-    message: {
-      channel: "email",
-      to: email,
-      subject: rendered.subject,
-      html: rendered.html,
-      text: rendered.text,
+  const pending: PendingNotification[] = [
+    {
+      logId: crypto.randomUUID(),
       dedupeKey,
+      playerId,
+      message: {
+        channel: "email",
+        to: email,
+        subject: rendered.subject,
+        html: rendered.html,
+        text: rendered.text,
+        dedupeKey,
+      },
     },
-  };
+  ];
 
-  const [inserted] = await insertQueuedLogRows(db, { fixtureId: null, notificationType: "n7" }, [pending]);
-  if (!inserted) return { kind: "already-logged" };
+  // Only a player with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise a player without a phone
+  // would accumulate a `no-recipient` row per removal, forever.
+  const subscribed = await playersWithPushSubscriptions(db, [playerId]);
+  if (subscribed.has(playerId)) {
+    const copy = PUSH_COPY.n7(emailPayload);
+    pending.push({
+      logId: crypto.randomUUID(),
+      dedupeKey: pushKey(dedupeKey),
+      playerId,
+      message: {
+        channel: "push",
+        to: playerId,
+        title: copy.title,
+        body: copy.body,
+        // N-7 has no fixture, and no other URL, behind it (`RemovedEmailPayload`
+        // carries none): the dashboard is the only sensible destination left
+        // for a tap, and the only place `PUSH_COPY.n7`'s tag can be sharpened
+        // from — membership id, not fixture id, is what this notification is
+        // actually about, and this caller does not hold one either
+        // (`sendRemovedEmail`'s own caller passes it, but it is not part of
+        // the copy or the tag today). Left as `PUSH_COPY`'s gameName
+        // approximation.
+        url: `${SITE_ORIGIN}${DASHBOARD_PATH}`,
+        tag: copy.tag,
+        dedupeKey: pushKey(dedupeKey),
+      },
+    });
+  }
+
+  const inserted = await insertQueuedLogRows(db, { fixtureId: null, notificationType: "n7" }, pending);
+  const emailEntry = inserted.find((entry) => entry.message.channel === "email");
+  if (!emailEntry) return { kind: "already-logged" };
 
   let results;
   try {
-    results = await notifier.send([inserted.message]);
+    results = await notifier.send(inserted.map((entry) => entry.message));
   } catch (error) {
     // The notifier rejected — e.g. `QuotaNotifier.reserve()` hitting a D1
     // error. Whether the message reached a provider first is unknowable from
-    // here, so the row is left `failed` (ambiguous, never retried), exactly as
-    // every other sender does with the same situation.
+    // here, so every row this batch inserted is left `failed` (ambiguous,
+    // never retried), exactly as every other sender does with the same
+    // situation.
     const reason = error instanceof Error ? error.message : String(error);
-    await db
-      .update(notificationLog)
-      .set({ status: "failed", error: reason })
-      .where(eq(notificationLog.id, inserted.logId));
+    for (const entry of inserted) {
+      await db
+        .update(notificationLog)
+        .set({ status: "failed", error: reason })
+        .where(eq(notificationLog.id, entry.logId));
+    }
     return { kind: "failed", reason };
   }
 
-  return applySendResult(db, inserted, results[0], now);
+  // See `send-promotion.ts` for why every row's own result is applied but
+  // the function's return value tracks only the email leg.
+  let emailOutcome: RemovedSendOutcome | undefined;
+  for (let i = 0; i < inserted.length; i++) {
+    const entry = inserted[i];
+    if (!entry) continue;
+    const outcome = await applySendResult(db, entry, results[i], now);
+    if (entry === emailEntry) {
+      emailOutcome =
+        outcome.kind === "sent"
+          ? { kind: "sent" }
+          : outcome.kind === "deferred"
+            ? { kind: "deferred" }
+            : { kind: "failed", reason: outcome.reason };
+    }
+  }
+  return emailOutcome ?? { kind: "already-logged" };
 }

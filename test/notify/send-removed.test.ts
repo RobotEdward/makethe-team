@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { notificationLog } from "../../src/db/schema.js";
+import { pushKey, removalKey } from "../../src/notify/dedupe-key.js";
 import { sendRemovedEmail } from "../../src/notify/send-removed.js";
 import type { Message, Notifier } from "../../src/notify/notifier.js";
-import { insertGame, insertPlayer, requireEmailMessage, resetDatabase, testDb } from "../support/factories.js";
+import {
+  insertGame,
+  insertPlayer,
+  insertSubscription,
+  requireEmailMessage,
+  resetDatabase,
+  testDb,
+} from "../support/factories.js";
 
 const NOW = new Date("2026-08-13T12:00:00Z");
 const LEFT_AT = new Date("2026-08-13T11:59:00Z");
@@ -45,6 +53,38 @@ describe("sendRemovedEmail", () => {
       status: "sent",
       dedupeKey: `n7:m-1:${LEFT_AT.toISOString()}`,
     });
+  });
+
+  it("queues a push alongside the email for a player with a device", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    const playerId = await insertPlayer(db, { name: "Sam Okafor", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example.com/sam");
+    const notifier = recordingNotifier();
+
+    const outcome = await sendRemovedEmail({
+      db, notifier, gameId, playerId, membershipId: "m-1", leftAt: LEFT_AT, now: NOW,
+    });
+
+    expect(outcome).toEqual({ kind: "sent" });
+    const rows = await db.select().from(notificationLog);
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = removalKey("m-1", LEFT_AT.toISOString());
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.sent.find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: playerId });
+  });
+
+  it("still emails a player with no device at all", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    const playerId = await insertPlayer(db, { name: "Sam Okafor", email: "sam@example.com" });
+    const notifier = recordingNotifier();
+
+    await sendRemovedEmail({ db, notifier, gameId, playerId, membershipId: "m-1", leftAt: LEFT_AT, now: NOW });
+
+    const rows = await db.select().from(notificationLog);
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("skips a player with no address and writes no row at all (BR-32)", async () => {
