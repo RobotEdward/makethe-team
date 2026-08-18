@@ -131,19 +131,30 @@ export async function sendBroadcast(params: SendBroadcastParams): Promise<Broadc
     return nothingSent(0);
   }
 
+  // `everyone` resolves from `memberships` and describes no fixture, so a
+  // fixture id arriving alongside it is discarded here rather than trusted:
+  // carried on, it would put a kick-off line in copy that went to people who
+  // never responded to that fixture, and a `fixture_id` on every log row.
+  // Making the pair impossible at this line beats asserting elsewhere that the
+  // routes never produce it (review, Important 1).
+  const scopedFixtureId = audience === "everyone" ? null : fixtureId;
+  if (audience === "everyone" && fixtureId !== null) {
+    console.error(`sendBroadcast: audience "everyone" ignores fixture ${fixtureId}`);
+  }
+
   let fixture: { kicksOffAt: Date; venueOverride: string | null } | undefined;
-  if (fixtureId !== null) {
+  if (scopedFixtureId !== null) {
     [fixture] = await db
       .select({ kicksOffAt: fixtures.kicksOffAt, venueOverride: fixtures.venueOverride })
       .from(fixtures)
-      .where(eq(fixtures.id, fixtureId));
+      .where(eq(fixtures.id, scopedFixtureId));
     if (fixture === undefined) {
-      console.error(`sendBroadcast: fixture ${fixtureId} not found`);
+      console.error(`sendBroadcast: fixture ${scopedFixtureId} not found`);
       return nothingSent(0);
     }
   }
 
-  const selected = await selectRecipients(db, { gameId, fixtureId, audience });
+  const selected = await selectRecipients(db, { gameId, fixtureId: scopedFixtureId, audience });
   const addressable = selected.filter((recipient) => isAddressable(recipient));
   const skipped = selected.length - addressable.length;
   if (addressable.length === 0) return nothingSent(skipped);
@@ -166,8 +177,8 @@ export async function sendBroadcast(params: SendBroadcastParams): Promise<Broadc
   // subscription is a signed-in player, so it is always reachable for them.
   const tokenExpiry = fixture === undefined ? null : responseTokenExpiry(fixture.kicksOffAt);
   const fixtureLink =
-    fixtureId !== null && tokenExpiry !== null && tokenExpiry.getTime() > now.getTime()
-      ? { fixtureId, expiresAt: tokenExpiry.getTime() }
+    scopedFixtureId !== null && tokenExpiry !== null && tokenExpiry.getTime() > now.getTime()
+      ? { fixtureId: scopedFixtureId, expiresAt: tokenExpiry.getTime() }
       : null;
   const gameUrl = `${SITE_ORIGIN}${gamePath(gameId)}`;
 
@@ -248,7 +259,7 @@ export async function sendBroadcast(params: SendBroadcastParams): Promise<Broadc
 
   if (pending.length === 0) return nothingSent(skipped);
 
-  const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n10" }, pending);
+  const inserted = await insertQueuedLogRows(db, { fixtureId: scopedFixtureId, notificationType: "n10" }, pending);
   if (inserted.length === 0) return nothingSent(skipped);
 
   let results;

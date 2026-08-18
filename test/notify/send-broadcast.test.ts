@@ -1,5 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { chunk, INSERT_CHUNK_SIZE } from "../../src/db/chunk.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import type { BroadcastAudience } from "../../src/domain/broadcast-audience.js";
@@ -173,8 +174,12 @@ describe("sendBroadcast (N-10)", () => {
     const email = requireEmailMessage(emailMessages(notifier)[0]!);
     expect(email.subject).toBe("Pitch has moved");
     expect(email.html).toContain("Jamie");
-    // A game-scoped send has no fixture line; a fixture-scoped one names the
-    // kick-off in the game's timezone (TR-5).
+    // The fixture line, formatted in the game's timezone by
+    // `formatLocalDateTime` (TR-5). "19:00" is the London local time of an
+    // 18:00Z kick-off in August, and "13 August" is a formatted date — a raw
+    // `toISOString()` would satisfy neither.
+    expect(email.text).toContain("13 August");
+    expect(email.text).toContain("19:00");
     expect(email.text).toContain("Oxford Sports Park");
   });
 
@@ -277,11 +282,14 @@ describe("sendBroadcast (N-10)", () => {
     expect(result).toMatchObject({ sent: 0, pushSent: 1, skipped: 0 });
   });
 
-  it("sends nothing to a response row whose status this build cannot name, under any audience", async () => {
+  it("sends nothing to a response row whose status this build cannot name, under every fixture audience", async () => {
     const { gameId, fixtureId } = await seed([
       { id: "odd", name: "Odd", email: "odd@example.com", status: "cancelled", device: true },
     ]);
 
+    // The four fixture-scoped audiences are the whole of the loop on purpose:
+    // `everyone` resolves from `memberships` and reads no status at all, so it
+    // reaches this player regardless — see the game-scoped cases below.
     for (const audience of ["playing", "waitlisted", "pending", "unavailable"] as const) {
       const notifier = new RecordingNotifier();
       const result = await send(gameId, fixtureId, notifier, { audience });
@@ -435,6 +443,85 @@ describe("sendBroadcast (N-10)", () => {
     const push = pushMessages(notifier)[0];
     if (push?.channel !== "push") throw new Error("expected a push message");
     expect(push.url).toBe(`https://makethe.team/g/${gameId}`);
+  });
+
+  it("ignores a fixture id handed in alongside the everyone audience", async () => {
+    const { gameId, fixtureId } = await seed([
+      { id: "alice", name: "Alice", email: "alice@example.com", status: null, device: true },
+    ]);
+    const notifier = new RecordingNotifier();
+
+    // `everyone` resolves from `memberships` and describes no fixture. The
+    // routes cannot produce this pair, and the sender makes it harmless rather
+    // than trusting them to (review, Important 1).
+    const result = await send(gameId, fixtureId, notifier, { audience: "everyone" });
+
+    expect(result).toMatchObject({ sent: 1, pushSent: 1 });
+    // No fixture line in the copy, no fixture id on the rows, and the push
+    // points at the game rather than at a response page for a fixture this
+    // player was never asked about.
+    expect(requireEmailMessage(emailMessages(notifier)[0]!).text).not.toContain("13 August");
+    expect((await logRows()).map((r) => r.fixtureId)).toEqual([null, null]);
+    const push = pushMessages(notifier)[0];
+    if (push?.channel !== "push") throw new Error("expected a push message");
+    expect(push.url).toBe(`https://makethe.team/g/${gameId}`);
+  });
+
+  it("messages a squad past D1's 100-bound-parameter ceiling", async () => {
+    // The counterpart of `send-teams.test.ts`'s case of the same name, and
+    // seeded the same way. `MAX_PLAYERS_CEILING` (src/domain/game-form.ts)
+    // allows 200; 110 is comfortably past the limit `src/db/chunk.ts`
+    // documents, and the inserts below are chunked because a single 110-row
+    // insert would trip the very limit this test exists to prove the *read*
+    // path does not trip. Both channels are on, so the id list handed to
+    // `playersWithPushSubscriptions` is all 110 — the one place this sender
+    // builds an `IN (...)` of player ids at all.
+    const SQUAD_SIZE = 110;
+    const gameId = await insertGame(db, { name: "Big Thursday", venueName: "Oxford Sports Park" });
+    const fixtureId = crypto.randomUUID();
+    await db.insert(fixtures).values({
+      id: fixtureId,
+      gameId,
+      kicksOffAt: KICKOFF,
+      lifecycle: "open",
+      minPlayers: 2,
+      maxPlayers: 200,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      durationMinutes: 60,
+    });
+
+    const playerRows = [];
+    const membershipRows = [];
+    const responseRows = [];
+    for (let i = 0; i < SQUAD_SIZE; i++) {
+      const id = `p${i}`;
+      playerRows.push({ id, name: `Player ${i}`, email: `p${i}@example.com` });
+      membershipRows.push({ id: `m-${id}`, gameId, playerId: id, active: true });
+      responseRows.push({ id: `r-${id}`, fixtureId, playerId: id, status: "in" as const, source: "token" as const });
+    }
+    for (const batch of chunk(playerRows, INSERT_CHUNK_SIZE)) await db.insert(players).values(batch);
+    for (const batch of chunk(membershipRows, INSERT_CHUNK_SIZE)) await db.insert(memberships).values(batch);
+    for (const batch of chunk(responseRows, INSERT_CHUNK_SIZE)) await db.insert(responses).values(batch);
+    // Two devices, not 110: the chunked lookup takes every id regardless of
+    // how many come back, and generating 110 key pairs would only slow this.
+    await insertSubscription(db, "p0", "https://push.example.com/p0");
+    await insertSubscription(db, "p7", "https://push.example.com/p7");
+
+    const notifier = new RecordingNotifier();
+
+    const result = await send(gameId, fixtureId, notifier);
+
+    expect(result).toEqual({
+      sent: SQUAD_SIZE,
+      failed: 0,
+      deferred: 0,
+      deferredPlayerIds: [],
+      pushSent: 2,
+      pushFailed: 0,
+      skipped: 0,
+    });
+    expect(await logRows()).toHaveLength(SQUAD_SIZE + 2);
   });
 
   it("tags each broadcast with its own id, so two sends never collapse in the tray", async () => {
