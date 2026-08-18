@@ -68,6 +68,18 @@ describe("privacy page", () => {
     expect(body).toMatch(/your device (chooses|choos)|choice is your device's/i);
   });
 
+  it("discloses that an organiser can message you (M15 §9)", async () => {
+    // What changes for a player with M15 is not what is collected but who can
+    // cause mail to arrive: the product, and now their organiser. Both
+    // channels named, because a player who has registered a device is told
+    // about push here just as they are for the product's own notifications.
+    const body = await (await SELF.fetch(url(PRIVACY_PATH))).text();
+
+    expect(body).toMatch(/organiser.*can (send|write).*message/i);
+    expect(body).toMatch(/email/i);
+    expect(body).toMatch(/push/i);
+  });
+
   it("states the four things erasure cannot reach", async () => {
     // These come off the list `docs/known-issues.md` kept specifically for this
     // page. They are the admissions a person needs *before* they rely on
