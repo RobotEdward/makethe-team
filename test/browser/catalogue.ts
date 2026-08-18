@@ -144,6 +144,20 @@ export const CATALOGUE: CataloguePage[] = [
     note: "The same form as creation, populated.",
   },
   {
+    id: "game-message",
+    title: "Message the squad",
+    path: (w) => `/g/${w.gameId}/message`,
+    persona: "owner",
+    note: "M15's game-scoped quick message: everyone in the squad, no audience radios.",
+  },
+  {
+    id: "fixture-message",
+    title: "Message a fixture's squad",
+    path: (w) => `/g/${w.gameId}/f/${w.fixtureId}/message`,
+    persona: "owner",
+    note: "M15's fixture-scoped quick message: the four response-derived audiences, and both channel checkboxes.",
+  },
+  {
     id: "remove-member",
     title: "Remove a member",
     path: (w) => `/g/${w.gameId}/squad/${w.memberPlayerId}/remove`,
