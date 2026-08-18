@@ -69,6 +69,16 @@ Four rules, each earned the expensive way. Fuller version with the evidence in
    and remembered strings go stale between tasks; a wrong one costs a correction round-trip.
    "Find X in this file" is shorter and cannot be wrong.
 
+## Process calibration
+
+Most work here is the brainstorming skill's **bounded** path: short design in
+chat, approval, implement — no spec file, no plan document, no subagent
+fan-out. Classifying a task as **architectural** (spec doc + implementation
+plan + subagent execution) requires the maintainer's explicit agreement to
+that classification first — state what makes it architectural and wait.
+Subagents pay off above roughly three independent workstreams; below that,
+implement in the main context.
+
 ## Conventions
 
 - Comments name the failure a rule prevents; they do not restate the code. A comment that overclaims
