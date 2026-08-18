@@ -65,13 +65,59 @@ function shortBy(problem: Extract<AttentionEmailPayload["problem"], { kind: "sho
 }
 
 /**
+ * The Android tray budget every title below is held to (spec §10.5).
+ * `PushCopy`'s own doc comment and `test/notify/push-copy.test.ts` both
+ * name this same number, so a change here is a change everywhere it's
+ * checked.
+ */
+const TITLE_MAX_CHARS = 40;
+
+/**
+ * What a truncated `gameName` ends in — one character, counted against the
+ * budget below like any other.
+ */
+const ELLIPSIS = "…";
+
+/**
+ * Fits `name` inside `budget` characters, replacing the tail with a single
+ * `ELLIPSIS` when it doesn't fit whole.
+ *
+ * A day-of-the-week plus a descriptor plus "Football" or "5-a-side" is an
+ * entirely ordinary game name for this product and routinely lands in the
+ * mid-to-high twenties of characters — long enough that a title built by
+ * simply concatenating a fixed phrase with `gameName` exceeds
+ * `TITLE_MAX_CHARS` for several of the nine notification types once the name
+ * is realistic rather than the short one convenient for a test fixture. This
+ * function is what makes every title below hold for a name of *any* length,
+ * rather than buying headroom against one example name that a slightly
+ * longer one immediately eats back up.
+ */
+function fitName(name: string, budget: number): string {
+  if (name.length <= budget) return name;
+  if (budget <= ELLIPSIS.length) return ELLIPSIS.slice(0, Math.max(budget, 0));
+  return `${name.slice(0, budget - ELLIPSIS.length)}${ELLIPSIS}`;
+}
+
+/**
+ * Builds `${before}${gameName}${after}`, truncating `gameName` (via
+ * `fitName`) by however much is needed to keep the whole title at or under
+ * `TITLE_MAX_CHARS` — never `before` or `after`, which are the fixed words
+ * that say what happened and are what makes the notification legible at a
+ * glance in the first place.
+ */
+function gameNameTitle(before: string, gameName: string, after: string): string {
+  const budget = TITLE_MAX_CHARS - before.length - after.length;
+  return `${before}${fitName(gameName, budget)}${after}`;
+}
+
+/**
  * N-1: the day-before reminder.
  *
  * What happened: it's tomorrow. When/where: kick-off and the venue.
  */
 function reminder({ gameName, venueName, kicksOffAtLocal }: ReminderEmailPayload): PushCopy {
   return {
-    title: `${gameName} — tomorrow`,
+    title: gameNameTitle("", gameName, " — tomorrow"),
     body: `${kicksOffAtLocal} at ${venueName}.`,
     tag: `n1:${gameName}:${kicksOffAtLocal}`,
   };
@@ -86,7 +132,7 @@ function reminder({ gameName, venueName, kicksOffAtLocal }: ReminderEmailPayload
  */
 function promotion({ gameName, venueName, kicksOffAtLocal }: PromotionEmailPayload): PushCopy {
   return {
-    title: `You're in — ${gameName}`,
+    title: gameNameTitle("You're in — ", gameName, ""),
     body: `${kicksOffAtLocal} at ${venueName}.`,
     tag: `n2:${gameName}:${kicksOffAtLocal}`,
   };
@@ -101,7 +147,7 @@ function promotion({ gameName, venueName, kicksOffAtLocal }: PromotionEmailPaylo
  */
 function cancellation({ gameName, venueName, kicksOffAtLocal }: CancellationEmailPayload): PushCopy {
   return {
-    title: `${gameName} — cancelled`,
+    title: gameNameTitle("", gameName, " — cancelled"),
     body: `Was ${kicksOffAtLocal} at ${venueName}.`,
     tag: `n3:${gameName}:${kicksOffAtLocal}`,
   };
@@ -116,12 +162,9 @@ function cancellation({ gameName, venueName, kicksOffAtLocal }: CancellationEmai
  * kick-off and venue, same as the email.
  */
 function attention({ gameName, venueName, kicksOffAtLocal, problem }: AttentionEmailPayload): PushCopy {
-  const title =
-    problem.kind === "short"
-      ? `${gameName} — ${shortBy(problem)} short`
-      : `${gameName} — odd number in`;
+  const after = problem.kind === "short" ? ` — ${shortBy(problem)} short` : " — odd number in";
   return {
-    title,
+    title: gameNameTitle("", gameName, after),
     body: `${kicksOffAtLocal} at ${venueName}.`,
     tag: `n4:${gameName}:${kicksOffAtLocal}`,
   };
@@ -151,7 +194,7 @@ function magicLink({ expiresInLabel }: MagicLinkEmailPayload): PushCopy {
  */
 function welcome({ gameName, venueName, whenLocal }: WelcomeEmailPayload): PushCopy {
   return {
-    title: `In the squad — ${gameName}`,
+    title: gameNameTitle("In the squad — ", gameName, ""),
     body: whenLocal === null ? `First game not in the diary yet.` : `First game ${whenLocal} at ${venueName}.`,
     tag: `n6:${gameName}`,
   };
@@ -165,7 +208,7 @@ function welcome({ gameName, venueName, whenLocal }: WelcomeEmailPayload): PushC
  */
 function removed({ gameName }: RemovedEmailPayload): PushCopy {
   return {
-    title: `Removed from ${gameName}`,
+    title: gameNameTitle("Removed from ", gameName, ""),
     body: "No more messages about this game.",
     tag: `n7:${gameName}`,
   };
@@ -195,7 +238,7 @@ function erasureScheduled({ whenLocal }: ErasureScheduledEmailPayload): PushCopy
  */
 function teams({ gameName, venueName, whenLocal, yourSideName }: TeamsEmailParams): PushCopy {
   return {
-    title: `Teams are up — ${gameName}`,
+    title: gameNameTitle("Teams are up — ", gameName, ""),
     body: `You're on ${yourSideName}. ${whenLocal} at ${venueName}.`,
     tag: `n9:${gameName}:${whenLocal}`,
   };

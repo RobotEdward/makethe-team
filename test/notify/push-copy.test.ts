@@ -44,6 +44,20 @@ const sampleContext = {
   ] as readonly { name: string; players: readonly string[] }[] | null,
 };
 
+/**
+ * An entirely ordinary game name for this product — a day of the week plus
+ * a descriptor plus "Massive" — at 28 characters, kept separate from
+ * `sampleContext.gameName` (18 characters) on purpose. The short sample
+ * name is convenient for reading test failures elsewhere in this file, but
+ * it is short enough that a title built by naively concatenating a fixed
+ * phrase with `gameName` can fit under the 40-character budget without the
+ * copy actually enforcing that budget for a realistic name. A day +
+ * descriptor + "Football"/"5-a-side" routinely lands in the
+ * mid-to-high-twenties of characters, so this is the length the
+ * length-budget test needs to exercise, not the comfortable one.
+ */
+const LONG_GAME_NAME = "The Tuesday 6-a-side Massive";
+
 describe("push copy", () => {
   it("covers every notification type", () => {
     // The catalogue is the source of truth. A type added later without copy
@@ -57,8 +71,15 @@ describe("push copy", () => {
     // Android truncates around forty characters, and a title that gets cut
     // mid-word is the difference between "Thursday is short" and "Thursday
     // is sh…". Deliberately not derived from email subjects, which are prose.
+    //
+    // Uses LONG_GAME_NAME, not sampleContext.gameName: the short sample name
+    // (18 characters) fits under the budget even without the copy actually
+    // enforcing it, so this test would pass on a title built by naive
+    // concatenation right up until a realistic game name broke it in
+    // production. The 28-character name exercises the boundary the copy is
+    // actually meant to hold.
     for (const type of NOTIFICATION_TYPES) {
-      const { title } = PUSH_COPY[type]({ ...sampleContext });
+      const { title } = PUSH_COPY[type]({ ...sampleContext, gameName: LONG_GAME_NAME });
       expect(title.length, `${type}: "${title}"`).toBeLessThanOrEqual(40);
     }
   });
