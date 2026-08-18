@@ -3,6 +3,7 @@ import { GAMES_PREFIX, SERVICE_WORKER_PATH } from "./auth/paths.js";
 import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { account } from "./routes/account.js";
+import { admin } from "./routes/admin.js";
 import { broadcast } from "./routes/broadcast.js";
 import { cancel } from "./routes/cancel.js";
 import { dashboard } from "./routes/dashboard.js";
@@ -155,6 +156,10 @@ export function createApp(): Hono<AppEnv> {
   // `src/routes/push.ts`. The session mount above still resolves
   // `c.get("player")` for whichever caller has one.
   app.route("/", push);
+  // `/app/admin/allowlist` (M16). Behind `AUTHENTICATED_PREFIX`'s session
+  // mount; whether the caller is an admin is re-asked inside every handler,
+  // and a refusal is a 404 (TR-18) — see src/routes/admin.ts.
+  app.route("/", admin);
   // `/g/*`, behind the game-management session mount above.
   app.route("/", gamesRoutes);
   // `/g/:id/message` and `/g/:id/f/:fixtureId/message` (M15 Task 8), under

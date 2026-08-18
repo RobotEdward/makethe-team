@@ -765,6 +765,26 @@ export const INVITE_CSS = `
   .fixtures .detail { color: var(--mut); font-size: var(--t-support); }
 `;
 
+/**
+ * The admin allow-list page (M16). Selectors are namespaced under
+ * `.allowlist` so this block cannot collide with SQUAD_STYLES_CSS's or
+ * FORM_CSS's list and row rules at equal specificity — the cascade-order
+ * failure test/views/style-cascade.test.ts exists to catch.
+ */
+export const ADMIN_ALLOWLIST_CSS = `
+  ul.allowlist { list-style: none; padding: 0; margin: 1.1rem 0; }
+  ul.allowlist > li {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; padding: 0.55rem 0; border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+  /* Secret-sourced entries have no remove button; mark them so the asymmetry
+     reads as designed rather than broken. */
+  ul.allowlist .provenance { color: var(--mut); font-size: var(--t-support); }
+  .allowlist-add { display: flex; gap: 0.75rem; align-items: flex-end; }
+  .allowlist-add .field { flex: 1; margin: 0; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -779,6 +799,7 @@ export const PAGE_STYLE_BLOCKS = [
   INSTALL_STYLES_CSS,
   PUSH_STYLES_CSS,
   INVITE_CSS,
+  ADMIN_ALLOWLIST_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

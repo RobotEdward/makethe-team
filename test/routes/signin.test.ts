@@ -17,6 +17,7 @@ import {
 // paths, and this page is not part of it (`src/auth/paths.ts`).
 import {
   ACCOUNT_PATH,
+  ADMIN_ALLOWLIST_PATH,
   DELETE_ACCOUNT_PATH,
   MANIFEST_PATH,
   OFFLINE_PATH,
@@ -30,6 +31,7 @@ import {
   passkey,
   players,
   session as sessionTable,
+  signupAllowlist,
   user as userTable,
   verification,
 } from "../../src/db/schema.js";
@@ -729,6 +731,18 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}${PASSKEYS_PATH}`, { headers: { cookie } }),
       );
 
+      // The admin allow-list screen (M16). The admin bit is flipped on the row
+      // directly — there is deliberately no promote UI — and a table entry is
+      // inserted first so the remove-button branch is the one captured, not
+      // just the empty state.
+      await getDb(env.DB).update(userTable).set({ isAdmin: true });
+      await getDb(env.DB).insert(signupAllowlist).values({ email: "listed@example.com" });
+      await capture(
+        "admin allow list",
+        /Sign-up allow list/,
+        new Request(`${ORIGIN}${ADMIN_ALLOWLIST_PATH}`, { headers: { cookie } }),
+      );
+
       // The delete-my-data page (M7b Task 4). Captured *before* the membership
       // below is promoted to `owner`: an ordinary member reaches the `offer`
       // state, which is the branch that carries the form, while a sole
@@ -978,6 +992,7 @@ describe("no password field anywhere (TR-16)", () => {
     expect(pages.map((page) => page.name).sort()).toEqual(
       [
         "home",
+        "admin allow list",
         "privacy",
         "offline",
         "robots",
@@ -1221,6 +1236,17 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "never returns HTML on any branch — a plain-text 403 (wrong origin) or a " +
       "303 redirect only (src/routes/account.ts); its own status-code coverage " +
       "lives in test/routes/delete-account.test.ts.",
+    "POST /app/admin/allowlist/add":
+      "renders through the same renderAdminAllowlistPage as GET /app/admin/allowlist " +
+      "on its one HTML-returning branch (an implausible address, 422) — no template " +
+      "of its own that could carry an un-enumerated script — and its other branches " +
+      "are a plain-text 403 (wrong origin), a plain-text 404 (not an admin) or a " +
+      "303 redirect (src/routes/admin.ts); its own status-code coverage lives in " +
+      "test/routes/admin.test.ts.",
+    "POST /app/admin/allowlist/remove":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
+      "plain-text 404 (not an admin) or a 303 redirect only (src/routes/admin.ts); " +
+      "its own status-code coverage lives in test/routes/admin.test.ts.",
     "POST /g/new":
       "renders through the same renderGameFormPage as GET /g/new on its only " +
       "HTML-returning branch (a rejected submission) — no template of its " +
@@ -1377,6 +1403,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /app/passkeys": "passkeys",
     "GET /app/delete": "delete my data",
     "GET /app/account": "account",
+    "GET /app/admin/allowlist": "admin allow list",
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",

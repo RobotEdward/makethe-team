@@ -1,10 +1,17 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createAuth, isSignInAllowlisted } from "../../src/auth/factory.js";
+import { createAuth } from "../../src/auth/factory.js";
+import { isSignInAllowlisted } from "../../src/auth/sign-in-gate.js";
 import { getDb } from "../../src/db/client.js";
 import { emailQuota } from "../../src/db/schema.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
-import { requireEmailMessage, resetDatabase } from "../support/factories.js";
+import {
+  insertGame,
+  insertMembership,
+  insertPlayer,
+  requireEmailMessage,
+  resetDatabase,
+} from "../support/factories.js";
 
 const BASE_URL = "http://localhost:8787";
 const NOW = new Date("2026-08-11T09:00:00Z");
@@ -93,6 +100,21 @@ describe("magic link issuance", () => {
     expect(url.searchParams.get("token")).toBeTruthy();
     expect(message.html).toContain("magic-link/verify");
     expect(message.html).toContain(url.searchParams.get("token")!);
+  });
+
+  it("sends a link to an invited player with an active membership, secret or no secret", async () => {
+    // The M16 union: an invitation is a standing pass through the gate, so a
+    // squad member never needs adding to any allowlist to get an account.
+    const db = getDb(env.DB);
+    const gameId = await insertGame(db);
+    const playerId = await insertPlayer(db, { email: "invitee@example.com" });
+    await insertMembership(db, gameId, playerId);
+
+    const { notifier, response } = await requestMagicLink("invitee@example.com", undefined);
+
+    expect(response.status).toBe(200);
+    expect(notifier.sent).toHaveLength(1);
+    expect(requireEmailMessage(notifier.sent[0]!).to).toBe("invitee@example.com");
   });
 
   it("goes through the real createNotifier branch when no override is given", async () => {

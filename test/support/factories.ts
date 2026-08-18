@@ -45,6 +45,7 @@ export async function insertGame(db: Db, overrides: Partial<GameInsert> = {}): P
  * before parents).
  */
 const RESET_TABLES = [
+  "signup_allowlist",
   "audit_log",
   "notification_log",
   "email_quota",

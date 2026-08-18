@@ -7,6 +7,7 @@ import type { Db } from "../db/client.js";
 import { createNotifier } from "../notify/factory.js";
 import type { Notifier } from "../notify/notifier.js";
 import { renderMagicLinkEmail } from "../notify/templates/magic-link.js";
+import { isSignInPermitted } from "./sign-in-gate.js";
 
 /**
  * How long a sign-in link stays usable. One constant, used both to configure
@@ -55,10 +56,11 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
       magicLink({
         expiresIn: MAGIC_LINK_EXPIRY_MINUTES * 60,
         sendMagicLink: async ({ email, url }) => {
-          // ---- TR-35: the trial sign-in gate. Delete this one `if` (and the
-          // `isSignInAllowlisted` function below, which then has no callers)
+          // ---- TR-35: the trial sign-in gate, widened in M16 to a union of
+          // the secret, the admin-managed table and standing invitees — see
+          // `isSignInPermitted` in `sign-in-gate.ts`. Delete this one `if`
           // when the product opens to the public. Nothing else changes. ----
-          if (!isSignInAllowlisted(env.SIGNIN_ALLOWLIST, email)) return;
+          if (!(await isSignInPermitted(db, env.SIGNIN_ALLOWLIST, email))) return;
 
           // Not addressable here: an unbounded-length `email` (Better Auth's
           // `z.email()` body schema does not cap local-part length) is
@@ -173,53 +175,4 @@ async function sendSignInLink(
       `sign-in link failed to send: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
     );
   }
-}
-
-/**
- * Whether `email` appears in the comma-separated `SIGNIN_ALLOWLIST` secret.
- *
- * Fails **closed**: an unset, empty or all-blank list matches nothing, so
- * nobody can sign in. This matches the convention `parseMaxEmailsPerDay`
- * already sets for a missing `MAX_EMAILS_PER_DAY` (fail closed to a ceiling
- * of 0) and is the only safe direction for a gate — a config mistake that
- * opened a trial-only site to the whole internet would be silent, whereas one
- * that closes it is reported by the first person who tries to sign in.
- *
- * Entries are trimmed (a comma-separated secret typed by a human will have
- * spaces and possibly newlines around entries) and empty ones are dropped, so
- * a trailing comma cannot create an `""` entry that a blank address would
- * match. Comparison folds ASCII case and nothing else — the same fold as
- * `normaliseEmail` in `link-player.ts`, for the same reason: a full-Unicode
- * `toLowerCase()` collapses U+212A KELVIN SIGN onto `k`, which here would let
- * `K@example.com` walk through a gate meant for `k@example.com`.
- *
- * Exported only so its degenerate cases can be pinned directly; the single
- * call site is the guard in `createAuth` above.
- */
-export function isSignInAllowlisted(raw: string | undefined, email: string): boolean {
-  const wanted = foldAsciiCase(email);
-  if (wanted === "") return false;
-  if (raw === undefined) return false;
-
-  return raw
-    .split(",")
-    .map(foldAsciiCase)
-    .some((entry) => entry !== "" && entry === wanted);
-}
-
-/**
- * Trim, then lowercase `A`-`Z` and nothing else (see `isSignInAllowlisted`).
- *
- * The `trim()` here is for the **allowlist entries** — a human typing a
- * comma-separated secret into `wrangler secret put` will leave stray spaces
- * and newlines around addresses, and those must be tolerated. On the
- * **address** side (the value Better Auth hands the gate) it is currently
- * unreachable dead weight: Better Auth's Zod body schema rejects any
- * whitespace-wrapped address with a 400 before `sendMagicLink` ever runs, so
- * no attacker input reaches this function carrying whitespace to strip. Do
- * not read the address-side `trim()` as the gate normalising its own input —
- * it doesn't need to, today, only because of a validator upstream of it.
- */
-function foldAsciiCase(value: string): string {
-  return value.trim().replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
 }

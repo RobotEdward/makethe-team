@@ -1,5 +1,6 @@
 import {
   ACCOUNT_PATH,
+  ADMIN_ALLOWLIST_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
@@ -222,6 +223,14 @@ export const CATALOGUE: CataloguePage[] = [
  * exclusion is exactly how the old hand-written enumeration lost coverage.
  */
 export const NOT_CATALOGUED = new Map<string, string>([
+  [
+    ADMIN_ALLOWLIST_PATH,
+    "reachable only with state this catalogue does not build: user.is_admin, " +
+      "which no UI sets (it is flipped by the operator in SQL). Its rendered " +
+      "output and status codes are pinned in test/routes/admin.test.ts and " +
+      "the TR-16 sweep in test/routes/signin.test.ts; its style block is " +
+      "hashed like every other by test/security/csp.test.ts.",
+  ],
   ["/robots.txt", "plain text, no document, no CSP surface"],
   ["/sign-in/complete", "a redirect-through, not a page anyone dwells on"],
   ["/manifest.webmanifest", "JSON, no document, no CSP surface — covered by pwa.spec.ts instead"],

@@ -108,6 +108,24 @@ export const DELETE_ACCOUNT_CANCEL_PATH = `${DELETE_ACCOUNT_PATH}/cancel`;
 export const ACCOUNT_PATH = `${DASHBOARD_PATH}/account`;
 
 /**
+ * The operator's allow-list screen (M16).
+ *
+ * Under `DASHBOARD_PATH` so it sits behind the session mount and the
+ * `private, no-store` header `AUTHENTICATED_PREFIX` carries — it lists other
+ * people's email addresses. Who may *see* it is not decided here or by any
+ * middleware: each handler re-asks `user.is_admin` and answers 404 (not 403)
+ * on refusal, so the URL does not confirm the screen exists (TR-18).
+ *
+ * Add and remove are POSTs of their own rather than one endpoint with a mode
+ * field: a mode field is a parser, and a parser in a handler is a place for a
+ * fifth mode to hide. The removed address travels in the form body, not the
+ * path — an email in a URL needs encoding both ways and lands in access logs.
+ */
+export const ADMIN_ALLOWLIST_PATH = `${DASHBOARD_PATH}/admin/allowlist`;
+export const ADMIN_ALLOWLIST_ADD_PATH = `${ADMIN_ALLOWLIST_PATH}/add`;
+export const ADMIN_ALLOWLIST_REMOVE_PATH = `${ADMIN_ALLOWLIST_PATH}/remove`;
+
+/**
  * Better Auth's own mount point: every endpoint it owns (`/sign-in/magic-link`,
  * `/magic-link/verify`, `/sign-out`, …) hangs off this. It is the framework's
  * default `basePath`, restated here because this project's own code builds

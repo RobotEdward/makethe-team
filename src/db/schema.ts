@@ -359,6 +359,20 @@ export const auditLog = sqliteTable(
 // rather than documented as an intentional exception.
 // ---------------------------------------------------------------------------
 
+/**
+ * Addresses allowed to request a sign-in link without holding an invite (M16).
+ *
+ * The union partner of the `SIGNIN_ALLOWLIST` secret, not its replacement:
+ * the secret survives a database wipe and keeps the operator able to sign in;
+ * this table holds everyone added from the admin screen. Emails are stored
+ * already folded by `foldAsciiCase` (ASCII case only — see `sign-in-gate.ts`
+ * for why not `toLowerCase()`), so lookups are plain equality.
+ */
+export const signupAllowlist = sqliteTable("signup_allowlist", {
+  email: text("email").primaryKey(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+});
+
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -367,6 +381,12 @@ export const user = sqliteTable("user", {
   image: text("image"),
   createdAt: integer("createdAt", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updatedAt", { mode: "timestamp_ms" }).notNull(),
+  // App-owned, not Better Auth's: never declared to the adapter, so Better
+  // Auth's inserts omit it and the default keeps them valid. Snake_case
+  // because only our own code reads it. Set manually via SQL (M16) — there is
+  // deliberately no promote/demote UI, so a wiped database has no admin until
+  // the operator flips this bit.
+  isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
 });
 
 export const session = sqliteTable(
