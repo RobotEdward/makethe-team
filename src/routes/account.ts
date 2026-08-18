@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { wrongOrigin } from "../auth/origin.js";
 import {
   ACCOUNT_PATH,
   DASHBOARD_PATH,
@@ -19,7 +20,7 @@ import { isTerminalLifecycle } from "../domain/lifecycle.js";
 import { parsePlayerName } from "../domain/player-name.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import type { AppEnv, Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendErasureScheduledEmail } from "../notify/send-erasure-scheduled.js";
 import { renderAccountPage } from "../views/account.js";
@@ -27,10 +28,6 @@ import { renderDeleteAccountPage } from "../views/delete-account.js";
 
 export const account = new Hono<AppEnv>();
 
-/** This deployment's own origin, as `src/routes/dashboard.ts` compares it. */
-function originOf(env: Bindings): string {
-  return new URL(env.BETTER_AUTH_URL).origin;
-}
 
 /**
  * Render `/app/delete` from scratch, in whichever state the database is in.
@@ -153,10 +150,7 @@ account.get(DELETE_ACCOUNT_PATH, requirePlayer, async (c) => renderDeleteAccount
  * email client.
  */
 account.post(DELETE_ACCOUNT_PATH, requirePlayer, async (c) => {
-  const origin = c.req.header("origin");
-  if (origin !== undefined && origin !== originOf(c.env)) {
-    return c.text("Forbidden", 403);
-  }
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
   // The one wall-clock read at this edge; `erasureDeadline` takes it as an
   // argument (see the lint rule banning bare `new Date()` downstream).
@@ -263,10 +257,7 @@ account.post(DELETE_ACCOUNT_PATH, requirePlayer, async (c) => {
  * cancels somebody's erasure is still somebody else deciding.
  */
 account.post(DELETE_ACCOUNT_CANCEL_PATH, requirePlayer, async (c) => {
-  const origin = c.req.header("origin");
-  if (origin !== undefined && origin !== originOf(c.env)) {
-    return c.text("Forbidden", 403);
-  }
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
   const now = new Date(Date.now());
   const player = c.get("player")!;
@@ -492,10 +483,7 @@ account.get(ACCOUNT_PATH, requirePlayer, async (c) => renderAccount(c));
  * own behalf.
  */
 account.post(ACCOUNT_PATH, requirePlayer, async (c) => {
-  const origin = c.req.header("origin");
-  if (origin !== undefined && origin !== originOf(c.env)) {
-    return c.text("Forbidden", 403);
-  }
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
   const now = new Date(Date.now());
   const player = c.get("player")!;

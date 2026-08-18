@@ -1,8 +1,10 @@
+import type { Context } from "hono";
 import { Hono } from "hono";
+import { wrongOrigin } from "../auth/origin.js";
 import { gamePath, ownerFixturePath } from "../auth/paths.js";
-import { requirePlayer } from "../auth/session.js";
+import { requirePlayer, type Player } from "../auth/session.js";
 import { recordAudit } from "../db/audit.js";
-import { getDb } from "../db/client.js";
+import { getDb, type Db } from "../db/client.js";
 import {
   countBroadcastsSince,
   listFixtureRecipients,
@@ -21,28 +23,13 @@ import {
 import { parseBroadcastForm, type BroadcastFormValues } from "../domain/broadcast-form.js";
 import { MAX_BROADCASTS_PER_GAME_PER_DAY, utcDayStart } from "../domain/broadcast-limit.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import type { AppEnv, Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
+import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendBroadcast } from "../notify/send-broadcast.js";
 import { renderBroadcastPage, type BroadcastPageParams } from "../views/broadcast.js";
 
 export const broadcast = new Hono<AppEnv>();
-
-/** This deployment's own origin, matching the `wrongOrigin` in every other state-changing route file. */
-function originOf(env: Bindings): string {
-  return new URL(env.BETTER_AUTH_URL).origin;
-}
-
-/**
- * Rejects a cross-site form post. Mirrors `wrongOrigin` in `src/routes/games.ts`
- * and `src/routes/account.ts`: a browser always sends `Origin` on a
- * cross-site form submission, so a *mismatched* one is refused, and a
- * *missing* one is a non-browser client acting on its own behalf.
- */
-function wrongOrigin(c: { req: { header: (name: string) => string | undefined }; env: Bindings }): boolean {
-  const origin = c.req.header("origin");
-  return origin !== undefined && origin !== originOf(c.env);
-}
 
 /** What the cap refusal says on the page, naming the number so raising it needs no copy change elsewhere. */
 function capMessage(): string {
@@ -173,13 +160,43 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
  * — `games.ts`'s own `publishTeams` and `notifyRemovedPlayer` carry the same
  * `catch`, for the same reason: without it, a thrown D1 error here vanishes
  * entirely, with no line anywhere saying the send never happened.
+ *
+ * **Also writes the durable ceiling-deferral record (TR-31, N-10).** This is
+ * the hook `sendBroadcast`'s own `BroadcastSendResult` was going begging for:
+ * a ceiling refusal deletes its `notification_log` row (`applySendResult`),
+ * so without a row here "was this player ever told?" becomes unanswerable —
+ * exactly the gap N-2/N-3/N-4/N-9 each closed the same way
+ * (`recordCeilingDeferral`). Written from the route's continuation, after
+ * awaiting the send, matching N-9's `publishTeams` shape — not inside
+ * `sendBroadcast` itself, which stays a pure sender with no audit-writing of
+ * its own. No `collapseWindowMs`: a broadcast is an act of a person, already
+ * capped at `MAX_BROADCASTS_PER_GAME_PER_DAY`, so — unlike the sweep-driven
+ * N-1/N-4 — the row count is already bounded, and a collapse window would
+ * silently drop the second or third deferral of the same hour.
  */
 async function backgroundSend(
   env: AppEnv["Bindings"],
   params: Parameters<typeof sendBroadcast>[0],
 ): Promise<void> {
   try {
-    await sendBroadcast(params);
+    const result = await sendBroadcast(params);
+    if (result.deferred > 0) {
+      await recordCeilingDeferral(params.db, {
+        action: "game.broadcast_email_deferred",
+        notificationType: "n10",
+        entityType: "game",
+        entityId: params.gameId,
+        // Names *which* broadcast this was: `entityId` is the game, not a
+        // per-message id, so two broadcasts deferred on the same game in the
+        // same day would otherwise be indistinguishable in this row.
+        broadcastId: params.broadcastId,
+        playerIds: result.deferredPlayerIds,
+        now: params.now,
+      });
+      console.error(
+        `broadcast (N-10) refused by the daily send ceiling for ${result.deferred} player(s) and NOTHING WILL RETRY IT (audit_log row written): broadcast ${params.broadcastId} on game ${params.gameId}`,
+      );
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     console.error(`sendBroadcast: broadcast ${params.broadcastId} on game ${params.gameId} failed: ${reason}`);
@@ -187,22 +204,112 @@ async function backgroundSend(
 }
 
 /**
- * Sending a game-scoped quick message (M15 spec §2, §7, §8, N-10).
+ * What the two routes below need to know about their scope, everything else
+ * being identical between them: which page to re-render a refusal on, which
+ * counts reduction to read `recipientCount` from, and which page a
+ * successful send redirects to.
+ */
+interface SendScope {
+  game: { id: string; name: string; timezone: string };
+  /** Present only for the fixture-scoped route; `null` means "everyone". */
+  fixture: { id: string; whenLocal: string } | null;
+  formScope: "game" | "fixture";
+  counts: Record<BroadcastAudience, number>;
+  redirectTo: string;
+}
+
+/**
+ * The shared body of both `POST` routes below (M15 spec §2, §7, §8, N-10) —
+ * ownership and fixture-ownership have already been checked by the caller,
+ * so this starts at parsing the form.
  *
- * The audit row is written **before** `waitUntil` hands the send off, because
- * it is what `countBroadcastsSince` counts — the daily cap (BR-36). Writing
- * it after would let two concurrent submissions each read a count of zero and
- * both send, and the cap would not cap anything. `recipientCount` on that row
- * is computed here, synchronously, from the same reduction `countsForGame`
- * gives the `GET` page: the send that would tell the real count runs inside
- * `waitUntil`, after this row is already written, so there is no later count
- * to read it from. The row records who the message was *aimed at*; the
- * per-recipient truth of what actually went out lives in `notification_log`.
+ * The audit row is written **before** `waitUntil` hands the send off,
+ * because it is what `countBroadcastsSince` counts — the daily cap (BR-36).
+ * Writing it after would let two concurrent submissions each read a count of
+ * zero and both send, and the cap would not cap anything. `recipientCount`
+ * on that row is computed here, synchronously, from `scope.counts` — the
+ * same reduction the `GET` page renders — rather than from the send result,
+ * which does not exist yet when this row is written. The row records who the
+ * message was *aimed at*; the per-recipient truth of what actually went out
+ * lives in `notification_log`.
  *
- * `fixtureId: null` and `audience: "everyone"` are passed explicitly to
- * `sendBroadcast` even though the sender already scopes the fixture out of an
- * `everyone` send itself — belt-and-braces, so this route stays honest about
- * what it is regardless of what the sender happens to do with it.
+ * `parseBroadcastForm` forces `audience` to `"everyone"` on the `"game"`
+ * scope regardless of what was submitted, so reading `parsed.values.audience`
+ * uniformly here is safe on both scopes without a branch.
+ */
+async function handleSend(
+  c: Context<AppEnv>,
+  db: Db,
+  player: Player,
+  scope: SendScope,
+  now: Date,
+): Promise<Response> {
+  const rerender = (values: BroadcastFormValues, extra: Partial<BroadcastPageParams>) =>
+    c.html(
+      renderBroadcastPage({
+        gameId: scope.game.id,
+        gameName: scope.game.name,
+        fixture: scope.fixture ?? undefined,
+        counts: scope.counts,
+        values,
+        ...extra,
+      }),
+      422,
+    );
+
+  const form = await c.req.parseBody();
+  const parsed = parseBroadcastForm(form, scope.formScope);
+  if (!parsed.ok) return rerender(parsed.values, { errors: parsed.errors });
+
+  const sentToday = await countBroadcastsSince(db, scope.game.id, utcDayStart(now));
+  if (sentToday >= MAX_BROADCASTS_PER_GAME_PER_DAY) {
+    return rerender(parsed.values, { problem: capMessage() });
+  }
+
+  const broadcastId = crypto.randomUUID();
+  const fixtureId = scope.fixture === null ? null : scope.fixture.id;
+  const recipientCount = scope.counts[parsed.values.audience];
+  const channels = { email: parsed.values.email, push: parsed.values.push };
+
+  await recordAudit(db, {
+    actorPlayerId: player.id,
+    entityType: "game",
+    entityId: scope.game.id,
+    action: "game.broadcast_sent",
+    // Never the message body (spec §8) — see AUDIT_ACTIONS's doc comment for
+    // "game.broadcast_sent".
+    after: { audience: parsed.values.audience, channels, recipientCount, fixtureId, subject: parsed.values.subject },
+    now,
+  });
+
+  c.executionCtx.waitUntil(
+    backgroundSend(c.env, {
+      db,
+      notifier: createNotifier(c.env, db, now),
+      broadcastId,
+      gameId: scope.game.id,
+      fixtureId,
+      audience: parsed.values.audience,
+      subject: parsed.values.subject,
+      message: parsed.values.message,
+      organiserName: player.name,
+      channels,
+      now,
+      responseTokenSecret: c.env.RESPONSE_TOKEN_SECRET,
+    }),
+  );
+
+  return c.redirect(scope.redirectTo, 303);
+}
+
+/**
+ * Sending a game-scoped quick message: a message to everyone in the squad.
+ *
+ * `fixture: null` on the `SendScope` passed to `handleSend` is what makes
+ * `sendBroadcast` receive `fixtureId: null` — belt-and-braces alongside
+ * `sendBroadcast`'s own scoping-out of a fixture on an `everyone` audience,
+ * so this route stays honest about what it is regardless of what the sender
+ * happens to do with it.
  */
 broadcast.post("/g/:id/message", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
@@ -214,63 +321,25 @@ broadcast.post("/g/:id/message", requirePlayer, async (c) => {
 
   const now = new Date(Date.now());
   const recipients = await listGameRecipients(db, game.id);
-  const counts = countsForGame(recipients);
 
-  const rerender = (values: BroadcastFormValues, extra: Partial<BroadcastPageParams>) =>
-    c.html(renderBroadcastPage({ gameId: game.id, gameName: game.name, counts, values, ...extra }), 422);
-
-  const form = await c.req.parseBody();
-  const parsed = parseBroadcastForm(form, "game");
-  if (!parsed.ok) return rerender(parsed.values, { errors: parsed.errors });
-
-  const sentToday = await countBroadcastsSince(db, game.id, utcDayStart(now));
-  if (sentToday >= MAX_BROADCASTS_PER_GAME_PER_DAY) {
-    return rerender(parsed.values, { problem: capMessage() });
-  }
-
-  const broadcastId = crypto.randomUUID();
-  const recipientCount = counts.everyone;
-  const channels = { email: parsed.values.email, push: parsed.values.push };
-
-  await recordAudit(db, {
-    actorPlayerId: player.id,
-    entityType: "game",
-    entityId: game.id,
-    action: "game.broadcast_sent",
-    // Never the message body (spec §8) — see AUDIT_ACTIONS's doc comment for
-    // "game.broadcast_sent".
-    after: { audience: "everyone", channels, recipientCount, fixtureId: null, subject: parsed.values.subject },
+  return handleSend(
+    c,
+    db,
+    player,
+    {
+      game,
+      fixture: null,
+      formScope: "game",
+      counts: countsForGame(recipients),
+      redirectTo: gamePath(game.id),
+    },
     now,
-  });
-
-  c.executionCtx.waitUntil(
-    backgroundSend(c.env, {
-      db,
-      notifier: createNotifier(c.env, db, now),
-      broadcastId,
-      gameId: game.id,
-      fixtureId: null,
-      audience: "everyone",
-      subject: parsed.values.subject,
-      message: parsed.values.message,
-      organiserName: player.name,
-      channels,
-      now,
-      responseTokenSecret: c.env.RESPONSE_TOKEN_SECRET,
-    }),
   );
-
-  return c.redirect(gamePath(game.id), 303);
 });
 
 /**
- * Sending a fixture-scoped quick message (M15 spec §2, §7, §8, N-10).
- *
- * Same ordering and the same reasoning as `POST /g/:id/message` above: the
- * audit row is the rate-limit counter and is written before the send is
- * handed to `waitUntil`, and `recipientCount` is read from `countsForFixture`
- * — the same reduction the `GET` page renders — rather than from the send
- * result, which does not exist yet when this row is written.
+ * Sending a fixture-scoped quick message: a message to one of the four
+ * response-derived audiences.
  *
  * Loads and checks the fixture the same way the `GET` handler above does
  * (TR-18): `findGameForOwner` first, then the fixture, then a check that it
@@ -292,59 +361,18 @@ broadcast.post("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
 
   const now = new Date(Date.now());
   const recipients = await listFixtureRecipients(db, fixtureId);
-  const counts = countsForFixture(recipients);
-  const fixtureParams = { id: fixture.id, whenLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone) };
 
-  const rerender = (values: BroadcastFormValues, extra: Partial<BroadcastPageParams>) =>
-    c.html(
-      renderBroadcastPage({ gameId: game.id, gameName: game.name, fixture: fixtureParams, counts, values, ...extra }),
-      422,
-    );
-
-  const form = await c.req.parseBody();
-  const parsed = parseBroadcastForm(form, "fixture");
-  if (!parsed.ok) return rerender(parsed.values, { errors: parsed.errors });
-
-  const sentToday = await countBroadcastsSince(db, game.id, utcDayStart(now));
-  if (sentToday >= MAX_BROADCASTS_PER_GAME_PER_DAY) {
-    return rerender(parsed.values, { problem: capMessage() });
-  }
-
-  const broadcastId = crypto.randomUUID();
-  const recipientCount = counts[parsed.values.audience];
-  const channels = { email: parsed.values.email, push: parsed.values.push };
-
-  await recordAudit(db, {
-    actorPlayerId: player.id,
-    entityType: "game",
-    entityId: game.id,
-    action: "game.broadcast_sent",
-    after: {
-      audience: parsed.values.audience,
-      channels,
-      recipientCount,
-      fixtureId: fixture.id,
-      subject: parsed.values.subject,
+  return handleSend(
+    c,
+    db,
+    player,
+    {
+      game,
+      fixture: { id: fixture.id, whenLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone) },
+      formScope: "fixture",
+      counts: countsForFixture(recipients),
+      redirectTo: ownerFixturePath(game.id, fixture.id),
     },
     now,
-  });
-
-  c.executionCtx.waitUntil(
-    backgroundSend(c.env, {
-      db,
-      notifier: createNotifier(c.env, db, now),
-      broadcastId,
-      gameId: game.id,
-      fixtureId: fixture.id,
-      audience: parsed.values.audience,
-      subject: parsed.values.subject,
-      message: parsed.values.message,
-      organiserName: player.name,
-      channels,
-      now,
-      responseTokenSecret: c.env.RESPONSE_TOKEN_SECRET,
-    }),
   );
-
-  return c.redirect(ownerFixturePath(game.id, fixture.id), 303);
 });

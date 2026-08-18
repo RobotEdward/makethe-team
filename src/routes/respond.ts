@@ -382,7 +382,8 @@ export async function notifyPromotedPlayer(
         await recordCeilingDeferral(db, {
           action: "fixture.promotion_email_deferred",
           notificationType: "n2",
-          fixtureId,
+          entityType: "fixture",
+          entityId: fixtureId,
           playerIds: [promoted.playerId],
           now,
         });

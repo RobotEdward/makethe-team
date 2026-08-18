@@ -1,6 +1,6 @@
-import { SELF } from "cloudflare:test";
+import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { auditLog, emailQuota, notificationLog, players } from "../../src/db/schema.js";
 import { MAX_BROADCASTS_PER_GAME_PER_DAY } from "../../src/domain/broadcast-limit.js";
 import { MAX_MESSAGE_LENGTH } from "../../src/domain/broadcast-form.js";
@@ -61,15 +61,39 @@ async function settleSend(atLeast: number, timeoutMs = 2000): Promise<void> {
 }
 
 /**
- * Waits a beat for a background `waitUntil` that is expected to produce no
- * lasting `notification_log` row at all — a route-level 422 refusal (nothing
- * ever queued), or a ceiling deferral (queued, then deleted). `settleSend`
- * cannot express either: it polls for rows to *appear*, and both of these
- * leave the table empty throughout, which `settleSend`'s loop would treat as
- * already settled before the background task has even started.
+ * Waits for `backgroundSend`'s ceiling-deferral write — the
+ * `game.broadcast_email_deferred` audit row `recordCeilingDeferral` writes
+ * once `sendBroadcast` has returned and `applySendResult` has already
+ * deleted every ceiling-refused `notification_log` row. Polling for *this*
+ * row, rather than sleeping a fixed amount, is what makes "nothing was
+ * sent" checks that follow non-vacuous: a fixed sleep can expire before a
+ * slow (or buggy, row-leaking) background task finishes, and the assertion
+ * would then pass on an empty table for the wrong reason. The timeout is
+ * only a backstop against a background task that never finishes at all.
  */
-async function pauseForBackground(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 150));
+async function settleDeferral(atLeast: number, timeoutMs = 2000): Promise<void> {
+  const db = testDb();
+  const deadline = Date.now() + timeoutMs;
+  const read = () => db.select().from(auditLog).where(eq(auditLog.action, "game.broadcast_email_deferred"));
+  let rows = await read();
+  while (rows.length < atLeast && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    rows = await read();
+  }
+}
+
+/**
+ * Polls for `backgroundSend`'s own `catch` having logged, rather than
+ * sleeping a fixed amount and hoping — the same reasoning as `settleDeferral`.
+ * `spy` is a `console.error` mock the caller installs; `match` identifies the
+ * one call this test is waiting for among any other `console.error` traffic.
+ */
+async function settleLoggedError(spy: { mock: { calls: unknown[][] } }, match: string, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const seen = () => spy.mock.calls.some((call) => typeof call[0] === "string" && call[0].includes(match));
+  while (!seen() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 /** A game with one organiser and one addressable member, ready to message. */
@@ -168,8 +192,10 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
       cookie,
     );
     const body = await response.text();
-    await pauseForBackground();
 
+    // No `waitUntil` is ever registered on this path — `parseBroadcastForm`
+    // fails before `recordAudit`/the send — so nothing here is racing a
+    // background task and no wait is needed.
     expect(response.status).toBe(422);
     expect(body).toContain("Heads up");
     expect(body).toContain("Bring bibs please.");
@@ -186,8 +212,9 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
       { ...VALID_FIELDS, audience: "playing", message: "x".repeat(MAX_MESSAGE_LENGTH + 1) },
       cookie,
     );
-    await pauseForBackground();
 
+    // No `waitUntil` is registered on a form-validation refusal — see the
+    // previous test.
     expect(response.status).toBe(422);
     expect(await testDb().select().from(notificationLog)).toEqual([]);
     expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);
@@ -213,8 +240,9 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
       cookie,
     );
     const body = await fourth.text();
-    await pauseForBackground();
 
+    // The cap refusal, like the form-validation refusal, returns before
+    // `recordAudit`/`waitUntil` ever run — nothing to wait for.
     expect(fourth.status).toBe(422);
     expect(body).toMatch(new RegExp(`${MAX_BROADCASTS_PER_GAME_PER_DAY}`));
     const rows = await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"));
@@ -271,8 +299,9 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
       { ...VALID_FIELDS, audience: "playing" },
       cookie,
     );
-    await pauseForBackground();
 
+    // The 404 fires before the handler ever reads the form — no background
+    // task is registered.
     expect(response.status).toBe(404);
     expect(await testDb().select().from(notificationLog)).toEqual([]);
     expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);
@@ -292,7 +321,7 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     expect(response.status).toBe(404);
   });
 
-  it("writes the audit row even when the send itself fails to deliver, because it is the counter", async () => {
+  it("writes the audit row before the redirect, before the send is even attempted — and it survives a failed delivery (TR-31 ceiling)", async () => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId } = await seedFixture(viewerId);
     const db = testDb();
@@ -311,16 +340,99 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
       { subject: "Ceiling test", message: "This will not deliver.", email: "on", audience: "playing" },
       cookie,
     );
-    // A ceiling refusal deletes the row it queued, so the table ends up
-    // empty either way — the same reason `settleSend` cannot be used here.
-    await pauseForBackground();
 
+    // Read straight after the response, before any wait: the route awaits
+    // `recordAudit` itself, ahead of `c.executionCtx.waitUntil`, so the row
+    // must already exist here. An implementation that instead wrote it from
+    // *inside* the `waitUntil` continuation would still pass every other
+    // assertion in this file — `sendBroadcast` returns normally on a
+    // ceiling refusal rather than throwing — so this is the one check that
+    // actually binds "written before the send", not merely "not removed by
+    // a failed send".
     expect(response.status).toBe(303);
-    // The ceiling refusal deletes its `notification_log` row (`applySendResult`).
-    expect(await testDb().select().from(notificationLog)).toEqual([]);
-    // But the counter stands — it was written before the send was ever attempted.
     const rows = await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"));
     expect(rows).toHaveLength(1);
+
+    // Now wait for the background continuation to actually finish — proven
+    // by its own durable record, `game.broadcast_email_deferred` — rather
+    // than a fixed sleep.
+    await settleDeferral(1);
+
+    // The ceiling refusal deletes its `notification_log` row (`applySendResult`).
+    expect(await testDb().select().from(notificationLog)).toEqual([]);
+    // The counter itself is untouched by the failed delivery.
+    expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toHaveLength(1);
+  });
+
+  it("names the broadcast and the deferred players on the durable ceiling record (TR-31, N-10)", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, inPlayerId } = await seedFixture(viewerId);
+    const db = testDb();
+    const today = new Date(Date.now()).toISOString().slice(0, 10);
+    await db
+      .insert(emailQuota)
+      .values({ day: today, sentCount: 50 })
+      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 50 } });
+
+    await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { subject: "Ceiling test", message: "This will not deliver.", email: "on", audience: "playing" },
+      cookie,
+    );
+    await settleDeferral(1);
+
+    const [deferral] = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "game.broadcast_email_deferred"));
+    // A game entity id, not a fixture — this caller has no single fixture
+    // for a game-scoped send, so `recordCeilingDeferral`'s widened
+    // `entityType`/`entityId` is what makes this call possible at all.
+    expect(deferral).toMatchObject({ actorPlayerId: null, entityType: "game", entityId: gameId });
+    const after = JSON.parse(deferral!.afterJson!) as {
+      notificationType: string;
+      playerIds: string[];
+      broadcastId: string;
+    };
+    expect(after.notificationType).toBe("n10");
+    expect(after.playerIds).toEqual([inPlayerId]);
+    // `entityId` names the game, not the message — `broadcastId` is what
+    // says *which* broadcast this deferral belongs to.
+    expect(after.broadcastId).toEqual(expect.any(String));
+  });
+
+  it("logs and does not crash when the background send itself throws", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFixture(viewerId);
+    // `signLeaveToken` throws synchronously on an unusable secret
+    // (`isUsableSecret`, `src/domain/token.ts`) — the one call in
+    // `sendBroadcast`'s recipient loop that is not already wrapped in its
+    // own `try`/`catch`, so this reaches `backgroundSend`'s own `catch`
+    // rather than one of `sendBroadcast`'s internal ones.
+    const previousSecret = env.RESPONSE_TOKEN_SECRET;
+    env.RESPONSE_TOKEN_SECRET = "";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const response = await appPost(
+        `/g/${gameId}/f/${fixtureId}/message`,
+        { ...VALID_FIELDS, audience: "playing" },
+        cookie,
+      );
+      await settleLoggedError(errorSpy, `on game ${gameId} failed:`);
+
+      expect(response.status).toBe(303);
+      // The audit row — the counter — was written before the throw could
+      // happen at all.
+      expect(
+        await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent")),
+      ).toHaveLength(1);
+      // Nothing was queued: the throw happens before `insertQueuedLogRows`.
+      expect(await testDb().select().from(notificationLog)).toEqual([]);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(`on game ${gameId} failed:`));
+    } finally {
+      env.RESPONSE_TOKEN_SECRET = previousSecret;
+      errorSpy.mockRestore();
+    }
   });
 });
 
@@ -356,8 +468,8 @@ describe("POST /g/:id/message", () => {
     await insertMembership(db, gameId, otherOwner, { role: "owner" });
 
     const response = await appPost(`/g/${gameId}/message`, VALID_FIELDS, cookie);
-    await pauseForBackground();
 
+    // No `waitUntil` is registered on a 404 — nothing to wait for.
     expect(response.status).toBe(404);
     expect(await testDb().select().from(notificationLog)).toEqual([]);
     expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);

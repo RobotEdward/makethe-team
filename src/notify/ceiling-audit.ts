@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { buildAuditInsert } from "../db/audit.js";
 import type { Db } from "../db/client.js";
 import { auditLog } from "../db/schema.js";
-import type { AuditAction } from "../domain/audit.js";
+import type { AuditAction, AuditEntityType } from "../domain/audit.js";
 import type { NotificationType } from "./dedupe-key.js";
 
 /**
@@ -71,9 +71,25 @@ export async function recordCeilingDeferral(
   params: {
     action: Extract<AuditAction, `${string}_email_deferred`>;
     notificationType: NotificationType;
-    fixtureId: string;
+    /**
+     * What the deferred message was about. `fixture` for every N-1/N-2/N-3/N-4/N-9
+     * caller so far; `game` for N-10's game-scoped broadcast, which has no
+     * fixture to key on. Widened from a hard-coded `"fixture"` (M15) so a
+     * caller with no fixture is not forced to invent one.
+     */
+    entityType: AuditEntityType;
+    entityId: string;
     /** Everyone whose copy of the message was refused. One row per event, not per player. */
     playerIds: readonly string[];
+    /**
+     * N-10 only: which broadcast this was, since `entityId` is the *game*
+     * for that caller, not a per-message id — without this, two broadcasts
+     * deferred on the same game in the same day would be indistinguishable
+     * in this row. Omitted entirely (not merely `undefined`) for every other
+     * caller, whose `entityId` already names the one fixture the message was
+     * about.
+     */
+    broadcastId?: string;
     now: Date;
     /** See "`collapseWindowMs`" above. Omit for a route call that already fires at most once. */
     collapseWindowMs?: number;
@@ -85,8 +101,8 @@ export async function recordCeilingDeferral(
       .from(auditLog)
       .where(
         and(
-          eq(auditLog.entityType, "fixture"),
-          eq(auditLog.entityId, params.fixtureId),
+          eq(auditLog.entityType, params.entityType),
+          eq(auditLog.entityId, params.entityId),
           eq(auditLog.action, params.action),
         ),
       )
@@ -102,10 +118,14 @@ export async function recordCeilingDeferral(
     // player or owner did — even when the send that hit it was triggered by
     // someone's request.
     actorPlayerId: null,
-    entityType: "fixture",
-    entityId: params.fixtureId,
+    entityType: params.entityType,
+    entityId: params.entityId,
     action: params.action,
-    after: { notificationType: params.notificationType, playerIds: [...params.playerIds] },
+    after: {
+      notificationType: params.notificationType,
+      playerIds: [...params.playerIds],
+      ...(params.broadcastId !== undefined ? { broadcastId: params.broadcastId } : {}),
+    },
     now: params.now,
   });
 }

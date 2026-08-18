@@ -1,6 +1,7 @@
 import { and, eq, ne } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { wrongOrigin } from "../auth/origin.js";
 import {
   DASHBOARD_PATH,
   NEW_GAME_PATH,
@@ -46,7 +47,7 @@ import {
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
-import type { AppEnv, Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
@@ -76,21 +77,6 @@ import { notifyPromotedPlayer } from "./respond.js";
 export const gamesRoutes = new Hono<AppEnv>();
 
 /** This deployment's own origin, as the state-changing handlers compare it. */
-function originOf(env: Bindings): string {
-  return new URL(env.BETTER_AUTH_URL).origin;
-}
-
-/**
- * Rejects a cross-site form post. Mirrors `POST /dashboard` and `POST
- * /sign-out`: a browser always sends `Origin` on a cross-site form
- * submission, and a missing header is a non-browser client acting on its own
- * behalf, which is allowed.
- */
-function wrongOrigin(c: { req: { header: (name: string) => string | undefined }; env: Bindings }): boolean {
-  const origin = c.req.header("origin");
-  return origin !== undefined && origin !== originOf(c.env);
-}
-
 /** Every string field of the submitted body, for redisplaying a rejected form. */
 function submittedValues(form: Record<string, unknown>): Record<string, string> {
   const values: Record<string, string> = {};
@@ -1119,7 +1105,8 @@ async function publishTeams(env: AppEnv["Bindings"], fixtureId: string, publishe
       await recordCeilingDeferral(db, {
         action: "fixture.teams_email_deferred",
         notificationType: "n9",
-        fixtureId,
+        entityType: "fixture",
+        entityId: fixtureId,
         playerIds: result.deferredPlayerIds,
         now: publishedAt,
       });

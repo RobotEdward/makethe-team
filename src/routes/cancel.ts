@@ -365,7 +365,8 @@ async function sendCancellation(
       await recordCeilingDeferral(db, {
         action: "fixture.cancellation_email_deferred",
         notificationType: "n3",
-        fixtureId: context.fixture.id,
+        entityType: "fixture",
+        entityId: context.fixture.id,
         playerIds: summary.deferredPlayerIds,
         now,
       });

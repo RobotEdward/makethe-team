@@ -423,7 +423,8 @@ async function sendDueReminders(
         await recordCeilingDeferral(db, {
           action: "fixture.reminder_email_deferred",
           notificationType: "n1",
-          fixtureId: fixture.id,
+          entityType: "fixture",
+          entityId: fixture.id,
           playerIds: deferredPlayerIds,
           now,
           collapseWindowMs: CEILING_DEFERRAL_COLLAPSE_WINDOW_MS,

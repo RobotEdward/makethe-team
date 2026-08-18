@@ -419,7 +419,8 @@ async function processFixture(
     await recordCeilingDeferral(db, {
       action: "fixture.attention_email_deferred",
       notificationType: "n4",
-      fixtureId,
+      entityType: "fixture",
+      entityId: fixtureId,
       playerIds: deferredPlayerIds,
       now,
       // N-4 retries every sweep tick, so a sustained ceiling would otherwise
