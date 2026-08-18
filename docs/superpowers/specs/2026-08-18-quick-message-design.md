@@ -201,8 +201,10 @@ the fixture's local time and venue when fixture-scoped (via
 link (BR-22).
 
 **Push copy:** a `PUSH_COPY.n10` entry taking the same payload as the template,
-title from the subject and body from the message, both truncated to the tray
-budget.
+title from the subject and body from the message. Only the title is truncated,
+to `TITLE_MAX_CHARS`; the body is passed through whole, because the form
+already caps the message at `MAX_MESSAGE_LENGTH` (500 characters), far inside
+the 4096-byte push payload limit.
 
 **No reply-to.** The email sends from the fixed address like every other, and
 the organiser is named in the body. Adding a reply-to would mean threading a

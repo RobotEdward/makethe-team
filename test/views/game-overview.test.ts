@@ -158,12 +158,13 @@ describe("the invite card (M12 §4)", () => {
     expect(card).not.toContain("button danger");
   });
 
-  it("offers a way to message the whole squad, beside the invite actions (M15 Task 10)", () => {
-    // Inside the existing `.actions` form rather than a group of its own —
-    // the invite card's rotate button is this page's one primary action, so
-    // the broadcast link must not carry `button primary` either.
-    const card = cardOf(render())!;
-    expect(card).toContain(`<a class="button" href="/g/g-1/message">Message everyone</a>`);
+  it("offers a way to message the whole squad, outside the invite card and its rotate form (M15 Task 10)", () => {
+    // Its own block, not a control of `POST /invite/rotate`: nested in that
+    // form it read as part of replacing the invite link. Still `button`, never
+    // `button primary` — the rotate button is this page's one primary action.
+    const html = render();
+    expect(html).toContain(`<p class="actions"><a class="button" href="/g/g-1/message">Message everyone</a></p>`);
+    expect(cardOf(html)!).not.toContain("Message everyone");
   });
 });
 

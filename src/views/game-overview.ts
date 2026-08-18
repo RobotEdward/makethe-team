@@ -136,9 +136,13 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       </details>
       <form class="actions" method="post" action="${escapeHtml(`/g/${gameId}/invite/rotate`)}">
         <button class="button" type="submit">Replace this link</button>
-        <a class="button" href="${escapeHtml(gameMessagePath(gameId))}">Message everyone</a>
       </form>
     </div>
+
+    <!-- Outside the invite card, and outside the rotate form: messaging the
+         squad has nothing to do with replacing the invite link, and nesting it
+         in that form read as one of its controls. -->
+    <p class="actions"><a class="button" href="${escapeHtml(gameMessagePath(gameId))}">Message everyone</a></p>
 
     <h2>Squad (${squad.length})</h2>
     <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>

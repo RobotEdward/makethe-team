@@ -227,10 +227,7 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
  * N-1/N-4 — the row count is already bounded, and a collapse window would
  * silently drop the second or third deferral of the same hour.
  */
-async function backgroundSend(
-  env: AppEnv["Bindings"],
-  params: Parameters<typeof sendBroadcast>[0],
-): Promise<void> {
+async function backgroundSend(params: Parameters<typeof sendBroadcast>[0]): Promise<void> {
   try {
     const result = await sendBroadcast(params);
     if (result.deferred > 0) {
@@ -251,6 +248,10 @@ async function backgroundSend(
       );
     }
   } catch (error) {
+    // A throw after the notifier has already deferred some players loses the
+    // `game.broadcast_email_deferred` row above with the result that carried
+    // the ids: the deferrals happened, and this line is all that is left of
+    // them.
     const reason = error instanceof Error ? error.message : String(error);
     console.error(`sendBroadcast: broadcast ${params.broadcastId} on game ${params.gameId} failed: ${reason}`);
   }
@@ -356,7 +357,7 @@ async function handleSend(
   });
 
   c.executionCtx.waitUntil(
-    backgroundSend(c.env, {
+    backgroundSend({
       db,
       notifier: createNotifier(c.env, db, now),
       broadcastId,
