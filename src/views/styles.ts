@@ -353,12 +353,13 @@ export const FORM_CSS = `
   main { max-width: 40rem; }
   .field { margin: 1.1rem 0; }
   .field label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
-  .field input, .field select {
+  .field input, .field select, .field textarea {
     width: 100%; padding: 0.6rem 0.7rem; font: inherit;
     color: var(--fg); background: var(--bg);
     border: 2px solid var(--line); border-radius: 0.5rem;
   }
-  .field input:focus-visible, .field select:focus-visible {
+  .field textarea { min-height: 8rem; resize: vertical; }
+  .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible {
     outline: 3px solid var(--accent); outline-offset: 1px;
   }
   .field .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
@@ -377,7 +378,7 @@ export const FORM_CSS = `
      on whatever follows because what follows differs per page. */
   .readout-label { margin-top: 1.1rem; font-size: var(--t-support); color: var(--mut); }
   .readout-label + p { color: var(--fg); margin-bottom: 1.1rem; }
-  .field-invalid input, .field-invalid select { border-color: var(--warn); }
+  .field-invalid input, .field-invalid select, .field-invalid textarea { border-color: var(--warn); }
   .row { display: flex; gap: 1rem; }
   .row .field { flex: 1; }
   /* A checkbox with a label and an explanatory hint. Written as a grid with

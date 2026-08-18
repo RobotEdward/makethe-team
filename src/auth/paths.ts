@@ -229,6 +229,26 @@ export function ownerGuestRemovePath(gameId: string, fixtureId: string, playerId
 }
 
 /**
+ * The game-scoped quick-message compose page (M15 spec §2): a message to
+ * everyone in the squad, resolved from `memberships` rather than any one
+ * fixture's responses.
+ */
+export function gameMessagePath(gameId: string): string {
+  return `/g/${gameId}/message`;
+}
+
+/**
+ * The fixture-scoped quick-message compose page (M15 spec §2), offering the
+ * four response-derived audiences. A sibling of `ownerFixturePath` rather
+ * than a query parameter on it, so the two scopes have distinct, bookmarkable
+ * URLs and the route registration can entitle each the same way the rest of
+ * this file's fixture-scoped paths do.
+ */
+export function fixtureMessagePath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/message`;
+}
+
+/**
  * The web app manifest (M13). Served to everyone, unauthenticated: the
  * browser fetches it on first visit, long before any session exists.
  */
