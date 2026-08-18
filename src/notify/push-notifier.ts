@@ -42,11 +42,26 @@ const TTL_SECONDS = 4 * 7 * 24 * 60 * 60;
  * miniflare level (`vitest.config.ts`'s `outboundService`), so a forgotten
  * stub fails loudly instead of reaching the internet. `now` is a parameter
  * for the same reason `createNotifier` takes one.
+ *
+ * `keys` accepts a bare `VapidKeys` or a `Promise<VapidKeys>` because
+ * `createNotifier` (`factory.ts`) has to stay synchronous for its many
+ * existing callers, while importing and verifying a VAPID keypair is
+ * inherently async. Resolving that promise happens inside `sendOne`, per
+ * message, inside the `try`/`catch` that already turns everything else this
+ * class can fail on into an ordinary `SendResult` — not in `send` and not in
+ * the constructor. That placement matters: a rejected import must become a
+ * failed result for *this notifier's own messages only*. `RouterNotifier`
+ * runs the email and push legs concurrently via `Promise.all`; if this class
+ * let that rejection propagate out of `send`, it would reject the combined
+ * `Promise.all` and take the email leg's already-computed results down with
+ * it, even though those emails may have genuinely been sent — exactly the
+ * "one leg's answer attributed to the other" failure this task exists to
+ * prevent, arriving through the error path instead of the index path.
  */
 export class PushNotifier implements Notifier {
   constructor(
     private readonly db: Db,
-    private readonly keys: VapidKeys,
+    private readonly keys: VapidKeys | Promise<VapidKeys>,
     private readonly fetchImpl: typeof fetch,
     private readonly now: Date,
   ) {}
@@ -72,6 +87,20 @@ export class PushNotifier implements Notifier {
       return { ok: false, error: "push-notifier-received-non-push-message" };
     }
 
+    let keys: VapidKeys;
+    try {
+      keys = await this.keys;
+    } catch (error) {
+      // A mismatched or malformed VAPID pair is a deterministic
+      // configuration error — `assertVapidKeysMatch`/`importVapidKeys` will
+      // reject identically for every message and every device, not just
+      // this one. It is reported as an ordinary failed `SendResult` for
+      // this message, same as any other push failure, rather than thrown:
+      // see the class doc comment for why this must never escape `send`.
+      const detail = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: `vapid-key-error: ${detail}` };
+    }
+
     const subscriptions = await this.db
       .select()
       .from(pushSubscriptions)
@@ -95,7 +124,7 @@ export class PushNotifier implements Notifier {
     // sequentially, since it is the *messages* loop above that exists to
     // stay inside the Worker's subrequest budget.
     const outcomes = await Promise.all(
-      subscriptions.map((subscription) => this.sendToDevice(subscription, payload)),
+      subscriptions.map((subscription) => this.sendToDevice(subscription, payload, keys)),
     );
 
     const gone = outcomes.filter((outcome) => outcome.gone).map((outcome) => outcome.id);
@@ -138,13 +167,14 @@ export class PushNotifier implements Notifier {
   private async sendToDevice(
     subscription: typeof pushSubscriptions.$inferSelect,
     payload: string,
+    keys: VapidKeys,
   ): Promise<{ id: string; delivered: boolean; gone: boolean; error: string }> {
     try {
       const body = await encryptPayload(subscription, payload);
       const response = await this.fetchImpl(subscription.endpoint, {
         method: "POST",
         headers: {
-          ...(await vapidHeaders(subscription.endpoint, this.keys, this.now)),
+          ...(await vapidHeaders(subscription.endpoint, keys, this.now)),
           "Content-Type": "application/octet-stream",
           TTL: String(TTL_SECONDS),
         },

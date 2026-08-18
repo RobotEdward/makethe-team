@@ -262,4 +262,45 @@ describe("PushNotifier", () => {
 
     expect(result?.ok).toBe(false);
   });
+
+  it("accepts a Promise<VapidKeys> and resolves it lazily, so a request that never sends a push never awaits it", async () => {
+    // `createNotifier` (factory.ts) hands a still-pending Promise<VapidKeys>
+    // to PushNotifier so the async key import never forces createNotifier
+    // itself to become async — see PushNotifier's doc comment. This proves
+    // the happy path of that seam: a promise that resolves after send() is
+    // called still produces a normal successful result.
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/phone");
+    const notifier = new PushNotifier(db, Promise.resolve(keys), stubFetch(201), NOW);
+
+    const [result] = await notifier.send([pushMessageFor(playerId)]);
+
+    expect(result).toEqual({ ok: true, providerMessageId: null });
+  });
+
+  it("turns a rejected keys promise into a failed result for that message, never a thrown error", async () => {
+    // The Critical this test guards against: a mismatched or malformed
+    // VAPID pair rejects the keys promise `vapidKeys` (factory.ts) hands
+    // in. If PushNotifier let that rejection propagate out of `send`
+    // instead of catching it per message, RouterNotifier's `Promise.all`
+    // over [email.send(...), push.send(...)] would reject as a whole,
+    // discarding the email leg's already-computed results even though
+    // those emails may have genuinely been sent — attributing a push
+    // misconfiguration's damage to an unrelated channel. `send` here must
+    // resolve, not reject, and every push message in the batch must come
+    // back `ok: false` naming the cause.
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/phone");
+    const brokenKeys: Promise<VapidKeys> = Promise.reject(new Error("VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY do not match"));
+    brokenKeys.catch(() => {}); // keep this test's own setup from tripping an unhandled-rejection failure
+    const notifier = new PushNotifier(db, brokenKeys, stubFetch(201), NOW);
+
+    const results = await notifier.send([pushMessageFor(playerId), pushMessageFor(playerId)]);
+
+    expect(results).toHaveLength(2);
+    for (const result of results) {
+      expect(result.ok).toBe(false);
+      expect(result).toEqual({ ok: false, error: expect.stringContaining("do not match") });
+    }
+  });
 });

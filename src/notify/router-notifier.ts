@@ -39,12 +39,23 @@ export class RouterNotifier implements Notifier {
     const pushMessages: Message[] = [];
 
     messages.forEach((message, index) => {
-      if (message.channel === "email") {
-        emailIndices.push(index);
-        emailMessages.push(message);
-      } else {
-        pushIndices.push(index);
-        pushMessages.push(message);
+      // A `switch` with an exhaustive `default`, not `if (channel ===
+      // "email") {...} else {...}` — the same reasoning `notifier.ts`
+      // documents for the `Message` union itself: a bare `else` would route
+      // any future third channel to push by default, silently, with no
+      // compiler complaint. This shape means adding a channel breaks the
+      // build here until it's given its own case.
+      switch (message.channel) {
+        case "email":
+          emailIndices.push(index);
+          emailMessages.push(message);
+          break;
+        case "push":
+          pushIndices.push(index);
+          pushMessages.push(message);
+          break;
+        default:
+          message satisfies never;
       }
     });
 

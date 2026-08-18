@@ -271,4 +271,34 @@ describe("createNotifier", () => {
   it("throws for an empty string binding rather than defaulting silently", () => {
     expect(() => createNotifier(bindings(""), db, NOW)).toThrow();
   });
+
+  describe("env.PUSH_NOTIFIER", () => {
+    // The property that matters most for production today: wrangler.jsonc
+    // ships PUSH_NOTIFIER: "null" with no VAPID_* vars present at all (M14
+    // ships push dark until the real keypair exists). `bindings()` above
+    // always supplies all three VAPID values, which would hide a regression
+    // where a future edit reads a VAPID binding above the switch instead of
+    // only inside the "webpush" case — this test builds Bindings without
+    // any of them and proves createNotifier still doesn't throw.
+    it('does not require any VAPID binding when PUSH_NOTIFIER is "null"', () => {
+      const noVapid: Bindings = {
+        ...bindings("console"),
+        PUSH_NOTIFIER: "null",
+        VAPID_PUBLIC_KEY: undefined as unknown as string,
+        VAPID_PRIVATE_KEY: undefined as unknown as string,
+        VAPID_SUBJECT: undefined as unknown as string,
+      };
+      expect(() => createNotifier(noVapid, db, NOW)).not.toThrow();
+    });
+
+    // Mirrors "throws at startup with a clear message for an unrecognised
+    // [NOTIFIER] value" above — a typo in PUSH_NOTIFIER must not quietly
+    // disable push the same way a typo in NOTIFIER must not quietly
+    // disable email.
+    it("throws at startup with a clear message for an unrecognised value", () => {
+      const broken: Bindings = { ...bindings("console"), PUSH_NOTIFIER: "webpush-but-typoed" };
+      expect(() => createNotifier(broken, db, NOW)).toThrow(/webpush-but-typoed/);
+      expect(() => createNotifier(broken, db, NOW)).toThrow(/PUSH_NOTIFIER/);
+    });
+  });
 });

@@ -2,7 +2,7 @@ import type { Db } from "../db/client.js";
 import type { Bindings } from "../env.js";
 import { ConsoleNotifier } from "./console-notifier.js";
 import { NullNotifier } from "./null-notifier.js";
-import type { Message, Notifier, SendResult } from "./notifier.js";
+import type { Notifier } from "./notifier.js";
 import { PushNotifier } from "./push-notifier.js";
 import { QuotaNotifier } from "./quota.js";
 import { ResendNotifier } from "./resend-notifier.js";
@@ -77,17 +77,21 @@ function selectPushNotifier(env: Bindings, db: Db, now: Date): Notifier {
     case "null":
       return new NullNotifier();
     case "webpush":
-      // `PushNotifier`'s constructor takes an already-imported `VapidKeys`,
-      // not a promise — but importing a key is inherently async (Web Crypto
-      // has no synchronous `importKey`), and `createNotifier` must stay
-      // synchronous for every one of its existing callers. `LazyVapidPushNotifier`
-      // is the seam: it defers the actual import (and the one-time
-      // sign-verify pairing check) to the first `send`, memoised per isolate
-      // by `vapidKeys` below, while every binding-presence check below still
+      // `PushNotifier` accepts `VapidKeys | Promise<VapidKeys>` for exactly
+      // this call: importing a key is inherently async (Web Crypto has no
+      // synchronous `importKey`), but `createNotifier` must stay synchronous
+      // for every one of its existing callers, so the promise is handed
+      // straight in rather than awaited here. `PushNotifier` itself resolves
+      // it per message, inside the same `try`/`catch` that already turns
+      // every other push failure into an ordinary `SendResult` — see its
+      // doc comment for why a rejected import must never be allowed to
+      // reject `send` and take an unrelated leg (e.g. email, running
+      // alongside this one in `RouterNotifier`'s `Promise.all`) down with
+      // it. Every binding-presence check inside `vapidKeys` below still
       // runs — and can still throw — synchronously, right here, at
       // construction time, the same as `selectNotifier`'s `requireBinding`
       // calls do for `"resend"`.
-      return new LazyVapidPushNotifier(db, vapidKeys(env), fetch, now);
+      return new PushNotifier(db, vapidKeys(env), fetch, now);
     default:
       throw new Error(
         `unrecognised PUSH_NOTIFIER binding: ${JSON.stringify(env.PUSH_NOTIFIER)} (expected "webpush", "console" or "null")`,
@@ -96,44 +100,13 @@ function selectPushNotifier(env: Bindings, db: Db, now: Date): Notifier {
 }
 
 /**
- * A `Notifier` that defers building the real `PushNotifier` until the first
- * `send`, so that resolving the VAPID keypair — an inherently async Web
- * Crypto import — never forces `createNotifier` itself to become async.
- *
- * Deliberately *not* a new top-level export or its own file: it exists only
- * to bridge `vapidKeys`'s `Promise<VapidKeys>` to `PushNotifier`'s
- * synchronous `VapidKeys` constructor parameter, which the task brief pins
- * exactly as `(db, keys: VapidKeys, fetchImpl, now)`. Building is memoised on
- * `this`, so a `RouterNotifier` calling `send` more than once against the
- * same `createNotifier` result does not re-import the keypair or re-run
- * `assertVapidKeysMatch` per call — only per instance, i.e. per request.
- */
-class LazyVapidPushNotifier implements Notifier {
-  private built: Promise<Notifier> | undefined;
-
-  constructor(
-    private readonly db: Db,
-    private readonly keys: Promise<VapidKeys>,
-    private readonly fetchImpl: typeof fetch,
-    private readonly now: Date,
-  ) {}
-
-  send(messages: readonly Message[]): Promise<SendResult[]> {
-    if (!this.built) {
-      this.built = this.keys.then((keys) => new PushNotifier(this.db, keys, this.fetchImpl, this.now));
-    }
-    return this.built.then((notifier) => notifier.send(messages));
-  }
-}
-
-/**
  * The imported, verified VAPID keypair, memoised per isolate (spec §10.3):
  * `importVapidKeys` and `assertVapidKeysMatch` — an async JWK import plus a
- * sign-then-verify round trip — run once per isolate, on the first `"webpush"`
- * send, not once per request. Every binding-presence check below still runs
- * on every call, synchronously, so a rotated-but-incomplete VAPID config
- * fails immediately rather than only on whichever request happens to be
- * first after a deploy.
+ * sign-then-verify round trip — run once per isolate, the first time a
+ * `"webpush"` request builds a notifier, not once per request. Every
+ * binding-presence check below still runs on every call, synchronously, so a
+ * rotated-but-incomplete VAPID config fails immediately rather than only on
+ * whichever request happens to be first after a deploy.
  *
  * `requireBinding` applies the same by-name failure `RESEND_API_KEY` and
  * `EMAIL_FROM` already get above, for the same reason: an unset secret
@@ -148,6 +121,29 @@ class LazyVapidPushNotifier implements Notifier {
  * suite that builds two different `Bindings` in the same module (this file's
  * own tests, for instance) gets the keys that actually match what it passed,
  * not whatever the first caller happened to import.
+ *
+ * A failed import or a mismatched pair is cached too, deliberately, and
+ * stays cached: both are deterministic configuration errors, not transient
+ * ones — the same two bindings will fail the same way on every subsequent
+ * call for as long as they're set to the same values, so nothing is gained
+ * by re-attempting, and every caller of `vapidKeys` already treats the
+ * rejection as an ordinary failure rather than something to retry (see
+ * `PushNotifier.sendOne`). Do not "fix" this into re-importing on every
+ * call in the name of retrying a transient failure — there is no transient
+ * failure here to retry.
+ *
+ * The returned promise is deliberately given a second, no-op `.catch` right
+ * here, in addition to being returned for real handling by its actual
+ * caller. Most requests build a notifier and never send a push in that
+ * request; if `PUSH_NOTIFIER` is `"webpush"` with a broken pair, the
+ * rejection would otherwise be entirely unhandled — no `.then`/`.catch`
+ * attached to it anywhere — until (if ever) some other request's
+ * `PushNotifier.sendOne` awaits the same cached promise, which is exactly
+ * the "unhandled promise rejection on any request that never sends a push"
+ * failure mode this comment exists to prevent. The no-op catch only marks
+ * the promise handled for that bookkeeping; it does not change what
+ * `vapidKeys` returns, and `PushNotifier` still observes the rejection when
+ * it awaits the same promise later.
  */
 let cachedVapidKeys: { publicKey: string; privateKey: string; subject: string; keys: Promise<VapidKeys> } | undefined;
 
@@ -177,15 +173,18 @@ function vapidKeys(env: Bindings): Promise<VapidKeys> {
     cachedVapidKeys.privateKey !== privateKey ||
     cachedVapidKeys.subject !== subject
   ) {
-    cachedVapidKeys = {
-      publicKey,
-      privateKey,
-      subject,
-      keys: importVapidKeys(publicKey, privateKey, subject).then(async (keys) => {
-        await assertVapidKeysMatch(keys);
-        return keys;
-      }),
-    };
+    const keys = importVapidKeys(publicKey, privateKey, subject).then(async (imported) => {
+      await assertVapidKeysMatch(imported);
+      return imported;
+    });
+    keys.catch(() => {
+      // Deliberately swallowed — see the doc comment above. This exists
+      // only to mark the promise handled; the real handling happens in
+      // whichever `PushNotifier.sendOne` call eventually awaits `keys`
+      // (returned below, untouched) and reports the rejection as a failed
+      // `SendResult`.
+    });
+    cachedVapidKeys = { publicKey, privateKey, subject, keys };
   }
   return cachedVapidKeys.keys;
 }
