@@ -76,7 +76,6 @@ import { notifyPromotedPlayer } from "./respond.js";
  */
 export const gamesRoutes = new Hono<AppEnv>();
 
-/** This deployment's own origin, as the state-changing handlers compare it. */
 /** Every string field of the submitted body, for redisplaying a rejected form. */
 function submittedValues(form: Record<string, unknown>): Record<string, string> {
   const values: Record<string, string> = {};

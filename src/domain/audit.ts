@@ -13,11 +13,13 @@
  * enum is a TypeScript-only narrowing); see `src/domain/lifecycle.ts` for the
  * equivalent for `fixtures.lifecycle`.
  *
- * `action` is namespaced (`fixture.cancelled`) so that as more entity types
- * gain actions, two unrelated actions never collide on the same bare verb.
- * Every action below is `fixture.`-namespaced because every one of them is
- * recorded against a fixture — including the notification deferrals, whose
- * `entity_id` is the fixture the undelivered message was about.
+ * `action` is namespaced by the entity it is recorded against (`fixture.
+ * cancelled`, `game.updated`) so that as more entity types gain actions, two
+ * unrelated actions never collide on the same bare verb. The `*_email_deferred`
+ * deferral actions key on whichever entity the undelivered message was
+ * about — a fixture for the sweep-driven ones (N-1, N-2, N-3, N-4, N-9), the
+ * game for a broadcast (N-10), whose `entity_id` is that entity's id, not
+ * always a fixture's.
  *
  * Extended by M6a, which is the first milestone to audit something that is not
  * a fixture. `entity_type` is a TypeScript-only narrowing — Drizzle's
