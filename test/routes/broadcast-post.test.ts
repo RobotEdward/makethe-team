@@ -351,6 +351,33 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     await settleSend(1);
   });
 
+  it("refuses a forged audience=everyone rather than sending game-wide from a fixture page", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFixture(viewerId);
+    const db = testDb();
+    // Somebody in the squad who answered nothing on this fixture: the person
+    // a game-wide send would reach and a fixture-scoped one must not.
+    const nonResponder = await insertPlayer(db, { name: "No Response" });
+    await insertMembership(db, gameId, nonResponder);
+
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { ...VALID_FIELDS, audience: "everyone" },
+      cookie,
+    );
+    const body = await response.text();
+
+    // `everyone` resolves from `memberships` and `sendBroadcast` nulls the
+    // fixture out for it, so honouring it here would send to the whole game
+    // while the audit row recorded a fixture-derived count.
+    expect(response.status).toBe(422);
+    expect(body).toContain("Change of time");
+    expect(body).toContain("Kick-off has moved to 7:30.");
+    expect(body).toContain("Pick who this message goes to.");
+    expect(await testDb().select().from(notificationLog)).toEqual([]);
+    expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);
+  });
+
   it("caps at three a day: the third succeeds, the fourth is refused with the cap named", async () => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId } = await seedFixture(viewerId);

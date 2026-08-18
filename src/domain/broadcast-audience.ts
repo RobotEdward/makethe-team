@@ -121,3 +121,17 @@ export function isAddressable(candidate: BroadcastCandidate): boolean {
 export function isBroadcastAudience(value: unknown): value is BroadcastAudience {
   return typeof value === "string" && (BROADCAST_AUDIENCES as readonly string[]).includes(value);
 }
+
+/**
+ * Narrow unknown form input to one of the four audiences a *fixture* can
+ * mean.
+ *
+ * Separate from `isBroadcastAudience` because `everyone` is a recognised
+ * audience that the fixture scope cannot honour: it resolves from
+ * `memberships`, and `sendBroadcast` nulls the fixture out for it, so a
+ * fixture-scoped form that accepted it would send game-wide from a page
+ * offering four response-derived radios.
+ */
+export function isFixtureAudience(value: unknown): value is BroadcastAudience {
+  return typeof value === "string" && (FIXTURE_AUDIENCES as readonly string[]).includes(value);
+}

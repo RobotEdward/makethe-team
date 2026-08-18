@@ -25,10 +25,13 @@ export interface BroadcastPageParams {
   counts: Record<BroadcastAudience, number>;
   /**
    * How many people this send, as configured, could actually reach: the
-   * selected audience narrowed by the ticked channels. The button says this
-   * number, and the route writes the same one onto the audit row, so the page
-   * and the record cannot tell different stories. Not derivable from `counts`
-   * — those are channel-agnostic.
+   * selected audience narrowed by the ticked channels. The route computes it
+   * the same way for its refusal and for the audit row it writes.
+   *
+   * A rendered figure can still go stale before submission — this page runs
+   * no script, so unticking a channel does not update the button until the
+   * server answers. It is a display, like the channel-agnostic counts beside
+   * the radios, which it is not derivable from.
    */
   reachableCount: number;
   /** What was typed, for re-rendering a refusal. Empty strings on a fresh GET. */
@@ -127,6 +130,18 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
   const subjectMessage = errorFor("subject");
   const messageMessage = errorFor("message");
 
+  // With no channel ticked, `reachableCount` is zero by arithmetic rather
+  // than because the audience is empty, and "Nobody to send to" beside "Pick
+  // at least one way to send this" reads as a second, wrong problem. The
+  // channel-agnostic count is what the button will mean as soon as a channel
+  // is ticked back on.
+  const buttonCount =
+    errorFor("channels") === undefined
+      ? params.reachableCount
+      : scoped
+        ? counts[values.audience]
+        : counts.everyone;
+
   const body = `
     <h1>${heading}</h1>
     ${params.problem ? `<p class="problem">${escapeHtml(params.problem)}</p>` : ""}
@@ -148,7 +163,7 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
       </div>
       ${channelFields(values, errorFor("channels"))}
       <div class="actions">
-        <button class="button primary" type="submit">${sendLabel(params.reachableCount)}</button>
+        <button class="button primary" type="submit">${sendLabel(buttonCount)}</button>
       </div>
     </form>
     <p class="back-link"><a href="${escapeHtml(backHref)}">Back</a></p>

@@ -85,6 +85,22 @@ describe("renderBroadcastPage", () => {
     expect(html).not.toMatch(/<button[^>]*disabled/);
   });
 
+  it("does not read as a second problem when the channel selection is what failed", () => {
+    // No channel ticked makes the reachable count zero by arithmetic, not
+    // because the audience is empty; "Nobody to send to" beside "Pick at
+    // least one way to send this" would name a problem that isn't there.
+    const html = renderBroadcastPage(
+      params({
+        values: { ...VALUES, email: false, push: false },
+        reachableCount: 0,
+        errors: [{ field: "channels", message: "Pick at least one way to send this — email, push, or both." }],
+      }),
+    );
+    expect(html).toContain("Pick at least one way to send this");
+    expect(html).not.toContain("Nobody to send to");
+    expect(html).toContain("Send to 12 players");
+  });
+
   it("posts to the fixture-scoped action on the fixture page", () => {
     const html = renderBroadcastPage(params());
     expect(html).toContain('method="post"');

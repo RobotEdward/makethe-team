@@ -117,6 +117,21 @@ describe("parseBroadcastForm", () => {
     expect(fieldErrors(result)).toContain("audience");
   });
 
+  it("refuses `everyone` on the fixture scope, substituting the default so the radios still re-render", () => {
+    // `everyone` is a real audience, but not one a fixture can mean: it
+    // resolves from `memberships`, and `sendBroadcast` nulls the fixture out
+    // for it, so accepting it here would turn a submission from a page of
+    // four response radios into a game-wide send.
+    const result = parseBroadcastForm(
+      { subject: "s", message: "m", email: "on", audience: "everyone" },
+      "fixture",
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected fail");
+    expect(fieldErrors(result)).toContain("audience");
+    expect(result.values.audience).toBe(DEFAULT_FIXTURE_AUDIENCE);
+  });
+
   it("defaults an absent audience on the fixture scope to DEFAULT_FIXTURE_AUDIENCE", () => {
     const result = parseBroadcastForm({ subject: "s", message: "m", email: "on" }, "fixture");
     expect(result.ok).toBe(true);

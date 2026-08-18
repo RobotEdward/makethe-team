@@ -1,6 +1,6 @@
 import {
   DEFAULT_FIXTURE_AUDIENCE,
-  isBroadcastAudience,
+  isFixtureAudience,
   type BroadcastAudience,
 } from "./broadcast-audience.js";
 import { text, type FieldError } from "./game-form.js";
@@ -58,12 +58,19 @@ export function parseBroadcastForm(
 
   // The game scope renders no audience control at all, so anything arriving
   // in that field is forged and must not be honoured.
+  //
+  // The fixture scope accepts only the four `FIXTURE_AUDIENCES`, not every
+  // `BroadcastAudience`: `everyone` is a real audience, but one this scope
+  // cannot mean — it resolves from `memberships`, and `sendBroadcast` nulls
+  // the fixture out for it, so honouring it here would turn a submission from
+  // a page of four response radios into a game-wide send. It is exactly as
+  // forged as any other value with no radio, and takes the same path.
   let audience: BroadcastAudience;
   if (scope === "game") {
     audience = "everyone";
   } else if (body["audience"] === undefined) {
     audience = DEFAULT_FIXTURE_AUDIENCE;
-  } else if (isBroadcastAudience(body["audience"])) {
+  } else if (isFixtureAudience(body["audience"])) {
     audience = body["audience"];
   } else {
     audience = DEFAULT_FIXTURE_AUDIENCE;

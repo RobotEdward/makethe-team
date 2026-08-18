@@ -113,10 +113,12 @@ function countsForFixture(recipients: readonly BroadcastRecipient[]): Record<Bro
  * from one pass over the rows already loaded — no second query, because
  * `BroadcastRecipient` already carries both `email` and `hasDevice`.
  *
- * `everyone` selects every row because that audience's rows come from
- * `listGameRecipients`, which is the membership list itself;
- * `audienceSelectsStatus` deliberately returns false for it, since it is not
- * resolved from `responses.status`.
+ * `everyone` selects every row given, because it is not resolved from
+ * `responses.status` at all (`audienceSelectsStatus` returns false for it) —
+ * it is the membership list itself. Only the game-scoped caller can reach
+ * this branch: `parseBroadcastForm` forces `everyone` on the game scope and
+ * refuses it on the fixture scope, so the rows here are always
+ * `listGameRecipients`'s.
  */
 function reachableCount(
   recipients: readonly BroadcastRecipient[],
