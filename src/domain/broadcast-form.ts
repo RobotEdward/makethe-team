@@ -3,7 +3,7 @@ import {
   isBroadcastAudience,
   type BroadcastAudience,
 } from "./broadcast-audience.js";
-import type { FieldError } from "./game-form.js";
+import { text, type FieldError } from "./game-form.js";
 
 /**
  * Parse and validate the quick-message compose form (M15 spec §2). Pure: no
@@ -27,11 +27,6 @@ export type BroadcastFormResult =
   | { ok: true; values: BroadcastFormValues }
   /** `values` is what was typed, so a refusal can re-render the form with it intact. */
   | { ok: false; values: BroadcastFormValues; errors: FieldError[] };
-
-/** A body value that is not a string is absent — `parseBody` can yield a File. */
-function text(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
 
 export function parseBroadcastForm(
   body: Record<string, unknown>,

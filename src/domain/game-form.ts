@@ -93,8 +93,11 @@ export function localDateToday(now: Date, timezone: string): string {
   return formatLocalDate(toLocalParts(now, timezone));
 }
 
-/** A body value that is not a string is absent — `parseBody` can yield a File. */
-function text(value: unknown): string {
+/**
+ * A body value that is not a string is absent — `parseBody` can yield a File.
+ * Shared with `broadcast-form.ts`, so both forms agree on what "absent" means.
+ */
+export function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
