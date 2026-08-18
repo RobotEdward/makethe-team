@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import {
@@ -11,7 +11,7 @@ import { requirePlayer } from "../auth/session.js";
 import { recordAudit } from "../db/audit.js";
 import { getDb } from "../db/client.js";
 import { listPlayerFixtureHistory } from "../db/dashboard-queries.js";
-import { players } from "../db/schema.js";
+import { players, pushSubscriptions } from "../db/schema.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { erasureDeadline } from "../domain/erasure-window.js";
 import { fixtureView, type FixtureStatus } from "../domain/fixture-view.js";
@@ -345,6 +345,15 @@ async function renderAccount(c: Context<AppEnv>, problem?: string) {
 
   const history = await listPlayerFixtureHistory(db, player.id, HISTORY_LIMIT);
 
+  // Newest first: the device a player is looking at right now — the one they
+  // most likely just registered — reads as the top row rather than buried
+  // under however many older ones they have.
+  const devices = await db
+    .select({ endpoint: pushSubscriptions.endpoint, userAgent: pushSubscriptions.userAgent })
+    .from(pushSubscriptions)
+    .where(eq(pushSubscriptions.playerId, player.id))
+    .orderBy(desc(pushSubscriptions.createdAt));
+
   return c.html(
     renderAccountPage({
       playerName: player.name,
@@ -367,6 +376,12 @@ async function renderAccount(c: Context<AppEnv>, problem?: string) {
         player.erasesAt === null
           ? undefined
           : formatLocalDateTime(player.erasesAt, "Europe/London"),
+      pushDevices: devices,
+      // Typed as a required `string` in `src/env.ts`, but genuinely absent
+      // from this deployment while `PUSH_NOTIFIER` is `"null"` (M14 ships
+      // dark) — see that binding's own doc comment. `renderAccountPage` reads
+      // `undefined` as "no button can work", not as a bug to surface.
+      vapidPublicKey: c.env.VAPID_PUBLIC_KEY || undefined,
     }),
     problem === undefined ? 200 : 422,
   );

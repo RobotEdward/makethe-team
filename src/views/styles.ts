@@ -615,6 +615,33 @@ export const INSTALL_STYLES_CSS = `
 `;
 
 /**
+ * The notification permission button and device list (M14 Task 12,
+ * `renderPushSection` in `src/views/install.ts`) — spec §11's states 3-5.
+ * Echoes `.install`'s own box and spacing on purpose rather than inventing a
+ * second look, so the two read as one coherent panel on `/app/account`
+ * (the doc comment on `renderPushSection` explains why) even though they
+ * come from separate functions and, on the one-time offer, only this block
+ * ever appears at all.
+ */
+export const PUSH_STYLES_CSS = `
+  .push { margin-top: 2rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 0.7rem; }
+  .push h2 { margin-top: 0; }
+  .push h3 { margin: 1.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
+  .push .button { margin-top: 0.5rem; }
+
+  .push-device-list {
+    list-style: none; margin: 0; padding: 0; text-align: left;
+    border-top: 1px solid var(--line);
+  }
+  .push-device {
+    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line); color: var(--fg);
+  }
+  .push-device form { margin: 0; }
+  .push-device .button { margin-top: 0; }
+`;
+
+/**
  * Where the .danger-link explanation lives, because the rule itself cannot
  * carry one.
  *
@@ -721,6 +748,7 @@ export const PAGE_STYLE_BLOCKS = [
   FORM_CSS,
   OFFLINE_STYLES_CSS,
   INSTALL_STYLES_CSS,
+  PUSH_STYLES_CSS,
   INVITE_CSS,
 ] as const;
 

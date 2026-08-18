@@ -211,6 +211,83 @@ describe("POST /r/:token — recording a plain response", () => {
   });
 });
 
+describe("POST /r/:token — the one-time push offer (M14 Task 12, spec §11)", () => {
+  it("offers push once, after a player says they are in", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+
+    const first = await postIntent(await tokenFor(fixtureId, playerId), "in");
+    expect(await first.text()).toContain("Get these on your phone");
+
+    const second = await postIntent(await tokenFor(fixtureId, playerId), "in");
+    expect(await second.text()).not.toContain("Get these on your phone");
+
+    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    expect(row?.pushOfferedAt).not.toBeNull();
+  });
+
+  it("never offers push for a response that lands as 'out'", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+
+    const body = await (await postIntent(await tokenFor(fixtureId, playerId), "out")).text();
+    expect(body).not.toContain("Get these on your phone");
+
+    const [row] = await db.select().from(players).where(eq(players.id, playerId));
+    expect(row?.pushOfferedAt).toBeNull();
+  });
+
+  it("never offers push to a player who lands on the waitlist instead of in (BR-5)", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture({ maxPlayers: 1, squadSize: 2 });
+    const [fillerId, latecomerId] = playerIds as [string, string];
+    await setResponse(fixtureId, fillerId, "in");
+
+    const body = await (await postIntent(await tokenFor(fixtureId, latecomerId), "in")).text();
+    expect(body).toMatch(/waitlist/i);
+    expect(body).not.toContain("Get these on your phone");
+
+    const [row] = await db.select().from(players).where(eq(players.id, latecomerId));
+    expect(row?.pushOfferedAt).toBeNull();
+  });
+
+  it("never offers push, and never spends it, while no VAPID key is configured (M14 ships dark)", async () => {
+    // Production has no VAPID_PUBLIC_KEY at all right now — wrangler.jsonc's
+    // own comment on PUSH_NOTIFIER. Burning the once-ever offer on a request
+    // that could never have shown a working button would mean nobody who
+    // said "in" tonight is ever offered push again once the real key exists.
+    const previousKey = env.VAPID_PUBLIC_KEY;
+    // @ts-expect-error — genuinely absent at runtime despite the honestly-
+    // dishonest `string` type; see `Bindings.VAPID_PUBLIC_KEY`'s own comment.
+    env.VAPID_PUBLIC_KEY = undefined;
+    try {
+      const { fixtureId, playerIds } = await seedOpenFixture();
+      const [playerId] = playerIds as [string];
+
+      const body = await (await postIntent(await tokenFor(fixtureId, playerId), "in")).text();
+      expect(body).not.toContain("Get these on your phone");
+
+      const [row] = await db.select().from(players).where(eq(players.id, playerId));
+      expect(row?.pushOfferedAt).toBeNull();
+    } finally {
+      env.VAPID_PUBLIC_KEY = previousKey;
+    }
+  });
+
+  it("never puts a device on the response-confirmation page's push section (the security invariant on PUSH_UNSUBSCRIBE_PATH)", async () => {
+    // The page this offer renders on is token-authenticated, and an endpoint
+    // must never reach a token holder who does not already have it —
+    // `src/auth/paths.ts`'s doc comment on PUSH_UNSUBSCRIBE_PATH explains
+    // why. This is the negative-space proof: whatever this page shows, it
+    // must never be a form that posts an `endpoint`.
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+
+    const body = await (await postIntent(await tokenFor(fixtureId, playerId), "in")).text();
+    expect(body).not.toMatch(/action="\/app\/push\/unsubscribe"/);
+    expect(body).not.toContain('name="endpoint"');
+  });
+});
+
 describe("POST /r/:token — capacity goes through the Durable Object (TR-10, BR-9)", () => {
   it("waitlists rather than over-filling a full fixture", async () => {
     const { fixtureId, playerIds } = await seedOpenFixture({ maxPlayers: 1, squadSize: 2 });

@@ -185,3 +185,10 @@ it("is enumerated, so the CSP hashes it", () => {
   // A block that is not in this array is script the browser silently drops.
   expect(SCRIPT_BLOCKS).toContain(SERVICE_WORKER_JS);
 });
+
+it("explains itself rather than offering a dead button when permission was denied", () => {
+  // A denied permission cannot be re-requested by the page (M14 Task 12,
+  // spec §11 state 5). A button that silently does nothing on every click is
+  // worse than a sentence saying why.
+  expect(scripts.PUSH_SUBSCRIBE_JS).toContain('"denied"');
+});

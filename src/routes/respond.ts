@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { countActiveOwners, findMembershipInGame, getFixtureWithSquad, listOtherActiveGames } from "../db/queries.js";
-import { games } from "../db/schema.js";
+import { games, players } from "../db/schema.js";
 import { getDb, type Db } from "../db/client.js";
 import { resolveSessionPlayer } from "../auth/session.js";
 import { fixtureView } from "../domain/fixture-view.js";
@@ -13,7 +13,7 @@ import {
   type LeaveTokenPayload,
 } from "../domain/token.js";
 import { removeMember } from "../domain/remove-member.js";
-import type { ResponseIntent, WaitlistPromotion } from "../capacity/types.js";
+import type { ResponseIntent, SetResponseOutcome, WaitlistPromotion } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
@@ -68,8 +68,18 @@ async function renderFixtureForViewer(params: {
   token: string;
   now: Date;
   intent: ResponseIntent | null;
+  /**
+   * The one-time push offer (M14 Task 12), decided and stamped by the caller
+   * — see `respond.post("/r/:token", …)` for the gate. `undefined` on every
+   * other caller, including the `GET` below: the offer belongs to the act of
+   * answering, not to revisiting an answer already given, and a `GET` is
+   * also the request a mail scanner or link-preview bot issues on every
+   * fixture link before a person ever opens it (the same reasoning this
+   * module's own doc comment gives for why `GET` here writes nothing).
+   */
+  pushOffer?: { vapidPublicKey: string };
 }): Promise<string | null> {
-  const { db, fixtureId, playerId, token, now, intent } = params;
+  const { db, fixtureId, playerId, token, now, intent, pushOffer } = params;
   const loaded = await getFixtureWithSquad(db, fixtureId);
   if (!loaded) return null;
 
@@ -144,6 +154,7 @@ async function renderFixtureForViewer(params: {
     // `null` would hide it from exactly the players whose game keeps its
     // squad private — the ones already holding an email that names their side.
     teams: publishedTeamsFor(fixture, game, viewerMember),
+    pushOffer,
   });
 }
 
@@ -194,6 +205,57 @@ respond.get("/r/:token", async (c) => {
  * because that is the one outcome `renderFixtureForViewer` cannot re-derive —
  * there is no fixture row left to read.
  */
+/**
+ * Decide, and — the same instant — spend, this player's one-time push offer
+ * (M14 Task 12, spec §11's closing paragraph: "offered once in the product's
+ * lifetime and never again").
+ *
+ * **Gated on the response having just landed as `"in"`, not merely on
+ * `intent === "in"` having been posted.** A fixture that is full records the
+ * same submitted intent as `"waitlisted"` (BR-5), and offering push on the
+ * strength of a headline that will read "You're on the waitlist" rather than
+ * "You're in" is exactly the confusion BR-5 exists to prevent one layer up —
+ * so this reads `outcome.status`, the Durable Object's own answer, never the
+ * form's.
+ *
+ * **Gated on a VAPID key existing at all**, and checked *before* the write:
+ * M14 ships dark (`wrangler.jsonc`'s own comment on `PUSH_NOTIFIER`), so on
+ * a fresh deploy this must stay a no-op that spends nothing, or every player
+ * who says "in" tonight would burn their once-ever offer on a page with a
+ * button that could never have worked, and none of them would ever be
+ * offered push again once the real key exists tomorrow.
+ *
+ * **The `UPDATE … WHERE push_offered_at IS NULL` is the actual gate**, not a
+ * preceding `SELECT`: `players.push_offered_at IS NULL` is checked and set
+ * atomically, so two concurrent requests for the same player (a doubled tap,
+ * two open tabs) cannot both see null and both decide to show the offer —
+ * only the request whose `UPDATE` actually changed a row does. Mirrors
+ * `linkPlayer`'s own compare-and-set in `src/auth/link-player.ts`.
+ */
+async function resolvePushOffer(
+  env: AppEnv["Bindings"],
+  db: Db,
+  playerId: string,
+  outcome: SetResponseOutcome,
+  now: Date,
+): Promise<{ vapidPublicKey: string } | undefined> {
+  if (outcome.kind !== "recorded" || outcome.status !== "in") return undefined;
+
+  // Typed as a required `string` in `src/env.ts`, but genuinely absent from
+  // this deployment while `PUSH_NOTIFIER` is `"null"` — see that binding's
+  // own doc comment. Read defensively rather than trusting the type.
+  const vapidPublicKey = env.VAPID_PUBLIC_KEY || undefined;
+  if (vapidPublicKey === undefined) return undefined;
+
+  const stamped = await db
+    .update(players)
+    .set({ pushOfferedAt: now })
+    .where(and(eq(players.id, playerId), isNull(players.pushOfferedAt)))
+    .returning({ id: players.id });
+
+  return stamped.length > 0 ? { vapidPublicKey } : undefined;
+}
+
 respond.post("/r/:token", async (c) => {
   const token = c.req.param("token");
   const now = new Date(Date.now());
@@ -236,7 +298,9 @@ respond.post("/r/:token", async (c) => {
     c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, outcome.promoted, now));
   }
 
-  const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent });
+  const pushOffer = await resolvePushOffer(c.env, db, playerId, outcome, now);
+
+  const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent, pushOffer });
   if (html === null) {
     console.error(`fixture disappeared between recording a response and re-rendering it: ${fixtureId}`);
     return c.html(renderLinkProblemPage(), 200);
