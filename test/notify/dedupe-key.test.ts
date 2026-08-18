@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   attentionKey,
+  broadcastKey,
   cancellationKey,
   promotionKey,
   pushKey,
@@ -95,5 +96,13 @@ describe("push dedupe keys (M14)", () => {
     const email = reminderKey("f", "p");
     expect(pushKey(email).startsWith("push:")).toBe(true);
     expect(email.startsWith("push:")).toBe(false);
+  });
+});
+
+describe("broadcastKey", () => {
+  it("is unique per broadcast and per recipient", () => {
+    expect(broadcastKey("b-1", "p-1")).toBe("n10:b-1:p-1");
+    expect(broadcastKey("b-1", "p-2")).not.toBe(broadcastKey("b-1", "p-1"));
+    expect(broadcastKey("b-2", "p-1")).not.toBe(broadcastKey("b-1", "p-1"));
   });
 });

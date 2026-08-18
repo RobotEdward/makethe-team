@@ -1,5 +1,6 @@
 import type { NotificationType } from "./dedupe-key.js";
 import type { AttentionEmailPayload } from "./templates/attention.js";
+import type { BroadcastEmailPayload } from "./templates/broadcast.js";
 import type { CancellationEmailPayload } from "./templates/cancellation.js";
 import type { ErasureScheduledEmailPayload } from "./templates/erasure-scheduled.js";
 import type { MagicLinkEmailPayload } from "./templates/magic-link.js";
@@ -245,6 +246,25 @@ function teams({ gameName, venueName, whenLocal, yourSideName }: TeamsEmailParam
 }
 
 /**
+ * N-10: organiser broadcast.
+ *
+ * What happened: the organiser's own subject, fitted to the tray. When and
+ * where: their own first words, which is the only thing here the product did
+ * not write and therefore the only thing worth showing.
+ *
+ * `tag` follows N-9's shape and is overridden by the caller with the real
+ * broadcast id — two different broadcasts must never collapse into one another
+ * in the tray, which is exactly what a game-name-based tag would do.
+ */
+function broadcast({ subject, message, gameName }: BroadcastEmailPayload): PushCopy {
+  return {
+    title: gameNameTitle("", subject, ""),
+    body: message,
+    tag: `n10:${gameName}:${subject}`,
+  };
+}
+
+/**
  * The push-copy catalogue, one builder per `NotificationType`
  * (`NOTIFICATION_TYPES` in `./dedupe-key.ts`). Indexed by type rather than
  * exported as nine loose functions so that a type added to the catalogue
@@ -262,6 +282,7 @@ export const PUSH_COPY: {
   n7: typeof removed;
   n8: typeof erasureScheduled;
   n9: typeof teams;
+  n10: typeof broadcast;
 } = {
   n1: reminder,
   n2: promotion,
@@ -272,6 +293,7 @@ export const PUSH_COPY: {
   n7: removed,
   n8: erasureScheduled,
   n9: teams,
+  n10: broadcast,
 };
 
 // Referenced only for the mapped type above; re-exported so callers can

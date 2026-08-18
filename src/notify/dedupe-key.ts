@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10"] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -120,6 +120,21 @@ export function erasureScheduledKey(playerId: string, erasesAt: string): string 
  */
 export function teamsKey(fixtureId: string, playerId: string, publishedAt: string): string {
   return `n9:${fixtureId}:${playerId}:${publishedAt}`;
+}
+
+/**
+ * N-10 organiser broadcast: once per recipient per send (BR-36, M15).
+ *
+ * `broadcastId` is a UUID minted once per request and shared by every
+ * recipient of that send. Not a timestamp, as N-2 and N-9 use: two broadcasts
+ * a second apart are both genuinely new information, and `Date.now()` is
+ * frozen between I/O inside one Worker invocation — so two sends within one
+ * request would mint the same key and the unique index on `dedupe_key` would
+ * silently drop the second, which for the one notification a person wrote by
+ * hand is the worst available failure.
+ */
+export function broadcastKey(broadcastId: string, playerId: string): string {
+  return `n10:${broadcastId}:${playerId}`;
 }
 
 /**

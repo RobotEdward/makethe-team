@@ -6,7 +6,7 @@ import { MAX_PAYLOAD_BYTES } from "../../src/notify/web-push.js";
 /**
  * One object satisfying every notification type's payload at once, so the
  * same literal can be handed to each `PUSH_COPY[type]` in the loops below.
- * Every field any of the nine builders reads is here; each builder narrows
+ * Every field any of the ten builders reads is here; each builder narrows
  * to the handful it actually needs (see `push-copy.ts`'s own doc comment on
  * why the parameter types are the real per-type payload interfaces rather
  * than one loose shape).
@@ -14,6 +14,9 @@ import { MAX_PAYLOAD_BYTES } from "../../src/notify/web-push.js";
 const sampleContext = {
   playerName: "Sam",
   ownerName: "Jamie",
+  organiserName: "Jamie",
+  subject: "Pitch has moved",
+  message: "We're on the astro tonight.",
   gameName: "Thursday 5-a-side",
   venueName: "Riverside Park",
   kicksOffAtLocal: "Thu 18 Feb, 7:30pm",
@@ -82,6 +85,16 @@ describe("push copy", () => {
       const { title } = PUSH_COPY[type]({ ...sampleContext, gameName: LONG_GAME_NAME });
       expect(title.length, `${type}: "${title}"`).toBeLessThanOrEqual(40);
     }
+  });
+
+  it("keeps the broadcast title inside the tray budget however long the subject is", () => {
+    // n10's title is built from the organiser's own subject, not a game name
+    // (see push-copy.ts's `broadcast` builder), so the general
+    // "keeps every title short enough" case above — which varies gameName,
+    // never subject — cannot exercise this budget on its own.
+    const copy = PUSH_COPY.n10({ ...sampleContext, subject: "x".repeat(60) });
+    expect(copy.title.length).toBeLessThanOrEqual(40);
+    expect(copy.title.endsWith("…")).toBe(true);
   });
 
   it("stays inside the wire payload's 4KB limit with the longest plausible values", () => {
