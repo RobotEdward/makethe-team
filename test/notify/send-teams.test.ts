@@ -4,11 +4,11 @@ import { chunk, INSERT_CHUNK_SIZE } from "../../src/db/chunk.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
-import { teamsKey } from "../../src/notify/dedupe-key.js";
+import { pushKey, teamsKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendTeamsEmails } from "../../src/notify/send-teams.js";
-import { insertGame, requireEmailMessage, resetDatabase } from "../support/factories.js";
+import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -135,6 +135,36 @@ describe("sendTeamsEmails (N-9)", () => {
         teamsKey(fixtureId, "bob", PUBLISHED_AT.toISOString()),
       ].sort(),
     );
+  });
+
+  it("queues a push alongside the email for an `in` player with a device", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "alice", name: "Alice", email: "alice@example.com", team: "a" },
+    ]);
+    await insertSubscription(db, "alice", "https://push.example.com/alice");
+    const notifier = new RecordingNotifier();
+
+    const result = await send(fixtureId, notifier);
+
+    expect(result).toEqual({ sent: 2, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped: 0 });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel).sort()).toEqual(["email", "push"]);
+    const emailKey = teamsKey(fixtureId, "alice", PUBLISHED_AT.toISOString());
+    expect(rows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
+    const pushMessage = notifier.all.find((m) => m.channel === "push");
+    expect(pushMessage).toMatchObject({ channel: "push", to: "alice", tag: `n9:${fixtureId}` });
+  });
+
+  it("still emails an `in` player with no device at all", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "alice", name: "Alice", email: "alice@example.com", team: "a" },
+    ]);
+    const notifier = new RecordingNotifier();
+
+    await send(fixtureId, notifier);
+
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 
   it("carries a leave link scoped to the game", async () => {

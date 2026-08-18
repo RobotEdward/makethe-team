@@ -7,15 +7,17 @@ import { squadForViewer } from "../domain/squad-visibility.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
 import { TEAM_IDS, isTeamId, teamNames } from "../domain/teams.js";
-import { teamsKey } from "./dedupe-key.js";
+import { pushKey, teamsKey } from "./dedupe-key.js";
 import {
   applySendResult,
   insertQueuedLogRows,
   markOrphanedRowsFailed,
+  playersWithPushSubscriptions,
   SITE_ORIGIN,
   type PendingNotification,
 } from "./delivery.js";
 import type { Notifier } from "./notifier.js";
+import { PUSH_COPY } from "./push-copy.js";
 import { renderTeamsEmail } from "./templates/teams.js";
 
 /** What one publish's worth of N-9 sends did, in aggregate. */
@@ -156,6 +158,15 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
   const venueName = fixture.venueOverride ?? game.venueName;
   const publishedAtIso = publishedAt.toISOString();
 
+  // Only a player with at least one registered device gets a `PushMessage`
+  // (M14 Task 13, spec §9.3 rule 1) — otherwise every player without a phone
+  // would accumulate a `no-recipient` row per publish, forever. Fetched once
+  // for the whole squad rather than per recipient.
+  const subscribed = await playersWithPushSubscriptions(
+    db,
+    inSquad.map((member) => member.playerId),
+  );
+
   let guestsSkipped = 0;
   const pending: PendingNotification[] = [];
 
@@ -178,20 +189,22 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
       { gameId: game.id, playerId: member.playerId, expiresAt: leaveTokenExpiry(now).getTime() },
       responseTokenSecret,
     );
+    const leaveUrl = `${SITE_ORIGIN}/leave/${leaveToken}`;
 
     // A recognised side by the `inSquad` filter above, which is what makes
     // `names[team]` below total rather than merely type-checked.
     const team = member.team!;
 
-    const rendered = renderTeamsEmail({
+    const emailPayload = {
       playerName: member.name,
       gameName: game.name,
       venueName,
       whenLocal,
       yourSideName: names[team],
       lineUps,
-      leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
-    });
+      leaveUrl,
+    };
+    const rendered = renderTeamsEmail(emailPayload);
 
     const dedupeKey = teamsKey(fixtureId, member.playerId, publishedAtIso);
     pending.push({
@@ -207,6 +220,38 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
         dedupeKey,
       },
     });
+
+    if (subscribed.has(member.playerId)) {
+      const copy = PUSH_COPY.n9(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey: pushKey(dedupeKey),
+        playerId: member.playerId,
+        message: {
+          channel: "push",
+          to: member.playerId,
+          title: copy.title,
+          body: copy.body,
+          // `leaveUrl` is the only per-player URL this caller builds — there
+          // is no non-token page showing the recipient's own side today
+          // (BR-33 may hide the rest of the squad even from an authenticated
+          // viewer). Reusing it at least lands on a page that names the
+          // fixture, same as every other caller reusing its one token link.
+          url: leaveUrl,
+          // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
+          // (Task 9) to the real fixture id (Task 13). Two teams-published
+          // pushes about the same fixture collapse in the tray; a
+          // re-publish after a late drop-out is a genuinely new fixture
+          // state but still the same fixture id, so it also collapses —
+          // consistent with the email side, where a re-publish is a new
+          // `dedupeKey` (via `publishedAt`) but still describes "the
+          // current teams for this fixture", which is what the tray should
+          // show once, not stack.
+          tag: `n9:${fixtureId}`,
+          dedupeKey: pushKey(dedupeKey),
+        },
+      });
+    }
   }
 
   if (pending.length === 0) return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], guestsSkipped };
