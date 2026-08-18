@@ -98,7 +98,7 @@ const OVERHEAD_BYTES = HEADER_BYTES + PADDING_DELIMITER_BYTES + GCM_TAG_BYTES;
  * both sides of the boundary and the resulting body size, so a mistake in
  * either constant is caught locally instead of by a stranger's server.
  */
-const MAX_PAYLOAD_BYTES = MAX_BODY_BYTES - OVERHEAD_BYTES;
+export const MAX_PAYLOAD_BYTES = MAX_BODY_BYTES - OVERHEAD_BYTES;
 
 export interface PushSubscriptionKeys {
   endpoint: string;
