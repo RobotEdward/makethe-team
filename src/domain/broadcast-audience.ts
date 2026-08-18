@@ -50,20 +50,21 @@ const AUDIENCE_BY_STATUS: Record<ResponseStatus, Exclude<BroadcastAudience, "eve
 /**
  * `status` is `string`, not `ResponseStatus`, deliberately: `responses.status`
  * is `text NOT NULL` with no CHECK constraint, so the TypeScript union is a
- * claim about the schema rather than a guarantee about the rows. This is the
- * "a stored value indexing a lookup table can be `undefined`" case named in
- * this codebase's working notes — deliberate and safe here, because indexing
- * `AUDIENCE_BY_STATUS` with an unrecognised value produces `undefined`, which
- * matches no `BroadcastAudience` and so is selected by **no** audience:
- * excluded rather than defaulted into one, because a message reaching someone
- * on the strength of a corrupt row is worse than a message not sent. The
- * result here is a boolean comparison, never a rendered string, so there is
- * no `escapeHtml(undefined)` at the end of this path.
+ * claim about the schema rather than a guarantee about the rows, and a row
+ * can hold a value `AUDIENCE_BY_STATUS` has never heard of. The `?? null`
+ * makes that missing-key case explicit in the code rather than hidden behind
+ * the `as ResponseStatus` cast — it is not defending against a rendered
+ * `"undefined"` (the result below is a boolean, never a string a page could
+ * show), only making the lookup's fallback visible. An unrecognised status
+ * still equals no `BroadcastAudience`, `everyone` included, so it is
+ * excluded rather than defaulted into one: a message reaching someone on the
+ * strength of a corrupt row is worse than a message not sent.
  */
 export function audienceSelectsStatus(audience: BroadcastAudience, status: string): boolean {
   // Resolved from memberships, never from response rows.
   if (audience === "everyone") return false;
-  return AUDIENCE_BY_STATUS[status as ResponseStatus] === audience;
+  const claimedBy = AUDIENCE_BY_STATUS[status as ResponseStatus] ?? null;
+  return claimedBy === audience;
 }
 
 /** Everything the exclusion rule needs to know about one candidate recipient. */

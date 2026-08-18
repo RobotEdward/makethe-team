@@ -14,6 +14,7 @@ import {
 import { renderDashboardPage } from "../src/views/dashboard.js";
 import { renderOwnerFixturePage } from "../src/views/owner-fixture.js";
 import { squadStatusLabel } from "../src/views/squad-row.js";
+import { audienceSelectsStatus } from "../src/domain/broadcast-audience.js";
 import type { SquadMember } from "../src/db/queries.js";
 import { insertFixture, insertGame, insertMembership, insertPlayer, insertResponse, resetDatabase } from "./support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "./support/sign-in.js";
@@ -94,6 +95,15 @@ function facts(lifecycle: "open" | never = "open") {
  * "undefined" — the three shapes this defect takes.
  */
 const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] = [
+  {
+    name: "audienceSelectsStatus (src/domain/broadcast-audience.ts)",
+    column: "responses.status",
+    // Not a rendered value — the function returns a boolean — so the
+    // assertions below exercise the shape they can: it must not throw, and
+    // the boolean it returns must not have collapsed into the string
+    // "undefined" or leaked the raw stored token by way of String().
+    reach: () => String(audienceSelectsStatus("playing", OUT_OF_UNION)),
+  },
   {
     name: "fixtureStatusWords (src/views/fixture.ts)",
     column: "fixtures.lifecycle",
