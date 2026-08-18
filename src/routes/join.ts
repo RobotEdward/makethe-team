@@ -1,10 +1,11 @@
 import { Hono } from "hono";
+import { wrongOrigin } from "../auth/origin.js";
 import { getDb, type Db } from "../db/client.js";
 import { findFirstScheduledFixture, findGameByInviteToken, listSquad } from "../db/queries.js";
 import type { games } from "../db/schema.js";
 import { isPlausibleEmail, joinSquad, normaliseEmail, type JoinOutcome } from "../domain/join-squad.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
-import type { AppEnv, Bindings } from "../env.js";
+import type { AppEnv } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendWelcomeEmail } from "../notify/send-welcome.js";
 import { renderInvitePage, renderJoinOutcomePage } from "../views/join.js";
@@ -31,27 +32,6 @@ export const join = new Hono<AppEnv>();
  * answer than "not found".
  */
 
-/** This deployment's own origin, as the state-changing handlers compare it. */
-function originOf(env: Bindings): string {
-  return new URL(env.BETTER_AUTH_URL).origin;
-}
-
-/**
- * Rejects a cross-site form post. Mirrors `POST /app` and `POST /g/:id/edit`:
- * a browser always sends `Origin` on a cross-site form submission, so a
- * *mismatched* one is refused, and a *missing* one is a non-browser client
- * acting on its own behalf, which is allowed.
- *
- * Note what this is and is not. There is no session and no cookie here, so
- * this is not CSRF protection in the usual sense — nothing is being ridden.
- * It is a cheap filter on the obvious abuse (a third-party page silently
- * posting joins from its visitors' browsers), and the daily send ceiling is
- * what actually bounds the damage if it is bypassed.
- */
-function wrongOrigin(c: { req: { header: (name: string) => string | undefined }; env: Bindings }): boolean {
-  const origin = c.req.header("origin");
-  return origin !== undefined && origin !== originOf(c.env);
-}
 
 /** The single string field of a submitted form, or "" — never a File. */
 function field(form: Record<string, unknown>, name: string): string {

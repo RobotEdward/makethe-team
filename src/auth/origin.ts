@@ -4,11 +4,11 @@ import type { Bindings } from "../env.js";
  * This deployment's own origin, as every state-changing route compares it
  * against a submitted form's `Origin` header.
  *
- * Previously defined once per route file (`games.ts`, `account.ts`, and a
- * third copy this milestone was about to add to `broadcast.ts`) — three
- * places a change to how the origin is derived would have to land correctly,
- * identically, in lockstep. One definition here, imported everywhere a
- * mutating route needs it.
+ * Previously defined once per route file — `games.ts`, `account.ts`,
+ * `join.ts`, and a fourth copy this milestone was about to add to
+ * `broadcast.ts` — four places a change to how the origin is derived would
+ * have to land correctly, identically, in lockstep. One definition here,
+ * imported everywhere a mutating route needs it.
  */
 export function originOf(env: Bindings): string {
   return new URL(env.BETTER_AUTH_URL).origin;
