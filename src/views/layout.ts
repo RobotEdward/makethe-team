@@ -210,6 +210,19 @@ export const STYLES = `
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-support); text-align: left;
   }
 
+  /* Script-injected only, on any page, so it lives here rather than in a
+     page block. Fixed to the bottom edge: an installed app has no reload
+     control of its own, and covering content would punish someone mid-form. */
+  .update-overlay {
+    position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
+    width: calc(100% - 2rem); max-width: 28rem;
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    padding: 0.8rem 1rem; border: 1px solid var(--line); border-radius: 0.7rem;
+    background: var(--bg); color: var(--fg);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  }
+  .update-overlay .button { flex: 0 0 auto; min-height: 44px; padding: 0.5rem 1rem; font-size: var(--t-body); margin: 0; }
+
   .button {
     flex: 1; display: flex; align-items: center; justify-content: center;
     min-height: 52px; padding: 0.85rem 1.25rem;

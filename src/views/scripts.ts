@@ -479,8 +479,42 @@ export const TEAM_PICKER_JS = `
 export const SERVICE_WORKER_JS = `
 (function () {
   if (!("serviceWorker" in navigator)) return;
+  var hadController = !!navigator.serviceWorker.controller;
   window.addEventListener("load", function () {
     navigator.serviceWorker.register("${SERVICE_WORKER_PATH}").catch(function () {});
+  });
+
+  // The new-version overlay (M18). Only for the installed app: a browser tab
+  // gets fresh pages on every navigation, but an installed PWA can sit open
+  // for days with no reload control of its own. "controllerchange" fires
+  // when an updated worker takes over this page (the worker skips its
+  // wait phase and claims open pages as soon as the browser's own update
+  // check finds a new deploy); the hadController guard keeps the very
+  // first install - a change from no controller to one, not an update -
+  // from announcing a new version to a brand-new page.
+  if (!window.matchMedia || !window.matchMedia("(display-mode: standalone)").matches) return;
+  navigator.serviceWorker.addEventListener("controllerchange", function () {
+    if (!hadController) {
+      hadController = true;
+      return;
+    }
+    if (document.querySelector(".update-overlay")) return;
+    var overlay = document.createElement("div");
+    overlay.className = "update-overlay";
+    var text = document.createElement("p");
+    text.textContent = "A new version is available.";
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "button primary";
+    button.textContent = "Refresh";
+    button.addEventListener("click", function () {
+      button.disabled = true;
+      button.textContent = "Refreshing\u2026";
+      location.reload();
+    });
+    overlay.appendChild(text);
+    overlay.appendChild(button);
+    document.body.appendChild(overlay);
   });
 })();
 `;
@@ -594,6 +628,31 @@ export const PUSH_KEY_ATTRIBUTE = "data-push-key";
  * click happened.
  */
 export const PUSH_TOKEN_ATTRIBUTE = "data-push-token";
+/**
+ * The friendly-name field revealed alongside the button ("Ed's phone").
+ * Its value rides in the subscribe POST as `name`; blank is fine — the
+ * route stores null and the list falls back to the user-agent caption.
+ */
+export const PUSH_NAME_ID = "push-name";
+/**
+ * The inline acknowledgement revealed after a successful subscribe — but
+ * only when `PUSH_RELOAD_ATTRIBUTE` is absent. A page that gave the button
+ * somewhere to navigate acknowledges by arriving there instead.
+ */
+export const PUSH_DONE_ID = "push-done";
+/**
+ * Where to navigate after a successful subscribe. The account page sets it
+ * to its own URL with a confirmation flag, so the new device appears in the
+ * table that page renders — an inline "done" note beside a table still
+ * missing the row it describes would be worse than a round trip.
+ */
+export const PUSH_RELOAD_ATTRIBUTE = "data-push-reload";
+/**
+ * The label to swap onto the button when the this-device check finds this
+ * browser already registered — server copy, carried as data rather than
+ * typed in this script, so the words live with the rest of the page's.
+ */
+export const PUSH_REENABLE_ATTRIBUTE = "data-push-reenable";
 
 /**
  * Asks for notification permission and registers a device (M14 Task 11).
@@ -698,9 +757,16 @@ export const PUSH_SUBSCRIBE_JS = `
   if (!key) return;
 
   var token = button.getAttribute("${PUSH_TOKEN_ATTRIBUTE}");
+  var reloadTo = button.getAttribute("${PUSH_RELOAD_ATTRIBUTE}");
+  var nameField = document.getElementById("${PUSH_NAME_ID}");
+  // The input is nested inside its label, so the label is what hides and
+  // reveals as one unit with the button.
+  var nameLabel = nameField ? nameField.parentNode : null;
+  var done = document.getElementById("${PUSH_DONE_ID}");
 
   function showDenied() {
     button.hidden = true;
+    if (nameLabel) nameLabel.hidden = true;
     if (problem) {
       problem.textContent = "Notifications are blocked for this site. You can turn them back on in your browser's site settings.";
       problem.hidden = false;
@@ -713,6 +779,30 @@ export const PUSH_SUBSCRIBE_JS = `
   }
 
   button.hidden = false;
+  if (nameLabel) nameLabel.hidden = false;
+
+  // Which row of the device table is the browser this script is running in?
+  // Only the browser knows (the server sees identical requests from every
+  // device), so the badge ships hidden and this comparison reveals it. The
+  // endpoints read here are the hidden form fields the page already
+  // carries — a read, not a new disclosure. "ready" resolves only once a
+  // worker is active; if registration failed the promise simply stays
+  // pending and the page keeps its server-rendered shape, which is the
+  // correct degraded answer.
+  navigator.serviceWorker.ready.then(function (registration) {
+    return registration.pushManager.getSubscription();
+  }).then(function (existing) {
+    if (!existing) return;
+    var fields = document.querySelectorAll('table.push-devices input[name="endpoint"]');
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].value !== existing.endpoint) continue;
+      var row = fields[i].closest("tr");
+      var badge = row ? row.querySelector(".this-device") : null;
+      if (badge) badge.hidden = false;
+      var reenable = button.getAttribute("${PUSH_REENABLE_ATTRIBUTE}");
+      if (reenable) button.textContent = reenable;
+    }
+  }).catch(function () {});
 
   function urlBase64ToUint8Array(base64) {
     var padding = "====".substring(0, (4 - (base64.length % 4)) % 4);
@@ -749,6 +839,7 @@ export const PUSH_SUBSCRIBE_JS = `
         var json = subscription.toJSON();
         var body = { subscription: { endpoint: json.endpoint, keys: json.keys } };
         if (token) body.token = token;
+        if (nameField && nameField.value) body.name = nameField.value;
         return fetch("${PUSH_SUBSCRIBE_PATH}", {
           method: "POST",
           credentials: "same-origin",
@@ -757,7 +848,15 @@ export const PUSH_SUBSCRIBE_JS = `
         });
       }).then(function (response) {
         if (!response.ok) throw new Error("subscribe");
+        if (reloadTo) {
+          // The device table on this page is now missing the row that was
+          // just created; arriving back at the page is the acknowledgement.
+          location.assign(reloadTo);
+          return;
+        }
         button.hidden = true;
+        if (nameLabel) nameLabel.hidden = true;
+        if (done) done.hidden = false;
       }).catch(function () {
         button.disabled = false;
         if (problem) {

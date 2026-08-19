@@ -13,7 +13,13 @@ import {
   insertSubscription,
   resetDatabase,
 } from "../support/factories.js";
-import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE, PUSH_TOKEN_ATTRIBUTE } from "../../src/views/scripts.js";
+import {
+  PUSH_BUTTON_ID,
+  PUSH_KEY_ATTRIBUTE,
+  PUSH_NAME_ID,
+  PUSH_RELOAD_ATTRIBUTE,
+  PUSH_TOKEN_ATTRIBUTE,
+} from "../../src/views/scripts.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
@@ -454,5 +460,109 @@ describe("the notification permission and device list (M14 Task 12)", () => {
     } finally {
       env.VAPID_PUBLIC_KEY = previousKey;
     }
+  });
+});
+
+describe("the device table and its controls (M18)", () => {
+  it("shows the friendly name over the user-agent, with the date enabled", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    await insertSubscription(db, me, "https://push.example/named", {
+      name: "Ed's phone",
+      userAgent: "SomeBrowser/1.0",
+      createdAt: new Date("2026-08-01T12:00:00Z"),
+    });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Ed&#39;s phone");
+    expect(body).not.toContain("SomeBrowser/1.0");
+    // Europe/London in August is BST, an hour ahead of the stored noon.
+    expect(body).toContain("1 August");
+    expect(body).toContain("13:00");
+  });
+
+  it("falls back to the user-agent caption for a pre-name row", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    await insertSubscription(db, me, "https://push.example/old", { userAgent: "OldBrowser/2.0" });
+
+    const body = await (await get(cookie)).text();
+    expect(body).toContain("OldBrowser/2.0");
+  });
+
+  it("gives every row a Test form and a Remove form, and ships the badge hidden", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    await insertSubscription(db, me, "https://push.example/row", { name: "Phone" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toMatch(/<form[^>]*action="\/app\/push\/test"/);
+    expect(body).toMatch(/<form[^>]*action="\/app\/push\/unsubscribe"/);
+    // Only the browser can know which row it is running on, so the badge
+    // must never be visible to a scriptless reader.
+    expect(body).toMatch(/<span class="this-device" hidden>/);
+  });
+
+  it("moves the enable control below the table once a device exists, and rewords it", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+
+    const before = await (await get(cookie)).text();
+    expect(before).toContain(">Turn on notifications</button>");
+
+    await insertSubscription(db, me, "https://push.example/row", { name: "Phone" });
+    const after = await (await get(cookie)).text();
+    expect(after).toContain(">Enable on this device</button>");
+    expect(after).not.toContain(">Turn on notifications</button>");
+    // Below, not above: the order assertion is paired with presence guards
+    // because indexOf answers -1 for an absent needle and -1 < anything.
+    const tableAt = after.indexOf('<table class="push-devices"');
+    const buttonAt = after.indexOf(`id="${PUSH_BUTTON_ID}"`);
+    expect(tableAt).toBeGreaterThan(-1);
+    expect(buttonAt).toBeGreaterThan(tableAt);
+  });
+
+  it("pre-fills the name field with the player's own name, hidden until script reveals it", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const [player] = await db.select().from(players).where(eq(players.id, me));
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toMatch(new RegExp(`<label class="device-name"[^>]*hidden`));
+    expect(body).toContain(`id="${PUSH_NAME_ID}"`);
+    expect(body).toContain(`value="${player!.name}&#39;s phone"`);
+  });
+
+  it("sends a successful subscribe back to this page, flagged, and acknowledges it", async () => {
+    const { cookie } = await signIn();
+
+    const body = await (await get(cookie)).text();
+    expect(body).toContain(`${PUSH_RELOAD_ATTRIBUTE}="${ACCOUNT_PATH}?push=enabled"`);
+
+    const flagged = await SELF.fetch(`${ORIGIN}${ACCOUNT_PATH}?push=enabled`, {
+      headers: { cookie },
+      redirect: "manual",
+    });
+    expect(await flagged.text()).toContain("Notifications are on for this device.");
+  });
+
+  it("acknowledges a test outcome from the flag, and ignores a value it does not know", async () => {
+    const { cookie } = await signIn();
+
+    const sent = await SELF.fetch(`${ORIGIN}${ACCOUNT_PATH}?test=sent`, { headers: { cookie } });
+    expect(await sent.text()).toContain("Test notification sent.");
+
+    const failed = await SELF.fetch(`${ORIGIN}${ACCOUNT_PATH}?test=failed`, { headers: { cookie } });
+    expect(await failed.text()).toContain("could not be sent");
+
+    // The query string is attacker-typeable; an unknown value must render
+    // as if no flag were present, never be echoed.
+    const junk = await SELF.fetch(`${ORIGIN}${ACCOUNT_PATH}?test=%3Cscript%3E`, { headers: { cookie } });
+    const junkBody = await junk.text();
+    expect(junkBody).not.toContain("Test notification");
+    expect(junkBody).not.toContain("<script>alert");
   });
 });

@@ -647,6 +647,10 @@ export function renderFixturePage(options: FixturePageOptions): string {
               "Get a push notification instead of waiting for an email — reminders, and a place freeing up if you're ever on a waitlist. You can turn this off any time from your phone's notification settings.",
             vapidPublicKey: pushOffer.vapidPublicKey,
             token,
+            // Not personalised: BR-33 can hide the squad list, so this page
+            // cannot always name its viewer, and a generic caption beats a
+            // sometimes-wrong one.
+            defaultDeviceName: "My phone",
           })
     }
     ${renderPublishedTeamsSection(teams, squad)}

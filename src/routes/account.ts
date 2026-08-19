@@ -343,7 +343,12 @@ async function renderAccount(c: Context<AppEnv>, problem?: string) {
   // most likely just registered — reads as the top row rather than buried
   // under however many older ones they have.
   const devices = await db
-    .select({ endpoint: pushSubscriptions.endpoint, userAgent: pushSubscriptions.userAgent })
+    .select({
+      endpoint: pushSubscriptions.endpoint,
+      userAgent: pushSubscriptions.userAgent,
+      name: pushSubscriptions.name,
+      createdAt: pushSubscriptions.createdAt,
+    })
     .from(pushSubscriptions)
     .where(eq(pushSubscriptions.playerId, player.id))
     .orderBy(desc(pushSubscriptions.createdAt));
@@ -371,7 +376,18 @@ async function renderAccount(c: Context<AppEnv>, problem?: string) {
         player.erasesAt === null
           ? undefined
           : formatLocalDateTime(player.erasesAt, "Europe/London"),
-      pushDevices: devices,
+      pushDevices: devices.map((device) => ({
+        endpoint: device.endpoint,
+        userAgent: device.userAgent,
+        name: device.name,
+        // Not scoped to a game, so `Europe/London`, matching `erasesAtLocal`
+        // above (TR-5).
+        enabledAtLocal: formatLocalDateTime(device.createdAt, "Europe/London"),
+      })),
+      // The two flags `POST /app/push/*` and `PUSH_SUBSCRIBE_JS` send this
+      // page back with. Read as an enum, never echoed: the query string is
+      // attacker-typeable, so an unrecognised value renders nothing at all.
+      pushNotice: pushNoticeFrom(c),
       // Typed as a required `string` in `src/env.ts`, but genuinely absent
       // from this deployment while `PUSH_NOTIFIER` is `"null"` (M14 ships
       // dark) — see that binding's own doc comment. `renderAccountPage` reads
@@ -471,6 +487,14 @@ function historyStatusLabel(status: ResponseStatus, isFinished: boolean): string
  * `c.get("player")`, which is also why this page has no denial state to
  * design.
  */
+function pushNoticeFrom(c: Context<AppEnv>): string | undefined {
+  if (c.req.query("push") === "enabled") return "Notifications are on for this device.";
+  const test = c.req.query("test");
+  if (test === "sent") return "Test notification sent. It should arrive on that device in a moment.";
+  if (test === "failed") return "The test notification could not be sent to that device.";
+  return undefined;
+}
+
 account.get(ACCOUNT_PATH, requirePlayer, async (c) => renderAccount(c));
 
 /**

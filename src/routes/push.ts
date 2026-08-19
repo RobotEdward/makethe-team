@@ -1,12 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { ACCOUNT_PATH, PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
+import { ACCOUNT_PATH, PUSH_SUBSCRIBE_PATH, PUSH_TEST_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
 import { getDb } from "../db/client.js";
 import type { Db } from "../db/client.js";
 import { players, pushSubscriptions } from "../db/schema.js";
 import { verifyResponseToken } from "../domain/token.js";
 import type { AppEnv, Bindings } from "../env.js";
+import { vapidKeys } from "../notify/factory.js";
+import { sendTestPush } from "../notify/push-notifier.js";
 import { base64UrlDecode } from "../notify/web-push.js";
 
 export const push = new Hono<AppEnv>();
@@ -34,6 +36,22 @@ const AUTH_SECRET_BYTES = 16;
  * caption ever needs and no reason to trust a client to keep it short.
  */
 const MAX_USER_AGENT_LENGTH = 200;
+
+/**
+ * The friendly name a player types at subscribe time ("Ed's phone") exists
+ * for exactly the same one purpose as `user_agent` above — telling rows
+ * apart in a list — so it gets the same treatment: truncated at the door,
+ * never trusted to be short, and blank collapses to null so the list's
+ * fallback caption logic has one shape of absence to handle, not two.
+ */
+const MAX_DEVICE_NAME_LENGTH = 60;
+
+function deviceNameFrom(body: Record<string, unknown>): string | null {
+  const raw = body["name"];
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim().slice(0, MAX_DEVICE_NAME_LENGTH).trim();
+  return trimmed === "" ? null : trimmed;
+}
 
 /**
  * The two proofs `PUSH_SUBSCRIBE_PATH` and `PUSH_UNSUBSCRIBE_PATH` accept, and
@@ -210,6 +228,7 @@ push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
   }
 
   const userAgent = (c.req.header("user-agent") ?? "").slice(0, MAX_USER_AGENT_LENGTH) || null;
+  const name = deviceNameFrom(body);
 
   await db
     .insert(pushSubscriptions)
@@ -220,6 +239,7 @@ push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
       p256dh: subscription.keys.p256dh,
       auth: subscription.keys.auth,
       userAgent,
+      name,
     })
     .onConflictDoUpdate({
       target: pushSubscriptions.endpoint,
@@ -237,10 +257,67 @@ push.post(PUSH_SUBSCRIBE_PATH, async (c) => {
       // device re-subscribing after they later sign in is the one case that
       // does this on purpose). There is no way for a second, unrelated
       // caller to produce the same endpoint and hijack someone else's row.
-      set: { playerId, p256dh: subscription.keys.p256dh, auth: subscription.keys.auth, userAgent },
+      set: { playerId, p256dh: subscription.keys.p256dh, auth: subscription.keys.auth, userAgent, name },
     });
 
   return c.body(null, 204);
+});
+
+/**
+ * Send a test notification to one of the caller's own devices (the device
+ * list's per-row Test button).
+ *
+ * **Session only** — no token branch, unlike both siblings. The form lives
+ * on the session-gated device list and carries an endpoint; accepting a
+ * token here would let anyone holding a forwarded response link buzz the
+ * player's devices on demand, an annoyance primitive neither sibling
+ * offers (subscribe registers the *caller's* browser; unsubscribe needs an
+ * endpoint the token holder can only know for a device they registered).
+ *
+ * The outcome rides back to `/app/account` as a `test=` query value rather
+ * than a re-render: a plain form POST that re-rendered would leave the
+ * player on a POST result they cannot refresh, and this route follows its
+ * unsubscribe sibling's 303-to-the-page shape. The value is one of two
+ * fixed words this route chooses — never caller text — so the page reads
+ * it as an enum, not as content.
+ *
+ * A deployment whose `PUSH_NOTIFIER` is not `"webpush"` has no pair to
+ * sign with and nothing real to deliver, so the answer is honestly
+ * `failed` rather than a pretend success.
+ */
+push.post(PUSH_TEST_PATH, async (c) => {
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== originOf(c.env)) {
+    return c.text("Forbidden", 403);
+  }
+
+  const player = c.get("player");
+  if (!player) return c.text("Not found", 404);
+
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const endpoint = body["endpoint"];
+  if (typeof endpoint !== "string" || endpoint.length === 0) {
+    return c.text('Bad Request: "endpoint" is required', 400);
+  }
+
+  let delivered = false;
+  if (c.env.PUSH_NOTIFIER === "webpush") {
+    delivered = await sendTestPush(
+      getDb(c.env.DB),
+      vapidKeys(c.env),
+      fetch,
+      new Date(Date.now()),
+      player.id,
+      endpoint,
+      {
+        title: "Make The Team",
+        body: "Test notification — this device is set up correctly.",
+        url: new URL(ACCOUNT_PATH, originOf(c.env)).toString(),
+      },
+    );
+  }
+
+  return c.redirect(`${ACCOUNT_PATH}?test=${delivered ? "sent" : "failed"}`, 303);
 });
 
 /**

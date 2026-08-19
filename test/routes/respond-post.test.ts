@@ -298,7 +298,15 @@ describe("POST /r/:token — the one-time push offer (M14 Task 12, spec §11)", 
     const { fixtureId, playerIds } = await seedOpenFixture();
     const [playerId] = playerIds as [string];
 
-    const body = await (await postIntent(await tokenFor(fixtureId, playerId), "in")).text();
+    // Scripts are stripped before scanning, the same technique
+    // `respond-get.test.ts` uses to tell markup from script text:
+    // `PUSH_SUBSCRIBE_JS` legitimately carries the *selector* string
+    // `input[name="endpoint"]` (its this-device check on the account page),
+    // and a selector in shipped script is not an endpoint value. The
+    // invariant this test guards is about the *markup* — a form or field
+    // that would put an actual endpoint in front of a token holder.
+    const raw = await (await postIntent(await tokenFor(fixtureId, playerId), "in")).text();
+    const body = raw.replace(/<script[\s\S]*?<\/script>/g, "");
     expect(body).not.toMatch(/action="\/app\/push\/unsubscribe"/);
     expect(body).not.toContain('name="endpoint"');
   });

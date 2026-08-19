@@ -658,16 +658,36 @@ export const PUSH_STYLES_CSS = `
   .push h3 { margin: 1.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
   .push .button { margin-top: 0.5rem; }
 
-  .push-device-list {
-    list-style: none; margin: 0; padding: 0; text-align: left;
-    border-top: 1px solid var(--line);
+  table.push-devices { width: 100%; border-collapse: collapse; text-align: left; font-size: var(--t-support); }
+  table.push-devices th {
+    color: var(--mut); font-weight: 600; padding: 0.3rem 0.5rem 0.3rem 0;
+    border-bottom: 1px solid var(--line);
   }
-  .push-device {
-    display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-    padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line); color: var(--fg);
+  table.push-devices td { padding: 0.55rem 0.5rem 0.55rem 0; border-bottom: 1px solid var(--line); color: var(--fg); vertical-align: middle; }
+  table.push-devices td.push-actions { display: flex; gap: 0.5rem; justify-content: flex-end; padding-right: 0; }
+  table.push-devices form { margin: 0; }
+  .push .device-when { color: var(--mut); }
+  /* Row controls, not page actions: the 52px floor .button sets is for the
+     one thing a page asks you to do, and two of those per row would drown
+     the names the table exists to show. 44px keeps the tap-target floor. */
+  .push .button.row-action {
+    flex: 0 0 auto; min-height: 44px; padding: 0.35rem 0.8rem;
+    font-size: var(--t-support); font-weight: 600; margin-top: 0;
   }
-  .push-device form { margin: 0; }
-  .push-device .button { margin-top: 0; }
+  .this-device {
+    display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.5rem;
+    border-radius: 1rem; background: var(--accent-mut); color: var(--accent);
+    font-size: var(--t-support); font-weight: 600; white-space: nowrap;
+  }
+  .push label.device-name {
+    display: block; margin-top: 1rem; text-align: left;
+    color: var(--mut); font-size: var(--t-support); font-weight: 600;
+  }
+  .push input.device-name-input {
+    display: block; width: 100%; margin-top: 0.3rem; padding: 0.6rem 0.75rem;
+    border: 1px solid var(--line); border-radius: 0.6rem;
+    background: var(--bg); color: var(--fg); font: inherit;
+  }
 `;
 
 /**

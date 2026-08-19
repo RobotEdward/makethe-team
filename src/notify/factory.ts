@@ -147,7 +147,15 @@ function selectPushNotifier(env: Bindings, db: Db, now: Date): Notifier {
  */
 let cachedVapidKeys: { publicKey: string; privateKey: string; subject: string; keys: Promise<VapidKeys> } | undefined;
 
-function vapidKeys(env: Bindings): Promise<VapidKeys> {
+/**
+ * Exported since the account page's per-device Test button: `POST
+ * PUSH_TEST_PATH` (`src/routes/push.ts`) sends to a single named endpoint
+ * via `sendTestPush`, outside the notifier fan-out, and needs the same
+ * memoised, verified pair rather than importing its own. Call only when
+ * `env.PUSH_NOTIFIER` is `"webpush"` — the binding-presence checks below
+ * throw, by design, on a deployment that has no pair to check.
+ */
+export function vapidKeys(env: Bindings): Promise<VapidKeys> {
   const publicKey = requireBinding(
     env.VAPID_PUBLIC_KEY,
     "VAPID_PUBLIC_KEY",

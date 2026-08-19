@@ -192,3 +192,119 @@ it("explains itself rather than offering a dead button when permission was denie
   // worse than a sentence saying why.
   expect(scripts.PUSH_SUBSCRIBE_JS).toContain('"denied"');
 });
+
+/**
+ * The new-version overlay (M18), exercised by running the shipped
+ * `SERVICE_WORKER_JS` text under faked browser globals — the same
+ * run-the-real-block technique `test/routes/push.test.ts` uses for
+ * `PUSH_SUBSCRIBE_JS`, and for the same reason: a hand-built stand-in could
+ * drift from the block it claims to describe.
+ */
+describe("the update overlay in SERVICE_WORKER_JS", () => {
+  interface FakeElement {
+    className: string;
+    textContent: string;
+    type: string;
+    disabled: boolean;
+    children: FakeElement[];
+    clickHandler: (() => void) | null;
+    appendChild(child: FakeElement): void;
+    addEventListener(type: string, handler: () => void): void;
+  }
+
+  function fakeElement(): FakeElement {
+    return {
+      className: "",
+      textContent: "",
+      type: "",
+      disabled: false,
+      children: [],
+      clickHandler: null,
+      appendChild(child: FakeElement) {
+        this.children.push(child);
+      },
+      addEventListener(type: string, handler: () => void) {
+        if (type === "click") this.clickHandler = handler;
+      },
+    };
+  }
+
+  function run(options: { standalone: boolean; hadController: boolean }) {
+    const body = fakeElement();
+    let controllerChange: (() => void) | null = null;
+    let reloaded = 0;
+    const documentFake = {
+      body,
+      querySelector: (selector: string) =>
+        selector === ".update-overlay" && body.children.length > 0 ? body.children[0] : null,
+      createElement: () => fakeElement(),
+    };
+    const navigatorFake = {
+      serviceWorker: {
+        controller: options.hadController ? {} : null,
+        register: () => Promise.resolve(),
+        addEventListener: (type: string, handler: () => void) => {
+          if (type === "controllerchange") controllerChange = handler;
+        },
+      },
+    };
+    const windowFake = {
+      matchMedia: (query: string) => ({ matches: options.standalone && query.includes("standalone") }),
+      addEventListener: () => undefined,
+    };
+    const locationFake = {
+      reload: () => {
+        reloaded += 1;
+      },
+    };
+    new Function("document", "navigator", "window", "location", scripts.SERVICE_WORKER_JS)(
+      documentFake,
+      navigatorFake,
+      windowFake,
+      locationFake,
+    );
+    return {
+      body,
+      fireControllerChange: () => controllerChange?.(),
+      listening: () => controllerChange !== null,
+      reloads: () => reloaded,
+    };
+  }
+
+  it("does not listen at all outside the installed app", () => {
+    // A browser tab gets a fresh page on every navigation; only the
+    // installed PWA, which can sit open for days, needs the prompt.
+    const harness = run({ standalone: false, hadController: true });
+    expect(harness.listening()).toBe(false);
+  });
+
+  it("stays silent when the first-ever worker claims the page", () => {
+    // First install is a change from no controller to one — not an update,
+    // and announcing a new version to a brand-new page would be a lie.
+    const harness = run({ standalone: true, hadController: false });
+    harness.fireControllerChange();
+    expect(harness.body.children).toHaveLength(0);
+  });
+
+  it("shows one overlay when an updated worker takes over, however many times the event fires", () => {
+    const harness = run({ standalone: true, hadController: true });
+    harness.fireControllerChange();
+    harness.fireControllerChange();
+    expect(harness.body.children).toHaveLength(1);
+    const overlay = harness.body.children[0]!;
+    expect(overlay.className).toBe("update-overlay");
+    const [text, button] = overlay.children;
+    expect(text!.textContent).toContain("new version");
+    expect(button!.textContent).toBe("Refresh");
+  });
+
+  it("refreshes on click, saying so and disarming the button first", () => {
+    const harness = run({ standalone: true, hadController: true });
+    harness.fireControllerChange();
+    const button = harness.body.children[0]!.children[1]!;
+    button.clickHandler!();
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain("Refreshing");
+    expect(harness.reloads()).toBe(1);
+  });
+});

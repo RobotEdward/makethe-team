@@ -1431,6 +1431,14 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "bare 204 with no body for any other caller (src/routes/push.ts); no " +
       "template of its own that could carry an un-enumerated script. Its " +
       "own status-code coverage lives in test/routes/push.test.ts.",
+    "POST /app/push/test":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), " +
+      "a plain-text 404 (no session; unlike its two siblings this route " +
+      "accepts no token), a plain-text 400 (missing endpoint) or a 303 " +
+      "redirect to /app/account with a test= outcome flag " +
+      "(src/routes/push.ts); no template of its own that could carry an " +
+      "un-enumerated script. Its own status-code coverage lives in " +
+      "test/routes/push.test.ts.",
     "POST /g/:id/message":
       "on its three HTML-returning branches (a rejected submission, the " +
       "nobody-reachable refusal — an empty audience, or one nobody in which " +

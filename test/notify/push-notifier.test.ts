@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { pushSubscriptions } from "../../src/db/schema.js";
 import type { EmailMessage, PushMessage } from "../../src/notify/notifier.js";
-import { PushNotifier } from "../../src/notify/push-notifier.js";
+import { PushNotifier, sendTestPush } from "../../src/notify/push-notifier.js";
 import { NO_RECIPIENT_REASON } from "../../src/notify/quota.js";
 import { base64UrlEncode, importVapidKeys, type VapidKeys } from "../../src/notify/web-push.js";
 import { insertPlayer, insertSubscription, resetDatabase } from "../support/factories.js";
@@ -339,5 +339,106 @@ describe("PushNotifier", () => {
       expect(result.ok).toBe(false);
       expect(result).toEqual({ ok: false, error: expect.stringContaining("do not match") });
     }
+  });
+});
+
+/**
+ * The account page's per-row Test button (M18). What matters here is the
+ * scoping — one named device, never the player's whole fleet, never anyone
+ * else's row — and that the send path is the same receiver-safe one the
+ * notifier uses.
+ */
+describe("sendTestPush", () => {
+  beforeEach(resetDatabase);
+
+  const payload = {
+    title: "Make The Team",
+    body: "Test notification",
+    url: "https://makethe.team/app/account",
+  };
+
+  it("sends to exactly the named device, not the player's other ones", async () => {
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/phone");
+    await insertSubscription(db, playerId, "https://push.example/tablet");
+    const fetched: string[] = [];
+
+    const delivered = await sendTestPush(
+      db, keys, stubFetch(201, fetched), NOW, playerId, "https://push.example/phone", payload,
+    );
+
+    expect(delivered).toBe(true);
+    expect(fetched).toEqual(["https://push.example/phone"]);
+    const [row] = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, "https://push.example/phone"));
+    expect(row!.lastSuccessAt).toEqual(NOW);
+  });
+
+  it("finds nothing for an endpoint registered to a different player", async () => {
+    // The same scoping as the unsubscribe delete: an existing endpoint that
+    // is not the caller's answers exactly like one that does not exist, so
+    // the route built on this cannot probe or buzz another player's device.
+    const owner = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    const other = await insertPlayer(db, { name: "Alex", email: "alex@example.com" });
+    await insertSubscription(db, owner, "https://push.example/phone");
+    const fetched: string[] = [];
+
+    const delivered = await sendTestPush(
+      db, keys, stubFetch(201, fetched), NOW, other, "https://push.example/phone", payload,
+    );
+
+    expect(delivered).toBe(false);
+    expect(fetched).toEqual([]);
+  });
+
+  it("deletes the row when the push service says the device is gone", async () => {
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/gone");
+
+    const delivered = await sendTestPush(
+      db, keys, stubFetch(410), NOW, playerId, "https://push.example/gone", payload,
+    );
+
+    expect(delivered).toBe(false);
+    const rows = await db.select().from(pushSubscriptions);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("stamps a failure and keeps the row for a transient status", async () => {
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/busy");
+
+    const delivered = await sendTestPush(
+      db, keys, stubFetch(503), NOW, playerId, "https://push.example/busy", payload,
+    );
+
+    expect(delivered).toBe(false);
+    const [row] = await db.select().from(pushSubscriptions);
+    expect(row!.lastFailureAt).toEqual(NOW);
+  });
+
+  it("calls its injected fetch without a receiver, as the Workers builtin requires", async () => {
+    // The same Illegal-invocation trap the notifier's own suite pins; the
+    // test path must not reintroduce it through a second call site.
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/phone");
+
+    const delivered = await sendTestPush(
+      db, keys, receiverCheckingFetch(201), NOW, playerId, "https://push.example/phone", payload,
+    );
+
+    expect(delivered).toBe(true);
+  });
+
+  it("reports a broken VAPID pair as a plain failure", async () => {
+    const playerId = await insertPlayer(db, { name: "Sam", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example/phone");
+    const brokenKeys: Promise<VapidKeys> = Promise.reject(new Error("keys do not match"));
+    brokenKeys.catch(() => {});
+
+    const delivered = await sendTestPush(
+      db, brokenKeys, stubFetch(201), NOW, playerId, "https://push.example/phone", payload,
+    );
+
+    expect(delivered).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ACCOUNT_PATH, PUSH_SUBSCRIBE_PATH, PUSH_UNSUBSCRIBE_PATH } from "../../src/auth/paths.js";
+import { ACCOUNT_PATH, PUSH_SUBSCRIBE_PATH, PUSH_TEST_PATH, PUSH_UNSUBSCRIBE_PATH } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import { players, pushSubscriptions } from "../../src/db/schema.js";
 import { signResponseToken } from "../../src/domain/token.js";
@@ -11,6 +11,7 @@ import { kickoffIn } from "../support/clock.js";
 import {
   PUSH_BUTTON_ID,
   PUSH_KEY_ATTRIBUTE,
+  PUSH_NAME_ID,
   PUSH_PROBLEM_ID,
   PUSH_SUBSCRIBE_JS,
   PUSH_TOKEN_ATTRIBUTE,
@@ -102,6 +103,7 @@ async function captureSubscribeFetch(
   vapidKey: string,
   token: string | undefined,
   subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
+  deviceName?: string,
 ): Promise<{ url: string; init: RequestInit }> {
   const attributes: Record<string, string> = { [PUSH_KEY_ATTRIBUTE]: vapidKey };
   if (token !== undefined) attributes[PUSH_TOKEN_ATTRIBUTE] = token;
@@ -120,6 +122,10 @@ async function captureSubscribeFetch(
     [PUSH_BUTTON_ID]: button,
     [PUSH_PROBLEM_ID]: problem,
   };
+  if (deviceName !== undefined) {
+    // The M18 name field, nested in its label exactly as the view nests it.
+    elements[PUSH_NAME_ID] = { value: deviceName, parentNode: { hidden: true } };
+  }
   const document = { getElementById: (id: string) => elements[id] ?? null };
   const navigator = {
     serviceWorker: {
@@ -372,6 +378,28 @@ describe("PUSH_SUBSCRIBE_JS's actual wire format (M14 Task 12 review, Finding 1)
     expect(rows).toHaveLength(1);
     expect(rows[0]?.endpoint).toBe(sampleSubscription.endpoint);
   });
+
+  it("carries the typed device name in the body the route stores (M18)", async () => {
+    const { cookie } = await signIn();
+    const sampleSubscription = await generateSampleSubscription();
+
+    const { init } = await captureSubscribeFetch(
+      env.VAPID_PUBLIC_KEY,
+      undefined,
+      sampleSubscription,
+      "Ed's phone",
+    );
+
+    const response = await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: init.body as string,
+    });
+
+    expect(response.status).toBe(204);
+    const [row] = await db.select().from(pushSubscriptions);
+    expect(row!.name).toBe("Ed's phone");
+  });
 });
 
 describe("POST /app/push/unsubscribe", () => {
@@ -488,5 +516,116 @@ describe("POST /app/push/unsubscribe", () => {
     expect(response.status).toBe(204);
     const remaining = await db.select().from(pushSubscriptions);
     expect(remaining.map((row) => row.id)).not.toContain(mine);
+  });
+});
+
+describe("the subscribe body's friendly name (M18)", () => {
+  it("stores a trimmed name against the new row", async () => {
+    const { cookie } = await signIn();
+    const subscription = await generateSampleSubscription();
+    const response = await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ subscription, name: "  Ed's phone  " }),
+    });
+    expect(response.status).toBe(204);
+
+    const [row] = await db.select().from(pushSubscriptions);
+    expect(row!.name).toBe("Ed's phone");
+  });
+
+  it("stores null for a blank or absent name, and truncates a long one", async () => {
+    const { cookie } = await signIn();
+    const blank = await generateSampleSubscription();
+    await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ subscription: blank, name: "   " }),
+    });
+    const long = await generateSampleSubscription();
+    await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ subscription: long, name: "x".repeat(300) }),
+    });
+
+    const [blankRow] = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, blank.endpoint));
+    expect(blankRow!.name).toBeNull();
+    const [longRow] = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.endpoint, long.endpoint));
+    expect(longRow!.name).toBe("x".repeat(60));
+  });
+
+  it("a re-subscribe with a new name renames the existing row", async () => {
+    const { cookie } = await signIn();
+    const subscription = await generateSampleSubscription();
+    for (const name of ["Old phone", "New phone"]) {
+      await SELF.fetch(url(PUSH_SUBSCRIBE_PATH), {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie },
+        body: JSON.stringify({ subscription, name }),
+      });
+    }
+    const rows = await db.select().from(pushSubscriptions);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.name).toBe("New phone");
+  });
+});
+
+/**
+ * `POST /app/push/test` (M18). This deployment of the test suite runs with
+ * `PUSH_NOTIFIER: "null"` (`vitest.config.ts`), so nothing here can deliver
+ * — the delivery mechanics are pinned in `test/notify/push-notifier.test.ts`
+ * (`sendTestPush`) with an injected fetch. What this suite owns is the HTTP
+ * boundary: the proofs, the origin check, and the redirect contract.
+ */
+describe("POST /app/push/test", () => {
+  it("refuses a caller with no session — a token is not enough here", async () => {
+    const { token, playerId } = await seedFixtureWithToken();
+    await insertSubscription(db, playerId, "https://push.example/phone");
+    const response = await SELF.fetch(url(PUSH_TEST_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ endpoint: "https://push.example/phone", token }).toString(),
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("refuses a cross-origin post", async () => {
+    const { cookie } = await signIn();
+    const response = await SELF.fetch(url(PUSH_TEST_PATH), {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        cookie,
+        origin: "https://evil.example.com",
+      },
+      body: new URLSearchParams({ endpoint: "https://push.example/phone" }).toString(),
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it("refuses a body with no endpoint", async () => {
+    const { cookie } = await signIn();
+    const response = await SELF.fetch(url(PUSH_TEST_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+      body: "",
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("sends the browser back to the account page with the outcome flag", async () => {
+    const { cookie } = await signIn();
+    await insertSubscription(db, await viewerId(), "https://push.example/phone");
+    const response = await SELF.fetch(url(PUSH_TEST_PATH), {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie },
+      body: new URLSearchParams({ endpoint: "https://push.example/phone" }).toString(),
+      redirect: "manual",
+    });
+    expect(response.status).toBe(303);
+    // "failed" is this deployment's honest answer: PUSH_NOTIFIER is "null"
+    // here, so nothing was delivered and the page must not claim otherwise.
+    expect(response.headers.get("location")).toContain(`${ACCOUNT_PATH}?test=failed`);
   });
 });

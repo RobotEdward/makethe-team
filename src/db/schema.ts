@@ -293,6 +293,12 @@ export const pushSubscriptions = sqliteTable(
     auth: text("auth").notNull(),
     /** Only so a player can tell one device from another in a list. */
     userAgent: text("user_agent"),
+    /**
+     * A caption the player typed at subscribe time ("Ed's phone"). Null for
+     * every device registered before this column existed — the list falls
+     * back to `user_agent` for those, so the fallback must survive.
+     */
+    name: text("name"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
     lastSuccessAt: integer("last_success_at", { mode: "timestamp_ms" }),
     lastFailureAt: integer("last_failure_at", { mode: "timestamp_ms" }),

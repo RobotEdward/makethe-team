@@ -1,6 +1,15 @@
-import { PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
+import { PUSH_TEST_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
 import { escapeHtml } from "./layout.js";
-import { PUSH_BUTTON_ID, PUSH_KEY_ATTRIBUTE, PUSH_PROBLEM_ID, PUSH_TOKEN_ATTRIBUTE } from "./scripts.js";
+import {
+  PUSH_BUTTON_ID,
+  PUSH_DONE_ID,
+  PUSH_KEY_ATTRIBUTE,
+  PUSH_NAME_ID,
+  PUSH_PROBLEM_ID,
+  PUSH_REENABLE_ATTRIBUTE,
+  PUSH_RELOAD_ATTRIBUTE,
+  PUSH_TOKEN_ATTRIBUTE,
+} from "./scripts.js";
 
 /**
  * "Add to your home screen" (M13, spec §11).
@@ -41,32 +50,40 @@ export function renderInstallSection(): string {
   `;
 }
 
-/** One registered device, as `renderPushSection` shows and removes it. */
+/** One registered device, as `renderPushSection` shows, tests and removes it. */
 export interface PushDeviceRow {
   /**
-   * **Never rendered.** Carried only so `renderPushDevice` can put it in the
-   * removal form's hidden `endpoint` field — the one place this value is
-   * allowed to appear at all, and only inside a `value=""` attribute, never
-   * as text a reader could see. This is the account page's half of the
-   * invariant on `PUSH_UNSUBSCRIBE_PATH` (`src/auth/paths.ts`): the endpoint
-   * is high-entropy and this session-gated page is the only place the
-   * product ever discloses one — see that route's own doc comment before
-   * changing anything here.
+   * **Never rendered as text.** Carried only so the row's two forms — remove
+   * and test — can put it in a hidden `endpoint` field, the one place this
+   * value is allowed to appear at all, and only inside a `value=""`
+   * attribute, never as text a reader could see. This is the account page's
+   * half of the invariant on `PUSH_UNSUBSCRIBE_PATH` (`src/auth/paths.ts`):
+   * the endpoint is high-entropy and this session-gated page is the only
+   * place the product ever discloses one — see that route's own doc comment
+   * before changing anything here. `PUSH_SUBSCRIBE_JS` also reads these
+   * hidden fields to find which row is the device it is running on; that is
+   * a read of what the page already carries, not a new disclosure.
    */
   endpoint: string;
   /**
-   * `push_subscriptions.user_agent` — a caption a player wrote for
-   * themselves at subscribe time (their browser's own UA string, truncated),
-   * not an identifier, and untrusted text either way: `renderPushDevice`
-   * escapes it like any other player-influenced string. `null` when the
-   * device subscribed before a `User-Agent` header was sent, or with one
-   * empty.
+   * The caption the player typed at subscribe time ("Ed's phone"), or null
+   * for a device registered before the field existed — those fall back to
+   * `userAgent` below. Untrusted text either way: escaped like any other
+   * player-influenced string.
+   */
+  name: string | null;
+  /**
+   * `push_subscriptions.user_agent` — the pre-name caption (the browser's
+   * own UA string, truncated), kept only as the fallback when `name` is
+   * null. Untrusted text: escaped.
    */
   userAgent: string | null;
+  /** `created_at`, already formatted by the route (TR-5). */
+  enabledAtLocal: string;
 }
 
 /**
- * The permission button and its problem paragraph — the one piece shared by
+ * The permission control — name field, button, problem paragraph — shared by
  * `renderPushSection` and `renderPushOffer` below (M14 Task 12 review,
  * Finding 5). Not exported: the two callers differ in exactly what a
  * `devices` field would let a caller do wrong, which is the reason this was
@@ -74,54 +91,97 @@ export interface PushDeviceRow {
  * parameter in the first place, and a third, more general entry point would
  * reopen that hole.
  *
- * **The button ships `hidden`, exactly like `data-install-button` above.**
- * The server has no way to know a visitor's `Notification.permission` — that
- * lives only in the browser — so it cannot choose between state 3 (ask),
- * state 4 (already granted) or state 5 (denied) at render time. Feature
- * detection is entirely `PUSH_SUBSCRIBE_JS`'s job: it reveals the button
- * unless permission is already `"denied"`, in which case it leaves the
- * button hidden and fills `PUSH_PROBLEM_ID` instead. With scripting off the
- * button and the problem text both stay hidden and silent — never a control
- * that cannot work.
+ * **Everything here ships `hidden`, exactly like `data-install-button`
+ * above.** The server has no way to know a visitor's
+ * `Notification.permission` — that lives only in the browser — so it cannot
+ * choose between state 3 (ask), state 4 (already granted) or state 5
+ * (denied) at render time. Feature detection is entirely
+ * `PUSH_SUBSCRIBE_JS`'s job: it reveals the name field and button together
+ * unless permission is already `"denied"`, in which case it leaves both
+ * hidden and fills `PUSH_PROBLEM_ID` instead. With scripting off the whole
+ * control stays hidden and silent — never a control that cannot work.
  *
  * `token`, when given, rides along as `${PUSH_TOKEN_ATTRIBUTE}` — see that
  * constant's own doc comment in `src/views/scripts.ts` for why the offer's
  * button is otherwise unusable for its entire, signed-out audience (Finding
  * 2). The account page never passes one: its caller is signed in, and
  * `resolvePlayerId` in `src/routes/push.ts` already reads the session.
+ *
+ * `reloadTo`, when given, is where `PUSH_SUBSCRIBE_JS` navigates after a
+ * successful subscribe (`${PUSH_RELOAD_ATTRIBUTE}`) — the account page
+ * passes its own URL with a confirmation flag so the freshly registered
+ * device appears in the table it renders. The offer page passes none and
+ * gets the inline `PUSH_DONE_ID` acknowledgement instead.
  */
-function renderPermissionButton(vapidPublicKey: string | undefined, token: string | undefined): string {
+interface PermissionControl {
+  vapidPublicKey: string | undefined;
+  token?: string;
+  buttonLabel: string;
+  /** Pre-filled into the name field; the player can overtype it. */
+  defaultDeviceName: string;
+  reloadTo?: string;
+  /** Swapped in by script when this browser is already in the table. */
+  reenableLabel?: string;
+}
+
+function renderPermissionControl(control: PermissionControl): string {
+  const { vapidPublicKey, token, buttonLabel, defaultDeviceName, reloadTo, reenableLabel } = control;
   if (vapidPublicKey === undefined) return "";
   const tokenAttribute = token === undefined ? "" : ` ${PUSH_TOKEN_ATTRIBUTE}="${escapeHtml(token)}"`;
+  const reloadAttribute = reloadTo === undefined ? "" : ` ${PUSH_RELOAD_ATTRIBUTE}="${escapeHtml(reloadTo)}"`;
+  const reenableAttribute =
+    reenableLabel === undefined ? "" : ` ${PUSH_REENABLE_ATTRIBUTE}="${escapeHtml(reenableLabel)}"`;
   return `
+    <label class="device-name" for="${PUSH_NAME_ID}" hidden>Name this device
+      <input class="device-name-input" id="${PUSH_NAME_ID}" type="text" maxlength="60" value="${escapeHtml(defaultDeviceName)}">
+    </label>
     <button
       class="button primary"
       type="button"
       id="${PUSH_BUTTON_ID}"
-      ${PUSH_KEY_ATTRIBUTE}="${escapeHtml(vapidPublicKey)}"${tokenAttribute}
+      ${PUSH_KEY_ATTRIBUTE}="${escapeHtml(vapidPublicKey)}"${tokenAttribute}${reloadAttribute}${reenableAttribute}
       hidden
-    >Turn on notifications</button>
-    <p class="nudge" id="${PUSH_PROBLEM_ID}" hidden></p>`;
+    >${escapeHtml(buttonLabel)}</button>
+    <p class="nudge" id="${PUSH_PROBLEM_ID}" hidden></p>
+    <p id="${PUSH_DONE_ID}" hidden>Notifications are on for this device.</p>`;
 }
 
 /**
- * One row of the device list: a caption and a plain `<form>` that removes it.
+ * One row of the device table: caption, date, and two plain `<form>`s — Test
+ * and Remove.
  *
- * A real `<form method="post">`, not a script-driven delete, because §11's
- * closing paragraph requires the whole list to work with no JavaScript at
- * all — `POST /app/push/unsubscribe` reads exactly this shape
- * (`application/x-www-form-urlencoded`) for that reason.
+ * Real `<form method="post">`s, not script-driven, because §11's closing
+ * paragraph requires the whole list to work with no JavaScript at all —
+ * `POST /app/push/unsubscribe` and `POST /app/push/test` both read exactly
+ * this shape (`application/x-www-form-urlencoded`) for that reason.
+ *
+ * The "This device" badge ships `hidden`: only the browser knows which row
+ * it is (`pushManager.getSubscription()`), so `PUSH_SUBSCRIBE_JS` reveals it
+ * on the row whose hidden endpoint matches. With scripting off it simply
+ * never appears — absence of an enhancement, not a broken control.
  */
 function renderPushDevice(device: PushDeviceRow): string {
-  const label = device.userAgent && device.userAgent.trim().length > 0 ? device.userAgent : "An unnamed device";
+  const caption =
+    device.name && device.name.trim().length > 0
+      ? device.name
+      : device.userAgent && device.userAgent.trim().length > 0
+        ? device.userAgent
+        : "An unnamed device";
   return `
-    <li class="push-device">
-      <span>${escapeHtml(label)}</span>
-      <form method="post" action="${escapeHtml(PUSH_UNSUBSCRIBE_PATH)}">
-        <input type="hidden" name="endpoint" value="${escapeHtml(device.endpoint)}">
-        <button class="button" type="submit">Remove</button>
-      </form>
-    </li>`;
+    <tr>
+      <td>${escapeHtml(caption)}<span class="this-device" hidden>This device</span></td>
+      <td class="device-when">${escapeHtml(device.enabledAtLocal)}</td>
+      <td class="push-actions">
+        <form method="post" action="${escapeHtml(PUSH_TEST_PATH)}">
+          <input type="hidden" name="endpoint" value="${escapeHtml(device.endpoint)}">
+          <button class="button row-action" type="submit">Test</button>
+        </form>
+        <form method="post" action="${escapeHtml(PUSH_UNSUBSCRIBE_PATH)}">
+          <input type="hidden" name="endpoint" value="${escapeHtml(device.endpoint)}">
+          <button class="button row-action" type="submit">Remove</button>
+        </form>
+      </td>
+    </tr>`;
 }
 
 export interface PushSectionOptions {
@@ -153,6 +213,16 @@ export interface PushSectionOptions {
    * property, not just a habit.
    */
   devices: readonly PushDeviceRow[];
+  /** Pre-fills the name field ("Ed's phone"); the player can overtype it. */
+  defaultDeviceName: string;
+  /**
+   * A one-line outcome to show at the top of the section — "Notifications
+   * are on for this device.", "Test sent." — chosen by the route from its
+   * own fixed strings, never from caller text.
+   */
+  notice?: string | undefined;
+  /** Where a successful subscribe navigates; see `PermissionControl`. */
+  reloadTo?: string;
 }
 
 /**
@@ -170,20 +240,35 @@ export interface PushSectionOptions {
  * related, but they remain two `<section>` elements, and a future task may
  * choose to fold them into one.
  */
-export function renderPushSection({ heading, intro, vapidPublicKey, devices }: PushSectionOptions): string {
+export function renderPushSection({ heading, intro, vapidPublicKey, devices, defaultDeviceName, notice, reloadTo }: PushSectionOptions): string {
   const deviceHeading = "<h3>Your devices</h3>";
   const deviceList =
     devices.length === 0
       ? `<p class="read-only">No devices registered yet.</p>`
-      : `<ul class="push-device-list">${devices.map(renderPushDevice).join("")}</ul>`;
+      : `<table class="push-devices">
+          <thead><tr><th>Device</th><th>Enabled</th><th></th></tr></thead>
+          <tbody>${devices.map(renderPushDevice).join("")}</tbody>
+        </table>`;
+  // "Turn on notifications" is the honest label for someone with nothing
+  // registered; once a table exists the same button under it means "add the
+  // one I am holding", so the words change with the position — and script
+  // upgrades them again to "Re-enable on this device" when the badge check
+  // finds this browser already in the table.
+  const control = renderPermissionControl({
+    vapidPublicKey,
+    buttonLabel: devices.length === 0 ? "Turn on notifications" : "Enable on this device",
+    defaultDeviceName,
+    reloadTo,
+    reenableLabel: "Re-enable on this device",
+  });
+  const noticeHtml = notice === undefined ? "" : `<p class="nudge">${escapeHtml(notice)}</p>`;
 
   return `
     <section class="push">
       <h2>${escapeHtml(heading)}</h2>
       <p>${escapeHtml(intro)}</p>
-      ${renderPermissionButton(vapidPublicKey, undefined)}
-      ${deviceHeading}
-      ${deviceList}
+      ${noticeHtml}
+      ${devices.length === 0 ? `${control}${deviceHeading}${deviceList}` : `${deviceHeading}${deviceList}${control}`}
     </section>
   `;
 }
@@ -205,6 +290,12 @@ export interface PushOfferOptions {
    * the failure mode that got missed the first time.
    */
   token: string;
+  /**
+   * Pre-fills the name field. This page cannot always name its viewer (the
+   * squad list is hidden under BR-33 for some fixtures), so callers pass a
+   * generic caption rather than a personalised one.
+   */
+  defaultDeviceName: string;
 }
 
 /**
@@ -220,12 +311,12 @@ export interface PushOfferOptions {
  * field to `PushOfferOptions` — see `src/views/fixture.ts`'s
  * `FixturePageOptions.pushOffer` doc comment before changing anything here.
  */
-export function renderPushOffer({ heading, intro, vapidPublicKey, token }: PushOfferOptions): string {
+export function renderPushOffer({ heading, intro, vapidPublicKey, token, defaultDeviceName }: PushOfferOptions): string {
   return `
     <section class="push">
       <h2>${escapeHtml(heading)}</h2>
       <p>${escapeHtml(intro)}</p>
-      ${renderPermissionButton(vapidPublicKey, token)}
+      ${renderPermissionControl({ vapidPublicKey, token, buttonLabel: "Turn on notifications", defaultDeviceName })}
     </section>
   `;
 }

@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { pushSubscriptions } from "../db/schema.js";
 import type { Message, Notifier, SendResult } from "./notifier.js";
@@ -164,44 +164,122 @@ export class PushNotifier implements Notifier {
     return { ok: false, error: lastOutcome?.error ?? "push-failed" };
   }
 
-  private async sendToDevice(
+  private sendToDevice(
     subscription: typeof pushSubscriptions.$inferSelect,
     payload: string,
     keys: VapidKeys,
-  ): Promise<{ id: string; delivered: boolean; gone: boolean; error: string }> {
-    try {
-      const body = await encryptPayload(subscription, payload);
-      // Detached from `this` before it is called. `fetchImpl` is a free
-      // function, and production hands in the Workers global `fetch`, which
-      // is a builtin that throws `TypeError: Illegal invocation` unless its
-      // receiver is `globalThis` — `this.fetchImpl(...)` would give it this
-      // notifier instead, failing every push of every type before a byte
-      // left the isolate. A stub written as an arrow function cannot see the
-      // difference, which is why the suite stayed green through it; the test
-      // that pins this uses an ordinary function that checks its receiver.
-      const send = this.fetchImpl;
-      const response = await send(subscription.endpoint, {
-        method: "POST",
-        headers: {
-          ...(await vapidHeaders(subscription.endpoint, keys, this.now)),
-          "Content-Type": "application/octet-stream",
-          TTL: String(TTL_SECONDS),
-        },
-        body,
-      });
-
-      if (response.ok) {
-        return { id: subscription.id, delivered: true, gone: false, error: "" };
-      }
-
-      // 404 and 410 are the push service telling us this endpoint is dead
-      // for good (RFC 8030 §7.2). Every other status might pass on a later
-      // send, so only these two mark the subscription for deletion.
-      const isGone = response.status === 404 || response.status === 410;
-      return { id: subscription.id, delivered: false, gone: isGone, error: `push-${response.status}` };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { id: subscription.id, delivered: false, gone: false, error: `push-error: ${message}` };
-    }
+  ): Promise<DeviceOutcome> {
+    return pushToDevice(subscription, payload, keys, this.fetchImpl, this.now);
   }
+}
+
+interface DeviceOutcome {
+  id: string;
+  delivered: boolean;
+  gone: boolean;
+  error: string;
+}
+
+/**
+ * Encrypt and POST one payload to one device. A module-level function rather
+ * than a method so `sendTestPush` below can share it without constructing a
+ * whole notifier around one send.
+ */
+async function pushToDevice(
+  subscription: typeof pushSubscriptions.$inferSelect,
+  payload: string,
+  keys: VapidKeys,
+  fetchImpl: typeof fetch,
+  now: Date,
+): Promise<DeviceOutcome> {
+  try {
+    const body = await encryptPayload(subscription, payload);
+    // `fetchImpl` is called as a free function, never as a property of
+    // anything. Production hands in the Workers global `fetch`, a builtin
+    // that throws `TypeError: Illegal invocation` unless its receiver is
+    // `globalThis` — as a method call it would fail every push of every
+    // type before a byte left the isolate. A stub written as an arrow
+    // function cannot see the difference, which is why the suite stayed
+    // green through it; the test that pins this uses an ordinary function
+    // that checks its receiver.
+    const response = await fetchImpl(subscription.endpoint, {
+      method: "POST",
+      headers: {
+        ...(await vapidHeaders(subscription.endpoint, keys, now)),
+        "Content-Type": "application/octet-stream",
+        TTL: String(TTL_SECONDS),
+      },
+      body,
+    });
+
+    if (response.ok) {
+      return { id: subscription.id, delivered: true, gone: false, error: "" };
+    }
+
+    // 404 and 410 are the push service telling us this endpoint is dead
+    // for good (RFC 8030 §7.2). Every other status might pass on a later
+    // send, so only these two mark the subscription for deletion.
+    const isGone = response.status === 404 || response.status === 410;
+    return { id: subscription.id, delivered: false, gone: isGone, error: `push-${response.status}` };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { id: subscription.id, delivered: false, gone: false, error: `push-error: ${message}` };
+  }
+}
+
+/**
+ * Send one test notification to exactly one of `playerId`'s own devices
+ * (the account page's per-row Test button, `POST PUSH_TEST_PATH`).
+ *
+ * Scoped by player id *and* endpoint, like the unsubscribe delete: an
+ * endpoint that exists but belongs to someone else finds no row and returns
+ * `false`, indistinguishable from a failed send, so this cannot be used to
+ * probe another player's devices. Deliberately *not* routed through
+ * `PushNotifier.send` — that fans out to every device the player has, and
+ * the whole point of the button is to test the one row it sits beside.
+ *
+ * A dead endpoint (404/410 from the push service) is deleted here exactly
+ * as the notifier does it — the test button is the one place a player is
+ * actively looking, so a row that can never work again vanishing from the
+ * list is the most honest possible answer.
+ */
+export async function sendTestPush(
+  db: Db,
+  keys: VapidKeys | Promise<VapidKeys>,
+  fetchImpl: typeof fetch,
+  now: Date,
+  playerId: string,
+  endpoint: string,
+  payload: { title: string; body: string; url: string },
+): Promise<boolean> {
+  let resolvedKeys: VapidKeys;
+  try {
+    resolvedKeys = await keys;
+  } catch {
+    return false;
+  }
+
+  const [subscription] = await db
+    .select()
+    .from(pushSubscriptions)
+    .where(and(eq(pushSubscriptions.playerId, playerId), eq(pushSubscriptions.endpoint, endpoint)));
+  if (subscription === undefined) return false;
+
+  const outcome = await pushToDevice(
+    subscription,
+    JSON.stringify({ ...payload, tag: `test-${subscription.id}` }),
+    resolvedKeys,
+    fetchImpl,
+    now,
+  );
+
+  if (outcome.gone) {
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, subscription.id));
+  } else if (outcome.delivered) {
+    await db.update(pushSubscriptions).set({ lastSuccessAt: now }).where(eq(pushSubscriptions.id, subscription.id));
+  } else {
+    await db.update(pushSubscriptions).set({ lastFailureAt: now }).where(eq(pushSubscriptions.id, subscription.id));
+  }
+
+  return outcome.delivered;
 }

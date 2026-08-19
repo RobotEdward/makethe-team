@@ -176,7 +176,7 @@ test.describe("the device list, with JavaScript off", () => {
     await signIn(page, TEST_PLAYER);
     await page.goto(ACCOUNT_PATH);
 
-    const row = page.locator(".push-device", { hasText: "The test phone" });
+    const row = page.locator("table.push-devices tr", { hasText: "The test phone" });
     await expect(row).toBeVisible();
 
     // This is a real `<form method="post">` submit, not a script-driven
@@ -190,6 +190,6 @@ test.describe("the device list, with JavaScript off", () => {
     // the row is actually gone, rather than leaving the stale page in place
     // (M14 Task 12 review, Finding 3).
     await expect(page).toHaveURL(new RegExp(`${ACCOUNT_PATH}$`));
-    await expect(page.locator(".push-device", { hasText: "The test phone" })).toHaveCount(0);
+    await expect(page.locator("table.push-devices tr", { hasText: "The test phone" })).toHaveCount(0);
   });
 });

@@ -333,3 +333,14 @@ export const PUSH_SUBSCRIBE_PATH = `${DASHBOARD_PATH}/push/subscribe`;
  * comment on the handler in `src/routes/push.ts` before building one.
  */
 export const PUSH_UNSUBSCRIBE_PATH = `${DASHBOARD_PATH}/push/unsubscribe`;
+
+/**
+ * Send a test notification to one of the caller's own devices. **Session
+ * only** — unlike its two siblings above, a response token is *not*
+ * accepted: the button lives on the session-gated device list, its form
+ * carries an endpoint, and widening this to token holders would hand anyone
+ * with a forwarded link a way to make a stranger's phone buzz on demand.
+ * Scoped by player id *and* endpoint in the send, like the unsubscribe
+ * delete, so it cannot be used to probe whether an endpoint exists.
+ */
+export const PUSH_TEST_PATH = `${DASHBOARD_PATH}/push/test`;
