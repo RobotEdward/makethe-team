@@ -1,6 +1,6 @@
 import {
   ACCOUNT_PATH,
-  ADMIN_ALLOWLIST_PATH,
+  ADMIN_PATH,
   APPLE_TOUCH_ICON_PATH,
   DASHBOARD_PATH,
   MANIFEST_PATH,
@@ -285,7 +285,7 @@ function renderHeader(nav: PageNav): string {
   const links = [
     navLink(DASHBOARD_PATH, "Games", "games", nav.current),
     navLink(ACCOUNT_PATH, "Account", "account", nav.current),
-    ...(nav.isAdmin ? [navLink(ADMIN_ALLOWLIST_PATH, "Admin", "admin", nav.current)] : []),
+    ...(nav.isAdmin ? [navLink(ADMIN_PATH, "Admin", "admin", nav.current)] : []),
   ];
   return `<header class="site-header"><a class="site-name" href="${escapeHtml(
     DASHBOARD_PATH,

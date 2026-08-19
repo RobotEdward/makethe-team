@@ -126,6 +126,21 @@ export const ADMIN_ALLOWLIST_ADD_PATH = `${ADMIN_ALLOWLIST_PATH}/add`;
 export const ADMIN_ALLOWLIST_REMOVE_PATH = `${ADMIN_ALLOWLIST_PATH}/remove`;
 
 /**
+ * The admin index (M17): the page the header's Admin link opens, linking out
+ * to the allow list and the two diagnostic screens below. Same TR-18 posture
+ * as the allow list — every handler re-asks `user.is_admin`, refusal is 404.
+ *
+ * The doctor's check is a POST that renders its verdict directly rather than
+ * a GET with a query parameter: the address under diagnosis is somebody's
+ * email (often a stranger's), and a query string puts it in access logs and
+ * browser history.
+ */
+export const ADMIN_PATH = `${DASHBOARD_PATH}/admin`;
+export const ADMIN_SIGNIN_DOCTOR_PATH = `${ADMIN_PATH}/sign-in`;
+export const ADMIN_SIGNIN_CHECK_PATH = `${ADMIN_SIGNIN_DOCTOR_PATH}/check`;
+export const ADMIN_DELIVERY_PATH = `${ADMIN_PATH}/delivery`;
+
+/**
  * Better Auth's own mount point: every endpoint it owns (`/sign-in/magic-link`,
  * `/magic-link/verify`, `/sign-out`, …) hangs off this. It is the framework's
  * default `basePath`, restated here because this project's own code builds

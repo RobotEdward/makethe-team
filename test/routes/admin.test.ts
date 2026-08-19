@@ -6,11 +6,16 @@ import {
   ADMIN_ALLOWLIST_ADD_PATH,
   ADMIN_ALLOWLIST_PATH,
   ADMIN_ALLOWLIST_REMOVE_PATH,
+  ADMIN_DELIVERY_PATH,
+  ADMIN_PATH,
+  ADMIN_SIGNIN_CHECK_PATH,
+  ADMIN_SIGNIN_DOCTOR_PATH,
   SIGN_IN_PATH,
 } from "../../src/auth/paths.js";
+import { recordSignInRefusal } from "../../src/auth/sign-in-gate.js";
 import { getDb } from "../../src/db/client.js";
-import { signupAllowlist, user } from "../../src/db/schema.js";
-import { resetDatabase } from "../support/factories.js";
+import { notificationLog, signupAllowlist, user } from "../../src/db/schema.js";
+import { insertPlayer, resetDatabase } from "../support/factories.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
@@ -119,5 +124,151 @@ describe("the admin allow-list screen", () => {
     );
     expect(response.status).toBe(403);
     expect(await db.select().from(signupAllowlist)).toHaveLength(1);
+  });
+});
+
+describe("the admin index and diagnostic pages (M17)", () => {
+  beforeEach(async () => {
+    await resetDatabase();
+  });
+
+  it("answers 404 to a signed-in non-admin on all four new endpoints", async () => {
+    const cookie = await signInAs({ admin: false });
+    const app = createApp();
+    for (const request of [
+      new Request(`${ORIGIN}${ADMIN_PATH}`, { headers: { cookie } }),
+      new Request(`${ORIGIN}${ADMIN_SIGNIN_DOCTOR_PATH}`, { headers: { cookie } }),
+      new Request(`${ORIGIN}${ADMIN_DELIVERY_PATH}`, { headers: { cookie } }),
+      post(ADMIN_SIGNIN_CHECK_PATH, cookie, "anyone@example.com"),
+    ]) {
+      const response = await app.fetch(request, bindings());
+      expect(response.status).toBe(404);
+    }
+  });
+
+  it("shows an admin the index with all three tools linked", async () => {
+    const cookie = await signInAs({ admin: true });
+    const response = await createApp().fetch(
+      new Request(`${ORIGIN}${ADMIN_PATH}`, { headers: { cookie } }),
+      bindings(),
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain(`href="${ADMIN_ALLOWLIST_PATH}"`);
+    expect(html).toContain(`href="${ADMIN_SIGNIN_DOCTOR_PATH}"`);
+    expect(html).toContain(`href="${ADMIN_DELIVERY_PATH}"`);
+  });
+
+  it("lists refused attempts newest first, capped at ten, addresses escaped", async () => {
+    const cookie = await signInAs({ admin: true });
+    const base = Date.parse("2026-08-19T09:00:00Z");
+    for (let i = 0; i < 12; i++) {
+      await recordSignInRefusal(db, `refused${i}@example.com`, new Date(base + i * 60_000));
+    }
+    await recordSignInRefusal(db, `<img src=x>@example.com`, new Date(base + 13 * 60_000));
+
+    const response = await createApp().fetch(
+      new Request(`${ORIGIN}${ADMIN_SIGNIN_DOCTOR_PATH}`, { headers: { cookie } }),
+      bindings(),
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    // Newest first, exactly ten of the thirteen: the hostile one plus 11..3.
+    expect(html).toContain("&lt;img src=x&gt;@example.com");
+    expect(html).not.toContain("<img src=x>");
+    expect(html).toContain("refused11@example.com");
+    expect(html).toContain("refused3@example.com");
+    expect(html).not.toContain("refused2@example.com");
+    // Order pinned with both presences asserted above, so neither indexOf
+    // can be a vacuous -1.
+    expect(html.indexOf("refused11@example.com")).toBeGreaterThan(-1);
+    expect(html.indexOf("refused11@example.com")).toBeLessThan(html.indexOf("refused3@example.com"));
+  });
+
+  it("answers a doctor check with every door's verdict", async () => {
+    const cookie = await signInAs({ admin: true });
+    await db.insert(signupAllowlist).values({ email: "friend@example.com" });
+    const app = createApp();
+
+    const listed = await app.fetch(post(ADMIN_SIGNIN_CHECK_PATH, cookie, "Friend@Example.COM"), bindings());
+    expect(listed.status).toBe(200);
+    const listedHtml = await listed.text();
+    expect(listedHtml).toContain("friend@example.com");
+    expect(listedHtml).toContain("Can sign in.");
+    expect(listedHtml.match(/"door-open"/g)).toHaveLength(1); // the table door only
+
+    const stranger = await app.fetch(post(ADMIN_SIGNIN_CHECK_PATH, cookie, "stranger@example.com"), bindings());
+    const strangerHtml = await stranger.text();
+    expect(strangerHtml).toContain("Cannot sign in");
+    expect(strangerHtml.match(/"door-shut"/g)).toHaveLength(3);
+  });
+
+  it("re-renders the doctor at 422 for an implausible address", async () => {
+    const cookie = await signInAs({ admin: true });
+    const response = await createApp().fetch(post(ADMIN_SIGNIN_CHECK_PATH, cookie, "not an email"), bindings());
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("That doesn&#39;t look like an email address.");
+  });
+
+  it("refuses a cross-origin doctor check", async () => {
+    const cookie = await signInAs({ admin: true });
+    const response = await createApp().fetch(
+      post(ADMIN_SIGNIN_CHECK_PATH, cookie, "friend@example.com", "https://evil.example"),
+      bindings(),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("shows pending link requests from the verification table with the gate's current answer", async () => {
+    const cookie = await signInAs({ admin: true });
+    // signIn() consumed its own link, so issue a fresh pending one for the
+    // permitted address alongside the refused stranger's.
+    const app = createApp();
+    for (const email of [ALLOWED, "stranger@example.com"]) {
+      await app.fetch(
+        new Request(`${ORIGIN}/api/auth/sign-in/magic-link`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: ORIGIN },
+          body: JSON.stringify({ email }),
+        }),
+        bindings(),
+      );
+    }
+
+    const response = await app.fetch(
+      new Request(`${ORIGIN}${ADMIN_SIGNIN_DOCTOR_PATH}`, { headers: { cookie } }),
+      bindings(),
+    );
+    const html = await response.text();
+    expect(html).toContain("stranger@example.com");
+    expect(html).toContain("would be refused");
+    expect(html).toContain("would be sent a link");
+  });
+
+  it("shows the delivery page with today's quota count and recent notification rows", async () => {
+    const cookie = await signInAs({ admin: true });
+    // signIn() sent one magic-link email through the real notifier factory,
+    // so today's quota row already reads 1.
+    const playerId = await insertPlayer(db, { email: "member@example.com" });
+    await db.insert(notificationLog).values({
+      id: crypto.randomUUID(),
+      dedupeKey: crypto.randomUUID(),
+      notificationType: "n1",
+      playerId,
+      channel: "email",
+      status: "failed",
+      error: "provider said no <script>",
+      createdAt: new Date("2026-08-19T08:00:00Z"),
+    });
+
+    const response = await createApp().fetch(
+      new Request(`${ORIGIN}${ADMIN_DELIVERY_PATH}`, { headers: { cookie } }),
+      bindings(),
+    );
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("Sent today (UTC): 1 of");
+    expect(html).toContain("failed");
+    expect(html).toContain("provider said no &lt;script&gt;");
   });
 });

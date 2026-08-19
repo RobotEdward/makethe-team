@@ -18,11 +18,15 @@ import {
 import {
   ACCOUNT_PATH,
   ADMIN_ALLOWLIST_PATH,
+  ADMIN_DELIVERY_PATH,
+  ADMIN_PATH,
+  ADMIN_SIGNIN_DOCTOR_PATH,
   DELETE_ACCOUNT_PATH,
   MANIFEST_PATH,
   OFFLINE_PATH,
   PRIVACY_PATH,
 } from "../../src/auth/paths.js";
+import { recordSignInRefusal } from "../../src/auth/sign-in-gate.js";
 import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
@@ -743,6 +747,26 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}${ADMIN_ALLOWLIST_PATH}`, { headers: { cookie } }),
       );
 
+      // The admin diagnostic screens (M17). A refusal is recorded first so
+      // the doctor's list is captured with a row in it, not just its empty
+      // state.
+      await capture(
+        "admin index",
+        /<h1>Admin<\/h1>/,
+        new Request(`${ORIGIN}${ADMIN_PATH}`, { headers: { cookie } }),
+      );
+      await recordSignInRefusal(getDb(env.DB), "turned.away@example.com", new Date("2030-06-01T09:00:00Z"));
+      await capture(
+        "admin sign-in doctor",
+        /Sign-in doctor/,
+        new Request(`${ORIGIN}${ADMIN_SIGNIN_DOCTOR_PATH}`, { headers: { cookie } }),
+      );
+      await capture(
+        "admin delivery",
+        /Email delivery/,
+        new Request(`${ORIGIN}${ADMIN_DELIVERY_PATH}`, { headers: { cookie } }),
+      );
+
       // The delete-my-data page (M7b Task 4). Captured *before* the membership
       // below is promoted to `owner`: an ordinary member reaches the `offer`
       // state, which is the branch that carries the form, while a sole
@@ -993,6 +1017,9 @@ describe("no password field anywhere (TR-16)", () => {
       [
         "home",
         "admin allow list",
+        "admin delivery",
+        "admin index",
+        "admin sign-in doctor",
         "privacy",
         "offline",
         "robots",
@@ -1182,6 +1209,9 @@ describe("no password field anywhere (TR-16)", () => {
       "delete my data",
       "account",
       "admin allow list",
+      "admin delivery",
+      "admin index",
+      "admin sign-in doctor",
       "game form",
       "game overview",
       "game edit",
@@ -1274,6 +1304,11 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "are a plain-text 403 (wrong origin), a plain-text 404 (not an admin) or a " +
       "303 redirect (src/routes/admin.ts); its own status-code coverage lives in " +
       "test/routes/admin.test.ts.",
+    "POST /app/admin/sign-in/check":
+      "renders through the same renderAdminSigninDoctorPage as GET /app/admin/sign-in " +
+      "captured above, with the verdict block added; its non-HTML answers are a " +
+      "plain-text 403 (wrong origin) or 404 (not an admin) (src/routes/admin.ts); " +
+      "its own status-code coverage lives in test/routes/admin.test.ts.",
     "POST /app/admin/allowlist/remove":
       "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
       "plain-text 404 (not an admin) or a 303 redirect only (src/routes/admin.ts); " +
@@ -1435,6 +1470,9 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /app/delete": "delete my data",
     "GET /app/account": "account",
     "GET /app/admin/allowlist": "admin allow list",
+    "GET /app/admin": "admin index",
+    "GET /app/admin/sign-in": "admin sign-in doctor",
+    "GET /app/admin/delivery": "admin delivery",
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",

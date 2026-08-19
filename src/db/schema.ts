@@ -373,6 +373,24 @@ export const signupAllowlist = sqliteTable("signup_allowlist", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
 });
 
+/**
+ * Addresses the sign-in gate refused a magic link (M17): what the admin
+ * sign-in doctor shows as "who knocked and was turned away". Written from the
+ * refused branch of `sendMagicLink` only — a permitted request never lands
+ * here. `email` is attacker-typed and unbounded in who can write it, so the
+ * table is pruned to the newest `REFUSAL_ROWS_KEPT` on every insert (see
+ * `recordSignInRefusal`) and every render of it escapes.
+ */
+export const signinRefusals = sqliteTable(
+  "signin_refusals",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [index("signin_refusals_created_idx").on(t.createdAt)],
+);
+
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

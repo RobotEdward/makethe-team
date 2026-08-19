@@ -785,6 +785,22 @@ export const ADMIN_ALLOWLIST_CSS = `
   .allowlist-add .field { flex: 1; margin: 0; }
 `;
 
+export const ADMIN_TOOLS_CSS = `
+  ul.admin-tools { list-style: none; padding: 0; margin: 1.1rem 0; }
+  ul.admin-tools > li { padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+  ul.admin-tools .tool-note { color: var(--mut); font-size: var(--t-support); margin: 0.15rem 0 0; }
+  ul.doors { list-style: none; padding: 0; margin: 1.1rem 0; }
+  ul.doors > li { padding: 0.35rem 0; overflow-wrap: anywhere; }
+  ul.doors .door-open { color: var(--accent); font-weight: 600; }
+  ul.doors .door-shut { color: var(--mut); }
+  table.admin-log { width: 100%; border-collapse: collapse; margin: 1.1rem 0; }
+  table.admin-log th, table.admin-log td {
+    text-align: left; padding: 0.45rem 0.6rem 0.45rem 0;
+    border-bottom: 1px solid var(--line); overflow-wrap: anywhere;
+    font-size: var(--t-support); vertical-align: top;
+  }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -800,6 +816,7 @@ export const PAGE_STYLE_BLOCKS = [
   PUSH_STYLES_CSS,
   INVITE_CSS,
   ADMIN_ALLOWLIST_CSS,
+  ADMIN_TOOLS_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

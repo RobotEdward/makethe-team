@@ -1,6 +1,9 @@
 import {
   ACCOUNT_PATH,
   ADMIN_ALLOWLIST_PATH,
+  ADMIN_DELIVERY_PATH,
+  ADMIN_PATH,
+  ADMIN_SIGNIN_DOCTOR_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
@@ -230,6 +233,21 @@ export const NOT_CATALOGUED = new Map<string, string>([
       "output and status codes are pinned in test/routes/admin.test.ts and " +
       "the TR-16 sweep in test/routes/signin.test.ts; its style block is " +
       "hashed like every other by test/security/csp.test.ts.",
+  ],
+  [
+    ADMIN_PATH,
+    "reachable only with user.is_admin, which no UI sets — same exclusion " +
+      "and same coverage as the allow-list entry above (M17).",
+  ],
+  [
+    ADMIN_SIGNIN_DOCTOR_PATH,
+    "reachable only with user.is_admin, which no UI sets — same exclusion " +
+      "and same coverage as the allow-list entry above (M17).",
+  ],
+  [
+    ADMIN_DELIVERY_PATH,
+    "reachable only with user.is_admin, which no UI sets — same exclusion " +
+      "and same coverage as the allow-list entry above (M17).",
   ],
   ["/robots.txt", "plain text, no document, no CSP surface"],
   ["/sign-in/complete", "a redirect-through, not a page anyone dwells on"],

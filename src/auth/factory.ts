@@ -7,7 +7,7 @@ import type { Db } from "../db/client.js";
 import { createNotifier } from "../notify/factory.js";
 import type { Notifier } from "../notify/notifier.js";
 import { renderMagicLinkEmail } from "../notify/templates/magic-link.js";
-import { isSignInPermitted } from "./sign-in-gate.js";
+import { isSignInPermitted, recordSignInRefusal } from "./sign-in-gate.js";
 
 /**
  * How long a sign-in link stays usable. One constant, used both to configure
@@ -60,7 +60,13 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
           // the secret, the admin-managed table and standing invitees — see
           // `isSignInPermitted` in `sign-in-gate.ts`. Delete this one `if`
           // when the product opens to the public. Nothing else changes. ----
-          if (!(await isSignInPermitted(db, env.SIGNIN_ALLOWLIST, email))) return;
+          if (!(await isSignInPermitted(db, env.SIGNIN_ALLOWLIST, email))) {
+            // For the admin sign-in doctor (M17). Never throws — a failure
+            // here surfacing as a 500 would answer refused addresses
+            // differently from permitted ones.
+            await recordSignInRefusal(db, email, now);
+            return;
+          }
 
           // Not addressable here: an unbounded-length `email` (Better Auth's
           // `z.email()` body schema does not cap local-part length) is

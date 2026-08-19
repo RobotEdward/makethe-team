@@ -2,6 +2,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import {
   ADMIN_ALLOWLIST_PATH,
+  ADMIN_DELIVERY_PATH,
+  ADMIN_PATH,
+  ADMIN_SIGNIN_DOCTOR_PATH,
   ACCOUNT_PATH,
   APPLE_TOUCH_ICON_PATH,
   DASHBOARD_PATH,
@@ -26,6 +29,9 @@ import { CATALOGUE, NOT_CATALOGUED } from "./catalogue.js";
  */
 const CONSTANTS: Record<string, string> = {
   ADMIN_ALLOWLIST_PATH,
+  ADMIN_DELIVERY_PATH,
+  ADMIN_PATH,
+  ADMIN_SIGNIN_DOCTOR_PATH,
   SIGN_IN_PATH,
   SIGN_IN_COMPLETE_PATH,
   DASHBOARD_PATH,

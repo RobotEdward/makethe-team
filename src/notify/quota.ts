@@ -182,8 +182,13 @@ function hasNoEmail(message: Message): boolean {
   return to === null || to === undefined || (typeof to === "string" && to.trim() === "");
 }
 
-/** The UTC calendar day `now` falls on, as `YYYY-MM-DD` (§2.8's quota table key). */
-function dayKey(now: Date): string {
+/**
+ * The UTC calendar day `now` falls on, as `YYYY-MM-DD` (§2.8's quota table
+ * key). Exported for the admin delivery page (M17), which must read the
+ * quota row under exactly the key the quota writes, or a timezone slip would
+ * show the operator "0 sent" on a day the ceiling was full.
+ */
+export function dayKey(now: Date): string {
   const iso = now.toISOString();
   return iso.slice(0, 10);
 }

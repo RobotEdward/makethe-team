@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAuth } from "../../src/auth/factory.js";
 import { isSignInAllowlisted } from "../../src/auth/sign-in-gate.js";
 import { getDb } from "../../src/db/client.js";
-import { emailQuota } from "../../src/db/schema.js";
+import { emailQuota, signinRefusals } from "../../src/db/schema.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import {
   insertGame,
@@ -162,6 +162,19 @@ describe("magic link issuance", () => {
     const { notifier } = await requestMagicLink("stranger@example.com", "someone@example.com");
 
     expect(notifier.sent).toEqual([]);
+  });
+
+  it("records a refused attempt for the admin sign-in doctor (M17)", async () => {
+    await requestMagicLink("Stranger@Example.com", "someone@example.com");
+    const rows = await getDb(env.DB).select().from(signinRefusals);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.email).toBe("stranger@example.com");
+    expect(rows[0]!.createdAt).toEqual(NOW);
+  });
+
+  it("records nothing for a permitted address", async () => {
+    await requestMagicLink("someone@example.com", "someone@example.com");
+    expect(await getDb(env.DB).select().from(signinRefusals)).toEqual([]);
   });
 
   it("answers a non-allowlisted address identically to an allowlisted one", async () => {

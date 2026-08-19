@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { memberships, players, signupAllowlist } from "../db/schema.js";
+import { memberships, players, signinRefusals, signupAllowlist } from "../db/schema.js";
 
 /**
  * The trial sign-in gate (TR-35, widened in M16): may this address be sent a
@@ -30,14 +30,22 @@ export async function isSignInPermitted(
   if (wanted === "") return false;
 
   if (isSignInAllowlisted(raw, email)) return true;
+  if (await isOnAllowlistTable(db, wanted)) return true;
+  return hasActiveMembership(db, wanted);
+}
 
+/** Door 2 on its own: the folded address is a `signup_allowlist` row. */
+async function isOnAllowlistTable(db: Db, wanted: string): Promise<boolean> {
   const [listed] = await db
     .select({ email: signupAllowlist.email })
     .from(signupAllowlist)
     .where(eq(signupAllowlist.email, wanted))
     .limit(1);
-  if (listed !== undefined) return true;
+  return listed !== undefined;
+}
 
+/** Door 3 on its own: a player with this email holds an active membership. */
+async function hasActiveMembership(db: Db, wanted: string): Promise<boolean> {
   const [member] = await db
     .select({ id: players.id })
     .from(players)
@@ -45,6 +53,74 @@ export async function isSignInPermitted(
     .where(and(eq(players.email, wanted), eq(memberships.active, true)))
     .limit(1);
   return member !== undefined;
+}
+
+/** Each gate door's own answer for one address, for the admin sign-in doctor. */
+export interface SignInDoors {
+  /** Door 1: the `SIGNIN_ALLOWLIST` secret. */
+  secret: boolean;
+  /** Door 2: the `signup_allowlist` table. */
+  table: boolean;
+  /** Door 3: an invited player with an active membership. */
+  member: boolean;
+}
+
+/**
+ * All three doors, answered independently (M17).
+ *
+ * The admin doctor's view of the gate. Built from the same door checks
+ * `isSignInPermitted` composes, so the doctor and the real gate cannot
+ * disagree; the only difference is that the gate stops at the first open door
+ * and this runs all three, because "which doors" is the whole diagnosis.
+ */
+export async function explainSignIn(
+  db: Db,
+  raw: string | undefined,
+  email: string,
+): Promise<SignInDoors> {
+  const wanted = foldAsciiCase(email);
+  if (wanted === "") return { secret: false, table: false, member: false };
+  return {
+    secret: isSignInAllowlisted(raw, email),
+    table: await isOnAllowlistTable(db, wanted),
+    member: await hasActiveMembership(db, wanted),
+  };
+}
+
+/**
+ * How many refused-attempt rows `recordSignInRefusal` keeps. Anyone on the
+ * internet can create these rows through the sign-in form, so the table is a
+ * ring buffer, not a log: enough for the admin doctor's "who was turned away
+ * recently", never an unbounded store of stranger-typed addresses.
+ */
+export const REFUSAL_ROWS_KEPT = 100;
+
+/**
+ * Record a refused sign-in attempt for the admin doctor (M17), then prune to
+ * the newest `REFUSAL_ROWS_KEPT`.
+ *
+ * **Never throws.** This runs on the refused branch of `sendMagicLink`; an
+ * error escaping here would 500 refused addresses while permitted ones got
+ * their 200 — the enumeration oracle the gate exists to close. The same
+ * swallow-and-log posture as `sendSignInLink`, for the same reason, and the
+ * log line carries no address.
+ */
+export async function recordSignInRefusal(db: Db, email: string, now: Date): Promise<void> {
+  try {
+    await db
+      .insert(signinRefusals)
+      .values({ id: crypto.randomUUID(), email: foldAsciiCase(email), createdAt: now });
+    const keep = db
+      .select({ id: signinRefusals.id })
+      .from(signinRefusals)
+      .orderBy(desc(signinRefusals.createdAt), desc(signinRefusals.id))
+      .limit(REFUSAL_ROWS_KEPT);
+    await db.delete(signinRefusals).where(notInArray(signinRefusals.id, keep));
+  } catch (error) {
+    console.error(
+      `sign-in refusal not recorded: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 

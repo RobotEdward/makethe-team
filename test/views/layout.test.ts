@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { escapeHtml, layout, STYLES, THEME_COLOR } from "../../src/views/layout.js";
 import {
   ACCOUNT_PATH,
-  ADMIN_ALLOWLIST_PATH,
+  ADMIN_PATH,
   APPLE_TOUCH_ICON_PATH,
   DASHBOARD_PATH,
   MANIFEST_PATH,
@@ -213,7 +213,7 @@ describe("the signed-in header (M16)", () => {
   it("draws the Admin link only for an admin", () => {
     expect(page({ isAdmin: false, current: "games" })).not.toContain("Admin");
     expect(page({ isAdmin: true, current: "games" })).toContain(
-      `<a href="${ADMIN_ALLOWLIST_PATH}">Admin</a>`,
+      `<a href="${ADMIN_PATH}">Admin</a>`,
     );
   });
 });
