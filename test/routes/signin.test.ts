@@ -1293,6 +1293,10 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "that could carry an un-enumerated script — and its other branches are " +
       "a plain-text 403 (wrong origin) or a 303 redirect (src/routes/account.ts); " +
       "its own status-code coverage lives in test/routes/account.test.ts.",
+    "POST /app/onboarding/dismiss":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin) or a " +
+      "303 redirect only (src/routes/dashboard.ts); its own status-code coverage " +
+      "lives in test/routes/dashboard.test.ts.",
     "POST /app/delete/cancel":
       "never returns HTML on any branch — a plain-text 403 (wrong origin) or a " +
       "303 redirect only (src/routes/account.ts); its own status-code coverage " +

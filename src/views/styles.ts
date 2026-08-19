@@ -245,6 +245,27 @@ export const DASHBOARD_STYLES_CSS = `
     display: flex; align-items: center; min-height: 44px;
     padding: 0.4rem 0.1rem; font-size: var(--t-body);
   }
+
+  /* The onboarding card (M19). Its own idiom, not .fixture-card: a card up
+     there is a fixture with buttons, and this is a short list of links with a
+     dismiss control. */
+  .onboarding {
+    margin-top: 1.25rem; padding: 1rem 1rem 0.75rem;
+    border: 1px solid var(--line); border-radius: 0.75rem;
+  }
+  .onboarding h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
+  .onboarding ul { list-style: none; margin: 0; padding: 0; }
+  .onboarding li a {
+    display: flex; align-items: center; min-height: 44px; font-size: var(--t-body);
+  }
+  .onboarding form { display: flex; justify-content: flex-end; margin-top: 0.25rem; }
+  .onboarding .button { flex: 0 0 auto; min-height: 44px; padding: 0.4rem 1rem; font-size: var(--t-support); font-weight: 400; }
+  /* The install hint is pointless inside the installed app itself. This is
+     the server's only way to know: no script runs on this page, but the
+     display mode is a pure CSS fact. */
+  @media (display-mode: standalone) {
+    .onboarding li.hint-install { display: none; }
+  }
 `;
 
 /**

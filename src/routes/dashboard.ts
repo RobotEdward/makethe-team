@@ -1,10 +1,13 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { notifyPromotedPlayer } from "./respond.js";
-import { DASHBOARD_PATH } from "../auth/paths.js";
-import { requirePlayer, pageNav } from "../auth/session.js";
+import { eq } from "drizzle-orm";
+import { DASHBOARD_PATH, ONBOARDING_DISMISS_PATH } from "../auth/paths.js";
+import { requirePlayer, pageNav, type Player } from "../auth/session.js";
 import type { ResponseIntent } from "../capacity/types.js";
 import { getDb } from "../db/client.js";
+import type { Db } from "../db/client.js";
+import { passkey, players, pushSubscriptions } from "../db/schema.js";
 import { findActionableFixture, listDashboardFixtures } from "../db/dashboard-queries.js";
 import type { DashboardFixture } from "../db/dashboard-queries.js";
 import { listOwnedGames } from "../db/queries.js";
@@ -13,7 +16,7 @@ import { fixtureView } from "../domain/fixture-view.js";
 import { removeMember } from "../domain/remove-member.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
-import { renderDashboardPage, type DashboardRow } from "../views/dashboard.js";
+import { renderDashboardPage, type DashboardRow, type OnboardingHints } from "../views/dashboard.js";
 
 
 export const dashboard = new Hono<AppEnv>();
@@ -47,9 +50,10 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
   const player = c.get("player")!;
   const db = getDb(c.env.DB);
 
-  const [rows, ownedGames] = await Promise.all([
+  const [rows, ownedGames, onboarding] = await Promise.all([
     listDashboardFixtures(db, player.id),
     listOwnedGames(db, player.id),
+    onboardingHintsFor(db, player, c.get("session")!.user.id, now),
   ]);
 
   // §6's third clause: a blocked erasure "surfaces on the player's dashboard
@@ -82,6 +86,7 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
       erasesAtLocal:
         player.erasesAt === null ? undefined : formatLocalDateTime(player.erasesAt, "Europe/London"),
       erasureHeldUp: heldUp,
+      onboarding,
     }),
     problem === undefined ? 200 : 422,
   );
@@ -265,5 +270,65 @@ dashboard.post(`${DASHBOARD_PATH}/games/:gameId/leave`, requirePlayer, async (c)
     c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, promoted, now));
   }
 
+  return c.redirect(DASHBOARD_PATH, 303);
+});
+
+/**
+ * How long after first sign-in the "Get set up" card keeps appearing (M19).
+ * A time window rather than a visit counter: a counter would mean a write on
+ * every dashboard GET, and "the first fortnight" is the same idea without one.
+ */
+const ONBOARDING_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Whether the "Get set up" card shows, and which hints are still undone.
+ *
+ * Undefined — no card — once the player dismissed it, once the window after
+ * `emailVerifiedAt` has passed, or for a player with no `emailVerifiedAt` at
+ * all (pre-M19 rows backfilled nothing; a player who somehow has a session
+ * without one is not someone to nudge). The two existence queries only run
+ * inside the window, which after a fortnight is nobody.
+ *
+ * The card still renders when both flags are false: the install hint has no
+ * server-side flag (see `renderOnboardingCard`), so an all-done player inside
+ * the window sees a one-line card until they dismiss it or the window closes.
+ */
+async function onboardingHintsFor(
+  db: Db,
+  player: Player,
+  authUserId: string,
+  now: Date,
+): Promise<OnboardingHints | undefined> {
+  if (player.onboardingDismissedAt !== null) return undefined;
+  if (player.emailVerifiedAt === null) return undefined;
+  if (now.getTime() - player.emailVerifiedAt.getTime() > ONBOARDING_WINDOW_MS) return undefined;
+
+  const [hasPasskey, hasSubscription] = await Promise.all([
+    db.select({ id: passkey.id }).from(passkey).where(eq(passkey.userId, authUserId)).limit(1),
+    db
+      .select({ id: pushSubscriptions.id })
+      .from(pushSubscriptions)
+      .where(eq(pushSubscriptions.playerId, player.id))
+      .limit(1),
+  ]);
+  return { passkey: hasPasskey.length === 0, notifications: hasSubscription.length === 0 };
+}
+
+/**
+ * Dismisses the card for good. Session only, like everything on this page;
+ * the origin check mirrors `POST /app`'s. Stamps rather than deletes, and
+ * never clears — `/app/account` and `/app/passkeys` remain the permanent
+ * routes to everything the card linked to, so there is nothing to bring back.
+ */
+dashboard.post(ONBOARDING_DISMISS_PATH, requirePlayer, async (c) => {
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== originOf(c.env)) {
+    return c.text("Forbidden", 403);
+  }
+  const player = c.get("player")!;
+  await getDb(c.env.DB)
+    .update(players)
+    .set({ onboardingDismissedAt: new Date(Date.now()) })
+    .where(eq(players.id, player.id));
   return c.redirect(DASHBOARD_PATH, 303);
 });

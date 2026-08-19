@@ -1,0 +1,1 @@
+ALTER TABLE `players` ADD `onboarding_dismissed_at` integer;

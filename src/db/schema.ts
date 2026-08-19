@@ -33,6 +33,13 @@ export const players = sqliteTable(
      */
     pushOfferedAt: integer("push_offered_at", { mode: "timestamp_ms" }),
     /**
+     * When the player dismissed the dashboard's "Get set up" onboarding card
+     * (M19). Stamped by `POST /app/onboarding/dismiss`, never cleared: like
+     * `pushOfferedAt`, the card is a one-time nudge and `/app/account` and
+     * `/app/passkeys` remain the permanent routes to everything it linked to.
+     */
+    onboardingDismissedAt: integer("onboarding_dismissed_at", { mode: "timestamp_ms" }),
+    /**
      * When a requested erasure becomes due (§2.1). Set by `POST /app/delete`,
      * cleared by `POST /app/delete/cancel`, and read by the hourly sweep.
      *

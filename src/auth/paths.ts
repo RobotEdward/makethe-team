@@ -344,3 +344,11 @@ export const PUSH_UNSUBSCRIBE_PATH = `${DASHBOARD_PATH}/push/unsubscribe`;
  * delete, so it cannot be used to probe whether an endpoint exists.
  */
 export const PUSH_TEST_PATH = `${DASHBOARD_PATH}/push/test`;
+
+/**
+ * Dismisses the dashboard's "Get set up" onboarding card (M19). Session only,
+ * origin-checked, no token form: the card exists only on the session-gated
+ * dashboard, and dismissal writes to the signed-in player's own row — there is
+ * nothing for a token holder to legitimately do here.
+ */
+export const ONBOARDING_DISMISS_PATH = `${DASHBOARD_PATH}/onboarding/dismiss`;

@@ -5,12 +5,14 @@ import { createApp } from "../../src/app.js";
 import {
   ACCOUNT_PATH,
   DASHBOARD_PATH,
+  ONBOARDING_DISMISS_PATH,
+  PASSKEYS_PATH,
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
   SIGN_IN_PATH,
 } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
-import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
+import { fixtures, memberships, passkey, players, pushSubscriptions, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { DASHBOARD_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
@@ -890,5 +892,136 @@ describe("POST /app/games/:gameId/leave", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(SIGN_IN_PATH);
+  });
+});
+
+/**
+ * The "Get set up" onboarding card (M19): shown to a recently signed-in
+ * player, each hint vanishing as its task is done, the whole card ending on
+ * dismissal or when the fortnight after first sign-in passes.
+ *
+ * `signIn()` stamps `emailVerifiedAt` at the real wall clock, so a fresh
+ * sign-in is always inside the window here; the expiry test moves the stamp
+ * into the past by hand.
+ */
+describe("the onboarding card (M19)", () => {
+  async function viewer() {
+    const [player] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    expect(player).toBeDefined();
+    return player!;
+  }
+
+  function dismiss(cookie: string | undefined, origin: string | null = ORIGIN) {
+    return createApp().fetch(
+      new Request(`${ORIGIN}${ONBOARDING_DISMISS_PATH}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          ...(cookie ? { cookie } : {}),
+          ...(origin ? { origin } : {}),
+        },
+      }),
+      bindings(),
+    );
+  }
+
+  it("shows all three hints to a fresh sign-in, with the dismiss form", async () => {
+    const { cookie } = await signIn();
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Get set up");
+    expect(body).toContain(`<a href="${PASSKEYS_PATH}">Add a passkey to sign in faster</a>`);
+    // The install hint carries the class the display-mode media query hides —
+    // the class, not just the copy, is the contract with DASHBOARD_STYLES_CSS.
+    expect(body).toContain('<li class="hint-install">');
+    expect(body).toContain("Install the app on this device");
+    expect(body).toContain(`<a href="${ACCOUNT_PATH}">Turn on notifications</a>`);
+    expect(body).toContain(`action="${ONBOARDING_DISMISS_PATH}"`);
+    expect(DASHBOARD_STYLES_CSS).toContain("(display-mode: standalone)");
+    expect(DASHBOARD_STYLES_CSS).toContain(".onboarding li.hint-install { display: none; }");
+  });
+
+  it("drops the passkey hint once this identity has a passkey", async () => {
+    const { cookie } = await signIn();
+    const { authUserId } = await viewer();
+    await db.insert(passkey).values({
+      id: "pk-1",
+      publicKey: "irrelevant",
+      userId: authUserId!,
+      credentialID: "cred-1",
+      counter: 0,
+      deviceType: "singleDevice",
+      backedUp: false,
+    });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Get set up");
+    expect(body).not.toContain("Add a passkey to sign in faster");
+    expect(body).toContain("Turn on notifications");
+  });
+
+  it("drops the notifications hint once any device is subscribed", async () => {
+    const { cookie } = await signIn();
+    const { id } = await viewer();
+    await db.insert(pushSubscriptions).values({
+      id: "sub-1",
+      playerId: id,
+      endpoint: "https://push.example/only-in-tests",
+      p256dh: "irrelevant",
+      auth: "irrelevant",
+    });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Get set up");
+    expect(body).toContain("Add a passkey to sign in faster");
+    expect(body).not.toContain("Turn on notifications");
+  });
+
+  it("is gone after the fortnight window closes", async () => {
+    const { cookie } = await signIn();
+    const { id } = await viewer();
+    await db
+      .update(players)
+      .set({ emailVerifiedAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) })
+      .where(eq(players.id, id));
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("Get set up");
+    // The class name alone would match the stylesheet's media-query rule,
+    // which ships on every dashboard; the card's markup is the thing absent.
+    expect(body).not.toContain('<li class="hint-install">');
+  });
+
+  it("dismisses for good: stamps the row, redirects, and never shows again", async () => {
+    const { cookie } = await signIn();
+
+    const response = await dismiss(cookie);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(DASHBOARD_PATH);
+
+    const { onboardingDismissedAt } = await viewer();
+    expect(onboardingDismissedAt).not.toBeNull();
+
+    const body = await (await get(cookie)).text();
+    expect(body).not.toContain("Get set up");
+  });
+
+  it("refuses a cross-origin dismissal without stamping anything", async () => {
+    const { cookie } = await signIn();
+
+    const response = await dismiss(cookie, "https://evil.example");
+
+    expect(response.status).toBe(403);
+    const { onboardingDismissedAt } = await viewer();
+    expect(onboardingDismissedAt).toBeNull();
+  });
+
+  it("needs a session: a bare request is redirected away, not an error", async () => {
+    const response = await dismiss(undefined);
+    expect([302, 303]).toContain(response.status);
   });
 });

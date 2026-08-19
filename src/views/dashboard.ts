@@ -1,8 +1,10 @@
 import {
+  ACCOUNT_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
+  ONBOARDING_DISMISS_PATH,
   PRIVACY_PATH,
   PASSKEYS_PATH,
   gamePath,
@@ -78,6 +80,21 @@ export interface DashboardPageOptions {
     /** Execution has begun and stopped part-way — no cancel button. */
     started: boolean;
   };
+  /**
+   * Present only while the "Get set up" card should show at all (M19): within
+   * the new-player window, not yet dismissed. The route decides that; this
+   * type only says which hints remain. The install hint has no flag because
+   * the server cannot know — CSS hides it inside the installed app.
+   */
+  onboarding?: OnboardingHints;
+}
+
+/** Which onboarding hints the viewer has not completed yet. */
+export interface OnboardingHints {
+  /** No passkey registered to this identity yet. */
+  passkey: boolean;
+  /** No push subscription on any device yet. */
+  notifications: boolean;
 }
 
 /**
@@ -244,6 +261,30 @@ function renderHeldUpErasureBanner(
  * scriptless, and the enhancement is quarantined on the page that cannot
  * exist without it.
  */
+/**
+ * The "Get set up" card (M19). Every hint is a plain link to a flow that
+ * already exists elsewhere — nothing here is the only way to reach anything,
+ * which is what makes a Dismiss button safe. The install hint always renders
+ * when the card does: whether this device already runs the installed app is a
+ * fact only the client has, and \`.onboarding li.hint-install\` is hidden by a
+ * display-mode media query rather than by script.
+ */
+function renderOnboardingCard(hints: OnboardingHints): string {
+  return `
+    <section class="onboarding">
+      <h2>Get set up</h2>
+      <ul>
+        ${hints.passkey ? `<li><a href="${PASSKEYS_PATH}">Add a passkey to sign in faster</a></li>` : ""}
+        <li class="hint-install"><a href="${ACCOUNT_PATH}">Install the app on this device</a></li>
+        ${hints.notifications ? `<li><a href="${ACCOUNT_PATH}">Turn on notifications</a></li>` : ""}
+      </ul>
+      <form method="post" action="${ONBOARDING_DISMISS_PATH}">
+        <button class="button" type="submit">Dismiss</button>
+      </form>
+    </section>
+  `;
+}
+
 export function renderDashboardPage({
   nav,
   playerName,
@@ -252,6 +293,7 @@ export function renderDashboardPage({
   problem,
   erasesAtLocal,
   erasureHeldUp,
+  onboarding,
 }: DashboardPageOptions): string {
   const problemNotice = problem === undefined ? "" : `<p class="nudge">${escapeHtml(problem)}</p>`;
   const erasureBanner =
@@ -269,6 +311,7 @@ export function renderDashboardPage({
     <p>Signed in as ${escapeHtml(playerName)}.</p>
     ${problemNotice}
     ${erasureBanner}
+    ${onboarding === undefined ? "" : renderOnboardingCard(onboarding)}
     ${
       rows.length === 0
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
