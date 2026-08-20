@@ -239,7 +239,11 @@ export const DASHBOARD_STYLES_CSS = `
      anchor — flex-with-space-between on the li keeps that note on the same
      line as the name instead of wrapping under it, which is what a bare block
      anchor (100% width, nothing to its right) did the one time this went
-     unstyled and unnoticed until the rendered page was actually looked at. */
+     unstyled and unnoticed until the rendered page was actually looked at.
+     Flex items do not grow by default, so the anchor also needs its own
+     flex: 1 — without it, a row with no note (the common case, every game the
+     viewer does not own) shrinks the anchor to the width of its text and
+     leaves the rest of the row looking tappable but dead. */
   /* The bottom margin is not decoration: paragraphs get zero margin from the
      layout's base rule, so the footer's run of account links lands hard
      against the last row's bottom border and reads as a fourth row of this
@@ -253,7 +257,7 @@ export const DASHBOARD_STYLES_CSS = `
     display: flex; align-items: center; justify-content: space-between;
   }
   ul.owned-games > li > a {
-    display: flex; align-items: center; min-height: 44px;
+    display: flex; align-items: center; min-height: 44px; flex: 1;
     padding: 0.4rem 0.1rem; font-size: var(--t-body);
   }
   ul.owned-games > li > .detail { white-space: nowrap; padding: 0 0.1rem; }
