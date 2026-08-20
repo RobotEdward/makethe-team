@@ -163,7 +163,11 @@ test("the account page offers the permission button, carrying the configured VAP
   // key does not silently leave this asserting the old one.
   await expect(button).toHaveAttribute(PUSH_KEY_ATTRIBUTE, /^B[A-Za-z0-9_-]{86}$/);
 
-  await expect(page.locator("section.push h2")).toHaveText("Notifications");
+  // M20 B5 merged the install and notification sections into one
+  // `<section class="install">` panel headed "This device"; the permission
+  // control now lives in a `<div class="push">` beneath it, not its own
+  // `<section>`.
+  await expect(page.locator("section.install h2")).toHaveText("This device");
 });
 
 test.describe("the device list, with JavaScript off", () => {

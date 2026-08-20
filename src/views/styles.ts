@@ -668,10 +668,11 @@ export const OFFLINE_STYLES_CSS = `
 `;
 
 /**
- * The install section on the account page (M13). Its own block rather than
- * an extension of `FORM_CSS`: `renderInstallSection` (`src/views/install.ts`)
- * is the one place this markup exists, so its canonical CSS lives beside the
- * other single-page blocks above rather than folded into the wider form
+ * The "This device" panel on the account page (M13; merged with the
+ * notification control at M20 B5). Its own block rather than an extension of
+ * `FORM_CSS`: `renderThisDeviceSection` (`src/views/install.ts`) is the one
+ * place this markup exists, so its canonical CSS lives beside the other
+ * single-page blocks above rather than folded into the wider form
  * stylesheet every owner page also carries.
  */
 export const INSTALL_STYLES_CSS = `
@@ -683,17 +684,20 @@ export const INSTALL_STYLES_CSS = `
 
 /**
  * The notification permission button and device list (M14 Task 12,
- * `renderPushSection` / `renderPushOffer` in `src/views/install.ts`) — spec
- * §11's states 3-5. Echoes `.install`'s own box and spacing on purpose
- * rather than inventing a second look, so the two are visually consistent —
- * but they remain **two separate boxes** on `/app/account`, not one merged
- * panel (M14 Task 12 review, minors: an earlier version of this comment
- * overclaimed "one coherent panel"; a future task may actually merge them,
- * but nothing here does yet).
+ * `renderPushBody` / `renderPushOffer` in `src/views/install.ts`) — spec
+ * §11's states 3-5. The box/heading rules are scoped to `section.push`
+ * specifically (not the bare `.push` class) because M20 B5 folded the
+ * account page's copy into `renderThisDeviceSection`'s `.install` panel as a
+ * plain `<div class="push">`, not a second `<section>` — a second box+margin
+ * there would nest a card inside a card. `renderPushOffer`'s own
+ * `<section class="push">` on `/r/:token` is unaffected: it is still the
+ * only element these two rules match. The inner rules below (`.push h3`,
+ * `.push .button`, …) stay unqualified because both the offer's `section`
+ * and the account page's `div` need them.
  */
 export const PUSH_STYLES_CSS = `
-  .push { margin-top: 2rem; padding: 1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
-  .push h2 { margin-top: 0; }
+  section.push { margin-top: 2rem; padding: 1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  section.push h2 { margin-top: 0; }
   .push h3 { margin: 1.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
   .push .button { margin-top: 0.5rem; }
 

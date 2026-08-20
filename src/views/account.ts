@@ -5,7 +5,7 @@ import {
   PRIVACY_PATH,
   gamePath,
 } from "../auth/paths.js";
-import { renderInstallSection, renderPushSection, type PushDeviceRow } from "./install.js";
+import { renderThisDeviceSection, type PushDeviceRow } from "./install.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { INSTALL_JS, PUSH_SUBSCRIBE_JS } from "./scripts.js";
 import { signOutForm } from "./sign-out-form.js";
@@ -168,11 +168,7 @@ export function renderAccountPage({
         : `<ul class="fixture-list">${fixtures.map(renderFixture).join("")}</ul>`
     }
 
-    ${renderInstallSection()}
-    ${renderPushSection({
-      heading: "Notifications",
-      intro:
-        "Get a push notification here instead of waiting for an email — a fixture opening, a reminder, a place freeing up on the waitlist.",
+    ${renderThisDeviceSection({
       vapidPublicKey,
       devices: pushDevices,
       defaultDeviceName: `${playerName}'s phone`,

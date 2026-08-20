@@ -566,3 +566,19 @@ describe("the device table and its controls (M18)", () => {
     expect(junkBody).not.toContain("<script>alert");
   });
 });
+
+describe("the This device panel (M20 B5)", () => {
+  it("renders one merged section, not two lookalike boxes", async () => {
+    const { cookie } = await signIn();
+    const html = await (await get(cookie)).text();
+
+    expect(html).toContain("<h2>This device</h2>");
+    expect(html).toContain("Add Make The Team to your home screen and turn on game notifications.");
+    // The old two-section headings are gone…
+    expect(html).not.toContain("<h2>Add to your home screen</h2>");
+    expect(html).not.toContain("<h2>Notifications</h2>");
+    // …but every working part of both survives inside the panel.
+    expect(html).toContain("data-install-button");
+    expect(html).toContain("Your devices");
+  });
+});

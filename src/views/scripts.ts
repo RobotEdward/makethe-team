@@ -536,7 +536,7 @@ export const SERVICE_WORKER_JS = `
  * Unlike `SERVICE_WORKER_JS`, this *is* a member of `PAGE_SCRIPT_BLOCKS`:
  * the registration above is unconditional, carried by every page, while this
  * enhancement is opted into by the one page that renders
- * `renderInstallSection()` (`src/views/install.ts`) — the ordinary case the
+ * `renderThisDeviceSection()` (`src/views/install.ts`) — the ordinary case the
  * enumeration exists for, not the site-wide exception `SERVICE_WORKER_JS` is.
  *
  * No `fetch`, so `connect-src` is untouched. If that ever changes, read the
@@ -661,7 +661,7 @@ export const PUSH_REENABLE_ATTRIBUTE = "data-push-reenable";
  * by whichever page renders the permission button — the account page and the
  * one-time post-response offer, both landing in M14 Task 12 — the same way
  * `INSTALL_JS` is opted into by the page that renders
- * `renderInstallSection()`. This block does not itself register the worker;
+ * `renderThisDeviceSection()`. This block does not itself register the worker;
  * `SERVICE_WORKER_JS` already does that, unconditionally, on every page.
  *
  * # Feature detection, in the order the API actually needs each piece

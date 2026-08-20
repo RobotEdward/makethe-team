@@ -33,10 +33,8 @@ import {
  * out-specificity the attribute and reveal a control the platform cannot
  * act on.
  */
-export function renderInstallSection(): string {
+function renderInstallBody(): string {
   return `
-    <section class="install">
-      <h2>Add to your home screen</h2>
       <p data-install-instructions>
         Keep Make The Team a tap away, and it opens like an app rather than a tab.
       </p>
@@ -46,11 +44,10 @@ export function renderInstallSection(): string {
       </ol>
       <button class="button" type="button" data-install-button hidden>Add to home screen</button>
       <p data-install-done hidden>Make The Team is installed on this device.</p>
-    </section>
   `;
 }
 
-/** One registered device, as `renderPushSection` shows, tests and removes it. */
+/** One registered device, as `renderPushBody` shows, tests and removes it. */
 export interface PushDeviceRow {
   /**
    * **Never rendered as text.** Carried only so the row's two forms — remove
@@ -84,7 +81,7 @@ export interface PushDeviceRow {
 
 /**
  * The permission control — name field, button, problem paragraph — shared by
- * `renderPushSection` and `renderPushOffer` below (M14 Task 12 review,
+ * `renderPushBody` and `renderPushOffer` below (M14 Task 12 review,
  * Finding 5). Not exported: the two callers differ in exactly what a
  * `devices` field would let a caller do wrong, which is the reason this was
  * split into two functions rather than one with an optional `devices?`
@@ -185,8 +182,6 @@ function renderPushDevice(device: PushDeviceRow): string {
 }
 
 export interface PushSectionOptions {
-  heading: string;
-  intro: string;
   /**
    * base64url VAPID public key for this deployment, or `undefined` when none
    * is configured. M14 ships dark — production has no `VAPID_PUBLIC_KEY` at
@@ -226,21 +221,17 @@ export interface PushSectionOptions {
 }
 
 /**
- * Notification permission and the device list — spec §11's states 3-5, on
- * the one page that may ever show both: `/app/account`, session-gated. The
- * one-time offer on `/r/:token` is `renderPushOffer` below, not this
- * function — that page must never be able to express a devices list, which
- * is why the two are separate exports rather than one function with an
+ * The device list and its permission control — spec §11's states 3-5, on the
+ * one page that may ever show both: `/app/account`, session-gated. Just the
+ * inside of the panel — no `<section>`, heading or intro — so
+ * `renderThisDeviceSection` below can wrap it alongside the install steps
+ * without a caller ever being able to reach a devices list from anywhere
+ * else. The one-time offer on `/r/:token` is `renderPushOffer` below, not
+ * this function — that page must never be able to express a devices list,
+ * which is why the two remain separate rather than one function with an
  * optional parameter (M14 Task 12 review, Finding 5).
- *
- * States 1-2 (install) are `renderInstallSection` above. The two sections
- * currently render as two separate boxes on `/app/account` rather than one
- * merged panel — `PUSH_STYLES_CSS` in `src/views/styles.ts` intentionally
- * echoes `.install`'s own spacing and border so the two at least *look*
- * related, but they remain two `<section>` elements, and a future task may
- * choose to fold them into one.
  */
-export function renderPushSection({ heading, intro, vapidPublicKey, devices, defaultDeviceName, notice, reloadTo }: PushSectionOptions): string {
+function renderPushBody({ vapidPublicKey, devices, defaultDeviceName, notice, reloadTo }: PushSectionOptions): string {
   const deviceHeading = "<h3>Your devices</h3>";
   const deviceList =
     devices.length === 0
@@ -264,11 +255,33 @@ export function renderPushSection({ heading, intro, vapidPublicKey, devices, def
   const noticeHtml = notice === undefined ? "" : `<p class="nudge">${escapeHtml(notice)}</p>`;
 
   return `
-    <section class="push">
-      <h2>${escapeHtml(heading)}</h2>
-      <p>${escapeHtml(intro)}</p>
       ${noticeHtml}
       ${devices.length === 0 ? `${control}${deviceHeading}${deviceList}` : `${deviceHeading}${deviceList}${control}`}
+  `;
+}
+
+/**
+ * The account page's merged install + notifications panel (M20 B5): one
+ * section, because the two jobs are one job — make this phone useful. The
+ * token-page offer (`renderPushOffer`) is deliberately NOT built from this:
+ * the type split that stops a devices list existing on a token page is the
+ * product's endpoint-disclosure invariant, and a shared entry point is how
+ * it would erode.
+ *
+ * The permission control and device list still render inside their own
+ * `.push` wrapper rather than directly in `.install` — `PUSH_STYLES_CSS`'s
+ * selectors (`.push h3`, `.push .button`, `.push label.device-name`, …) are
+ * shared with `renderPushOffer`'s own `<section class="push">`, and nesting
+ * here rather than editing those selectors keeps this task from touching
+ * `renderPushOffer` at all.
+ */
+export function renderThisDeviceSection(push: PushSectionOptions): string {
+  return `
+    <section class="install">
+      <h2>This device</h2>
+      <p>Add Make The Team to your home screen and turn on game notifications.</p>
+      ${renderInstallBody()}
+      <div class="push">${renderPushBody(push)}</div>
     </section>
   `;
 }
@@ -305,9 +318,10 @@ export interface PushOfferOptions {
  * token-authenticated page — anyone holding the response link in `/r/:token`
  * reaches it, not only the player it names — and `PUSH_UNSUBSCRIBE_PATH`'s
  * whole safety argument (`src/auth/paths.ts`) depends on an endpoint value
- * never being disclosed to a token-authenticated caller. `renderPushSection`
+ * never being disclosed to a token-authenticated caller. `renderPushBody`
  * above is the only function in this module that can render a devices list,
- * and it is called from nowhere but `/app/account`. Do not add a `devices`
+ * and it is called from nowhere but `renderThisDeviceSection`, itself called
+ * from nowhere but `/app/account`. Do not add a `devices`
  * field to `PushOfferOptions` — see `src/views/fixture.ts`'s
  * `FixturePageOptions.pushOffer` doc comment before changing anything here.
  */
