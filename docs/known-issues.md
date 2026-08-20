@@ -125,6 +125,16 @@ until this task added them.
 | Task 16's "retire throws after reminders are already committed" test calls `openAndRemind` and `retirePastFixtures` directly rather than through `handleScheduled`, because `vi.mock` does not intercept a module's own internal calls under this test pool (see the M2–M3 plan's post-implementation corrections). It pins the two functions' individual behaviour, not `handleScheduled`'s call order. | A future reordering inside `handleScheduled` would not be caught by this test. |
 | `POST /g/:id/message` and `POST /g/:id/f/:fixtureId/message` (M15, BR-36) read `countBroadcastsSince` and then write the `game.broadcast_sent` audit row that count is taken against, as two separate statements rather than one atomic operation. Two concurrent submissions from the same game can both read a count below `MAX_BROADCASTS_PER_GAME_PER_DAY` and both pass, sending a fourth (or more) message in the same day. Writing the audit row *before* handing the send to `waitUntil` (rather than after) already shrinks the race window from "the whole send" down to the read-then-write pair itself — the narrowest it can be made without an atomic increment, which D1 has no primitive for. | An organiser would have to double-submit the compose form, or open it in two tabs, inside the same narrow window, to see one extra message beyond the cap of three a day — mild even at its worst, and there is no interactive transaction in D1 (`db.batch()` is the only atomicity primitive, and a read cannot join it) to close it with. Revisit only if the cap itself is raised to a place where being off by one matters, or if D1 gains a compare-and-increment primitive. |
 
+## Parked by decision: squad above the join form (20 August 2026)
+
+The M20 design review's change #8 proposed moving the invite page's roster
+above the join form (a one-line count above, names below), and itself labelled
+the idea "worth testing rather than asserting". The maintainer parked it while
+approving the other seven changes (spec:
+`docs/superpowers/specs/2026-08-20-design-refresh-design.md` §8). The current
+below-the-form placement is therefore a decision twice over, not an oversight.
+Revisit only with evidence, such as observed join-rate differences.
+
 ## Edge configuration — applied
 
 The two WAF custom rules in `docs/runbooks/cloudflare.md` (TR-37) were applied by hand
