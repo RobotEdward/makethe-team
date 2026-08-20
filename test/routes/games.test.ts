@@ -489,7 +489,18 @@ describe("the broadcast receipt (M20 B4)", () => {
   });
 
   it("renders nothing for a malformed flag — never caller text", async () => {
-    for (const q of ["?sent=11&via=carrier-pigeon", "?sent=lots&via=email", "?sent=-3&via=push", "?sent=11"]) {
+    for (const q of [
+      "?sent=11&via=carrier-pigeon",
+      "?sent=lots&via=email",
+      "?sent=-3&via=push",
+      "?sent=11",
+      // Object.prototype member names — the channel lookup must be a Map,
+      // not an object literal, or these fall through to an inherited
+      // function instead of missing (M20 B4 fix).
+      "?sent=11&via=constructor",
+      "?sent=11&via=__proto__",
+      "?sent=11&via=toString",
+    ]) {
       const { html } = await ownerGetsGamePage(q);
       expect(html).not.toContain("Sent to");
     }

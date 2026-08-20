@@ -184,13 +184,25 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
  * Enum-and-integer only: an unrecognised channel or a count that is not a
  * sane positive integer renders nothing rather than something surprising —
  * the query string is caller-controlled, the notice text is not.
+ *
+ * The channel-word lookup is a `Map`, not an object literal: an object
+ * literal's `[key]` lookup falls through to `Object.prototype`, so
+ * `via=constructor`, `toString`, `valueOf`, `hasOwnProperty` or `__proto__`
+ * would resolve to an inherited function rather than miss, and the
+ * `=== undefined` guard below would wave it through into the rendered
+ * notice. A `Map` has no prototype chain to fall through to — `get` returns
+ * only what was `set`.
  */
+const CHANNEL_WORDING = new Map([
+  ["email", "by email"],
+  ["push", "by push"],
+  ["both", "by email and push"],
+]);
+
 function broadcastNoticeFrom(c: Context<AppEnv>): string | undefined {
   const sent = Number(c.req.query("sent"));
   if (!Number.isInteger(sent) || sent < 1 || sent > 10_000) return undefined;
-  const channel = { email: "by email", push: "by push", both: "by email and push" }[
-    c.req.query("via") ?? ""
-  ];
+  const channel = CHANNEL_WORDING.get(c.req.query("via") ?? "");
   if (channel === undefined) return undefined;
   return `Sent to ${sent} player${sent === 1 ? "" : "s"} ${channel}.`;
 }
