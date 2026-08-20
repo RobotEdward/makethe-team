@@ -62,8 +62,8 @@ The public invite page. A stranger with the link needs no account.
   one is"). Since M21 the date can be a fixture already open for responses — a joiner is
   backfilled into it (BR-2′), so naming it is a promise the app keeps.
 - **Form — `Join the squad` (h2):** `Your name` (text, required), `Your email address`
-  (email, required). Reassurance line: "We'll email you when there's a game on… What else we
-  do with it" → privacy.
+  (email, required). Reassurance line (M21): "We'll add you to the squad and email you when
+  there's a game on." with a bare `Privacy` link on its own line beneath it.
 - **Action:** `Join the squad` (primary).
 - **Below the form — `Who's playing (N)` (h2):** first names + initial only. Deliberately
   placed *below* the form ("it's what they read while deciding, not something to scroll past
@@ -178,8 +178,9 @@ The signed-in home.
   knows. A `Dismiss` button removes the card permanently.
 - **Erasure banner:** appears while a deletion is pending, with a `Keep my account` button and
   a `More about this` link; a second variant names the games that are holding the erasure up.
-- **Footer links (M20):** `Delete my account and data` · `Privacy` only — account, passkeys
-  and sign-out now live behind the header's Account link (sign-out is on the account page).
+- **No footer links (M21):** `Delete my account and data` and `Privacy` moved to the account
+  page, completing M20's migration of account, passkeys and sign-out behind the header's
+  Account link. The dashboard below the squads section now ends clean.
 - The card-heading route to the game page is no longer load-bearing: `Your squads` links
   there always.
 
