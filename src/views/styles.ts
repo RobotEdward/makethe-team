@@ -104,13 +104,13 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
      "chosen-in" and the "· waiting" on "chosen-waiting" are what make the
      three states tellable apart without seeing colour at all. */
   .button.chosen-in {
-    background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+    background: var(--accent); color: var(--accent-fg);
   }
   .button.chosen-waiting {
-    background: var(--warn-bg); border-color: var(--warn); color: var(--warn);
+    background: var(--warn-bg); color: var(--warn);
   }
   .button.chosen-out {
-    background: var(--line); border-color: var(--mut); color: var(--fg);
+    background: var(--line); color: var(--fg);
   }
 
   .full-warning { margin: 0.5rem 0 0; font-size: var(--t-support); color: var(--mut); }
@@ -400,7 +400,7 @@ export const FORM_CSS = `
      on whatever follows because what follows differs per page. */
   .readout-label { margin-top: 1.1rem; font-size: var(--t-support); color: var(--mut); }
   .readout-label + p { color: var(--fg); margin-bottom: 1.1rem; }
-  .field-invalid input, .field-invalid select, .field-invalid textarea { border-color: var(--warn); }
+  .field-invalid input, .field-invalid select, .field-invalid textarea { outline: 2px solid var(--warn); outline-offset: 1px; }
   .row { display: flex; gap: 1rem; }
   .row .field { flex: 1; }
   /* A checkbox with a label and an explanatory hint. Written as a grid with
