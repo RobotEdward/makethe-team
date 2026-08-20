@@ -133,7 +133,7 @@ function quoteReasonLines(reason: string): string {
  * The copy is deliberately unambiguous that the game is off, not merely in
  * doubt: no conditional language, no response links (there is nothing left
  * to accept or decline), and the cancelled notice is the first thing in the
- * body, styled as a warning rather than the confirmation green the
+ * body, styled as a warning rather than the accent styling the
  * promotion and reminder emails use for a still-on fixture.
  */
 export function renderCancellationEmail(payload: CancellationEmailPayload): CancellationEmail {
@@ -154,40 +154,40 @@ export function renderCancellationEmail(payload: CancellationEmailPayload): Canc
 <meta name="supported-color-schemes" content="light dark">
 <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0; padding:0; background-color:#f2efe9; color:#1c1b19;">
+<body style="margin:0; padding:0; background-color:#efe3cd; color:#201e1d;">
 <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">
 ${escapeHtml(lead)}
 </div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f2efe9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#efe3cd;">
 <tr>
-<td align="center" style="padding:24px 12px; background-color:#f2efe9;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#ffffff; border:1px solid #e3ded4; border-radius:8px;">
+<td align="center" style="padding:24px 12px; background-color:#efe3cd;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#f9f4ed; border:1px solid #d6c9b3; border-radius:20px;">
 <tr>
-<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1c1b19; background-color:#ffffff;">
+<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#201e1d; background-color:#f9f4ed;">
 
-<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#1c1b19; background-color:#ffffff;">Hi ${escapeHtml(playerName)},</p>
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#201e1d; background-color:#f9f4ed;">Hi ${escapeHtml(playerName)},</p>
 
-<p style="margin:0 0 16px; padding:12px 14px; font-size:15px; line-height:1.5; color:#7a1f1f; background-color:#fbe9e7; font-weight:700; border-radius:6px;">${escapeHtml(lead)}</p>
+<p style="margin:0 0 16px; padding:12px 14px; font-size:15px; line-height:1.5; color:#a4321f; background-color:#ffe1d0; font-weight:700; border-radius:12px;">${escapeHtml(lead)}</p>
 
-<h1 style="margin:0 0 4px; font-size:22px; line-height:1.3; color:#1c1b19; background-color:#ffffff;">${escapeHtml(gameName)}</h1>
-<p style="margin:0 0 2px; font-size:15px; line-height:1.5; color:#4a4741; background-color:#ffffff;">${escapeHtml(venueName)}</p>
-<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#4a4741; background-color:#ffffff;">${escapeHtml(kicksOffAtLocal)}</p>
+<h1 style="margin:0 0 4px; font-size:22px; line-height:1.3; color:#201e1d; background-color:#f9f4ed;">${escapeHtml(gameName)}</h1>
+<p style="margin:0 0 2px; font-size:15px; line-height:1.5; color:#645c50; background-color:#f9f4ed;">${escapeHtml(venueName)}</p>
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#645c50; background-color:#f9f4ed;">${escapeHtml(kicksOffAtLocal)}</p>
 
 ${
   reason
-    ? `<p style="margin:0 0 4px; font-size:12px; line-height:1.5; color:#635f59; background-color:#ffffff; text-transform:uppercase; letter-spacing:0.03em;">Reason given</p>
-<p style="margin:0 0 20px; padding:12px 14px; font-size:14px; line-height:1.5; color:#4a4741; background-color:#f2efe9; border-left:3px solid #cfc9bc; border-radius:2px;">${escapeHtml(reason)}</p>`
+    ? `<p style="margin:0 0 4px; font-size:12px; line-height:1.5; color:#645c50; background-color:#f9f4ed; text-transform:uppercase; letter-spacing:0.03em;">Reason given</p>
+<p style="margin:0 0 20px; padding:12px 14px; font-size:14px; line-height:1.5; color:#645c50; background-color:#efe3cd; border-left:3px solid #d6c9b3; border-radius:2px;">${escapeHtml(reason)}</p>`
     : ""
 }
 
-<p style="margin:0 0 0; font-size:14px; line-height:1.5; color:#4a4741; background-color:#ffffff;">No action needed — there's nothing to respond to. If you'd rather not hear about this Game again, you can leave it below.</p>
+<p style="margin:0 0 0; font-size:14px; line-height:1.5; color:#645c50; background-color:#f9f4ed;">No action needed — there's nothing to respond to. If you'd rather not hear about this Game again, you can leave it below.</p>
 
-<hr style="margin:24px 0; border:none; border-top:1px solid #e3ded4;">
+<hr style="margin:24px 0; border:none; border-top:1px solid #d6c9b3;">
 
-<p style="margin:0; font-size:12px; line-height:1.6; color:#928d84; background-color:#ffffff;">
+<p style="margin:0; font-size:12px; line-height:1.6; color:#645c50; background-color:#f9f4ed;">
 Make The Team — organising this Game for your squad.
 <br>
-Not playing any more? <a href="${href(leaveUrl)}" style="color:#928d84; background-color:#ffffff;">See how to leave this Game</a>.
+Not playing any more? <a href="${href(leaveUrl)}" style="color:#645c50; background-color:#f9f4ed;">See how to leave this Game</a>.
 </p>
 
 </td>

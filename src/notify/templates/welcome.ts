@@ -105,45 +105,45 @@ export function renderWelcomeEmail(payload: WelcomeEmailPayload): WelcomeEmail {
 <meta name="supported-color-schemes" content="light dark">
 <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0; padding:0; background-color:#f2efe9; color:#1c1b19;">
+<body style="margin:0; padding:0; background-color:#efe3cd; color:#201e1d;">
 <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">
 ${escapeHtml(lead)}
 </div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f2efe9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#efe3cd;">
 <tr>
 <td align="center" style="padding:24px 12px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#ffffff; border:1px solid #e3ded4; border-radius:8px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#f9f4ed; border:1px solid #d6c9b3; border-radius:20px;">
 <tr>
-<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1c1b19;">
+<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#201e1d;">
 
-<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#1c1b19;">Hi ${escapeHtml(playerName)},</p>
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#201e1d;">Hi ${escapeHtml(playerName)},</p>
 
-<h1 style="margin:0 0 4px; font-size:22px; line-height:1.3; color:#1c1b19;">${escapeHtml(gameName)}</h1>
-<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#4a4741;">${escapeHtml(venueName)}</p>
+<h1 style="margin:0 0 4px; font-size:22px; line-height:1.3; color:#201e1d;">${escapeHtml(gameName)}</h1>
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#645c50;">${escapeHtml(venueName)}</p>
 
-<p style="margin:0 0 12px; font-size:15px; line-height:1.5; color:#1f6f4a; font-weight:700;">${escapeHtml(lead)}</p>
+<p style="margin:0 0 12px; font-size:15px; line-height:1.5; color:#8c491a; font-weight:700;">${escapeHtml(lead)}</p>
 
-<p style="margin:0 0 12px; font-size:15px; line-height:1.5; color:#1c1b19;">${escapeHtml(firstGameLine)}</p>
+<p style="margin:0 0 12px; font-size:15px; line-height:1.5; color:#201e1d;">${escapeHtml(firstGameLine)}</p>
 
-<p style="margin:0 0 20px; font-size:15px; line-height:1.5; color:#4a4741;">${escapeHtml(reminderLine)}</p>
+<p style="margin:0 0 20px; font-size:15px; line-height:1.5; color:#645c50;">${escapeHtml(reminderLine)}</p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
 <td>
-<a href="${href(dashboardUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#1f6f4a; color:#ffffff; text-decoration:none; font-weight:700; font-size:16px; border-radius:6px; border:2px solid #1f6f4a;">See your games</a>
+<a href="${href(dashboardUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">See your games</a>
 </td>
 </tr>
 </table>
 
-<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#635f59;">If the button doesn't work, copy this address into your browser:</p>
-<p style="margin:4px 0 0; font-size:12px; line-height:1.5; word-break:break-all; color:#635f59;">${escapeHtml(dashboardUrl)}</p>
+<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#645c50;">If the button doesn't work, copy this address into your browser:</p>
+<p style="margin:4px 0 0; font-size:12px; line-height:1.5; word-break:break-all; color:#645c50;">${escapeHtml(dashboardUrl)}</p>
 
-<hr style="margin:24px 0; border:none; border-top:1px solid #e3ded4;">
+<hr style="margin:24px 0; border:none; border-top:1px solid #d6c9b3;">
 
-<p style="margin:0; font-size:12px; line-height:1.6; color:#928d84;">
+<p style="margin:0; font-size:12px; line-height:1.6; color:#645c50;">
 Make The Team — organising this Game for your squad.
 <br>
-Didn't mean to join? <a href="${href(leaveUrl)}" style="color:#928d84;">Leave this game</a>.
+Didn't mean to join? <a href="${href(leaveUrl)}" style="color:#645c50;">Leave this game</a>.
 </p>
 
 </td>

@@ -64,37 +64,37 @@ export function renderMagicLinkEmail(payload: MagicLinkEmailPayload): MagicLinkE
 <meta name="supported-color-schemes" content="light dark">
 <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0; padding:0; background-color:#f2efe9; color:#1c1b19;">
+<body style="margin:0; padding:0; background-color:#efe3cd; color:#201e1d;">
 <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">
 ${escapeHtml(expiryLine)}
 </div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f2efe9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#efe3cd;">
 <tr>
 <td align="center" style="padding:24px 12px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#ffffff; border:1px solid #e3ded4; border-radius:8px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#f9f4ed; border:1px solid #d6c9b3; border-radius:20px;">
 <tr>
-<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1c1b19;">
+<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#201e1d;">
 
-<h1 style="margin:0 0 12px; font-size:22px; line-height:1.3; color:#1c1b19;">Sign in to Make The Team</h1>
+<h1 style="margin:0 0 12px; font-size:22px; line-height:1.3; color:#201e1d;">Sign in to Make The Team</h1>
 
-<p style="margin:0 0 20px; font-size:15px; line-height:1.5; color:#4a4741;">Tap the button below and you'll be signed in.</p>
+<p style="margin:0 0 20px; font-size:15px; line-height:1.5; color:#645c50;">Tap the button below and you'll be signed in.</p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
 <td>
-<a href="${href(signInUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#1f6f4a; color:#ffffff; text-decoration:none; font-weight:700; font-size:16px; border-radius:6px; border:2px solid #1f6f4a;">Sign in</a>
+<a href="${href(signInUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">Sign in</a>
 </td>
 </tr>
 </table>
 
-<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#635f59;">${escapeHtml(expiryLine)}</p>
+<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#645c50;">${escapeHtml(expiryLine)}</p>
 
-<p style="margin:12px 0 0; font-size:13px; line-height:1.5; color:#635f59;">If the button doesn't work, copy this address into your browser:</p>
-<p style="margin:4px 0 0; font-size:12px; line-height:1.5; word-break:break-all; color:#635f59;">${escapeHtml(signInUrl)}</p>
+<p style="margin:12px 0 0; font-size:13px; line-height:1.5; color:#645c50;">If the button doesn't work, copy this address into your browser:</p>
+<p style="margin:4px 0 0; font-size:12px; line-height:1.5; word-break:break-all; color:#645c50;">${escapeHtml(signInUrl)}</p>
 
-<hr style="margin:24px 0; border:none; border-top:1px solid #e3ded4;">
+<hr style="margin:24px 0; border:none; border-top:1px solid #d6c9b3;">
 
-<p style="margin:0; font-size:12px; line-height:1.6; color:#928d84;">
+<p style="margin:0; font-size:12px; line-height:1.6; color:#645c50;">
 ${escapeHtml(ignoreLine)}
 <br>
 Make The Team — organising football for your squad.

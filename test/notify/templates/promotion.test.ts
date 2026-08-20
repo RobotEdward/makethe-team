@@ -52,7 +52,7 @@ describe("renderPromotionEmail", () => {
     const { html } = renderPromotionEmail(BASE);
     // The `?intent=in` anchor carries the solid background; the `out` one is outlined.
     const inAnchor = html.slice(html.indexOf(`href="${BASE.respondInUrl}"`));
-    expect(inAnchor.slice(0, 400)).toContain("background-color:#1f6f4a");
+    expect(inAnchor.slice(0, 400)).toContain("background-color:#c67139");
   });
 
   it("the text rendition contains no HTML tags", () => {

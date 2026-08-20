@@ -67,39 +67,39 @@ export function renderErasureScheduledEmail(payload: ErasureScheduledEmailPayloa
 <meta name="supported-color-schemes" content="light dark">
 <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin:0; padding:0; background-color:#f2efe9; color:#1c1b19;">
+<body style="margin:0; padding:0; background-color:#efe3cd; color:#201e1d;">
 <div style="display:none; max-height:0; overflow:hidden; opacity:0; mso-hide:all;">
 ${escapeHtml(whenLine)}
 </div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f2efe9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#efe3cd;">
 <tr>
 <td align="center" style="padding:24px 12px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#ffffff; border:1px solid #e3ded4; border-radius:8px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px; background-color:#f9f4ed; border:1px solid #d6c9b3; border-radius:20px;">
 <tr>
-<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#1c1b19;">
+<td style="padding:28px 24px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; color:#201e1d;">
 
-<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#1c1b19;">Hi ${escapeHtml(playerName)},</p>
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#201e1d;">Hi ${escapeHtml(playerName)},</p>
 
-<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#1c1b19; font-weight:700;">${escapeHtml(whenLine)}</p>
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#201e1d; font-weight:700;">${escapeHtml(whenLine)}</p>
 
-<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#1c1b19;">${escapeHtml(loseLine)}</p>
+<p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#201e1d;">${escapeHtml(loseLine)}</p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
 <td>
-<a href="${href(signInUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#1f6f4a; color:#ffffff; text-decoration:none; font-weight:700; font-size:16px; border-radius:6px; border:2px solid #1f6f4a;">Sign in to cancel</a>
+<a href="${href(signInUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">Sign in to cancel</a>
 </td>
 </tr>
 </table>
 
-<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#635f59;">${escapeHtml(cancelLine)} If the button doesn't work, copy this address into your browser:</p>
-<p style="margin:4px 0 0; font-size:12px; line-height:1.5; word-break:break-all; color:#635f59;">${escapeHtml(signInUrl)}</p>
+<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#645c50;">${escapeHtml(cancelLine)} If the button doesn't work, copy this address into your browser:</p>
+<p style="margin:4px 0 0; font-size:12px; line-height:1.5; word-break:break-all; color:#645c50;">${escapeHtml(signInUrl)}</p>
 
-<p style="margin:16px 0 0; font-size:15px; line-height:1.5; color:#4a4741;">${escapeHtml(finalLine)}</p>
+<p style="margin:16px 0 0; font-size:15px; line-height:1.5; color:#645c50;">${escapeHtml(finalLine)}</p>
 
-<hr style="margin:24px 0; border:none; border-top:1px solid #e3ded4;">
+<hr style="margin:24px 0; border:none; border-top:1px solid #d6c9b3;">
 
-<p style="margin:0; font-size:12px; line-height:1.6; color:#928d84;">
+<p style="margin:0; font-size:12px; line-height:1.6; color:#645c50;">
 Make The Team — organising this Game for your squad.
 </p>
 
