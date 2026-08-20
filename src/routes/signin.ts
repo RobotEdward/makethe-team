@@ -188,9 +188,9 @@ signIn.get(SIGN_IN_COMPLETE_PATH, requireSession, async (c) => {
     case "created":
       return c.redirect(DASHBOARD_PATH, 302);
 
-    // Four refusals, four pages — see `renderLinkRefusalPage`. `create-raced`
-    // is the retryable one and its page offers a retry; the other three need a
-    // human and say which one.
+    // Four refusals, one page (M20 B6) — see `renderLinkRefusalPage`.
+    // `create-raced` is the retryable one and offers a retry; the other
+    // three need a human and say which one, in the reason line.
     case "conflict":
     case "ambiguous-email":
     case "email-held-by-guest":

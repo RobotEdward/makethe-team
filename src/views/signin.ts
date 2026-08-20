@@ -1,5 +1,5 @@
 import { PRIVACY_PATH, SIGN_IN_COMPLETE_PATH, SIGN_IN_PATH } from "../auth/paths.js";
-import { layout } from "./layout.js";
+import { escapeHtml, layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
 import { PASSKEY_SIGN_IN_JS } from "./scripts.js";
 import { PASSKEY_STYLES_CSS, SIGNIN_STYLES_CSS } from "./styles.js";
@@ -119,68 +119,39 @@ export type LinkRefusal = "conflict" | "ambiguous-email" | "email-held-by-guest"
  * to stop being stuck.
  */
 export function renderLinkRefusalPage(refusal: LinkRefusal): { html: string; status: 409 | 500 | 503 } {
-  switch (refusal) {
-    case "conflict":
-      return {
-        status: 409,
-        html: layout({
-          title: "That email is already in use — Make The Team",
-          body: `
-            <h1>That email is already in use</h1>
-            <p>Your player already belongs to a different sign-in. We won't move it across automatically — that is exactly what it would look like if someone else were trying to take the account over.</p>
-            <p>Sign in the way you did the first time, or ask whoever organises your game to sort it out.</p>
-            ${signOutForm("Sign out and try a different address")}
-            <p><a href="/">Back to Make The Team</a></p>
-          `,
-          centred: true,
-        }),
-      };
-
-    case "ambiguous-email":
-      return {
-        status: 500,
-        html: layout({
-          title: "We need a hand with your record — Make The Team",
-          body: `
-            <h1>We need a hand with your record</h1>
-            <p>Your email address appears on more than one player, and we can't tell which one is you. Picking one at random is not something we're willing to do with your account.</p>
-            <p>Ask whoever organises your game to remove the duplicate, then sign in again.</p>
-            ${signOutForm("Sign out and try a different address")}
-            <p><a href="/">Back to Make The Team</a></p>
-          `,
-          centred: true,
-        }),
-      };
-
-    case "email-held-by-guest":
-      return {
-        status: 500,
-        html: layout({
-          title: "We need a hand with your record — Make The Team",
-          body: `
-            <h1>We need a hand with your record</h1>
-            <p>Your email address is attached to a guest entry — someone an organiser added by hand. Guest entries aren't accounts, so we can't sign you in as one.</p>
-            <p>Ask whoever organises your game to turn it into a proper player, then sign in again.</p>
-            ${signOutForm("Sign out and try a different address")}
-            <p><a href="/">Back to Make The Team</a></p>
-          `,
-          centred: true,
-        }),
-      };
-
-    case "create-raced":
-      return {
-        status: 503,
-        html: layout({
-          title: "Nearly there — Make The Team",
-          body: `
-            <h1>Nearly there</h1>
-            <p>You're signed in, but something else was changing your record at the same moment and we backed off rather than guess. Nothing is broken and nothing was lost.</p>
-            <p><a href="${SIGN_IN_COMPLETE_PATH}">Try again</a> — it should go through this time.</p>
-            ${signOutForm()}
-          `,
-          centred: true,
-        }),
-      };
-  }
+  // One page for all four dead ends (M20 B6): they all resolve to "ask your
+  // organiser", so the reason line is the only thing that varies. Status
+  // codes are unchanged — they are how the ops side tells the cases apart.
+  const status = refusal === "conflict" ? 409 : refusal === "create-raced" ? 503 : 500;
+  const reason = {
+    conflict:
+      "Your player already belongs to a different sign-in, and we won't move it across automatically — that is exactly what it would look like if someone else were trying to take the account over. Sign in the way you did the first time, or ask whoever organises your game to sort it out.",
+    "ambiguous-email":
+      "Your email address appears on more than one player, and we can't tell which one is you. Ask whoever organises your game to remove the duplicate, then sign in again.",
+    "email-held-by-guest":
+      "Your email address is attached to a guest entry — someone an organiser added by hand — and guest entries aren't accounts. Ask whoever organises your game to turn it into a proper player, then sign in again.",
+    "create-raced":
+      "Something else was changing your record at the same moment and we backed off rather than guess. Nothing is broken and nothing was lost.",
+  }[refusal];
+  // The one sanctioned deviation (spec decision Q4): the race is the only
+  // case where trying again is the fix, so it alone keeps a next step
+  // beyond "go back".
+  const retry =
+    refusal === "create-raced"
+      ? `<p><a href="${SIGN_IN_COMPLETE_PATH}">Try again</a> — it should go through this time.</p>`
+      : "";
+  return {
+    status,
+    html: layout({
+      title: "We can't sign you in — Make The Team",
+      body: `
+        <h1>We can't sign you in</h1>
+        <p>${escapeHtml(reason)}</p>
+        ${retry}
+        ${signOutForm("Sign out and try a different address")}
+        <p><a href="/">Back to Make The Team</a></p>
+      `,
+      centred: true,
+    }),
+  };
 }

@@ -397,7 +397,11 @@ describe("verification", () => {
 
     expect(response.status).toBe(409);
     const body = await response.text();
-    expect(body).toContain("<h1>");
+    // All four sign-in dead ends now share one heading and shape (M20 B6);
+    // status codes are unchanged — monitoring reads them.
+    expect(body).toContain("We can't sign you in");
+    expect(body).toContain("already belongs to a different sign-in");
+    expect(body).not.toContain("Try again");
     expect(body).toContain(SIGN_OUT_PATH);
     const [player] = await getDb(env.DB).select().from(players);
     expect(player!.authUserId).toBe("some-other-identity");
@@ -419,7 +423,9 @@ describe("verification", () => {
 
     expect(response.status).toBe(500);
     const body = await response.text();
-    expect(body).toContain("<h1>");
+    expect(body).toContain("We can't sign you in");
+    expect(body).toContain("more than one player");
+    expect(body).not.toContain("Try again");
     expect(body).toContain(SIGN_OUT_PATH);
   });
 
@@ -437,7 +443,10 @@ describe("verification", () => {
     );
 
     expect(response.status).toBe(500);
-    expect(await response.text()).toContain("<h1>");
+    const body = await response.text();
+    expect(body).toContain("We can't sign you in");
+    expect(body).toContain("guest entry");
+    expect(body).not.toContain("Try again");
   });
 
   /**
@@ -478,11 +487,12 @@ describe("verification", () => {
 
     expect(response.status).toBe(503);
     const body = await response.text();
+    expect(body).toContain("We can't sign you in");
     // The one page in the flow with a retry link — it is what makes this
     // outcome different from the three terminal refusals, and a wrong target
     // here would strand someone in a loop.
     expect(body).toContain(`href="${SIGN_IN_COMPLETE_PATH}"`);
-    expect(body).toMatch(/try again/i);
+    expect(body).toContain("Try again");
     expect(body).not.toMatch(/type=.?password/i);
   });
 });
@@ -954,7 +964,7 @@ describe("no password field anywhere (TR-16)", () => {
       await getDb(env.DB).update(players).set({ authUserId: "some-other-identity" });
       await capture(
         "link conflict (409)",
-        /already in use/i,
+        /already belongs to a different sign-in/i,
         new Request(`${ORIGIN}${SIGN_IN_COMPLETE_PATH}`, { headers: { cookie } }),
       );
     }
@@ -1010,7 +1020,11 @@ describe("no password field anywhere (TR-16)", () => {
           bindings({ DB: racing }),
         )
       ).text();
-      pages.push({ name: "create-raced (503)", body, distinctive: /Nearly there/ });
+      pages.push({
+        name: "create-raced (503)",
+        body,
+        distinctive: /something else was changing your record/i,
+      });
     }
 
     expect(pages.map((page) => page.name).sort()).toEqual(
