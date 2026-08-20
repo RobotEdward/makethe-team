@@ -80,8 +80,9 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       .from(responses)
       .where(eq(responses.fixtureId, fixtureId));
 
-    // A row exists for every player eligible when the fixture opened. No row
-    // means this player was not in the squad at that moment (BR-2).
+    // A row exists for every eligible player: written when the fixture opened
+    // (BR-1), or backfilled when they joined while it was open (BR-2′). No
+    // row means they have never been in this fixture's squad.
     //
     // A `withdrawn` row counts as no row: it is the marker that an organiser
     // took this player out of the fixture (BR-3), and someone taken out is no

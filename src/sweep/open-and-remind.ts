@@ -3,21 +3,10 @@ import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog, players, responses } from "../db/schema.js";
 import { openFixture } from "../domain/open-fixture.js";
 import { reminderInstant } from "../domain/reminder-time.js";
-import { formatLocalDateTime } from "../domain/time/zone.js";
-import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
+import { buildReminderMessages, type ReminderCandidate } from "../notify/reminder-messages.js";
 import type { Notifier } from "../notify/notifier.js";
-import { pushKey, reminderKey } from "../notify/dedupe-key.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
-import {
-  applySendResult,
-  insertQueuedLogRows,
-  markOrphanedRowsFailed,
-  playersWithPushSubscriptions,
-  SITE_ORIGIN,
-  type PendingNotification,
-} from "../notify/delivery.js";
-import { PUSH_COPY } from "../notify/push-copy.js";
-import { renderReminderEmail } from "../notify/templates/reminder.js";
+import { applySendResult, insertQueuedLogRows, markOrphanedRowsFailed } from "../notify/delivery.js";
 
 /** One fixture (or game) the sweep could not fully process, and why. */
 export interface SweepFailure {
@@ -229,13 +218,6 @@ async function fixturesDueByLifecycle(
   }
 
   return { due, failures };
-}
-
-interface ReminderCandidate {
-  playerId: string;
-  name: string;
-  email: string | null;
-  isGuest: boolean;
 }
 
 interface RemindResult {
@@ -523,101 +505,3 @@ async function existingReminderLog(db: Db, fixtureId: string): Promise<Set<strin
     );
   return new Set(rows.map((r) => r.playerId));
 }
-
-async function buildReminderMessages(params: {
-  db: Db;
-  fixture: typeof fixtures.$inferSelect;
-  game: typeof games.$inferSelect;
-  candidates: ReminderCandidate[];
-  responseTokenSecret: string;
-  now: Date;
-}): Promise<PendingNotification[]> {
-  const { db, fixture, game, candidates, responseTokenSecret, now } = params;
-
-  const kicksOffAtLocal = formatLocalDateTime(fixture.kicksOffAt, game.timezone);
-  const inCount = fixture.inCount;
-  const spotsLeft = Math.max(0, fixture.maxPlayers - fixture.inCount);
-  const expiresAt = responseTokenExpiry(fixture.kicksOffAt).getTime();
-
-  // Only a player with at least one registered device gets a `PushMessage`
-  // (M14 Task 13, spec §9.3 rule 1) — otherwise every player without a phone
-  // would accumulate a `no-recipient` row per reminder, forever. Fetched
-  // once for the whole fixture's candidates rather than per player.
-  const subscribed = await playersWithPushSubscriptions(
-    db,
-    candidates.map((candidate) => candidate.playerId),
-  );
-
-  const pending: PendingNotification[] = [];
-  for (const candidate of candidates) {
-    // Filtered by the caller, but narrowed again here so the compiler — not
-    // just the runtime check — refuses to let a null email reach `Message.to`.
-    const email = candidate.email;
-    if (!email) continue;
-
-    const token = await signResponseToken(
-      { playerId: candidate.playerId, fixtureId: fixture.id, expiresAt },
-      responseTokenSecret,
-    );
-
-    // A leave token, not the response token above: leaving is scoped to the
-    // Game, not this one Fixture, and it must keep working long after this
-    // reminder's response token has expired (BR-22, §2.2).
-    const leaveToken = await signLeaveToken(
-      { gameId: fixture.gameId, playerId: candidate.playerId, expiresAt: leaveTokenExpiry(now).getTime() },
-      responseTokenSecret,
-    );
-
-    const respondInUrl = `${SITE_ORIGIN}/r/${token}?intent=in`;
-    const emailPayload = {
-      playerName: candidate.name,
-      gameName: game.name,
-      venueName: fixture.venueOverride ?? game.venueName,
-      kicksOffAtLocal,
-      inCount,
-      spotsLeft,
-      respondInUrl,
-      respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
-      leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
-    };
-    const rendered = renderReminderEmail(emailPayload);
-
-    const dedupeKey = reminderKey(fixture.id, candidate.playerId);
-    pending.push({
-      logId: crypto.randomUUID(),
-      dedupeKey,
-      playerId: candidate.playerId,
-      message: {
-        channel: "email",
-        to: email,
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-        dedupeKey,
-      },
-    });
-
-    if (subscribed.has(candidate.playerId)) {
-      const copy = PUSH_COPY.n1(emailPayload);
-      pending.push({
-        logId: crypto.randomUUID(),
-        dedupeKey: pushKey(dedupeKey),
-        playerId: candidate.playerId,
-        message: {
-          channel: "push",
-          to: candidate.playerId,
-          title: copy.title,
-          body: copy.body,
-          url: respondInUrl,
-          // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
-          // (Task 9) to the real fixture id, now that this caller holds one
-          // (Task 13).
-          tag: `n1:${fixture.id}`,
-          dedupeKey: pushKey(dedupeKey),
-        },
-      });
-    }
-  }
-  return pending;
-}
-

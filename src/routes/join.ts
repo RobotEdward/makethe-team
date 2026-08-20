@@ -1,12 +1,14 @@
 import { Hono } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
 import { getDb, type Db } from "../db/client.js";
-import { findFirstScheduledFixture, findGameByInviteToken, listSquad } from "../db/queries.js";
+import { findFirstUpcomingFixture, findGameByInviteToken, listSquad } from "../db/queries.js";
 import type { games } from "../db/schema.js";
+import { backfillOpenFixtureResponses } from "../domain/backfill-open-responses.js";
 import { isPlausibleEmail, joinSquad, normaliseEmail, type JoinOutcome } from "../domain/join-squad.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
+import { sendLateInvitations } from "../notify/send-late-invitations.js";
 import { sendWelcomeEmail } from "../notify/send-welcome.js";
 import { renderInvitePage, renderJoinOutcomePage } from "../views/join.js";
 
@@ -50,7 +52,7 @@ async function invitePageFor(params: {
   const { db, game, now, values, error } = params;
   const [squad, firstFixture] = await Promise.all([
     listSquad(db, game.id),
-    findFirstScheduledFixture(db, game.id, now),
+    findFirstUpcomingFixture(db, game.id, now),
   ]);
 
   return renderInvitePage({
@@ -133,23 +135,33 @@ join.post("/j/:token", async (c) => {
   const outcome = await joinSquad({ db, gameId: game.id, name, email, now });
 
   if (outcome.kind === "joined" || outcome.kind === "rejoined") {
+    // Backfilled *before* the page renders, not in the background task: the
+    // page below names the open fixture as theirs (BR-2′), and it must not
+    // say so ahead of the row that makes it true. Only the emails wait.
+    const backfilledFixtureIds = await backfillOpenFixtureResponses(db, game.id, outcome.playerId);
+
     // `waitUntil`, exactly as `POST /r/:token` does with the promotion email:
     // the membership is already committed and durable, nothing on this page
     // depends on the welcome arriving, and a person's first contact with this
     // product must not sit waiting on a mail provider's latency. Failures are
     // not silent — `notifyJoiner` logs every non-success and
     // `sendWelcomeEmail` leaves a durable `notification_log` row.
-    c.executionCtx.waitUntil(notifyJoiner(c.env, game.id, outcome, now));
+    c.executionCtx.waitUntil(notifyJoiner(c.env, game.id, outcome, now, backfilledFixtureIds));
   }
 
-  const firstFixture = await findFirstScheduledFixture(db, game.id, now);
+  const firstFixture = await findFirstUpcomingFixture(db, game.id, now);
 
   return c.html(
     renderJoinOutcomePage({
       kind: outcome.kind,
       gameName: game.name,
       venueName: game.venueName,
-      firstFixtureLocal: firstFixture ? formatLocalDateTime(firstFixture.kicksOffAt, game.timezone) : null,
+      firstFixture: firstFixture
+        ? {
+            local: formatLocalDateTime(firstFixture.kicksOffAt, game.timezone),
+            lifecycle: firstFixture.lifecycle,
+          }
+        : null,
     }),
   );
 });
@@ -174,9 +186,44 @@ export async function notifyJoiner(
   gameId: string,
   outcome: Extract<JoinOutcome, { kind: "joined" | "rejoined" }>,
   now: Date,
+  /** Open fixtures the join backfilled this player into (BR-2′) — each gets its N-1 now. */
+  backfilledFixtureIds: readonly string[] = [],
 ): Promise<void> {
   const who = `game ${gameId}, player ${outcome.playerId}`;
   const db = getDb(env.DB);
+
+  if (backfilledFixtureIds.length > 0) {
+    try {
+      // The same quota-wrapped notifier as the welcome below (TR-31): this is
+      // the other send an anonymous stranger can trigger, and the daily
+      // ceiling is what caps what a leaked invite link can cost. A ceiling
+      // refusal here is benign — `sendLateInvitations` removes the row, so
+      // the hourly sweep retries it (the pre-BR-2′ timing, never a loss).
+      const invitations = await sendLateInvitations({
+        db,
+        notifier: createNotifier(env, db, now),
+        playerId: outcome.playerId,
+        fixtureIds: backfilledFixtureIds,
+        responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
+        now,
+      });
+      if (invitations.failed > 0 || invitations.deferred > 0) {
+        console.error(
+          `late N-1 invitation(s) incomplete for ${who}: ` +
+            `${invitations.sent} sent, ${invitations.failed} failed, ${invitations.deferred} deferred to the sweep`,
+        );
+      }
+    } catch (error) {
+      // Same last line of defence as the welcome's catch below: a rejected
+      // promise inside `waitUntil` resolves into nothing.
+      console.error(
+        `late N-1 invitation(s) threw for ${who}: ${
+          error instanceof Error ? (error.stack ?? error.message) : String(error)
+        }`,
+      );
+    }
+  }
+
   try {
     const result = await sendWelcomeEmail({
       db,

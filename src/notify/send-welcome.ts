@@ -1,4 +1,4 @@
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { DASHBOARD_PATH } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog, players } from "../db/schema.js";
@@ -86,14 +86,13 @@ export interface SendWelcomeEmailParams {
  *   silently drop the second welcome. `joinSquad` resets `joined_at` on
  *   reactivation precisely so this key differs (see `src/domain/join-squad.ts`).
  *
- * **BR-2 lives here too.** The fixture this email names is the next
- * `scheduled` one, never a fixture that is already `open`: `pending` response
- * rows were written for the eligible set at the moment that fixture opened
- * (BR-1) and nothing back-fills them, so a player who joined afterwards is
- * simply not in it. Naming it would promise them a game they have no place in.
- * A squad with nothing `scheduled` ahead of it is normal (it may have been
- * created minutes ago), and the template says so rather than rendering a blank
- * date.
+ * **BR-2′ lives here too.** The fixture this email names is the next
+ * upcoming one, `open` included: the join flow backfills a `pending` row for
+ * every open fixture before this send is queued, so a game already being
+ * organised is one the joiner is in, and the copy promises the N-1
+ * invitation that the same background task is sending. A squad with nothing
+ * upcoming is normal (it may have been created minutes ago), and the
+ * template says so rather than rendering a blank date.
  *
  * The ordering is the sweep's (BR-19, §2.4), reused rather than
  * reimplemented: `insertQueuedLogRows` writes the `queued` row first, the
@@ -130,14 +129,25 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
   // by anything: `failed` with a nameable reason, and no row written.
   if (!game) return { kind: "failed", reason: "game-not-found" };
 
-  // BR-2: their *first* fixture is the next `scheduled` one ahead of `now`.
-  // Anything already `open` was populated before they arrived, and a
-  // `scheduled` fixture in the past would be a sweep that has not run — either
-  // way, naming it would be wrong.
+  // BR-2′: their first fixture is the next upcoming one ahead of `now`,
+  // `open` included — the join flow backfilled their `pending` row before
+  // queueing this send, so an open fixture is genuinely theirs. A fixture in
+  // the past would be a sweep that has not run, and naming it would be wrong.
   const [firstFixture] = await db
-    .select({ id: fixtures.id, kicksOffAt: fixtures.kicksOffAt, venueOverride: fixtures.venueOverride })
+    .select({
+      id: fixtures.id,
+      kicksOffAt: fixtures.kicksOffAt,
+      venueOverride: fixtures.venueOverride,
+      lifecycle: fixtures.lifecycle,
+    })
     .from(fixtures)
-    .where(and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "scheduled"), gte(fixtures.kicksOffAt, now)))
+    .where(
+      and(
+        eq(fixtures.gameId, gameId),
+        inArray(fixtures.lifecycle, ["open", "scheduled"]),
+        gte(fixtures.kicksOffAt, now),
+      ),
+    )
     .orderBy(asc(fixtures.kicksOffAt))
     .limit(1);
 
@@ -156,6 +166,7 @@ export async function sendWelcomeEmail(params: SendWelcomeEmailParams): Promise<
     // The single permitted place cross-zone formatting happens. `null` when
     // there is nothing scheduled yet — the template has copy for that.
     whenLocal: firstFixture ? formatLocalDateTime(firstFixture.kicksOffAt, game.timezone) : null,
+    firstGameAlreadyOpen: firstFixture?.lifecycle === "open",
     // Built here, from `SITE_ORIGIN` — never from anything in the request.
     dashboardUrl,
     leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,

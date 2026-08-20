@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseSource, ResponseStatus } from "../domain/response-status.js";
@@ -349,30 +349,40 @@ export async function findGameByInviteToken(
 }
 
 /**
- * The next `scheduled` fixture — the first one a joiner will actually be
- * invited to (BR-2).
+ * The next upcoming fixture — `open` or `scheduled` — the first one a joiner
+ * will be in (BR-2′).
  *
- * Deliberately excludes `open` fixtures: a player added after a fixture opens
- * is not in it, because `pending` response rows were written for the eligible
- * set at the moment it opened (BR-1) and nothing back-fills them. Naming an
- * `open` fixture on the "you're in" page would promise someone a game they
- * have no place in. The same rule, for the same reason, is applied by
- * `src/notify/send-welcome.ts` for the N-6 email.
+ * `open` fixtures are deliberately *included* since BR-2′: the join flow
+ * backfills a `pending` row for every open fixture
+ * (`src/domain/backfill-open-responses.ts`), so the game being organised
+ * right now is a joiner's first game and the invite/outcome pages may name
+ * it. The `lifecycle` comes back with the date because the two callers word
+ * the two cases differently — an invitation for an `open` fixture is already
+ * on its way, a `scheduled` one is announced nearer the time.
  */
-export async function findFirstScheduledFixture(
+export async function findFirstUpcomingFixture(
   db: Db,
   gameId: string,
   now: Date,
-): Promise<{ kicksOffAt: Date } | null> {
+): Promise<{ kicksOffAt: Date; lifecycle: "open" | "scheduled" } | null> {
   const [fixture] = await db
-    .select({ kicksOffAt: fixtures.kicksOffAt })
+    .select({ kicksOffAt: fixtures.kicksOffAt, lifecycle: fixtures.lifecycle })
     .from(fixtures)
     .where(
-      and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "scheduled"), gte(fixtures.kicksOffAt, now)),
+      and(
+        eq(fixtures.gameId, gameId),
+        inArray(fixtures.lifecycle, ["open", "scheduled"]),
+        gte(fixtures.kicksOffAt, now),
+      ),
     )
     .orderBy(asc(fixtures.kicksOffAt))
     .limit(1);
-  return fixture ?? null;
+  if (!fixture) return null;
+  // The filter above admits only these two values; the narrowing is for the
+  // stored-lifecycle caveat (`test/stored-lookups.test.ts`): a row whose text
+  // is neither is a schema violation better surfaced here than rendered.
+  if (fixture.lifecycle !== "open" && fixture.lifecycle !== "scheduled") return null;
+  return { kicksOffAt: fixture.kicksOffAt, lifecycle: fixture.lifecycle };
 }
 
 /**

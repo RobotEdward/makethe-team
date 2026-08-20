@@ -13,10 +13,12 @@ export interface OpenFixtureResult {
 /**
  * Move a fixture from `scheduled` to `open`, fixing its eligible set (BR-1).
  *
- * The set of players who can respond is decided here and nowhere else: a
- * `pending` row is written for every active member at this instant, so someone
- * who joins the squad afterwards is not retroactively invited (BR-2) and
- * someone who left is not asked.
+ * The eligible set is fixed here at the moment of opening: a `pending` row is
+ * written for every active member at this instant, and someone who left is
+ * not asked. Since BR-2′ (M21) there is one sanctioned later addition — the
+ * join flow backfills a `pending` row for a player who joins while this
+ * fixture is open (`src/domain/backfill-open-responses.ts`); nothing else
+ * back-fills.
  *
  * Idempotent by two mechanisms, because the sweep may retry or overlap:
  * the lifecycle guard short-circuits a second call, and the

@@ -1,4 +1,4 @@
-import { joinPath, PRIVACY_PATH } from "../auth/paths.js";
+import { DASHBOARD_PATH, joinPath, PRIVACY_PATH } from "../auth/paths.js";
 import { describeRecurrenceRule, parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { redactName } from "../domain/redact-name.js";
 import { escapeHtml, layout } from "./layout.js";
@@ -59,7 +59,7 @@ export interface InvitePageParams {
    * applied at the single point of interpolation below.
    */
   squad: ReadonlyArray<{ name: string }>;
-  /** The next `scheduled` fixture, already formatted in the Game's timezone. */
+  /** The next upcoming (`open` or `scheduled`) fixture, already formatted in the Game's timezone (BR-2′). */
   firstFixtureLocal: string | null;
   /** Preserved across a rejected submission so nobody retypes on a phone. */
   values?: { name?: string; email?: string };
@@ -205,25 +205,30 @@ export interface JoinOutcomePageParams {
   kind: "joined" | "rejoined" | "already-member";
   gameName: string;
   venueName: string;
-  /** The next `scheduled` fixture, already formatted in the Game's timezone. */
-  firstFixtureLocal: string | null;
+  /**
+   * The next upcoming fixture, already formatted in the Game's timezone. The
+   * lifecycle decides the wording: `open` means this person was just
+   * backfilled into it (BR-2′) and their invitation email is already on its
+   * way, while `scheduled` is announced nearer the time.
+   */
+  firstFixture: { local: string; lifecycle: "open" | "scheduled" } | null;
 }
 
 /**
  * What happened, in the terms the person in front of it needs.
  *
- * **BR-2 is stated here rather than glossed over.** Someone who joins after a
- * fixture has already opened is *not* in that fixture, so this page names the
- * next `scheduled` one as their first and never implies they are in a game
- * already underway. The N-6 welcome email says the same thing from the same
- * rule (`src/notify/send-welcome.ts`), so the page and the email cannot
- * disagree about which fixture is theirs.
+ * **BR-2′ is stated here in the joiner's favour.** Someone who joins while a
+ * fixture is open was just backfilled into it, so this page names that game
+ * as their first and says the invitation email is on its way. The N-6
+ * welcome email says the same thing from the same rule
+ * (`src/notify/send-welcome.ts`), so the page and the email cannot disagree
+ * about which fixture is theirs.
  *
  * No email address and no squad list: there is nothing here that a forwarded
  * screenshot of this page could leak.
  */
 export function renderJoinOutcomePage(params: JoinOutcomePageParams): string {
-  const { kind, gameName, venueName, firstFixtureLocal } = params;
+  const { kind, gameName, venueName, firstFixture } = params;
 
   const heading =
     kind === "joined"
@@ -237,25 +242,31 @@ export function renderJoinOutcomePage(params: JoinOutcomePageParams): string {
       ? `<p>Nothing has changed — you were already on the squad for ${escapeHtml(gameName)} at ${escapeHtml(venueName)}.</p>`
       : `<p>You're on the squad for ${escapeHtml(gameName)} at ${escapeHtml(venueName)}.</p>`;
 
-  // BR-2, said plainly rather than left to be discovered: the first fixture
-  // named is the next *scheduled* one, and a fixture already being organised
-  // is not one this person is in.
+  // BR-2′: an `open` fixture is one this person was just backfilled into, so
+  // it is named as theirs and the invitation is promised — it was handed to
+  // the same background task as the welcome email before this page rendered.
   const next =
-    firstFixtureLocal === null
+    firstFixture === null
       ? `<p>There's no fixture scheduled yet. You'll get an email when the next one opens — nothing to do until then.</p>`
-      : `<p>Your first game is ${escapeHtml(firstFixtureLocal)}. You'll get an email a few days before, with a way to say whether you're in.</p>`;
+      : firstFixture.lifecycle === "open"
+        ? `<p>A game is being organised right now for ${escapeHtml(firstFixture.local)} — and you're in the running. Check your email: your invitation is on its way, with a way to say whether you're playing.</p>`
+        : `<p>Your first game is ${escapeHtml(firstFixture.local)}. You'll get an email a few days before, with a way to say whether you're in.</p>`;
 
-  // The caveat goes on *both* branches. A squad whose only fixture is already
-  // `open` renders the "nothing scheduled yet" line above, and that is exactly
-  // the person most likely to see a game happening this week and assume they
-  // are in it — which is the confusion BR-2 exists to prevent.
-  const caveat = `<p>If a game is already being organised for this week, you're not in that one — you joined after the invitations went out.</p>`;
+  // The dashboard is where the "Get set up" card lives (M19) — install,
+  // notifications, passkey all need a session, so this page's job is only to
+  // make the trip worth taking. `.actions`/`.button` are layout() primitives;
+  // no new style block, so nothing new to register for the CSP.
+  const getSetUp = `
+    <h2>Get set up</h2>
+    <p>Your dashboard has the rest: add the app to your home screen, turn on notifications so you hear about games first, and set up a passkey to sign in faster.</p>
+    <div class="actions"><a class="button primary" href="${DASHBOARD_PATH}">Open your dashboard</a></div>
+  `;
 
   const body = `
     <h1>${heading}</h1>
     ${opener}
     ${next}
-    ${caveat}
+    ${getSetUp}
   `;
 
   return layout({ title: `${gameName} — Make The Team`, body, pageStyles: [FORM_CSS] });

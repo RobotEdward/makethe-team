@@ -24,6 +24,7 @@ const sampleContext = {
   // nullable (a squad can have no fixture yet) but `ErasureScheduledEmailPayload.whenLocal`
   // is not, and a string satisfies both — a `| null` union here would not.
   whenLocal: "Thu 18 Feb, 7:30pm",
+  firstGameAlreadyOpen: false,
   inCount: 8,
   spotsLeft: 2,
   respondInUrl: "https://makethe.team/r/abc?intent=in",

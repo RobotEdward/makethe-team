@@ -15,7 +15,7 @@ const NOW = new Date("2026-08-12T09:00:00Z");
 const JOINED_AT = NOW;
 /** A week out, and deliberately later than the already-open fixture below. */
 const NEXT_SCHEDULED = new Date("2026-08-20T18:00:00Z");
-/** Already open when the player joined, so BR-2 says they are not in it. */
+/** Already open when the player joined — BR-2′ backfills them into it, so it is their first. */
 const ALREADY_OPEN = new Date("2026-08-13T18:00:00Z");
 
 /** Records every message it was sent, in order, so a test can assert on it. */
@@ -56,7 +56,7 @@ interface Joined {
   gameId: string;
   playerId: string;
   membershipId: string;
-  /** The next `scheduled` fixture's id, when `withFixtures` seeded one — their "first" fixture (BR-2). */
+  /** The already-`open` fixture's id, when `withFixtures` seeded one — their first fixture (BR-2′). */
   firstFixtureId: string | null;
 }
 
@@ -83,8 +83,8 @@ async function insertFixture(
 /**
  * One game the player has just joined. Mirrors what `joinSquad` leaves behind:
  * a `players` row, an active `memberships` row with `joinedAt`, and — unless
- * `withFixtures` says otherwise — a fixture already `open` (which BR-2 says
- * they are *not* in) plus the next `scheduled` one, which is their first.
+ * `withFixtures` says otherwise — a fixture already `open` (their first,
+ * since BR-2′ backfills a joiner into it) plus the next `scheduled` one.
  */
 async function seedJoin(
   options: { email?: string | null; withFixtures?: boolean; joinedAt?: Date } = {},
@@ -100,8 +100,8 @@ async function seedJoin(
 
   let firstFixtureId: string | null = null;
   if (withFixtures) {
-    await insertFixture(gameId, ALREADY_OPEN, "open");
-    firstFixtureId = await insertFixture(gameId, NEXT_SCHEDULED, "scheduled");
+    firstFixtureId = await insertFixture(gameId, ALREADY_OPEN, "open");
+    await insertFixture(gameId, NEXT_SCHEDULED, "scheduled");
   }
 
   return { gameId, playerId, membershipId, firstFixtureId };
@@ -196,18 +196,32 @@ describe("sendWelcomeEmail (N-6)", () => {
     expect(verified).toMatchObject({ ok: true, payload: { gameId: joined.gameId, playerId: joined.playerId } });
   });
 
-  it("names the next *scheduled* fixture, not the one already open (BR-2)", async () => {
+  it("names the open fixture as their first, and promises its invitation (BR-2′)", async () => {
     const joined = await seedJoin();
     const notifier = new RecordingNotifier();
 
     await send(joined, notifier);
 
     const message = requireEmailMessage(notifier.all[0]!);
-    // 20 August is the next `scheduled` fixture; 13 August is already `open`,
-    // and the joiner has no `pending` response row for it.
-    expect(message.text).toContain("20 August");
-    expect(message.text).not.toContain("13 August");
+    // 13 August is already `open` — the join flow backfilled them into it, so
+    // it is their first game, ahead of the `scheduled` 20 August one.
+    expect(message.text).toContain("13 August");
+    expect(message.text).not.toContain("20 August");
+    expect(message.text.toLowerCase()).toContain("invitation is on its way");
     expect(message.html).toContain("https://makethe.team/app");
+  });
+
+  it("uses the reminder framing, not the invitation promise, when nothing is open yet", async () => {
+    const joined = await seedJoin({ withFixtures: false });
+    const gameId = joined.gameId;
+    await insertFixture(gameId, NEXT_SCHEDULED, "scheduled");
+    const notifier = new RecordingNotifier();
+
+    await send(joined, notifier);
+
+    const message = requireEmailMessage(notifier.all[0]!);
+    expect(message.text).toContain("20 August");
+    expect(message.text.toLowerCase()).not.toContain("invitation is on its way");
   });
 
   it("stays honest, and still sends, when the game has no scheduled fixture yet", async () => {

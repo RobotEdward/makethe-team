@@ -73,18 +73,16 @@ export interface DashboardFixture {
  * *reach*. A caller that widened this function's `notInArray` instead would
  * have silently widened the dashboard's write path with it.
  *
- * **Driving the join from `responses` has a consequence worth stating out
- * loud: a player who joins a Game *after* a fixture has already opened has no
- * `responses` row for it, so that fixture never appears on their dashboard and
- * cannot be answered here.** This is not a bug. BR-1/BR-2 fix the eligible
- * squad, and therefore the set of players a fixture mints a response row for,
- * at the moment it opens; `/r/:token` behaves identically for the same
- * player — no token was ever minted for them either, so they have no way to
- * reach that fixture from a reminder email — and this route re-uses that same
- * eligible set rather than inventing a second one. No later milestone is
- * expected to need to revisit this: it would require retroactively minting a
- * response row (and a token) for a fixture that has already opened, which is
- * a change to BR-1/BR-2's eligibility rule, not to this query.
+ * **Driving the join from `responses` is safe precisely because eligibility
+ * is a row, not a rule evaluated here.** BR-1 mints the response rows when a
+ * fixture opens, and BR-2′ (M21) backfills one when a player joins while a
+ * fixture is open — so a late joiner *does* see the open fixture on their
+ * dashboard, because the join flow wrote their `pending` row before this
+ * query could run. `/r/:token` agrees for the same reason: their N-1, with a
+ * freshly minted token, is sent by the same join. Anyone without a row —
+ * removed mid-fixture, or missed by the narrow join/open race noted in
+ * docs/known-issues.md — is invisible here, which is the intended reading of
+ * the eligible set, not a query bug.
  */
 function entitledTo(playerId: string, extra?: SQL): SQL | undefined {
   return and(

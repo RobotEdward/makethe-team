@@ -144,6 +144,18 @@ reads. (The other M20 carve-out recorded here, the email templates keeping
 the old green, was closed the same day: `src/notify/templates/*` now use the
 M20 palette.)
 
+## BR-2′ backfill can miss a fixture opening in the same instant (20 August 2026)
+
+M21 changed BR-2: a player who joins while a fixture is `open` is backfilled into it
+(`src/domain/backfill-open-responses.ts`) and invited immediately. One race is accepted
+rather than closed: a join committing in the same sub-second window as the hourly sweep
+opening a fixture can be missed by both sides — the sweep's eligible-set read runs before
+the membership commits, and the join's open-fixtures read runs before the lifecycle write
+lands. The window is one cron tick racing one form submit, D1 has no cross-statement
+transaction to close it with, and the failure mode is the pre-M21 behaviour for that one
+player (they are simply not in that fixture, and their dashboard says so). Not worth a
+reconciliation pass; revisit only if a real report ever lands.
+
 ## Edge configuration — applied
 
 The two WAF custom rules in `docs/runbooks/cloudflare.md` (TR-37) were applied by hand

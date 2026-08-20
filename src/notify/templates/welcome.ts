@@ -30,11 +30,19 @@ export interface WelcomeEmailPayload {
    * Their **first** Fixture's kick-off, already formatted in the Game's local
    * timezone by the caller (src/domain/time/zone.ts). Never formatted here.
    *
-   * `null` when the Game has no `scheduled` Fixture ahead of it — a squad can
-   * be joined before the sweep has materialised anything, and the copy says so
-   * rather than rendering an empty date.
+   * `null` when the Game has no upcoming Fixture — a squad can be joined
+   * before the sweep has materialised anything, and the copy says so rather
+   * than rendering an empty date.
    */
   whenLocal: string | null;
+  /**
+   * True when `whenLocal` names a fixture that is already `open` — the joiner
+   * was backfilled into it (BR-2′) and their N-1 invitation is being sent in
+   * the same background task as this welcome, so the copy promises it rather
+   * than the "a few days before" reminder framing. Meaningless when
+   * `whenLocal` is null.
+   */
+  firstGameAlreadyOpen: boolean;
   /** Absolute URL of the player dashboard. Server-built by the caller from `SITE_ORIGIN`. */
   dashboardUrl: string;
   /**
@@ -61,12 +69,11 @@ function href(url: string): string {
  *
  * Three things the copy is deliberately careful about:
  *
- * - **The first fixture is not necessarily the current one (BR-2).** A Player
- *   who joins after a Fixture has already `open`ed is not in it: `pending`
- *   response rows were written for the eligible set at the moment it opened
- *   and nothing back-fills them. So `whenLocal` is the next *`scheduled`*
- *   Fixture, and the copy calls it "your first game" rather than "the next
- *   game" — the next game may well be one they are watching from outside.
+ * - **The current fixture can be their first (BR-2′).** A Player who joins
+ *   while a Fixture is `open` is backfilled into it and invited immediately,
+ *   so `whenLocal` may name a game already being organised — and when it
+ *   does, the copy promises the invitation email instead of the day-before
+ *   reminder, because that invitation is being sent right now.
  * - **A squad can have no fixtures yet.** With `whenLocal` null the email says
  *   the diary is empty and that they will hear when it is not, rather than
  *   printing a blank line where a date should be. Getting this wrong is how an
@@ -87,14 +94,19 @@ export function renderWelcomeEmail(payload: WelcomeEmailPayload): WelcomeEmail {
   const subject = `You're in the squad for ${gameName}`;
 
   const lead = "You joined from this Game's invite link, so you're in the squad.";
-  // BR-2 in one sentence: what they are told about is their *first* game, which
-  // is the next scheduled one — never a fixture that is already open.
+  // BR-2′: a first game that is already open is theirs, and its invitation is
+  // in flight from the same background task as this email — promised here so
+  // its arrival moments later is expected rather than confusing.
   const firstGameLine =
     whenLocal === null
       ? "Your first game isn't in the diary yet — you'll get an email as soon as one is."
-      : `Your first game is ${whenLocal}.`;
+      : payload.firstGameAlreadyOpen
+        ? `Your first game is ${whenLocal} — it's being organised right now, and your invitation is on its way in a separate email.`
+        : `Your first game is ${whenLocal}.`;
   const reminderLine =
     "The day before each game you'll get an email with two buttons — “I'm in” and “Can't make it”. One tap is the whole job.";
+  const setUpLine =
+    "While you're here: open your dashboard to add Make The Team to your home screen, turn on notifications so you hear about games first, and set up a passkey to sign in faster.";
 
   const html = `<!doctype html>
 <html lang="en">
@@ -125,7 +137,9 @@ ${escapeHtml(lead)}
 
 <p style="margin:0 0 12px; font-size:15px; line-height:1.5; color:#201e1d;">${escapeHtml(firstGameLine)}</p>
 
-<p style="margin:0 0 20px; font-size:15px; line-height:1.5; color:#645c50;">${escapeHtml(reminderLine)}</p>
+<p style="margin:0 0 12px; font-size:15px; line-height:1.5; color:#645c50;">${escapeHtml(reminderLine)}</p>
+
+<p style="margin:0 0 20px; font-size:15px; line-height:1.5; color:#645c50;">${escapeHtml(setUpLine)}</p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
@@ -168,6 +182,8 @@ Didn't mean to join? <a href="${href(leaveUrl)}" style="color:#645c50;">Leave th
     firstGameLine,
     "",
     reminderLine,
+    "",
+    setUpLine,
     "",
     "See your games:",
     dashboardUrl,

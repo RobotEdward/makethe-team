@@ -1,7 +1,7 @@
 import { SELF } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { fixtures, games, memberships, notificationLog, players } from "../../src/db/schema.js";
+import { fixtures, games, memberships, notificationLog, players, responses as responsesTable } from "../../src/db/schema.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ORIGIN } from "../support/sign-in.js";
 
@@ -311,9 +311,8 @@ describe("POST /j/:token", () => {
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html).toContain("You're in");
-    // BR-2 on the branch with nothing scheduled — the person most likely to
-    // see a game happening this week and assume it is theirs.
-    expect(html).toContain("you're not in that one");
+    // Nothing upcoming at all: told plainly, and no game promised.
+    expect(html).toContain("There's no fixture scheduled yet");
 
     const [player] = await db.select().from(players).where(eq(players.email, "alex@example.com"));
     expect(player?.name).toBe("Alex Smith");
@@ -440,12 +439,11 @@ describe("POST /j/:token", () => {
   });
 
   /**
-   * BR-2, on the page rather than only in the email. A fixture that is already
-   * `open` was populated with `pending` rows for the eligible set at the
-   * moment it opened and nothing back-fills them, so a joiner is not in it —
-   * the page must name the next `scheduled` one as their first game.
+   * BR-2′: a fixture that is already `open` is backfilled with a `pending`
+   * row for the late joiner, who is invited to it immediately — the page
+   * names it as their first game and the N-1 goes out alongside the N-6.
    */
-  it("names the next scheduled fixture, never one already open (BR-2)", async () => {
+  it("puts a late joiner into the open fixture and names it as their first (BR-2′)", async () => {
     const { db, game } = await seedGame({ timezone: "Europe/London" });
     const common = {
       gameId: game.id,
@@ -455,9 +453,10 @@ describe("POST /j/:token", () => {
       prefersEvenNumbers: true,
       shortWarningOffsetHours: 12,
     };
+    const openId = crypto.randomUUID();
     await db.insert(fixtures).values([
       {
-        id: crypto.randomUUID(),
+        id: openId,
         ...common,
         kicksOffAt: new Date("2030-06-06T18:00:00Z"),
         lifecycle: "open",
@@ -475,10 +474,63 @@ describe("POST /j/:token", () => {
     ).text();
 
     expect(html).toContain("You're in");
-    // 13 June, the scheduled one — not 6 June, which is already being
-    // organised without them.
-    expect(html).toContain("13 June");
-    expect(html).not.toContain("6 June");
-    expect(await waitForNotificationRows(1)).toHaveLength(1);
+    // 6 June, the open one — the game being organised right now is theirs.
+    expect(html).toContain("6 June");
+    expect(html).toContain("your invitation is on its way");
+    // The old BR-2 caveat went with the rule it stated.
+    expect(html).not.toContain("you're not in that one");
+
+    // The backfilled `pending` row is what makes them eligible at all.
+    const [player] = await db.select().from(players).where(eq(players.email, "alex@example.com"));
+    const backfilled = await db.select().from(responsesTable).where(eq(responsesTable.playerId, player!.id));
+    expect(backfilled).toHaveLength(1);
+    expect(backfilled[0]?.fixtureId).toBe(openId);
+    expect(backfilled[0]?.status).toBe("pending");
+
+    // Two emails from one join: the N-6 welcome and the immediate N-1
+    // invitation for the open fixture.
+    const log = await waitForNotificationRows(2);
+    const n1 = log.find((row) => row.notificationType === "n1");
+    expect(n1?.fixtureId).toBe(openId);
+    expect(n1?.status).toBe("sent");
+  });
+
+  it("shows the onboarding CTA pointing at the dashboard", async () => {
+    const { game } = await seedGame();
+
+    const html = await (
+      await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" })
+    ).text();
+
+    expect(html).toContain("Get set up");
+    expect(html).toContain('href="/app"');
+    // The three wins, named so a new joiner knows why to bother.
+    expect(html).toContain("home screen");
+    expect(html).toContain("notifications");
+    expect(html).toContain("passkey");
+    await waitForNotificationRows(1);
+  });
+});
+
+describe("GET /j/:token with an open fixture", () => {
+  beforeEach(resetDatabase);
+
+  it("names the open fixture as next up, since a joiner would now be in it (BR-2′)", async () => {
+    const { db, game } = await seedGame({ timezone: "Europe/London" });
+    await db.insert(fixtures).values({
+      id: crypto.randomUUID(),
+      gameId: game.id,
+      minPlayers: 10,
+      maxPlayers: 14,
+      durationMinutes: 60,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      kicksOffAt: new Date("2030-06-06T18:00:00Z"),
+      lifecycle: "open",
+    });
+
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    expect(html).toContain("6 June");
   });
 });

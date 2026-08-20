@@ -6,6 +6,7 @@ const BASE: WelcomeEmailPayload = {
   gameName: "Thursday 7-a-side",
   venueName: "Oxford Sports Park",
   whenLocal: "Thursday 20 August at 19:00",
+  firstGameAlreadyOpen: false,
   dashboardUrl: "https://makethe.team/app",
   leaveUrl: "https://makethe.team/leave/tok123",
 };
@@ -15,11 +16,28 @@ describe("renderWelcomeEmail", () => {
     expect(renderWelcomeEmail(BASE).subject).toContain("Thursday 7-a-side");
   });
 
-  it("says which fixture is their first, because it is not the current one (BR-2)", () => {
+  it("says which fixture is their first", () => {
     const { html, text } = renderWelcomeEmail(BASE);
     for (const rendition of [html, text]) {
       expect(rendition).toContain("Thursday 20 August at 19:00");
       expect(rendition.toLowerCase()).toMatch(/first game/);
+    }
+  });
+
+  it("promises the invitation when their first game is already being organised (BR-2′)", () => {
+    const { html, text } = renderWelcomeEmail({ ...BASE, firstGameAlreadyOpen: true });
+    for (const rendition of [html, text]) {
+      expect(rendition).toContain("Thursday 20 August at 19:00");
+      expect(rendition.toLowerCase()).toMatch(/invitation is on its way/);
+    }
+  });
+
+  it("names the three set-up wins, so the dashboard trip is worth taking", () => {
+    const { html, text } = renderWelcomeEmail(BASE);
+    for (const rendition of [html, text]) {
+      expect(rendition.toLowerCase()).toMatch(/home screen/);
+      expect(rendition.toLowerCase()).toMatch(/notifications/);
+      expect(rendition.toLowerCase()).toMatch(/passkey/);
     }
   });
 

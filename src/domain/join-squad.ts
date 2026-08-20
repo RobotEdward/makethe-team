@@ -18,10 +18,12 @@ import { memberships, players } from "../db/schema.js";
  * you appear to another. The cost is that a typo'd name cannot be corrected
  * here — that belongs to a profile-edit surface (§1.6, M7).
  *
- * **BR-2 is deliberate, not a bug.** A player who joins after a fixture has
- * opened is not in that fixture: `pending` rows are written for the eligible
- * set at the moment a fixture opens (BR-1) and nothing back-fills them. The
- * page that renders this outcome says which fixture is their first.
+ * **BR-2′ (M21): a joiner is backfilled into open fixtures — by the caller,
+ * not here.** `pending` rows are written for the eligible set when a fixture
+ * opens (BR-1); `backfillOpenFixtureResponses` is the one sanctioned
+ * addition, and the join route runs it after this returns. It stays out of
+ * this function because J6's "add a squad member by hand" shares this code
+ * and decides separately whether the new member joins the current game.
  */
 
 export type JoinOutcome =

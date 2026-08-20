@@ -66,7 +66,7 @@ export type RemoveMemberResult =
  *
  * 1. The membership is deactivated **first**, in one `db.batch()` with its
  *    audit row. From that instant the player is out of the squad: they are not
- *    eligible when the next fixture opens (BR-2), and no later failure can
+ *    eligible when the next fixture opens (BR-1), and no later failure can
  *    leave them half-in.
  * 2. Only then are the open fixtures walked. `withdrawMember` is idempotent —
  *    a second call finds no row and returns `no-op` — so a failure partway
