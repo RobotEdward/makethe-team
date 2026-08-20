@@ -124,6 +124,12 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     ${oddMax}
     <p><a href="${escapeHtml(gameEditPath(gameId))}">Edit this game</a></p>
 
+    <h2>Coming up</h2>
+    <ul class="fixtures">${fixtureItems || "<li>No fixtures scheduled.</li>"}</ul>
+
+    <h2>Squad (${squad.length})</h2>
+    <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>
+
     <div class="card">
       <h2>Invite people</h2>
       <p>Share this link in your group chat, or let people scan the code.</p>
@@ -144,12 +150,6 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
          squad has nothing to do with replacing the invite link, and nesting it
          in that form read as one of its controls. -->
     <p class="actions"><a class="button" href="${escapeHtml(gameMessagePath(gameId))}">Message everyone</a></p>
-
-    <h2>Squad (${squad.length})</h2>
-    <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>
-
-    <h2>Coming up</h2>
-    <ul class="fixtures">${fixtureItems || "<li>No fixtures scheduled.</li>"}</ul>
 
   `;
 

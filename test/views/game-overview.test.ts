@@ -267,6 +267,22 @@ describe("coming up", () => {
   });
 });
 
+describe("element ordering (M20 B1)", () => {
+  it("puts fixtures first, squad second, invite last", () => {
+    const html = render();
+    const coming = html.indexOf("Coming up");
+    const squad = html.indexOf("Squad (");
+    const invite = html.indexOf("Invite people");
+    const message = html.indexOf("Message everyone");
+    // Presence first: indexOf's -1 sorts before everything, so an absent
+    // section would pass the order assertions vacuously.
+    for (const at of [coming, squad, invite, message]) expect(at).toBeGreaterThan(-1);
+    expect(coming).toBeLessThan(squad);
+    expect(squad).toBeLessThan(invite);
+    expect(invite).toBeLessThan(message);
+  });
+});
+
 describe("getting back out", () => {
   it("offers the way back through the header, not a body back link (M16)", () => {
     const html = render();
