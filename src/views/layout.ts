@@ -101,7 +101,7 @@ export interface LayoutOptions {
  * extract from `STYLES` that would be less fragile than stating the value
  * once, here, and having both `STYLES` and this constant agree on it.
  */
-export const THEME_COLOR = "#1f6f4a";
+export const THEME_COLOR = "#c67139";
 
 /**
  * Shared primitives only: tokens, reset, body/typography, and the handful of
@@ -117,7 +117,7 @@ export const THEME_COLOR = "#1f6f4a";
  * `src/views/styles.ts`; the CSP must hash every member, not just this one.
  *
  * The light-mode `--accent` below is interpolated from `THEME_COLOR` rather
- * than a second pasted `#1f6f4a` — see that constant's own comment for why
+ * than a second pasted `#c67139` — see that constant's own comment for why
  * a third literal here would be exactly the drift risk it exists to close
  * off. The dark-mode `--accent` a few lines down stays its own literal:
  * `THEME_COLOR` is deliberately the one value the OS chrome and the
@@ -127,18 +127,15 @@ export const THEME_COLOR = "#1f6f4a";
 export const STYLES = `
   :root {
     color-scheme: light dark;
-    --fg: #1c1b19; --bg: #fbfaf8;
-    /* #6b6862, one shade lighter than this, read at ~4.0:1 against --line —
-       under the 4.5 AA floor for 14px text on a rounded neutral pill, which
-       is what most of a fourth of the response categories render in early in
-       the week (M10 whole-branch review, Minor 6). Darkened to read at
-       ~4.7:1 against --line while staying readable as the same neutral grey
-       against --bg, which it also sits on everywhere else. Kept free of file
-       paths and page names on purpose — this constant renders on error pages
-       and the public holding page too, both of which forbid exactly that. */
-    --mut: #635f59; --line: #e3ded4;
-    --accent: ${THEME_COLOR}; --accent-fg: #fbfaf8; --accent-mut: #e3efe7;
-    --warn: #8a5a10; --warn-bg: #f7ecd8;
+    --fg: #201e1d; --bg: #f6ebd7;
+    --card: #f5ead8; --card-raised: #f9f4ed; --field: #ebddc5;
+    /* Contrast floors for every pair are enforced by test/views/contrast.test.ts. */
+    --mut: #645c50; --line: #dcd3c4;
+    --accent: ${THEME_COLOR}; --accent-fg: #fff7f0; --accent-mut: #ffe1d0;
+    --link: #8c491a;
+    --ok: #8fa073; --ok-bg: #e1eecc; --ok-fg: #3d472b;
+    --warn: #8a4c14; --warn-bg: #ffe1d0;
+    --wait: #f6a06b; --wait-fg: #402310;
     /* Irreversible actions only — call off, remove, leave, erase. Never used
        for anything a person can undo. --warn used to carry both this and
        "unsettled", which is why the three genuinely irreversible buttons in
@@ -149,9 +146,14 @@ export const STYLES = `
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --fg: #e6e3de; --bg: #16181a; --mut: #9b968e; --line: #2c2f30;
-      --accent: #3fae7c; --accent-fg: #08170f; --accent-mut: #17251d;
-      --warn: #d9a441; --warn-bg: #2b230f;
+      --fg: #ede5d8; --bg: #221f1b;
+      --card: #2b2721; --card-raised: #322d26; --field: #3a342b;
+      --mut: #a89e8f; --line: #3a352d;
+      --accent: #d98a55; --accent-fg: #2a1608; --accent-mut: #3a2818;
+      --link: #e0a878;
+      --ok: #a3b585; --ok-bg: #2c3320; --ok-fg: #cfe0b0;
+      --warn: #f0b285; --warn-bg: #43301f;
+      --wait: #f6a06b; --wait-fg: #402310;
       --danger: #e8705a; --danger-fg: #1a0d0a;
     }
   }
@@ -164,7 +166,7 @@ export const STYLES = `
   body {
     margin: 0; min-height: 100vh; display: grid; place-items: center;
     padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
-    font: var(--t-body)/1.6 "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: var(--t-body)/1.6 "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   /* Left by default. Centring is opt-in via centred on layout(), for pages
      that are a single statement and nothing else. Until M10 the default was
@@ -199,10 +201,10 @@ export const STYLES = `
     text-decoration: underline; text-decoration-color: var(--accent);
     text-decoration-thickness: 2px; text-underline-offset: 0.4em;
   }
-  h1 { font-size: var(--t-title); letter-spacing: -0.02em; margin: 0 0 0.5rem; }
-  h2 { font-size: var(--t-lead); margin: 2rem 0 0.6rem; }
+  h1 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-title); letter-spacing: 0; margin: 0 0 0.5rem; }
+  h2 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-lead); margin: 2rem 0 0.6rem; }
   p { color: var(--mut); margin: 0; }
-  a { color: var(--accent); }
+  a { color: var(--link); }
   .danger-link { color: var(--danger); font-weight: 600; }
 
   .nudge {
@@ -249,14 +251,15 @@ export const STYLES = `
      colour says "and it cannot be undone". Four pages use it, which is why it
      is here and not in CANCEL_STYLES_CSS where it started.
 
-     Relative luminance: --danger and --accent are close enough that a
-     deuteranope reading a filled button of either colour is relying on the
-     label, not the colour, to tell them apart — light: #a4321f (--danger) is
-     about 0.10, #1f6f4a (--accent) about 0.12; dark: #e8705a about 0.295,
-     #3fae7c about 0.324. That is safe today only because M10 §3.2 keeps red
-     and green filled buttons off the same screen — no page shows both at
-     once. If a future page ever needs to, that separation is what makes this
-     safe and it stops being true the moment both appear together. */
+     Both --danger and --accent are now warm red-orange hues, close enough in
+     hue that a deuteranope reading a filled button of either colour is
+     relying on the label, not the colour, to tell them apart — light:
+     #a4321f (--danger) vs #c67139 (--accent); dark: #e8705a vs #d98a55,
+     whose relative luminance sits within 1.12:1 of each other. That is safe
+     today only because M10 §3.2 keeps red and orange filled buttons off the
+     same screen — no page shows both at once. If a future page ever needs
+     to, that separation is what makes this safe and it stops being true the
+     moment both appear together. */
   .button.danger {
     background: var(--danger); border-color: var(--danger); color: var(--danger-fg);
   }
@@ -326,7 +329,7 @@ export function layout({ title, body, pageStyles, pageScripts, centred, nav }: L
 <meta name="robots" content="noindex, nofollow">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="manifest" href="${MANIFEST_PATH}">
 <!-- iOS reads only this. It ignores the manifest's icon list entirely. -->
 <link rel="apple-touch-icon" href="${APPLE_TOUCH_ICON_PATH}">

@@ -161,8 +161,8 @@ describe("layout", () => {
 
   it("keeps the system stack behind the webfont", () => {
     // If the font request is blocked, this is the whole appearance of the
-    // product. It must still be the stack that shipped before M10.
-    expect(STYLES).toContain(`"Instrument Sans", ui-sans-serif, system-ui`);
+    // product. It must still fall back to the platform sans stack.
+    expect(STYLES).toContain(`"Figtree", ui-sans-serif, system-ui`);
   });
 });
 
