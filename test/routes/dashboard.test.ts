@@ -435,6 +435,19 @@ describe("GET /app", () => {
     expect(html).toContain(`href="/g/${gameId}"`);
   });
 
+  it("keeps delete and privacy in the footer but drops the passkey nudge and sign-out (M20 B2)", async () => {
+    const { cookie } = await signIn();
+    await viewerId();
+
+    const html = await (await get(cookie)).text();
+
+    expect(html).toContain("Delete my account and data");
+    expect(html).toContain("Privacy");
+    expect(html).not.toContain("Sign in faster next time with a passkey");
+    // The sign-out form lives on the account page only now (spec decision Q3).
+    expect(html).not.toContain('class="signout"');
+  });
+
   it("does not list a game the viewer belongs to but does not own", async () => {
     const { cookie } = await signIn();
     const playerId = await viewerId();

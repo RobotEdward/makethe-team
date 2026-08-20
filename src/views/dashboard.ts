@@ -13,7 +13,6 @@ import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import { renderFullWarning, renderResponseButtons, renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
-import { signOutForm } from "./sign-out-form.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
 
 /**
@@ -318,9 +317,7 @@ export function renderDashboardPage({
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
     ${renderOwnedGamesSection(ownedGames)}
-    <p><a href="${PASSKEYS_PATH}">Sign in faster next time with a passkey</a></p>
     <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
-    ${signOutForm("Sign out")}
   `;
 
   return layout({
