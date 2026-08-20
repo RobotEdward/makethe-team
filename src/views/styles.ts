@@ -49,6 +49,8 @@ export const FIXTURE_STYLES_CSS = `
   .status-badge.status-confirmed { border: none; background: var(--ok-fg); color: var(--ok-bg); }
   .status-badge.status-short { border: none; background: var(--ok-bg); color: var(--ok-fg); }
   .status-badge.status-cancelled { border: none; background: var(--accent-mut); color: var(--warn); }
+  .status-badge.status-open { border: none; background: var(--ok-bg); color: var(--ok-fg); }
+  .status-badge.status-played, .status-badge.status-scheduled { border: none; background: var(--field); color: var(--mut); }
   /* The headcount as a proportion rather than a countdown (M12 §3.1): a bar
      whose fill is who is there, with the numbers under it so nothing is lost
      when the CSS does not load. */
