@@ -412,11 +412,14 @@ test("a player schedules their own erasure, sees it on the dashboard, and cancel
   const seen = observe(playerPage);
   await signIn(playerPage, TEST_PLAYER);
 
-  // --- 1: reached from the dashboard, not by typing the URL ----------------
+  // --- 1: reached through the nav, not by typing the URL -------------------
   // The link is the only way in for a real person, so following it is part of
   // what is under test: a page that works only when navigated to directly is
-  // a page nobody finds.
+  // a page nobody finds. Since M21 the delete link lives on the account page
+  // alone, so the real route is dashboard → Account → delete.
   await playerPage.goto("/app");
+  await playerPage.getByRole("link", { name: "Account" }).click();
+  await playerPage.waitForURL(/\/app\/account$/);
   await playerPage.getByRole("link", { name: "Delete my account and data" }).click();
   await playerPage.waitForURL(/\/app\/delete$/);
   await expect(playerPage.locator("h1")).toHaveText("Delete my data");

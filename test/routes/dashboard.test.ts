@@ -455,16 +455,17 @@ describe("GET /app", () => {
     expect(html).toContain(`href="/g/${gameId}"`);
   });
 
-  it("keeps delete and privacy in the footer but drops the passkey nudge and sign-out (M20 B2)", async () => {
+  it("carries no footer links — delete, privacy, passkey nudge and sign-out all live on the account page (M21)", async () => {
     const { cookie } = await signIn();
     await viewerId();
 
     const html = await (await get(cookie)).text();
 
-    expect(html).toContain("Delete my account and data");
-    expect(html).toContain("Privacy");
+    // M20 B2 moved the passkey nudge and sign-out to the account page;
+    // M21 moved delete and privacy after them for the same reason.
+    expect(html).not.toContain("Delete my account and data");
+    expect(html).not.toContain('href="/privacy"');
     expect(html).not.toContain("Sign in faster next time with a passkey");
-    // The sign-out form lives on the account page only now (spec decision Q3).
     expect(html).not.toContain('class="signout"');
   });
 
@@ -541,13 +542,15 @@ describe("GET /app", () => {
     expect(body).toContain(`href="${ACCOUNT_PATH}"`);
   });
 
-  it("links to deleting my account and data, with no erasure banner when none is pending", async () => {
+  it("shows no erasure banner when none is pending — and no delete link since M21", async () => {
     const { cookie } = await signIn();
     await viewerId();
 
     const body = await (await get(cookie)).text();
 
-    expect(body).toContain(`href="${DELETE_ACCOUNT_PATH}"`);
+    // Deleting lives on the account page now; the dashboard only ever shows
+    // the banner (with its cancel form) once an erasure is actually pending.
+    expect(body).not.toContain(DELETE_ACCOUNT_PATH);
     expect(body).not.toContain(DELETE_ACCOUNT_CANCEL_PATH);
   });
 

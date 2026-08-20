@@ -167,7 +167,8 @@ export function renderInvitePage(params: InvitePageParams): string {
                autocapitalize="off" spellcheck="false" required
                value="${escapeHtml(values?.email ?? "")}">
       </div>
-      <p>We'll email you when there's a game on. That's the whole point of the address. <a href="${PRIVACY_PATH}">What else we do with it</a>.</p>
+      <p>We'll add you to the squad and email you when there's a game on.</p>
+      <p><a href="${PRIVACY_PATH}">Privacy</a></p>
       <div class="actions">
         <button class="button primary" type="submit">Join the squad</button>
       </div>

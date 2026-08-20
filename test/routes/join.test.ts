@@ -236,6 +236,15 @@ describe("GET /j/:token", () => {
     expect((await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).status).toBe(404);
   });
 
+  it("reassures with the squad-add wording and a plain Privacy link (M21)", async () => {
+    const { game } = await seedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
+
+    expect(html).toContain("We'll add you to the squad and email you when there's a game on.");
+    expect(html).toContain('<a href="/privacy">Privacy</a>');
+    expect(html).not.toContain("whole point of the address");
+  });
+
   it("posts to the path the handler reads, with the field names it parses", async () => {
     // The assertion the connect-src post-mortem asks for: a form with the
     // wrong action, method or field names fails *identically* to a correct one

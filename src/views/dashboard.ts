@@ -5,7 +5,6 @@ import {
   DELETE_ACCOUNT_PATH,
   NEW_GAME_PATH,
   ONBOARDING_DISMISS_PATH,
-  PRIVACY_PATH,
   PASSKEYS_PATH,
   gamePath,
 } from "../auth/paths.js";
@@ -333,7 +332,6 @@ export function renderDashboardPage({
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
     ${renderYourSquadsSection(squads)}
-    <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
   `;
 
   return layout({
