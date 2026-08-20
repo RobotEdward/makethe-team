@@ -261,26 +261,31 @@ function renderPushBody({ vapidPublicKey, devices, defaultDeviceName, notice, re
 }
 
 /**
- * The account page's merged install + notifications panel (M20 B5): one
- * section, because the two jobs are one job — make this phone useful. The
- * token-page offer (`renderPushOffer`) is deliberately NOT built from this:
- * the type split that stops a devices list existing on a token page is the
- * product's endpoint-disclosure invariant, and a shared entry point is how
- * it would erode.
+ * The account page's install and notifications cards (M21, reversing M20
+ * B5's merge): two boxes, each headed from *outside* the card so the
+ * headings sit at the same level as "Your fixtures" — a card that carries
+ * its own h2 reads as a different, heavier kind of section than the plain
+ * ones around it. The token-page offer (`renderPushOffer`) is deliberately
+ * NOT built from this: the type split that stops a devices list existing on
+ * a token page is the product's endpoint-disclosure invariant, and a shared
+ * entry point is how it would erode.
  *
  * The permission control and device list still render inside their own
  * `.push` wrapper rather than directly in `.install` — `PUSH_STYLES_CSS`'s
  * selectors (`.push h3`, `.push .button`, `.push label.device-name`, …) are
  * shared with `renderPushOffer`'s own `<section class="push">`, and nesting
- * here rather than editing those selectors keeps this task from touching
+ * here rather than editing those selectors keeps this change from touching
  * `renderPushOffer` at all.
  */
-export function renderThisDeviceSection(push: PushSectionOptions): string {
+export function renderDeviceSections(push: PushSectionOptions): string {
   return `
+    <h2>Install the app</h2>
     <section class="install">
-      <h2>This device</h2>
-      <p>Add Make The Team to your home screen and turn on game notifications.</p>
       ${renderInstallBody()}
+    </section>
+
+    <h2>Manage notifications</h2>
+    <section class="install">
       <div class="push">${renderPushBody(push)}</div>
     </section>
   `;

@@ -5,7 +5,7 @@ import {
   PRIVACY_PATH,
   gamePath,
 } from "../auth/paths.js";
-import { renderThisDeviceSection, type PushDeviceRow } from "./install.js";
+import { renderDeviceSections, type PushDeviceRow } from "./install.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { INSTALL_JS, PUSH_SUBSCRIBE_JS } from "./scripts.js";
 import { signOutForm } from "./sign-out-form.js";
@@ -168,7 +168,7 @@ export function renderAccountPage({
         : `<ul class="fixture-list">${fixtures.map(renderFixture).join("")}</ul>`
     }
 
-    ${renderThisDeviceSection({
+    ${renderDeviceSections({
       vapidPublicKey,
       devices: pushDevices,
       defaultDeviceName: `${playerName}'s phone`,

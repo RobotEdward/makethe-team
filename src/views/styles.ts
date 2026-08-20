@@ -708,8 +708,11 @@ export const OFFLINE_STYLES_CSS = `
  * stylesheet every owner page also carries.
  */
 export const INSTALL_STYLES_CSS = `
-  .install { margin-top: 2rem; padding: 1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
-  .install h2 { margin-top: 0; }
+  /* The heading lives *outside* the card since M21, so the box hugs its h2
+     (the 2rem section gap is the heading's own margin now) and the first
+     paragraph inside needs no headroom. */
+  .install { margin-top: 0.75rem; padding: 1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  .install > p:first-child, .install > [data-install-instructions] { margin-top: 0; }
   .install ol { margin: 0.5rem 0 0; padding-left: 1.2rem; color: var(--mut); font-size: var(--t-support); }
   .install li + li { margin-top: 0.35rem; }
 `;

@@ -192,10 +192,11 @@ The signed-in home.
   edited; `Manage your passkeys` link.
 - **`Your fixtures` (h2):** the last 20 fixtures across every game, most recent first, each
   with the game name as a link. Games left are excluded.
-- **`This device` (section, M20):** install and notifications merged into one panel — intro
-  ("Add Make The Team to your home screen and turn on game notifications."), the install
-  instructions/button, then the notifications control and device table below.
-- **Inside it, the notifications half:** intro; an outcome notice when returning from an action
+- **`Install the app` (h2, M21):** the heading sits *outside* its card, at the same level as
+  `Your fixtures` (M20's merged "This device" panel is split back in two, without the intro
+  sentence). The card holds the install instructions/button.
+- **`Manage notifications` (h2, M21):** the second card, same outside-heading treatment —
+  an outcome notice when returning from an action
   ("Notifications are on for this device.", "Test sent."…); `Your devices` (h3) — a table of
   registered devices, or "No devices registered yet." Each row: a player-chosen caption
   ("Ed's phone", falling back to the browser's UA string for rows named before the field

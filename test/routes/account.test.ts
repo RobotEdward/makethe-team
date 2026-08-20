@@ -567,17 +567,20 @@ describe("the device table and its controls (M18)", () => {
   });
 });
 
-describe("the This device panel (M20 B5)", () => {
-  it("renders one merged section, not two lookalike boxes", async () => {
+describe("the device sections (M21, reversing M20 B5's merge)", () => {
+  it("renders two page-level headings with the boxes below them", async () => {
     const { cookie } = await signIn();
     const html = await (await get(cookie)).text();
 
-    expect(html).toContain("<h2>This device</h2>");
-    expect(html).toContain("Add Make The Team to your home screen and turn on game notifications.");
-    // The old two-section headings are gone…
-    expect(html).not.toContain("<h2>Add to your home screen</h2>");
-    expect(html).not.toContain("<h2>Notifications</h2>");
-    // …but every working part of both survives inside the panel.
+    // Each heading sits *outside* its card, at the same level as "Your
+    // fixtures" — asserted structurally, not just by presence: the h2 must
+    // come before the section tag that carries the box.
+    expect(html).toMatch(/<h2>Install the app<\/h2>\s*<section class="install">/);
+    expect(html).toMatch(/<h2>Manage notifications<\/h2>\s*<section class="install">/);
+    // The merged panel and its heading are gone.
+    expect(html).not.toContain("<h2>This device</h2>");
+    expect(html).not.toContain("Add Make The Team to your home screen and turn on game notifications.");
+    // Every working part of both survives.
     expect(html).toContain("data-install-button");
     expect(html).toContain("Your devices");
   });
