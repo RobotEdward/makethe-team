@@ -51,10 +51,11 @@ export interface DashboardRow {
   waitlistCount: number;
 }
 
-/** One game the viewer owns, as the "your games" list needs it — nothing else. */
-export interface OwnedGame {
+/** One game the viewer is a member of, as the "Your squads" list needs it (M20 B3). */
+export interface SquadListEntry {
   id: string;
   name: string;
+  owned: boolean;
 }
 
 export interface DashboardPageOptions {
@@ -62,8 +63,8 @@ export interface DashboardPageOptions {
   nav: PageNav;
   playerName: string;
   rows: readonly DashboardRow[];
-  /** Games this player is an active Owner of — `listOwnedGames` (J1/M6a). */
-  ownedGames: readonly OwnedGame[];
+  /** Every game this player is an active member of — `listMemberGames` (M20 B3). */
+  squads: readonly SquadListEntry[];
   /** The one refusal `POST /app/games/:gameId/leave` can produce (M7a Task 4). */
   problem?: string;
   /** Set when this player has an erasure pending — already formatted (M7b). */
@@ -115,12 +116,12 @@ function renderActions(row: DashboardRow): string {
 /**
  * One fixture card. Its heading is a link to the game's own page.
  *
- * That link is the *only* way a member who owns nothing reaches their game —
- * "Games you own" below lists games they own, which for most players is none —
- * and it costs no extra query, because the dashboard already loads every game
- * the viewer has a fixture in. The same "built but nobody can get to it"
- * failure that `renderOwnedGamesSection` exists to prevent for `/g/new` had
- * happened again for the member's own game page; this is the fix for it.
+ * That link is not the only route in any more — "Your squads" below lists
+ * every game the viewer is a member of — but it costs no extra query, because
+ * the dashboard already loads every game the viewer has a fixture in. The same
+ * "built but nobody can get to it" failure that `renderYourSquadsSection`
+ * exists to prevent for `/g/new` had happened again for the member's own game
+ * page; this is the fix for it.
  */
 function renderRow(row: DashboardRow): string {
   // Same sentences the fixture page uses for the same statuses — imported, not
@@ -142,29 +143,30 @@ function renderRow(row: DashboardRow): string {
 }
 
 /**
- * "Set up a game" plus any games the viewer owns, with links to `/g/:id`.
+ * "Your squads" — every game the viewer is an active member of, owned or not,
+ * each linking to `/g/:id` — plus "Set up a game", which links to `/g/new`.
  *
- * Without this the whole of J1 is unreachable except by typing `/g/new`
+ * Without the link, the whole of J1 is unreachable except by typing `/g/new`
  * directly — there is no other link into it anywhere in the app. Deliberately
- * no "Games you own" header at all when the list is empty: a heading over
+ * no "Your squads" header at all when the list is empty: a heading over
  * nothing reads as a broken page, not an honest empty state, and the "Set up
  * a game" link already says everything a first-time owner needs.
  */
-function renderOwnedGamesSection(games: readonly OwnedGame[]): string {
+function renderYourSquadsSection(squads: readonly SquadListEntry[]): string {
   const link = `<p><a href="${NEW_GAME_PATH}">Set up a game</a></p>`;
-  if (games.length === 0) return link;
-
-  const items = games
-    // `escapeHtml` on the href as well as the name. The id is a UUID, so this
-    // is not exploitable — it is here so the pattern that gets copied out of
-    // this file is the safe one, and so it matches `src/views/game-overview.ts`
-    // which escapes the identical construction.
-    .map((game) => `<li><a href="${escapeHtml(gamePath(game.id))}">${escapeHtml(game.name)}</a></li>`)
+  if (squads.length === 0) return link;
+  const items = squads
+    .map(
+      (g) =>
+        `<li><a href="${escapeHtml(gamePath(g.id))}">${escapeHtml(g.name)}</a>${
+          g.owned ? `<span class="detail"> · you own this</span>` : ""
+        }</li>`,
+    )
     .join("");
   return `
-    ${link}
-    <h2>Games you own</h2>
-    <ul class="owned-games">${items}</ul>`;
+    <h2>Your squads</h2>
+    <ul class="owned-games">${items}</ul>
+    ${link}`;
 }
 
 /**
@@ -288,7 +290,7 @@ export function renderDashboardPage({
   nav,
   playerName,
   rows,
-  ownedGames,
+  squads,
   problem,
   erasesAtLocal,
   erasureHeldUp,
@@ -316,7 +318,7 @@ export function renderDashboardPage({
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
-    ${renderOwnedGamesSection(ownedGames)}
+    ${renderYourSquadsSection(squads)}
     <p><a href="${DELETE_ACCOUNT_PATH}">Delete my account and data</a> · <a href="${PRIVACY_PATH}">Privacy</a></p>
   `;
 

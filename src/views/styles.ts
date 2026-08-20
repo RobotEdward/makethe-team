@@ -234,7 +234,12 @@ export const DASHBOARD_STYLES_CSS = `
      and ul.fixtures > li are scoped.
 
      The anchor carries the 44px floor, not the li: the li's padding is not
-     what a finger lands on, and these rows are entirely link. */
+     what a finger lands on. Most rows are entirely link, but a row for a game
+     the viewer owns (M20 B3) has a trailing ownership note outside the
+     anchor — flex-with-space-between on the li keeps that note on the same
+     line as the name instead of wrapping under it, which is what a bare block
+     anchor (100% width, nothing to its right) did the one time this went
+     unstyled and unnoticed until the rendered page was actually looked at. */
   /* The bottom margin is not decoration: paragraphs get zero margin from the
      layout's base rule, so the footer's run of account links lands hard
      against the last row's bottom border and reads as a fourth row of this
@@ -243,11 +248,15 @@ export const DASHBOARD_STYLES_CSS = `
     list-style: none; margin: 0.4rem 0 1.1rem; padding: 0; text-align: left;
     border-top: 1px solid var(--line);
   }
-  ul.owned-games > li { border-bottom: 1px solid var(--line); }
+  ul.owned-games > li {
+    border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between;
+  }
   ul.owned-games > li > a {
     display: flex; align-items: center; min-height: 44px;
     padding: 0.4rem 0.1rem; font-size: var(--t-body);
   }
+  ul.owned-games > li > .detail { white-space: nowrap; padding: 0 0.1rem; }
 
   /* The onboarding card (M19). Its own idiom, not .fixture-card: a card up
      there is a fixture with buttons, and this is a short list of links with a

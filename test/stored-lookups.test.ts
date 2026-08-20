@@ -189,7 +189,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
             myStatus: OUT_OF_UNION,
           },
         ],
-        ownedGames: [],
+        squads: [],
       }),
   },
   {

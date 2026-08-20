@@ -173,6 +173,35 @@ async function fixtureRow(fixtureId: string) {
   return row;
 }
 
+/**
+ * The signed-in viewer owning one game and being an ordinary member of
+ * another, then the rendered dashboard for them (M20 B3).
+ */
+async function viewer() {
+  const { cookie } = await signIn();
+  const playerId = await viewerId();
+  const ownedGameId = await insertGame(db, { name: "Sunday Kickabout" });
+  await db
+    .insert(memberships)
+    .values({ id: crypto.randomUUID(), gameId: ownedGameId, playerId, active: true, role: "owner" });
+  const memberGameId = await insertGame(db, { name: "Tuesday Five" });
+  await db
+    .insert(memberships)
+    .values({ id: crypto.randomUUID(), gameId: memberGameId, playerId, active: true, role: "player" });
+
+  const html = await (await get(cookie)).text();
+  return { html, ownedGameId, memberGameId };
+}
+
+/** The signed-in viewer with no memberships at all (M20 B3). */
+async function viewerWithNoMemberships() {
+  const { cookie } = await signIn();
+  await viewerId();
+
+  const html = await (await get(cookie)).text();
+  return { html };
+}
+
 beforeEach(async () => {
   await resetDatabase();
 });
@@ -297,11 +326,15 @@ describe("GET /app", () => {
     await seedFixtureFor(playerId, { gameName: "Live Game" });
 
     const body = await (await get(cookie)).text();
+    // Scoped to the fixture list: the game itself stays active and the
+    // viewer's membership stays active, so it legitimately still appears
+    // under "Your squads" (M20 B3) — only the fixture card is at stake here.
+    const fixtureList = body.match(/<ul class="fixture-list">[\s\S]*?<\/ul>/)?.[0] ?? "";
 
-    expect(body).toContain("Live Game");
+    expect(fixtureList).toContain("Live Game");
     // No row, therefore no action offered on it (BR-15).
-    expect(body).not.toContain("Played Game");
-    expect(body).not.toContain("Cancelled Game");
+    expect(fixtureList).not.toContain("Played Game");
+    expect(fixtureList).not.toContain("Cancelled Game");
   });
 
   it("says so plainly when there is nothing coming up", async () => {
@@ -386,20 +419,6 @@ describe("GET /app", () => {
   });
 
   /**
-   * A player who owns no game must not see an empty "Games you own" section —
-   * a heading over nothing reads as a broken page, not an honest empty state.
-   * The "Set up a game" link on its own already says what to do next.
-   */
-  it("shows no owned-games header when the viewer owns nothing", async () => {
-    const { cookie } = await signIn();
-    await viewerId();
-
-    const body = await (await get(cookie)).text();
-
-    expect(body).not.toContain("Games you own");
-  });
-
-  /**
    * J6a's squad removal (`withdrawMember`) clears `memberships.active` and
    * sets `leftAt` — the same shape a game-left test above already drives by
    * hand. This pins the dashboard query's side of that contract rather than
@@ -421,8 +440,9 @@ describe("GET /app", () => {
 
   /**
    * The member's own game page is reachable from here or from nowhere: a
-   * player who owns nothing gets no "Games you own" list, so the fixture
-   * card's heading is their only link into it.
+   * player who owns nothing still gets a "Your squads" row for it — plain,
+   * with no owned marker — linking straight to it, and the fixture card's
+   * heading links there too.
    */
   it("links a member who owns nothing to a game they are in", async () => {
     const { cookie } = await signIn();
@@ -431,7 +451,7 @@ describe("GET /app", () => {
 
     const html = await (await SELF.fetch(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } })).text();
 
-    expect(html).not.toContain("Games you own");
+    expect(html).not.toContain("you own this");
     expect(html).toContain(`href="/g/${gameId}"`);
   });
 
@@ -448,7 +468,7 @@ describe("GET /app", () => {
     expect(html).not.toContain('class="signout"');
   });
 
-  it("does not list a game the viewer belongs to but does not own", async () => {
+  it("lists a game the viewer belongs to but does not own, without the owned marker", async () => {
     const { cookie } = await signIn();
     const playerId = await viewerId();
     const gameId = await insertGame(db, { name: "Someone Else's Game" });
@@ -458,7 +478,8 @@ describe("GET /app", () => {
 
     const body = await (await get(cookie)).text();
 
-    expect(body).not.toContain("Games you own");
+    expect(body).toContain("Someone Else&#39;s Game");
+    expect(body).not.toContain("you own this");
   });
 
   it("redirects an anonymous visitor to sign-in", async () => {
@@ -509,7 +530,7 @@ describe("GET /app", () => {
 
   /**
    * Without this link `/app/delete` exists and nothing reaches it — the same
-   * "built but nobody can get to it" failure `renderOwnedGamesSection`'s
+   * "built but nobody can get to it" failure `renderYourSquadsSection`'s
    * comment describes, and which happened again at M8.
    */
   it("links to the account page", async () => {
@@ -645,6 +666,25 @@ describe("GET /app", () => {
 
       expect(body).not.toContain("The squad is full");
     });
+  });
+});
+
+describe("the Your squads section (M20 B3)", () => {
+  it("lists every membership with the owned marker, and links each game", async () => {
+    const { html } = await viewer();
+
+    expect(html).toContain("Your squads");
+    // On the owned game only — a marker on every row would fail this.
+    expect(html.split("you own this").length).toBe(2);
+    expect(html).toContain(`href="/g/`);
+    expect(html).not.toContain("Games you own");
+  });
+
+  it("omits the section entire when the player has no squads, keeping Set up a game", async () => {
+    const { html } = await viewerWithNoMemberships();
+
+    expect(html).not.toContain("Your squads");
+    expect(html).toContain("Set up a game");
   });
 });
 

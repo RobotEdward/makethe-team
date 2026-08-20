@@ -281,7 +281,7 @@ const SQUAD_GROUPS: readonly { status: ResponseStatus; label: string }[] = [
  *
  * A group with nobody in it renders nothing at all — a heading over an empty
  * list reads as a broken page rather than an honest empty state, which is the
- * same rule `renderOwnedGamesSection` follows on the dashboard.
+ * same rule `renderYourSquadsSection` follows on the dashboard.
  *
  * BR-27's attribution moves to a sentence beneath its group rather than onto
  * the chip, which could not carry it without becoming a row again. It is kept

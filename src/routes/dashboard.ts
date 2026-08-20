@@ -10,7 +10,7 @@ import type { Db } from "../db/client.js";
 import { passkey, players, pushSubscriptions } from "../db/schema.js";
 import { findActionableFixture, listDashboardFixtures } from "../db/dashboard-queries.js";
 import type { DashboardFixture } from "../db/dashboard-queries.js";
-import { listOwnedGames } from "../db/queries.js";
+import { listMemberGames } from "../db/queries.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { removeMember } from "../domain/remove-member.js";
@@ -50,9 +50,9 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
   const player = c.get("player")!;
   const db = getDb(c.env.DB);
 
-  const [rows, ownedGames, onboarding] = await Promise.all([
+  const [rows, squads, onboarding] = await Promise.all([
     listDashboardFixtures(db, player.id),
-    listOwnedGames(db, player.id),
+    listMemberGames(db, player.id),
     onboardingHintsFor(db, player, c.get("session")!.user.id, now),
   ]);
 
@@ -76,7 +76,7 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
       nav: pageNav(c, "games"),
       playerName: player.name,
       rows: rows.map((row) => toRow(row, now)),
-      ownedGames,
+      squads,
       problem,
       // `player` already carries `erasesAt` — `sessionMiddleware` selects the
       // whole row, so this is a field read, not a second query. Not scoped to
