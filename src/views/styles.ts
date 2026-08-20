@@ -223,7 +223,17 @@ export const DASHBOARD_STYLES_CSS = `
     border: none; border-radius: 1.25rem; background: var(--card-raised);
   }
   .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
+  /* Still 0.9rem for the account page's history row, which wears this same
+     card class with a bare headline and no answer block around it. */
   .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: var(--t-lead); }
+  /* The dashboard's own card puts that headline inside the answer block, whose
+     padding is the gap — so the block's reset must win here. It cannot win on
+     order: this file's rule above and the .answer .viewer-headline rule in
+     FIXTURE_STYLES_CSS are both (0,2,0), and this block loads second, so the
+     0.9rem would silently take a stacked margin inside the block's padding.
+     Three classes is the deliberate resolution, and it holds whichever order
+     the two blocks are listed in. */
+  .fixture-card .answer .viewer-headline { margin-top: 0; }
   .fixture-card .responses { margin-bottom: 0; }
 
   /* The owned-games section: one row per game the viewer organises, each a

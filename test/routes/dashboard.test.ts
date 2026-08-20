@@ -15,7 +15,7 @@ import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, passkey, players, pushSubscriptions, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
-import { DASHBOARD_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
+import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import { insertGame, insertMembership, resetDatabase } from "../support/factories.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
 
@@ -700,6 +700,68 @@ describe("the card's answer block (M20 B7)", () => {
 
     expect(body).toContain('<section class="answer answer-waiting">');
   });
+});
+
+/**
+ * The two-blocks-one-element collision `style-cascade.test.ts` cannot see: it
+ * compares blocks that declare the *same* selector, and these two reach the
+ * same headline through different ones. `.answer .viewer-headline` (0,2,0) in
+ * FIXTURE_STYLES_CSS and `.fixture-card .viewer-headline` (0,2,0) in
+ * DASHBOARD_STYLES_CSS tie on specificity, and the dashboard's page lists the
+ * dashboard block second — so the card's 0.9rem beat the block's reset and the
+ * headline sat on a stacked margin inside the block's own padding, with every
+ * test passing. `.fixture-card .answer .viewer-headline` is the deliberate
+ * resolution: three classes, so it wins whichever order the blocks are listed.
+ */
+describe("the answer block's headline margin on a dashboard card (M20 B7)", () => {
+  /** The `margin-top` the last-declared matching rule sets, scanning in cascade order. */
+  function marginTopFor(css: string, selector: string): string | null {
+    let value: string | null = null;
+    // Comments carry no braces, so they otherwise ride along in the selector
+    // text and every lookup silently misses.
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of rules.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+      if (m[1]!.trim() !== selector) continue;
+      const decl = m[2]!.match(/margin-top:\s*([^;]+)/);
+      if (decl) value = decl[1]!.trim();
+    }
+    return value;
+  }
+
+  it("declares all three rules, so this guard cannot pass vacuously", () => {
+    // The 0.9rem rule is not dead weight to be tidied away: the account page's
+    // history row wears .fixture-card with a bare headline and no answer block
+    // around it, and that rule is the only thing spacing it.
+    expect(marginTopFor(FIXTURE_STYLES_CSS, ".answer .viewer-headline")).toBe("0");
+    expect(marginTopFor(DASHBOARD_STYLES_CSS, ".fixture-card .viewer-headline")).toBe("0.9rem");
+    expect(marginTopFor(DASHBOARD_STYLES_CSS, ".fixture-card .answer .viewer-headline")).toBe("0");
+  });
+
+  it("gives the winner more classes than either tied rule, not a later position", () => {
+    // Both losers are two classes; the winner is three. Counted rather than
+    // asserted as a string so narrowing one of the losers cannot go unnoticed.
+    const classes = (selector: string) => selector.split(".").length - 1;
+    expect(classes(".fixture-card .answer .viewer-headline")).toBeGreaterThan(
+      classes(".fixture-card .viewer-headline"),
+    );
+    expect(classes(".fixture-card .answer .viewer-headline")).toBeGreaterThan(classes(".answer .viewer-headline"));
+  });
+
+  it("ships both blocks on the dashboard, with the card's headline inside the block", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await seedFixtureFor(playerId, { maxPlayers: 14 });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain(FIXTURE_STYLES_CSS);
+    expect(body).toContain(DASHBOARD_STYLES_CSS);
+    // The markup the three-class selector needs: a headline nested in an
+    // answer block nested in a fixture card. Without this the winning rule
+    // matches nothing and the reset is decorative.
+    expect(body).toMatch(/<li class="fixture-card">[\s\S]*?<section class="answer[\s\S]*?class="viewer-headline/);
+  });
+
 });
 
 describe("the Your squads section (M20 B3)", () => {
