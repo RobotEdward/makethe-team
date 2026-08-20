@@ -605,6 +605,28 @@ function renderReadOnlyNotice(reason: ReadOnlyReason): string {
 }
 
 /**
+ * Which state the answer block is in (M20 B7): one card carrying the viewer's
+ * own state — their headline, the buttons or the read-only sentence, and the
+ * pre-tap warning — said once, with the fixture's impersonal facts below it
+ * rather than interleaved with them.
+ *
+ * The class names a *state*, not a colour, so a retint never needs a markup
+ * change. `readOnly` wins over every status because a closed page has no
+ * question to answer: a viewer recorded `in` on a played fixture is `closed`,
+ * not `going`, and the block must not offer the going treatment to somebody
+ * who cannot act.
+ *
+ * Exported and called from `renderRow` in `src/views/dashboard.ts` for the
+ * same reason `viewerHeadlineOpen` and `renderResponseButtons` are: two
+ * copies of "what state is this viewer in" is how the two pages start
+ * disagreeing about it.
+ */
+export function answerStateOf(status: ResponseStatus, readOnly: boolean): string {
+  if (readOnly) return "closed";
+  return status === "waitlisted" ? "waiting" : status === "in" ? "going" : status === "out" ? "declined" : "open";
+}
+
+/**
  * Render the page a player sees when they tap their response link.
  *
  * Server-rendered only — no `<script>`, no auto-submit (TR-4, TR-15). Both
@@ -629,11 +651,13 @@ export function renderFixturePage(options: FixturePageOptions): string {
     <h1>${escapeHtml(gameName)}</h1>
     <p class="venue">${escapeHtml(venueName)}</p>
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
-    ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
+    <section class="answer answer-${answerStateOf(viewer.status, readOnlyReason !== undefined)}">
+      ${headline ? `<h2 class="${headlineClass}">${escapeHtml(headline)}</h2>` : ""}
+      ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}
+    </section>
     ${renderStatusLine(view, options.waitlistCount)}
     ${renderNudge(view)}
     ${renderOverCapacity(view)}
-    ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}
     ${
       pushOffer === undefined
         ? ""

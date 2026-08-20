@@ -657,7 +657,8 @@ describe("POST /r/:token — a waitlisted viewer never reads as confirmed (BR-5,
     // ...and visually distinct from a confirmation: warn-coloured headline,
     // positioned before the fixture's own (still green/"confirmed") badge...
     expect(body).toMatch(/class="viewer-headline warn"/);
-    const headlineIndex = body.indexOf('<p class="viewer-headline');
+    // The headline is the answer block's h2 since M20 B7, still above the badge.
+    const headlineIndex = body.indexOf('<h2 class="viewer-headline');
     const badgeIndex = body.indexOf('<p class="status-badge');
     expect(headlineIndex).toBeGreaterThan(-1);
     expect(badgeIndex).toBeGreaterThan(-1);

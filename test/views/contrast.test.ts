@@ -38,9 +38,15 @@ const PAIRS: readonly [string, string, number][] = [
   ["--fg", "--card", 4.5],
   ["--fg", "--card-raised", 4.5],
   ["--fg", "--field", 4.5],
+  // The going answer block (M20 B7) is an --ok-bg card holding the viewer's
+  // headline, which is --fg.
+  ["--fg", "--ok-bg", 4.5],
   ["--mut", "--bg", 4.5],
   ["--mut", "--card", 4.5],
   ["--mut", "--card-raised", 4.5],
+  // The closed answer block (M20 B7) is a --field card holding the read-only
+  // sentence, which is --mut small text.
+  ["--mut", "--field", 4.5],
   ["--link", "--bg", 4.5],
   ["--link", "--card", 4.5],
   ["--link", "--card-raised", 4.5],

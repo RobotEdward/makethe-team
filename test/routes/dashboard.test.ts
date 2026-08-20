@@ -669,6 +669,39 @@ describe("GET /app", () => {
   });
 });
 
+describe("the card's answer block (M20 B7)", () => {
+  it("ends the card with one state-classed block holding the headline and the buttons", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { fixtureId } = await seedFixtureFor(playerId, { maxPlayers: 14 });
+    await setResponse(fixtureId, playerId, "in");
+
+    const body = await (await get(cookie)).text();
+
+    const block = body.match(/<section class="answer answer-going">([\s\S]*?)<\/section>/);
+    expect(block).not.toBeNull();
+    expect(block![1]).toContain("viewer-headline");
+    expect(block![1]).toContain('name="intent" value="in"');
+    // The fixture's own facts stay above the block, as on the response page.
+    expect(body.indexOf('<p class="status-badge')).toBeLessThan(body.indexOf('<section class="answer'));
+  });
+
+  it("names the waiting state the same way the response page does", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { fixtureId, otherPlayerIds } = await seedFixtureFor(playerId, {
+      maxPlayers: 1,
+      others: ["Other Player"],
+    });
+    await setResponse(fixtureId, otherPlayerIds[0]!, "in");
+    await setResponse(fixtureId, playerId, "in");
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain('<section class="answer answer-waiting">');
+  });
+});
+
 describe("the Your squads section (M20 B3)", () => {
   it("lists every membership with the owned marker, and links each game", async () => {
     const { html } = await viewer();

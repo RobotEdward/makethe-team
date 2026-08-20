@@ -69,6 +69,28 @@ export const FIXTURE_STYLES_CSS = `
      cannot drift from the twenty-one 5% steps the renderer can emit. */
 ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${i * 5}%; }`).join("\n")}
 
+  /* The answer block (M20 B7): the viewer's own state — headline, controls or
+     the closed-page sentence, and the pre-tap warning — in one card, so it is
+     read once rather than picked out of a run of fixture facts. Each tint
+     follows the state class, so a colour change never needs a markup change:
+     waiting is amber, going is the settled green, closed is the quiet field
+     grey, and open and declined keep the plain raised card. */
+  .answer {
+    margin: 1rem 0; padding: 1.1rem 1.25rem;
+    border-radius: 1.25rem; background: var(--card-raised);
+  }
+  .answer .viewer-headline { margin-top: 0; }
+  .answer .responses { margin-top: 1rem; }
+  .answer.answer-waiting { background: var(--warn-bg); }
+  .answer.answer-going { background: var(--ok-bg); }
+  .answer.answer-closed { background: var(--field); }
+  /* Inside an amber block the amber "waiting" button would disappear into its
+     own background, so it takes the stronger wait fill there. */
+  .answer.answer-waiting .button.chosen-waiting { background: var(--wait); color: var(--wait-fg); }
+  /* The closed block is already the card, so the notice inside it drops the
+     second panel it would otherwise draw. */
+  .answer.answer-closed .read-only { margin-top: 0; padding: 0; background: none; }
+
   .viewer-headline {
     margin-top: 1.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--fg); line-height: 1.3;
   }

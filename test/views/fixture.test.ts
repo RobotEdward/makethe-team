@@ -186,8 +186,10 @@ describe("fixture page", () => {
       // Search for the opening tags, not the bare class names — the
       // stylesheet in <head> mentions both class names ahead of either
       // actual element, which would make a bare substring search find the
-      // CSS rule instead of the rendered markup.
-      const headlineIndex = html.indexOf('<p class="viewer-headline');
+      // CSS rule instead of the rendered markup. The headline is the answer
+      // block's h2 since M20 B7; the block still sits above the badge, which
+      // is the guarantee this test exists for.
+      const headlineIndex = html.indexOf('<h2 class="viewer-headline');
       const badgeIndex = html.indexOf('<p class="status-badge');
       expect(headlineIndex).toBeGreaterThan(-1);
       expect(badgeIndex).toBeGreaterThan(-1);
@@ -1224,5 +1226,90 @@ describe("a stored lifecycle this build has never heard of", () => {
     const html = renderStatusLine(view(`x" onclick="alert(1)` as never), 0);
     expect(html).not.toContain(`onclick="alert(1)"`);
     expect(html).toContain("&quot;");
+  });
+});
+
+/**
+ * M20 B7. The viewer's own state — the headline, the buttons or the read-only
+ * sentence, and the pre-tap warning — is said once, in one tinted block, with
+ * the fixture's impersonal facts below it rather than interleaved with it.
+ */
+describe("the answer block (M20 B7)", () => {
+  /** The answer section's inner HTML, or null if the page rendered no block. */
+  function answerBlock(html: string): { state: string; inner: string } | null {
+    const match = html.match(/<section class="answer answer-([a-z]+)">([\s\S]*?)<\/section>/);
+    return match === null ? null : { state: match[1] as string, inner: match[2] as string };
+  }
+
+  it("wraps headline, buttons and full-warning in one state-classed section", () => {
+    const html = renderFixturePage(
+      optionsWith({
+        view: { status: "confirmed", flags: [], inCount: 14, minPlayers: 10, maxPlayers: 14, spotsLeft: 0, needsOwnerAttention: false },
+        viewer: { playerId: "p2", status: "pending" },
+        waitlistCount: 2,
+      }),
+    );
+    const block = answerBlock(html);
+    expect(block).not.toBeNull();
+    expect(block?.state).toBe("open");
+    expect(block?.inner).toContain("Can you make it?");
+    expect(block?.inner).toContain("aria-pressed");
+    expect(block?.inner).toContain("The squad is full");
+  });
+
+  it("keeps the fixture's own facts below the block, not inside it", () => {
+    const html = renderFixturePage(BASE);
+    const blockEnd = html.indexOf("</section>");
+    expect(blockEnd).toBeGreaterThan(-1);
+    // The badge is the fixture's fact, so it must not appear inside the
+    // viewer's block — and it must still be on the page exactly once.
+    expect(answerBlock(html)?.inner).not.toContain("status-badge");
+    const badgeIndex = html.indexOf('<p class="status-badge');
+    expect(badgeIndex).toBeGreaterThan(blockEnd);
+  });
+
+  it("names the waitlisted state on the block", () => {
+    const html = renderFixturePage(
+      optionsWith({ viewer: { playerId: "p2", status: "waitlisted", waitlistRank: 2 } }),
+    );
+    expect(html).toContain('class="answer answer-waiting"');
+  });
+
+  it("names the going and declined states on the block", () => {
+    const going = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "in" } }));
+    expect(going).toContain('class="answer answer-going"');
+    const declined = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "out" } }));
+    expect(declined).toContain('class="answer answer-declined"');
+  });
+
+  it("renders read-only states as the block with a sentence for buttons", () => {
+    for (const readOnlyReason of ["played", "cancelled", "not-open", "not-eligible"] as const) {
+      const html = renderFixturePage(optionsWith({ readOnlyReason }));
+      expect(html).toContain('class="answer answer-closed"');
+      expect(html).not.toContain("aria-pressed");
+      expect(answerBlock(html)?.inner).toContain('class="read-only"');
+    }
+  });
+
+  it("never renders buttons and a read-only sentence together, in any state", () => {
+    const statuses = ["pending", "in", "out", "waitlisted"] as const;
+    const reasons = [undefined, "played", "cancelled", "not-open", "not-eligible"] as const;
+    for (const status of statuses) {
+      for (const readOnlyReason of reasons) {
+        const html = renderFixturePage(
+          optionsWith({
+            viewer: { playerId: "p2", status, waitlistRank: status === "waitlisted" ? 1 : null },
+            readOnlyReason,
+          }),
+        );
+        const inner = answerBlock(html)?.inner ?? "";
+        expect(inner).not.toBe("");
+        expect(inner.includes('name="intent"') && inner.includes('class="read-only"')).toBe(false);
+        // One block per page, and one badge per page: the restructure must not
+        // duplicate either.
+        expect(html.split('<section class="answer').length - 1).toBe(1);
+        expect(html.split('<p class="status-badge').length - 1).toBe(1);
+      }
+    }
   });
 });

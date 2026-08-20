@@ -11,7 +11,13 @@ import {
 } from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
-import { renderFullWarning, renderResponseButtons, renderStatusLine, viewerHeadlineOpen } from "./fixture.js";
+import {
+  answerStateOf,
+  renderFullWarning,
+  renderResponseButtons,
+  renderStatusLine,
+  viewerHeadlineOpen,
+} from "./fixture.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
 
@@ -129,6 +135,12 @@ function renderRow(row: DashboardRow): string {
   // and not the other (BR-5).
   const headline = viewerHeadlineOpen({ status: row.myStatus, waitlistRank: null });
   const headlineClass = `viewer-headline${row.myStatus === "waitlisted" ? " warn" : ""}`;
+  // The card ends in the same answer block the response page opens with
+  // (M20 B7), through the same exported state expression rather than a second
+  // copy of it — the reason the headline itself is imported. `false` for
+  // read-only because this row carries no read-only reason at all: the card's
+  // controls are live whatever `row.view.status` says, exactly as they were
+  // before this block existed.
 
   return `
     <li class="fixture-card">
@@ -136,9 +148,11 @@ function renderRow(row: DashboardRow): string {
       <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
       ${renderStatusLine(row.view, row.waitlistCount)}
-      ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
-      ${renderActions(row)}
-      ${renderFullWarning(row.view, { status: row.myStatus }, row.waitlistCount)}
+      <section class="answer answer-${answerStateOf(row.myStatus, false)}">
+        ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
+        ${renderActions(row)}
+        ${renderFullWarning(row.view, { status: row.myStatus }, row.waitlistCount)}
+      </section>
     </li>`;
 }
 
