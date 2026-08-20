@@ -463,6 +463,39 @@ describe("the fixtures list on /g/:id", () => {
  * 303, so these drive it by seeding a game rather than by submitting a form —
  * which is also what pins the "it keeps showing" half of the behaviour.
  */
+/**
+ * The broadcast receipt (M20 B4): the one-line "Sent to n players by …"
+ * notice the send handler's 303 carries as `?sent=&via=`, read back and
+ * re-validated by the destination GET rather than trusted as given — see
+ * `broadcastNoticeFrom` in `src/routes/games.ts`.
+ */
+describe("the broadcast receipt (M20 B4)", () => {
+  beforeEach(resetDatabase);
+
+  /** Creates a game owned by the signed-in player and fetches /g/:id with the given query string appended. */
+  async function ownerGetsGamePage(query: string): Promise<{ html: string }> {
+    const { cookie } = await signIn();
+    const db = testDb();
+    const [owner] = await db.select().from(players);
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, owner!.id, { role: "owner" });
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}${query}`, { headers: { cookie } })).text();
+    return { html };
+  }
+
+  it("renders the one-line notice from the redirect flag", async () => {
+    const { html } = await ownerGetsGamePage("?sent=11&via=email");
+    expect(html).toContain("Sent to 11 players by email.");
+  });
+
+  it("renders nothing for a malformed flag — never caller text", async () => {
+    for (const q of ["?sent=11&via=carrier-pigeon", "?sent=lots&via=email", "?sent=-3&via=push", "?sent=11"]) {
+      const { html } = await ownerGetsGamePage(q);
+      expect(html).not.toContain("Sent to");
+    }
+  });
+});
+
 describe("the odd-max nudge on /g/:id", () => {
   beforeEach(resetDatabase);
 

@@ -378,7 +378,11 @@ async function handleSend(
     }),
   );
 
-  return c.redirect(scope.redirectTo, 303);
+  // The receipt flag (M20 B4). An enum plus a bounded integer the
+  // destination page re-validates — the notice can never carry text a
+  // sender chose, which is what keeps this from being a reflection sink.
+  const via = channels.email && channels.push ? "both" : channels.push ? "push" : "email";
+  return c.redirect(`${scope.redirectTo}?sent=${recipientCount}&via=${via}`, 303);
 }
 
 /**

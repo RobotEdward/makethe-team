@@ -143,7 +143,9 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     await settleSend(1);
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(`/g/${gameId}/f/${fixtureId}`);
+    const location = response.headers.get("location")!;
+    expect(location.split("?")[0]).toBe(`/g/${gameId}/f/${fixtureId}`);
+    expect(location).toMatch(/\?sent=\d+&via=(email|push|both)$/);
 
     const rows = await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"));
     expect(rows).toHaveLength(1);
@@ -605,7 +607,9 @@ describe("POST /g/:id/message", () => {
     await settleSend(2);
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(`/g/${gameId}`);
+    const location = response.headers.get("location")!;
+    expect(location.split("?")[0]).toBe(`/g/${gameId}`);
+    expect(location).toMatch(/\?sent=\d+&via=(email|push|both)$/);
 
     const [row] = await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"));
     const after = JSON.parse(row!.afterJson!) as { fixtureId: string | null; audience: string };

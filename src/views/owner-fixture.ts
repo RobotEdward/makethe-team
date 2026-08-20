@@ -68,6 +68,8 @@ export interface OwnerFixtureParams {
   announcementOutstanding: boolean;
   /** A refusal to explain near the top, e.g. Task 6's guard. Escaped and shown. */
   problem?: string;
+  /** The broadcast receipt (M20 B4), from `broadcastNoticeFrom` — never caller-chosen text. */
+  broadcastNotice?: string;
 }
 
 /**
@@ -285,6 +287,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     ${problem}
+    ${params.broadcastNotice === undefined ? "" : `<p class="nudge ok">${escapeHtml(params.broadcastNotice)}</p>`}
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="venue">${escapeHtml(venueName)}</p>
     ${renderStatusLine(view, waitlistCount)}

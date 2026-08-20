@@ -41,6 +41,8 @@ export interface GameOverviewParams {
   viewerPlayerId: string;
   /** A refusal to explain on this page, e.g. J6a's last-organiser guard. Escaped and shown near the top. */
   problem?: string;
+  /** The broadcast receipt (M20 B4), from `broadcastNoticeFrom` — never caller-chosen text. */
+  broadcastNotice?: string;
 }
 
 /**
@@ -119,6 +121,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     ${problem}
+    ${params.broadcastNotice === undefined ? "" : `<p class="nudge ok">${escapeHtml(params.broadcastNotice)}</p>`}
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}
     ${oddMax}

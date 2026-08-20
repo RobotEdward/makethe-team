@@ -174,9 +174,26 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       squad,
       upcoming,
       viewerPlayerId: player.id,
+      broadcastNotice: broadcastNoticeFrom(c),
     }),
   );
 });
+
+/**
+ * The broadcast receipt (M20 B4), from the send handler's redirect flag.
+ * Enum-and-integer only: an unrecognised channel or a count that is not a
+ * sane positive integer renders nothing rather than something surprising —
+ * the query string is caller-controlled, the notice text is not.
+ */
+function broadcastNoticeFrom(c: Context<AppEnv>): string | undefined {
+  const sent = Number(c.req.query("sent"));
+  if (!Number.isInteger(sent) || sent < 1 || sent > 10_000) return undefined;
+  const channel = { email: "by email", push: "by push", both: "by email and push" }[
+    c.req.query("via") ?? ""
+  ];
+  if (channel === undefined) return undefined;
+  return `Sent to ${sent} player${sent === 1 ? "" : "s"} ${channel}.`;
+}
 
 /**
  * Render `/g/:id` for a member who is not this game's owner — the game's
@@ -648,8 +665,11 @@ async function renderOwnerFixture(
     listTeamAssignments(target.db, target.fixture.id),
   ]);
   if (withSquad === null) return c.text("Not found", 404);
+  const params = ownerFixtureParams(pageNav(c, "games"), withSquad, assignments, c.get("player")!.id, now, extras);
+  // Only the plain GET (`status === 200`, no `extras`-carrying refusal) gets
+  // the receipt — a 422 re-render is never the destination of a redirect.
   return c.html(
-    renderOwnerFixturePage(ownerFixtureParams(pageNav(c, "games"), withSquad, assignments, c.get("player")!.id, now, extras)),
+    renderOwnerFixturePage(status === 200 ? { ...params, broadcastNotice: broadcastNoticeFrom(c) } : params),
     status,
   );
 }
