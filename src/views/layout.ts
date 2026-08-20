@@ -270,7 +270,7 @@ export const STYLES = `
   .button.danger:focus-visible { outline: 3px solid var(--danger); outline-offset: 2px; }
 
   /* Sign-out is a real action but never the point of the page it sits on, so
-     it gets the outlined button rather than the filled one. */
+     it gets the plain filled default rather than the primary fill. */
   .signout { margin: 1.25rem 0; }
 `;
 

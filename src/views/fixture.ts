@@ -642,7 +642,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
   const headline = viewerHeadline(viewer, readOnlyReason);
   // A waitlisted viewer's headline gets the same warn treatment the roster
   // already uses for a waitlisted row, so it reads as unmistakably different
-  // from the accent-coloured "confirmed" badge that may sit right below it
+  // from the solid green "confirmed" badge that may sit right below it
   // (BR-5) — and is placed above that badge, not below, so it is the first
   // thing read, not a correction to something read already.
   const headlineClass = `viewer-headline${viewer.status === "waitlisted" ? " warn" : ""}`;

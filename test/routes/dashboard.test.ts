@@ -682,7 +682,8 @@ describe("the card's answer block (M20 B7)", () => {
     expect(block).not.toBeNull();
     expect(block![1]).toContain("viewer-headline");
     expect(block![1]).toContain('name="intent" value="in"');
-    // The fixture's own facts stay above the block, as on the response page.
+    // The fixture's own facts stay above the block here — the mirror image of
+    // the response page, which deliberately puts the block above the facts.
     expect(body.indexOf('<p class="status-badge')).toBeLessThan(body.indexOf('<section class="answer'));
   });
 

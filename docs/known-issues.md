@@ -135,6 +135,17 @@ approving the other seven changes (spec:
 below-the-form placement is therefore a decision twice over, not an oversight.
 Revisit only with evidence, such as observed join-rate differences.
 
+## Email templates keep the old green (20 August 2026)
+
+The M20 refresh deliberately left `src/notify/templates/*`'s `#1f6f4a` accents
+untouched — spec §4 scopes emails out of the redesign. The resulting brand
+mismatch between the app (restyled) and the emails (still the old green) is
+known, not accidental, and re-skinning the email templates is its own
+follow-up rather than part of M20. Separately: the light theme's capacity-bar
+fill (`--ok` on `--line`, ≈1.7:1) was accepted by the visual pass as-is and
+has no contrast tripwire pinning it — a future palette nudge should re-check
+it by eye before assuming it still reads.
+
 ## Edge configuration — applied
 
 The two WAF custom rules in `docs/runbooks/cloudflare.md` (TR-37) were applied by hand

@@ -57,6 +57,7 @@ const PAIRS: readonly [string, string, number][] = [
   ["--danger-fg", "--danger", 3],
   ["--ok-fg", "--ok-bg", 4.5],
   ["--warn", "--warn-bg", 4.5],
+  ["--warn", "--accent-mut", 4.5],
   ["--wait-fg", "--wait", 4.5],
   // Accent fills are identified by their AA-passing label text (the
   // --accent-fg/--accent pair above), so WCAG 1.4.11 does not require the
