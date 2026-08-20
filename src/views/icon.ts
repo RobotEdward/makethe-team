@@ -29,12 +29,12 @@
  * floating in a grey circle on exactly the devices you did not test on.
  */
 export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-<rect width="512" height="512" fill="#1f6f4a"/>
-<g fill="#fbfaf8">
+<rect width="512" height="512" fill="#c67139"/>
+<g fill="#f9f4ed">
 <circle cx="151" cy="301" r="36"/>
 <circle cx="213" cy="369" r="36"/>
 <circle cx="262" cy="291" r="36"/>
 <circle cx="311" cy="221" r="36"/>
 </g>
-<circle cx="361" cy="150" r="30" fill="none" stroke="#fbfaf8" stroke-width="11" stroke-opacity="0.8"/>
+<circle cx="361" cy="150" r="30" fill="none" stroke="#f9f4ed" stroke-width="11" stroke-opacity="0.8"/>
 </svg>`;

@@ -11,7 +11,7 @@ import { APPLE_TOUCH_ICON_PNG, ICON_192_PNG, ICON_512_PNG } from "../../src/view
 describe("the app icon", () => {
   it("is full bleed, so a maskable crop always lands on the accent colour", () => {
     expect(ICON_SVG).toContain('viewBox="0 0 512 512"');
-    expect(ICON_SVG).toContain('<rect width="512" height="512" fill="#1f6f4a"/>');
+    expect(ICON_SVG).toContain('<rect width="512" height="512" fill="#c67139"/>');
   });
 
   it("keeps every dot inside the maskable safe zone", () => {
@@ -35,7 +35,7 @@ describe("the app icon", () => {
   it("has one hollow dot — four in, one spot left", () => {
     // The whole idea of the mark. A later "tidy-up" that fills this dot in
     // turns a squad with a place going spare into five identical dots.
-    expect(ICON_SVG).toContain('fill="none" stroke="#fbfaf8"');
+    expect(ICON_SVG).toContain('fill="none" stroke="#f9f4ed"');
   });
 
   it("ships the three raster sizes the platforms actually read", () => {
@@ -51,5 +51,11 @@ describe("the app icon", () => {
       // say, an error message that got base64'd by accident.
       expect([...bytes.slice(0, 4)], `${name} is not a PNG`).toEqual([0x89, 0x50, 0x4e, 0x47]);
     }
+  });
+
+  it("is the terracotta mark on the cream dots (M20)", () => {
+    expect(ICON_SVG).toContain('fill="#c67139"');
+    expect(ICON_SVG).toContain('fill="#f9f4ed"');
+    expect(ICON_SVG).not.toContain("#1f6f4a");
   });
 });
