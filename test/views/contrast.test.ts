@@ -52,7 +52,11 @@ const PAIRS: readonly [string, string, number][] = [
   ["--ok-fg", "--ok-bg", 4.5],
   ["--warn", "--warn-bg", 4.5],
   ["--wait-fg", "--wait", 4.5],
-  ["--accent", "--bg", 3],
+  // Accent fills are identified by their AA-passing label text (the
+  // --accent-fg/--accent pair above), so WCAG 1.4.11 does not require the
+  // fill/ground boundary itself to clear a floor. This pair stays only as a
+  // drift tripwire against an accent so pale it stops reading as a fill.
+  ["--accent", "--bg", 2.5],
   ["--line", "--bg", 1.2],
 ];
 

@@ -127,10 +127,10 @@ export const THEME_COLOR = "#c67139";
 export const STYLES = `
   :root {
     color-scheme: light dark;
-    --fg: #201e1d; --bg: #f6ebd7;
+    --fg: #201e1d; --bg: #efe3cd;
     --card: #f5ead8; --card-raised: #f9f4ed; --field: #ebddc5;
     /* Contrast floors for every pair are enforced by test/views/contrast.test.ts. */
-    --mut: #645c50; --line: #dcd3c4;
+    --mut: #645c50; --line: #d6c9b3;
     --accent: ${THEME_COLOR}; --accent-fg: #fff7f0; --accent-mut: #ffe1d0;
     --link: #8c491a;
     --ok: #8fa073; --ok-bg: #e1eecc; --ok-fg: #3d472b;
