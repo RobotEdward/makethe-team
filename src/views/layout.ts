@@ -208,9 +208,13 @@ export const STYLES = `
   .danger-link { color: var(--danger); font-weight: 600; }
 
   .nudge {
-    margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
+    margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 1rem;
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-support); text-align: left;
   }
+  /* The one success notice shape. B4's broadcast receipt is the first to
+     wear it; anything later that says "that worked" uses this, not a new
+     class. */
+  .nudge.ok { background: var(--ok-bg); color: var(--ok-fg); }
 
   /* Script-injected only, on any page, so it lives here rather than in a
      page block. Fixed to the bottom edge: an installed app has no reload
@@ -219,8 +223,8 @@ export const STYLES = `
     position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
     width: calc(100% - 2rem); max-width: 28rem;
     display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    padding: 0.8rem 1rem; border: 1px solid var(--line); border-radius: 0.7rem;
-    background: var(--bg); color: var(--fg);
+    padding: 0.8rem 1rem; border: 1px solid var(--line); border-radius: 1rem;
+    background: var(--card-raised); color: var(--fg);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   }
   .update-overlay .button { flex: 0 0 auto; min-height: 44px; padding: 0.5rem 1rem; font-size: var(--t-body); margin: 0; }
@@ -228,8 +232,8 @@ export const STYLES = `
   .button {
     flex: 1; display: flex; align-items: center; justify-content: center;
     min-height: 52px; padding: 0.85rem 1.25rem;
-    border-radius: 0.65rem; border: 2px solid var(--line);
-    background: var(--bg); color: var(--fg);
+    border: none; border-radius: 999px;
+    background: var(--field); color: var(--fg);
     font: inherit; font-size: var(--t-lead); font-weight: 700;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
@@ -244,7 +248,7 @@ export const STYLES = `
      the one inlined into every page including the holding page, where a
      handful of words describing anything operational are asserted absent. */
   .button.primary {
-    background: var(--accent); border-color: var(--accent); color: var(--accent-fg);
+    background: var(--accent); color: var(--accent-fg);
   }
   /* Filled, like .primary, because a destructive action is still the primary
      thing on the page it appears on — the fill says "this is the action", the
@@ -261,7 +265,7 @@ export const STYLES = `
      to, that separation is what makes this safe and it stops being true the
      moment both appear together. */
   .button.danger {
-    background: var(--danger); border-color: var(--danger); color: var(--danger-fg);
+    background: var(--danger); color: var(--danger-fg);
   }
   .button.danger:focus-visible { outline: 3px solid var(--danger); outline-offset: 2px; }
 

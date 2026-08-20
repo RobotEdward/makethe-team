@@ -46,15 +46,16 @@ export const FIXTURE_STYLES_CSS = `
     padding: 0.3rem 0.85rem; border-radius: 999px; border: 1px solid var(--line);
     font-weight: 600; font-size: var(--t-support); color: var(--fg);
   }
-  .status-badge.status-confirmed { border-color: var(--accent); color: var(--accent); }
-  .status-badge.status-short, .status-badge.status-cancelled { border-color: var(--warn); color: var(--warn); }
+  .status-badge.status-confirmed { border: none; background: var(--ok-fg); color: var(--ok-bg); }
+  .status-badge.status-short { border: none; background: var(--ok-bg); color: var(--ok-fg); }
+  .status-badge.status-cancelled { border: none; background: var(--accent-mut); color: var(--warn); }
   /* The headcount as a proportion rather than a countdown (M12 §3.1): a bar
      whose fill is who is there, with the numbers under it so nothing is lost
      when the CSS does not load. */
   .capacity { margin-top: 0.6rem; }
   .capacity .track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
-  .capacity .fill { display: block; height: 100%; background: var(--accent); }
-  .capacity .fill.short { background: var(--warn); }
+  .capacity .fill { display: block; height: 100%; background: var(--ok); }
+  .capacity .fill.short { background: var(--wait); }
   .capacity .spots { margin-top: 0.35rem; font-size: var(--t-support); color: var(--mut); }
   .capacity .count { font-family: var(--mono); }
 
@@ -76,8 +77,8 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
   .viewer-headline.warn { color: var(--warn); }
 
   .read-only {
-    margin-top: 1.25rem; padding: 0.85rem 1rem; border-radius: 0.6rem;
-    border: 1px dashed var(--line); color: var(--mut); font-size: var(--t-body); text-align: left;
+    margin-top: 1.25rem; padding: 0.85rem 1rem; border-radius: 1.25rem;
+    border: none; background: var(--card-raised); color: var(--mut); font-size: var(--t-body); text-align: left;
   }
 
   /* Paragraphs get zero margin by default (the layout's base rule), so a
@@ -159,7 +160,7 @@ export const SQUAD_STYLES_CSS = `
   .chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; padding: 0; }
   .chip {
     padding: 0.3rem 0.65rem; border-radius: 999px;
-    font-size: var(--t-support); background: var(--line); color: var(--mut);
+    font-size: var(--t-support); background: var(--field); color: var(--mut);
   }
   .chip-in { background: var(--accent-mut); color: var(--accent); }
   .chip-waitlisted { background: var(--warn-bg); color: var(--warn); }
@@ -171,9 +172,9 @@ export const SQUAD_STYLES_CSS = `
      rule — so they get an explicit solid fg/bg inversion instead of
      silently keeping the unhighlighted tint. Text stays the player's real
      name throughout; this is a colour cue only. */
-  .chip-in.chip-you { background: var(--accent); color: var(--accent-fg); font-weight: 600; }
-  .chip-waitlisted.chip-you { background: var(--warn); color: var(--bg); font-weight: 600; }
-  .chip-out.chip-you, .chip-pending.chip-you { background: var(--fg); color: var(--bg); font-weight: 600; }
+  .chip-in.chip-you, .chip-waitlisted.chip-you, .chip-out.chip-you, .chip-pending.chip-you {
+    background: var(--fg); color: var(--bg); font-weight: 600;
+  }
   .set-by { display: block; margin: 0.4rem 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
 
@@ -195,7 +196,7 @@ export const DASHBOARD_STYLES_CSS = `
   .fixture-list { list-style: none; margin: 1.5rem 0 0; padding: 0; }
   .fixture-card {
     padding: 1.1rem 1rem 1.25rem; margin-bottom: 1rem;
-    border: 1px solid var(--line); border-radius: 0.75rem;
+    border: none; border-radius: 1.25rem; background: var(--card-raised);
   }
   .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
   .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: var(--t-lead); }
@@ -251,7 +252,7 @@ export const DASHBOARD_STYLES_CSS = `
      dismiss control. */
   .onboarding {
     margin-top: 1.25rem; padding: 1rem 1rem 0.75rem;
-    border: 1px solid var(--line); border-radius: 0.75rem;
+    border: none; border-radius: 1.25rem; background: var(--card-raised);
   }
   .onboarding h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
   .onboarding ul { list-style: none; margin: 0; padding: 0; }
@@ -376,8 +377,8 @@ export const FORM_CSS = `
   .field label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
   .field input, .field select, .field textarea {
     width: 100%; padding: 0.6rem 0.7rem; font: inherit;
-    color: var(--fg); background: var(--bg);
-    border: 2px solid var(--line); border-radius: 0.5rem;
+    color: var(--fg); background: var(--field);
+    border: none; border-radius: 0.75rem;
   }
   .field textarea { min-height: 8rem; resize: vertical; }
   .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible {
@@ -447,7 +448,10 @@ export const FORM_CSS = `
   .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
   .qr { margin: 1rem 0; max-width: 240px; }
   .invite-link { display: flex; gap: 0.5rem; align-items: center; }
-  .invite-link input { flex: 1; font-family: var(--mono); font-size: var(--t-support); }
+  .invite-link input {
+    flex: 1; font-family: var(--mono); font-size: var(--t-support);
+    background: var(--field); border: none; border-radius: 0.75rem;
+  }
   /* Without this, .button's own flex: 1 (from STYLES) matches .invite-link
      input's flex: 1 above, so the field and the Copy button split the row
      exactly in half regardless of content — on the one page whose whole
@@ -538,28 +542,19 @@ export const FORM_CSS = `
      is shared with the player's own fixture page, which has no controls at
      all (it only ever reads squad state) and must not carry rules for a
      control it can never render. */
-  .segment { display: flex; margin: 0; padding: 3px; gap: 3px; border-radius: 0.7rem; background: var(--line); }
+  .segment { display: flex; margin: 0; padding: 3px; gap: 3px; border-radius: 999px; background: var(--field); }
   .segment .seg {
-    min-height: 44px; padding: 0.5rem 0.9rem; border: 0; border-radius: 0.55rem;
+    min-height: 44px; padding: 0.5rem 0.9rem; border: 0; border-radius: 999px;
     background: transparent; color: var(--mut);
     font: inherit; font-size: var(--t-support); font-weight: 600; cursor: pointer;
   }
   .segment .seg:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-  .segment .seg.on { background: var(--accent); color: var(--accent-fg); }
-  /* A solid mid-grey fill. It was var(--bg), which sits almost on top of the
-     track's own var(--line) — about 1.16:1 in light — so a pressed "Out"
-     barely differed from an unpressed segment while a pressed "In" was a loud
-     solid green (M10 whole-branch review, Minor 7).
-     var(--mut) and not var(--fg): near-black would be visually heavier than
-     the accent-green "In" beside it, so scanning a squad the dropouts would
-     shout louder than the players — and grey is what M10 gives "out, no reply,
-     inert" (spec 2.1). This is about 4.7:1 against the track in light and
-     4.2:1 in dark, which is plainly visible at a glance down fourteen rows,
-     with about 6:1 for its own label. Deliberately NOT the fg/bg inversion
-     .chip-out.chip-you uses: there that treatment means "this one is you",
-     and one product should not spend the same strong inversion on two
-     unrelated meanings. */
-  .segment .seg.out { background: var(--mut); color: var(--bg); }
+  .segment .seg.on { background: var(--ok-fg); color: var(--ok-bg); }
+  /* Neutral by design (M20 §2.4): "out" is not a success state and gets no
+     colour family of its own, only a raised-card fill against the field
+     track so a pressed "Out" still reads as pressed next to the unpressed
+     segments beside it. */
+  .segment .seg.out { background: var(--card-raised); color: var(--fg); }
   .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
 `;
 
@@ -600,7 +595,15 @@ export const TEAM_PICKER_CSS = `
      be shown two empty boxes they cannot put a name into. */
   .team-columns { display: none; }
   .team-columns:not([hidden]) { display: flex; gap: 1rem; margin: 0.75rem 0; }
-  .team-column { flex: 1 1 0; min-width: 0; }
+  .team-column {
+    flex: 1 1 0; min-width: 0; padding: 0.75rem 0.85rem; border-radius: 1.25rem;
+  }
+  /* The two sides get their own fill, in source order — the first is the
+     success family (a side you can pick with confidence), the second the
+     warn family (M20 §2.4), so a scripting-on organiser can tell the columns
+     apart by colour as well as by the heading. */
+  .team-column:first-child { background: var(--ok-bg); color: var(--ok-fg); }
+  .team-column:last-child { background: var(--accent-mut); color: var(--warn); }
   .team-column h3 { margin: 0 0 0.25rem; font-size: var(--t-body); }
   /* Tall enough to be a target while empty — a drop area with no height is a
      side an organiser cannot pick until somebody is already on it. On the
@@ -657,7 +660,7 @@ export const OFFLINE_STYLES_CSS = `
  * stylesheet every owner page also carries.
  */
 export const INSTALL_STYLES_CSS = `
-  .install { margin-top: 2rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 0.7rem; }
+  .install { margin-top: 2rem; padding: 1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
   .install h2 { margin-top: 0; }
   .install ol { margin: 0.5rem 0 0; padding-left: 1.2rem; color: var(--mut); font-size: var(--t-support); }
   .install li + li { margin-top: 0.35rem; }
@@ -674,7 +677,7 @@ export const INSTALL_STYLES_CSS = `
  * but nothing here does yet).
  */
 export const PUSH_STYLES_CSS = `
-  .push { margin-top: 2rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: 0.7rem; }
+  .push { margin-top: 2rem; padding: 1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
   .push h2 { margin-top: 0; }
   .push h3 { margin: 1.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
   .push .button { margin-top: 0.5rem; }
@@ -744,7 +747,7 @@ export const PUSH_STYLES_CSS = `
  * game form's optional sections and read as a page division here.
  */
 export const INVITE_CSS = `
-  .card { margin: 1.1rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 0.75rem; }
+  .card { margin: 1.1rem 0; padding: 1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
   .card h2 { margin: 0 0 0.6rem; font-size: var(--t-body); }
   .card .actions { margin-top: 0.75rem; }
   .qr-toggle { margin: 0; border: 0; padding: 0; }
