@@ -14,7 +14,7 @@ import {
 } from "../auth/paths.js";
 import { requirePlayer, pageNav } from "../auth/session.js";
 import { buildAuditInsert, recordAudit } from "../db/audit.js";
-import { getDb } from "../db/client.js";
+import { getDb, type Db } from "../db/client.js";
 import {
   countCommitments,
   findGameForMember,
@@ -64,7 +64,7 @@ import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-
 import { renderPlayerFixturePage } from "../views/player-fixture.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
-import { outcomeNames } from "../views/result.js";
+import { outcomeNames, type ResultPanelParams } from "../views/result.js";
 import { renderSquadMemberPage } from "../views/squad-member.js";
 import { rowName } from "../views/team-picker.js";
 import { notifyPromotedPlayer } from "./respond.js";
@@ -611,21 +611,65 @@ async function loadFixtureTarget(c: Context<AppEnv>, gameId: string, fixtureId: 
 type FixtureRenderExtras = Partial<Pick<OwnerFixtureParams, "confirm" | "problem" | "unassignedProblem">>;
 
 /**
+ * The result panel's params for the organiser's own fixture page (M25 Task
+ * 10) — the same shape `renderPlayerFixture` below builds for a member, so
+ * the tally an organiser sees can never drift from the one a player sees.
+ *
+ * Callers only reach for this on a `played` fixture; an open one has nothing
+ * to have a result about, and `POST …/result` (`src/routes/results.ts`) 404s
+ * a write to any fixture that is not `played`, so a panel offering forms on
+ * one would invite a submit the route refuses.
+ */
+async function ownerResultParams(
+  db: Db,
+  game: typeof games.$inferSelect,
+  fixture: typeof fixtures.$inferSelect,
+  viewerPlayerId: string,
+  now: Date,
+): Promise<ResultPanelParams> {
+  const [claims, electorate] = await Promise.all([
+    listResultClaims(db, fixture.id),
+    resultElectorate(db, game.id, fixture.id),
+  ]);
+  const deadline = resultDeadline(fixture.kicksOffAt);
+  return {
+    names: outcomeNames(game),
+    candidates: tally(claims),
+    derived: deriveResult(claims, electorate.organiserIds),
+    locked: isResultLocked(fixture.kicksOffAt, claims.length, now),
+    writable: resultWritable(fixture.lifecycle, fixture.kicksOffAt, claims.length, now),
+    eligible: electorate.eligibleIds.has(viewerPlayerId),
+    rostered: fixture.teamsPublishedAt !== null,
+    yourPlayerId: viewerPlayerId,
+    deadlineLocal: formatLocalDateTime(deadline, game.timezone),
+    actionPath: resultPath(game.id, fixture.id),
+    clearPath: resultClearPath(game.id, fixture.id),
+  };
+}
+
+/**
  * Build `OwnerFixtureParams` from a loaded `FixtureWithSquad`.
  *
  * One place for the three render paths this page has (a plain GET here, plus
  * Tasks 5 and 6's re-renders after a refusal) to agree on the derived `view`
  * and the formatted kickoff, so a change to either cannot drift between them.
  */
-function ownerFixtureParams(
+async function ownerFixtureParams(
+  db: Db,
   nav: PageNav,
   withSquad: FixtureWithSquad,
   assignments: readonly TeamAssignment[],
   viewerPlayerId: string,
   now: Date,
   extras: FixtureRenderExtras = {},
-): OwnerFixtureParams {
+): Promise<OwnerFixtureParams> {
   const { fixture, game, squad } = withSquad;
+  // Only a `played` fixture has anything to have a result about — see
+  // `ownerResultParams`'s own comment for why an open one gets no panel.
+  const result =
+    fixture.lifecycle === "played"
+      ? await ownerResultParams(db, game, fixture, viewerPlayerId, now)
+      : undefined;
   return {
     nav,
     gameId: game.id,
@@ -663,6 +707,7 @@ function ownerFixtureParams(
     teamsNeedAnotherLook: teamsNeedAnotherLook(assignments),
     announcementOutstanding: announcementOutstanding(fixture, assignments),
     cancellationReason: fixture.cancellationReason,
+    result,
     ...extras,
   };
 }
@@ -686,7 +731,15 @@ async function renderOwnerFixture(
     listTeamAssignments(target.db, target.fixture.id),
   ]);
   if (withSquad === null) return c.text("Not found", 404);
-  const params = ownerFixtureParams(pageNav(c, "games"), withSquad, assignments, c.get("player")!.id, now, extras);
+  const params = await ownerFixtureParams(
+    target.db,
+    pageNav(c, "games"),
+    withSquad,
+    assignments,
+    c.get("player")!.id,
+    now,
+    extras,
+  );
   // Only the plain GET (`status === 200`, no `extras`-carrying refusal) gets
   // the receipt — a 422 re-render is never the destination of a redirect.
   return c.html(

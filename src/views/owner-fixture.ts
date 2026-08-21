@@ -18,8 +18,17 @@ import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
 import { renderFreshness } from "./freshness.js";
+import { renderResultPanel, type ResultPanelParams } from "./result.js";
 import { COPY_BUTTON_JS, FRESHNESS_JS, TEAM_PICKER_JS, type PageScriptBlock } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS, WHATSAPP_CSS } from "./styles.js";
+import {
+  FIXTURE_STYLES_CSS,
+  FORM_CSS,
+  FRESHNESS_CSS,
+  RESULT_CSS,
+  SQUAD_STYLES_CSS,
+  TEAM_PICKER_CSS,
+  WHATSAPP_CSS,
+} from "./styles.js";
 import { renderWhatsAppCard, type WhatsAppMessage } from "./whatsapp.js";
 
 export interface OwnerFixtureParams {
@@ -81,6 +90,17 @@ export interface OwnerFixtureParams {
    * off; `null` is the honest "there wasn't one".
    */
   cancellationReason: string | null;
+  /**
+   * The result panel (M25 Task 6), shared verbatim with the player's own
+   * fixture page (`src/views/player-fixture.ts`) — never forked or given an
+   * owner-only variant. `undefined` on anything but a `played` fixture: an
+   * open one has nothing to have a result about, and `src/routes/results.ts`
+   * 404s a write to it, so a panel with live forms here would offer controls
+   * the server refuses. The caller (`ownerFixtureParams` in
+   * `src/routes/games.ts`) is what enforces the `played`-only rule; this view
+   * only renders what it is given.
+   */
+  result?: ResultPanelParams;
 }
 
 /**
@@ -372,6 +392,8 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     ${renderTeams(params)}
 
+    ${params.result === undefined ? "" : renderResultPanel(params.result)}
+
     ${renderGuestForm(gameId, fixtureId, params)}
 
     ${whatsapp.length === 0 ? "" : renderWhatsAppCard({ messages: whatsapp })}
@@ -414,9 +436,19 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     // member's row and a guest's row are two lines here rather than one. Two
     // lines that fit beat one line that is partly off the screen.
     //
-    // WHATSAPP_CSS is namespaced under .whatsapp and collides with nothing, so
-    // its position is not load-bearing; last keeps it out of the pair above.
-    pageStyles: [SQUAD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS, WHATSAPP_CSS, FRESHNESS_CSS],
+    // WHATSAPP_CSS and RESULT_CSS are each namespaced (`.whatsapp`, `.result-*`)
+    // and collide with nothing, so their position is not load-bearing; both
+    // stay out of the pair above, in the same relative order `PAGE_STYLE_BLOCKS`
+    // (src/views/styles.ts) holds them.
+    pageStyles: [
+      SQUAD_STYLES_CSS,
+      FIXTURE_STYLES_CSS,
+      FORM_CSS,
+      TEAM_PICKER_CSS,
+      WHATSAPP_CSS,
+      RESULT_CSS,
+      FRESHNESS_CSS,
+    ],
     pageScripts,
   });
 }

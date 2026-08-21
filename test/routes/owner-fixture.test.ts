@@ -1,9 +1,27 @@
 import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditLog, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import {
+  auditLog,
+  fixtureResultClaims,
+  fixtures,
+  memberships,
+  notificationLog,
+  players,
+  responses,
+} from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { insertGame, insertMembership, insertPlayer, playerRow, resetDatabase, testDb } from "../support/factories.js";
+import {
+  insertFixture,
+  insertGame,
+  insertMembership,
+  insertPlayer,
+  insertResponse,
+  insertResultClaim,
+  playerRow,
+  resetDatabase,
+  testDb,
+} from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
 
@@ -91,6 +109,34 @@ async function seedOpenFixtureOwnedBy(ownerPlayerId: string): Promise<{ gameId: 
     durationMinutes: 60,
   });
   await openFixture(db, fixtureId, NOW);
+
+  return { gameId, fixtureId };
+}
+
+/**
+ * A played fixture (M25) in a game owned by `ownerPlayerId`, with `p-0`
+ * already `in` and having filed a claim for side "a" — so the organiser's
+ * own page has a candidate to show and, since kickoff was only an hour ago,
+ * the 48-hour window (`RESULT_LOCK_WINDOW_MS`) is still open to agree with.
+ *
+ * Deliberately does not give `ownerPlayerId` a `responses` row: an owner is
+ * part of the electorate (`resultElectorate` counts every active owner)
+ * whether or not they played, and a seed that gave them one would leave the
+ * "an organiser who did not play can still agree" case untested.
+ */
+async function seedPlayedFixtureOwnedBy(ownerPlayerId: string): Promise<{ gameId: string; fixtureId: string }> {
+  const db = testDb();
+  const gameId = await insertGame(db, { maxPlayers: 14 });
+  await insertMembership(db, gameId, ownerPlayerId, { role: "owner" });
+  const memberPlayerId = await ensurePlayer(db, "p-0", "Player 0");
+  await insertMembership(db, gameId, memberPlayerId);
+
+  const fixtureId = await insertFixture(db, gameId, {
+    lifecycle: "played",
+    kicksOffAt: kickoffIn(-1),
+  });
+  await insertResponse(db, fixtureId, memberPlayerId, { status: "in" });
+  await insertResultClaim(db, fixtureId, memberPlayerId, { outcome: "a" });
 
   return { gameId, fixtureId };
 }
@@ -427,6 +473,53 @@ describe("GET /g/:id/f/:fixtureId", () => {
     // Scoped to the waitlisted member's own name, so a passing test cannot be
     // the label having landed on the wrong row.
     expect(html).toMatch(/Waiting Player[\s\S]*?class="status status-waitlisted"/);
+  });
+
+  it("shows the result panel on a played fixture", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedPlayedFixtureOwnedBy(viewerId);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    expect(html).toContain("<h2>Result</h2>");
+  });
+
+  it("shows no result panel on an open fixture", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedOpenFixtureOwnedBy(viewerId);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
+
+    // An open fixture has nothing to have a result about, and Task 9's write
+    // route 404s a claim posted to one — so no panel, not merely a blank one.
+    expect(html).not.toContain("<h2>Result</h2>");
+  });
+
+  it("lets an organiser who did not play agree from their own page", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    // `seedPlayedFixtureOwnedBy` deliberately gives the owner no `responses`
+    // row — this is the case that tests, not the ordinary "organiser also
+    // played" one.
+    const { gameId, fixtureId } = await seedPlayedFixtureOwnedBy(viewerId);
+
+    const page = await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } });
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    // `resultElectorate` counts every active owner as eligible whether or not
+    // they played, so the Agree control on `p-0`'s filed claim must render
+    // for this viewer.
+    expect(html).toContain(">Agree<");
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/result`, { outcome: "a" }, cookie);
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(`/g/${gameId}/f/${fixtureId}`);
+    const db = testDb();
+    const [row] = await db
+      .select()
+      .from(fixtureResultClaims)
+      .where(and(eq(fixtureResultClaims.fixtureId, fixtureId), eq(fixtureResultClaims.playerId, viewerId)));
+    expect(row).toMatchObject({ outcome: "a", scoreA: null, scoreB: null });
   });
 });
 
