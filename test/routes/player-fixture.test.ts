@@ -7,6 +7,7 @@ import {
   insertGame,
   insertMembership,
   insertPlayer,
+  insertResponse,
   resetDatabase,
   testDb,
 } from "../support/factories.js";
@@ -57,11 +58,79 @@ describe("GET /g/:id/f/:fixtureId dispatches by role (M25)", () => {
 
     expect(response.status).toBe(200);
     const html = await response.text();
-    // Only `renderPlayerFixturePage` renders the result panel — the owner
-    // page has none (this task adds no result panel to it).
-    expect(html).toContain("<h2>Result</h2>");
+    // `status-badge` is `renderPlayerFixturePage`'s own marker, present
+    // regardless of lifecycle — unlike the result panel below, which is
+    // gated on `played` and so cannot tell the two pages apart on an `open`
+    // fixture (M25 review fix, I1: an earlier version of this test used
+    // `<h2>Result</h2>` as the marker here, on an `open` fixture where the
+    // panel should not — and, after that fix, does not — render at all).
+    expect(html).toContain('class="status-badge');
     // And the owner-only guest form must not leak to a non-owner.
     expect(html).not.toContain("Add a guest");
+  });
+
+  it("does not render a result panel for an open fixture (M25 review fix, I1)", async () => {
+    const { cookie, viewerId } = await viewerSession();
+    const db = testDb();
+    const otherOwner = await insertPlayer(db);
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, otherOwner, { role: "owner" });
+    await insertMembership(db, gameId, viewerId);
+    const fixtureId = await insertFixture(db, gameId, { lifecycle: "open" });
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } });
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).not.toContain("<h2>Result</h2>");
+  });
+
+  it("does not render a result panel for a cancelled fixture (M25 review fix, I1)", async () => {
+    // Spec §15 excludes a cancelled fixture from results entirely — distinct
+    // from `open`/`scheduled`, which merely have not happened yet.
+    const { cookie, viewerId } = await viewerSession();
+    const db = testDb();
+    const otherOwner = await insertPlayer(db);
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, otherOwner, { role: "owner" });
+    await insertMembership(db, gameId, viewerId);
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "cancelled",
+      cancellationReason: "Pitch waterlogged",
+    });
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } });
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).not.toContain("<h2>Result</h2>");
+  });
+
+  it("shows the awaiting-side sentence for an upcoming fixture with published teams (M25 review fix, I2)", async () => {
+    // Definition of Done #5: a promoted player with no side yet must never
+    // read a Teams heading and both line-ups with nothing about themselves.
+    // Before the fix the tense was hard-coded to `past`, which suppresses
+    // exactly this sentence, on every lifecycle including one that has not
+    // kicked off.
+    const { cookie, viewerId } = await viewerSession();
+    const db = testDb();
+    const otherOwner = await insertPlayer(db);
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, otherOwner, { role: "owner" });
+    await insertMembership(db, gameId, viewerId);
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "open",
+      teamsPublishedAt: kickoffIn(-1),
+    });
+    await insertResponse(db, fixtureId, viewerId, { status: "in", team: null });
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } });
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("hasn't been picked yet");
+    // And the past-tense line must not have leaked in alongside it.
+    expect(html).not.toContain("You were on");
   });
 
   it("404s someone who is not a member", async () => {

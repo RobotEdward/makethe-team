@@ -103,11 +103,11 @@ export interface OutcomeCandidate {
  * Step 2 exists because step 3 alone rewards being quick over being right: a
  * wrong early claim that picks up one friend would beat a correct later one.
  *
- * Step 4 exists because step 3 is not actually total: `putResultClaim`
- * stamps every claim in one request with a single `params.now`, so two
- * players filing in the same request tie on `filedAt` exactly, and
- * `fixture_results` caches whichever winner `deriveResult` picked at lock
- * time. If the comparator could stop at step 3 and fall through to
+ * Step 4 exists because step 3 is not actually total: two different players'
+ * claims can tie on `filedAt` exactly — each `POST …/result` writes one
+ * claim with its own `Date.now()`, so this needs two separate requests, not
+ * one — and `fixture_results` caches whichever winner `deriveResult` picked
+ * at lock time. If the comparator could stop at step 3 and fall through to
  * `Array.prototype.sort`'s handling of equal elements, the answer would
  * depend on the order candidates were built in — Map insertion order, which
  * traces back to database row order, which SQLite does not guarantee

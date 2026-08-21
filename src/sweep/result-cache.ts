@@ -1,5 +1,6 @@
 import { eq, inArray } from "drizzle-orm";
 import { buildAuditInsert } from "../db/audit.js";
+import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import type { Db } from "../db/client.js";
 import { listTeamAssignments } from "../db/queries.js";
 import { listResultClaims, resultElectorate } from "../db/result-queries.js";
@@ -64,16 +65,27 @@ export async function materialiseResults(db: Db, now: Date): Promise<Materialise
     .where(eq(fixtures.lifecycle, "played"));
   if (played.length === 0) return outcome;
 
-  const alreadyCached = await db
-    .select({ fixtureId: fixtureResults.fixtureId })
-    .from(fixtureResults)
-    .where(
-      inArray(
-        fixtureResults.fixtureId,
-        played.map((row) => row.id),
-      ),
-    );
-  const cachedIds = new Set(alreadyCached.map((row) => row.fixtureId));
+  // `played` is unbounded and grows with the platform, so this cannot be one
+  // `inArray` (TR-38): D1 rejects a statement with more than 100 bound
+  // parameters, and this used to bind one per played fixture in the whole
+  // database. Past roughly a hundred played fixtures — a handful of weekly
+  // games within months — the unchunked form threw here, outside the
+  // per-fixture `try` below, and the sweep step never cached another result
+  // again. Chunked at `INSERT_CHUNK_SIZE`, the same as every other multi-row
+  // query in this codebase (`sendResultNudges` in
+  // `src/notify/send-result-nudge.ts` chunks its own equivalent lookup for
+  // the same reason).
+  const cachedIds = new Set<string>();
+  for (const batch of chunk(
+    played.map((row) => row.id),
+    INSERT_CHUNK_SIZE,
+  )) {
+    const alreadyCached = await db
+      .select({ fixtureId: fixtureResults.fixtureId })
+      .from(fixtureResults)
+      .where(inArray(fixtureResults.fixtureId, batch));
+    for (const row of alreadyCached) cachedIds.add(row.fixtureId);
+  }
   const candidates = played.filter((row) => !cachedIds.has(row.id));
 
   outcome.considered = candidates.length;

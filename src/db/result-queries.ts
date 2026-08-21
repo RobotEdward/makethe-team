@@ -1,20 +1,24 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { chunk, INSERT_CHUNK_SIZE } from "./chunk.js";
 import type { Db } from "./client.js";
 import { fixtureResultClaims, memberships, players, responses } from "./schema.js";
 import type { ResultClaim, ResultOutcome } from "../domain/result.js";
 
 /**
- * A claim as stored, with just enough about its author to render it.
+ * A claim as stored.
  *
- * `erasedAt` travels with the row for the reason `SquadMember.erasedAt` does:
- * a played fixture keeps its erased participants, so `name` may be the
- * `[erased player]` placeholder, which must never reach a screen. Every read
- * of it goes through `displayName`.
+ * No author name and no `erasedAt`: nothing in `src/` reads either (the
+ * result panel renders backer *counts*, never names — `src/views/result.ts`),
+ * so an `innerJoin(players)` fetching them ran, for nothing, on every player
+ * and owner fixture page render, both result POSTs, both game pages and every
+ * hourly sweep pass. Dropped in the M25 review fix that also caught the
+ * docstring this interface used to carry, which claimed "every read of it
+ * goes through `displayName`" — a safety property for a hazard that, absent
+ * any read, could not occur. If a later milestone wants to name backers, it
+ * can add the join back deliberately, with a comment that says so.
  */
 export interface StoredClaim extends ResultClaim {
   id: string;
-  name: string;
-  erasedAt: Date | null;
 }
 
 /**
@@ -39,11 +43,8 @@ export async function listResultClaims(db: Db, fixtureId: string): Promise<Store
       scoreA: fixtureResultClaims.scoreA,
       scoreB: fixtureResultClaims.scoreB,
       filedAt: fixtureResultClaims.filedAt,
-      name: players.name,
-      erasedAt: players.erasedAt,
     })
     .from(fixtureResultClaims)
-    .innerJoin(players, eq(fixtureResultClaims.playerId, players.id))
     .where(eq(fixtureResultClaims.fixtureId, fixtureId))
     .orderBy(fixtureResultClaims.id);
 }
@@ -111,20 +112,31 @@ export interface FixtureClaim extends ResultClaim {
  * however many fixtures in one round trip rather than one query per fixture.
  * `listResultClaims` above stays the single-fixture, name-carrying read the
  * write routes and the fixture pages use.
+ *
+ * `fixtureIds` is caller-supplied and, for the dashboard's caller, scales
+ * with how many fixtures one player has ever played — chunked at
+ * `INSERT_CHUNK_SIZE` (TR-38) so a long-standing player cannot hand this an
+ * `inArray` past D1's 100-bound-parameter ceiling and 500 their own
+ * dashboard.
  */
 export async function listClaimsForFixtures(db: Db, fixtureIds: readonly string[]): Promise<FixtureClaim[]> {
   if (fixtureIds.length === 0) return [];
-  return db
-    .select({
-      fixtureId: fixtureResultClaims.fixtureId,
-      playerId: fixtureResultClaims.playerId,
-      outcome: fixtureResultClaims.outcome,
-      scoreA: fixtureResultClaims.scoreA,
-      scoreB: fixtureResultClaims.scoreB,
-      filedAt: fixtureResultClaims.filedAt,
-    })
-    .from(fixtureResultClaims)
-    .where(inArray(fixtureResultClaims.fixtureId, fixtureIds));
+  const claims: FixtureClaim[] = [];
+  for (const batch of chunk(fixtureIds, INSERT_CHUNK_SIZE)) {
+    const rows = await db
+      .select({
+        fixtureId: fixtureResultClaims.fixtureId,
+        playerId: fixtureResultClaims.playerId,
+        outcome: fixtureResultClaims.outcome,
+        scoreA: fixtureResultClaims.scoreA,
+        scoreB: fixtureResultClaims.scoreB,
+        filedAt: fixtureResultClaims.filedAt,
+      })
+      .from(fixtureResultClaims)
+      .where(inArray(fixtureResultClaims.fixtureId, batch));
+    claims.push(...rows);
+  }
+  return claims;
 }
 
 /**
@@ -133,6 +145,12 @@ export async function listClaimsForFixtures(db: Db, fixtureIds: readonly string[
  * time, for the account history's per-row `deriveResult` tie-break (M25 Task
  * 13). A history can span many games in one page load; this is one query
  * for all of them rather than one per row.
+ *
+ * `gameIds` is chunked at `INSERT_CHUNK_SIZE` for the same TR-38 reason as
+ * `listClaimsForFixtures` above: it was previously saved from D1's
+ * 100-bound-parameter ceiling only by `HISTORY_LIMIT` capping how many rows
+ * the account history ever passes in, which made the safety margin an
+ * accident of that caller rather than a property of this function.
  */
 export async function activeOwnersByGame(
   db: Db,
@@ -140,20 +158,22 @@ export async function activeOwnersByGame(
 ): Promise<Map<string, Set<string>>> {
   const result = new Map<string, Set<string>>();
   if (gameIds.length === 0) return result;
-  const rows = await db
-    .select({ gameId: memberships.gameId, playerId: memberships.playerId })
-    .from(memberships)
-    .where(
-      and(
-        inArray(memberships.gameId, gameIds),
-        eq(memberships.role, "owner"),
-        eq(memberships.active, true),
-      ),
-    );
-  for (const row of rows) {
-    const set = result.get(row.gameId) ?? new Set<string>();
-    set.add(row.playerId);
-    result.set(row.gameId, set);
+  for (const batch of chunk(gameIds, INSERT_CHUNK_SIZE)) {
+    const rows = await db
+      .select({ gameId: memberships.gameId, playerId: memberships.playerId })
+      .from(memberships)
+      .where(
+        and(
+          inArray(memberships.gameId, batch),
+          eq(memberships.role, "owner"),
+          eq(memberships.active, true),
+        ),
+      );
+    for (const row of rows) {
+      const set = result.get(row.gameId) ?? new Set<string>();
+      set.add(row.playerId);
+      result.set(row.gameId, set);
+    }
   }
   return result;
 }

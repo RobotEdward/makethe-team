@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import type { Db } from "../../src/db/client.js";
+import { INSERT_CHUNK_SIZE } from "../../src/db/chunk.js";
 import { auditLog, fixtureResults } from "../../src/db/schema.js";
 import { deriveResult } from "../../src/domain/result.js";
 import { listResultClaims, resultElectorate } from "../../src/db/result-queries.js";
@@ -413,6 +414,40 @@ describe("materialiseResults", () => {
     expect(healthyRow?.outcome).toBe("b");
     const healthyAuditRows = await db.select().from(auditLog).where(eq(auditLog.entityId, healthy));
     expect(healthyAuditRows.filter((row) => row.action === "fixture.result_locked")).toHaveLength(1);
+  });
+
+  it("chunks past D1's 100-bound-parameter ceiling instead of throwing (C1, TR-38)", async () => {
+    // More played fixtures than `INSERT_CHUNK_SIZE * 13` — past `chunk.ts`'s
+    // own worked example of the ceiling, and the whole class this regression
+    // guards was invisible to every other test in this file because none of
+    // them crosses 100 played fixtures. Before the fix, the unchunked
+    // `inArray` over every played fixture id threw here, outside the
+    // per-fixture `try`, and the step never cached another result again.
+    const TOTAL = INSERT_CHUNK_SIZE * 13 + 3;
+    const fixtureIds: string[] = [];
+    for (let i = 0; i < TOTAL; i++) {
+      const gameId = await insertGame(db);
+      const playerId = await insertPlayer(db, { email: `p${i}@example.com` });
+      const fixtureId = await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt: KICKOFF });
+      await insertResponse(db, fixtureId, playerId, { status: "in" });
+      await insertResultClaim(db, fixtureId, playerId, { outcome: "a", filedAt: KICKOFF });
+      fixtureIds.push(fixtureId);
+    }
+
+    const outcome = await materialiseResults(db, AFTER_DEADLINE);
+
+    expect(outcome.considered).toBe(TOTAL);
+    expect(outcome.written).toBe(TOTAL);
+    expect(outcome.failures).toHaveLength(0);
+    for (const fixtureId of fixtureIds) {
+      expect(await cachedRow(fixtureId)).toBeDefined();
+    }
+
+    // A second run must still complete without throwing, exercising the
+    // chunked "already cached" lookup at the same scale.
+    const second = await materialiseResults(db, AFTER_DEADLINE);
+    expect(second.considered).toBe(0);
+    expect(second.failures).toHaveLength(0);
   });
 
   it("writes a fixture.result_locked audit row with a null actor", async () => {

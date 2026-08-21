@@ -1315,4 +1315,24 @@ describe("GET /app — results needed", () => {
     expect(body).not.toContain("Results needed");
     expect(body).not.toContain("Left This One");
   });
+
+  it("still answers for a player with more than a hundred played fixtures (C2, TR-38)", async () => {
+    // Two years of one weekly game is this product's entire premise. Before
+    // the fix, `listResultsNeededCandidates` had no `.limit()` and handed
+    // every one of these ids, unchunked, to `listClaimsForFixtures`'s
+    // `inArray` — past D1's 100-bound-parameter ceiling, 500ing the app's own
+    // front door. Each fixture is its own game so they can all share one
+    // kickoff instant without tripping the per-game kickoff-uniqueness index.
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    for (let i = 0; i < 110; i++) {
+      await seedFixtureFor(playerId, { gameName: `Game ${i}`, lifecycle: "played" });
+    }
+
+    const response = await get(cookie);
+
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("Results needed");
+  });
 });

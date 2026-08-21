@@ -157,16 +157,27 @@ gamesRoutes.post(NEW_GAME_PATH, requirePlayer, async (c) => {
  * `derivedResultWords`, the same function `renderLocked` uses inside the
  * panel, so this line and that one can never disagree about what a result
  * was called.
+ *
+ * **Gated on `isResultLocked`, the same predicate the account page's
+ * `resultWordsForLockedRows` uses and says why (M25 review fix).** Without
+ * it, one person's claim filed minutes after full time put a bare, settled-
+ * looking line on both game pages while the claim was still openly
+ * arguable — contradicting `screens.md`'s "absent until a fixture has
+ * locked" and the result panel right below it, which shows the same claims
+ * *with* their backer counts precisely so a contested tally does not read as
+ * fact.
  */
 async function lastResultFor(
   db: Db,
   game: { id: string; teamAName: string; teamBName: string },
+  now: Date,
 ): Promise<{ fixtureId: string; words: string } | null> {
   const last = await findLastPlayedFixture(db, game.id);
   if (last === null) return null;
 
   const claims = await listResultClaims(db, last.id);
   if (claims.length === 0) return null;
+  if (!isResultLocked(last.kicksOffAt, claims.length, now)) return null;
 
   const { organiserIds } = await resultElectorate(db, game.id, last.id);
   const derived = deriveResult(claims, organiserIds);
@@ -202,7 +213,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
   const [squad, upcoming, lastResult] = await Promise.all([
     listSquad(db, game.id),
     listUpcomingFixtures(db, game.id, now),
-    lastResultFor(db, game),
+    lastResultFor(db, game, now),
   ]);
 
   return c.html(
@@ -272,7 +283,7 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
   const [openFixtureIds, upcoming, lastResult] = await Promise.all([
     listOpenFixtureIds(db, game.id),
     listUpcomingFixtures(db, game.id, now),
-    lastResultFor(db, game),
+    lastResultFor(db, game, now),
   ]);
 
   let openFixture: NonNullable<Parameters<typeof renderPlayerGamePage>[0]["openFixture"]> | null = null;
@@ -835,11 +846,35 @@ export async function renderPlayerFixture(
   const withSquad = await getFixtureWithSquad(db, fixtureId);
   if (withSquad === null) return c.text("Not found", 404);
 
-  const [claims, electorate] = await Promise.all([
-    listResultClaims(db, fixtureId),
-    resultElectorate(db, game.id, fixtureId),
-  ]);
-  const deadline = resultDeadline(fixture.kicksOffAt);
+  // Only a `played` fixture has anything to have a result about — the same
+  // gate `ownerResultParams` uses on the organiser's page, and spec §15
+  // excludes `open`, `scheduled` and `cancelled` fixtures from results
+  // entirely (M25 review fix, I1). Before this fix the panel was built
+  // unconditionally and an upcoming or cancelled fixture rendered "No result
+  // recorded yet" about a game that had not happened, or never would.
+  const result =
+    fixture.lifecycle === "played"
+      ? await (async () => {
+          const [claims, electorate] = await Promise.all([
+            listResultClaims(db, fixtureId),
+            resultElectorate(db, game.id, fixtureId),
+          ]);
+          const deadline = resultDeadline(fixture.kicksOffAt);
+          return {
+            names: outcomeNames(game),
+            candidates: tally(claims),
+            derived: deriveResult(claims, electorate.organiserIds),
+            locked: isResultLocked(fixture.kicksOffAt, claims.length, now),
+            writable: resultWritable(fixture.lifecycle, fixture.kicksOffAt, claims.length, now),
+            eligible: electorate.eligibleIds.has(viewerPlayerId),
+            rostered: fixture.teamsPublishedAt !== null,
+            yourPlayerId: viewerPlayerId,
+            deadlineLocal: formatLocalDateTime(deadline, game.timezone),
+            actionPath: resultPath(game.id, fixtureId),
+            clearPath: resultClearPath(game.id, fixtureId),
+          };
+        })()
+      : undefined;
 
   return c.html(
     renderPlayerFixturePage({
@@ -858,19 +893,7 @@ export async function renderPlayerFixture(
       inCount: fixture.inCount,
       viewerPlayerId,
       problem: extras.problem,
-      result: {
-        names: outcomeNames(game),
-        candidates: tally(claims),
-        derived: deriveResult(claims, electorate.organiserIds),
-        locked: isResultLocked(fixture.kicksOffAt, claims.length, now),
-        writable: resultWritable(fixture.lifecycle, fixture.kicksOffAt, claims.length, now),
-        eligible: electorate.eligibleIds.has(viewerPlayerId),
-        rostered: fixture.teamsPublishedAt !== null,
-        yourPlayerId: viewerPlayerId,
-        deadlineLocal: formatLocalDateTime(deadline, game.timezone),
-        actionPath: resultPath(game.id, fixtureId),
-        clearPath: resultClearPath(game.id, fixtureId),
-      },
+      result,
       fixturePath: fixturePath(game.id, fixtureId),
     }),
     status,
@@ -1403,7 +1426,7 @@ async function renderSquadRefusal(
   const [squad, upcoming, lastResult] = await Promise.all([
     listSquad(db, game.id),
     listUpcomingFixtures(db, game.id, now),
-    lastResultFor(db, game),
+    lastResultFor(db, game, now),
   ]);
   return c.html(
     renderGameOverviewPage({

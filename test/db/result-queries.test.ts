@@ -141,18 +141,3 @@ describe("deleteResultClaim", () => {
     expect(await listResultClaims(db, fixtureId)).toHaveLength(1);
   });
 });
-
-describe("listResultClaims", () => {
-  beforeEach(resetDatabase);
-
-  it("carries the erasure marker so a renderer never prints the placeholder", async () => {
-    const db = testDb();
-    const erasedAt = new Date("2026-08-01T00:00:00Z");
-    const playerId = await insertPlayer(db, { name: "[erased player]", erasedAt });
-    const gameId = await insertGame(db);
-    const fixtureId = await insertFixture(db, gameId, { lifecycle: "played" });
-    await insertResultClaim(db, fixtureId, playerId, { outcome: "a" });
-
-    expect((await listResultClaims(db, fixtureId))[0]?.erasedAt?.getTime()).toBe(erasedAt.getTime());
-  });
-});

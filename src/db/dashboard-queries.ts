@@ -235,14 +235,26 @@ export async function findActionableFixture(
  * A fixture the viewer has already filed a claim on, or whose window has
  * locked, is not a "need" — `src/routes/dashboard.ts` filters both out after
  * this returns, from a batched claims read rather than one query per row.
+ *
+ * Bounded at `RESULTS_NEEDED_CANDIDATE_LIMIT` (TR-38): without a `.limit()`
+ * a player with more than roughly a hundred played fixtures across their
+ * games — two years of one weekly game, this product's entire premise —
+ * handed `listClaimsForFixtures` an id list past D1's 100-bound-parameter
+ * ceiling and 500'd their own dashboard, the app's front door. Ordered `desc`
+ * on `kicksOffAt` before the cut, so it is the *most recent* played fixtures
+ * that compete for a "needs a result" line — a fixture from years ago is not
+ * a more urgent to-do than one from last week, so trimming the old end loses
+ * nothing this list is for.
  */
+export const RESULTS_NEEDED_CANDIDATE_LIMIT = 50;
+
 export async function listResultsNeededCandidates(
   db: Db,
   playerId: string,
 ): Promise<DashboardFixture[]> {
-  const rows = await selectEntitledFixtures(db, playerId, eq(fixtures.lifecycle, "played")).orderBy(
-    desc(fixtures.kicksOffAt),
-  );
+  const rows = await selectEntitledFixtures(db, playerId, eq(fixtures.lifecycle, "played"))
+    .orderBy(desc(fixtures.kicksOffAt))
+    .limit(RESULTS_NEEDED_CANDIDATE_LIMIT);
   return rows.map(toDashboardFixture);
 }
 

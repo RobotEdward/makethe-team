@@ -101,7 +101,24 @@ Both levels use the same comparison, applied in order:
 
 1. most backers;
 2. then a claim backed by an **active organiser** of the game;
-3. then the earliest `min(filed_at)` among its current backers.
+3. then the earliest `min(filed_at)` among its current backers;
+4. then the lowest backer id, lexicographically.
+
+**Step 4 is not in the original design and was added during implementation
+(Task 3) because step 3 does not make the comparison total.** Two different
+players' claims can tie on `filed_at` to the millisecond — each `POST
+…/result` writes one claim stamped with its own `Date.now()`, so this needs
+two separate requests landing in the same millisecond, not two players filing
+in one request. Without a fourth step the comparator would fall through to
+`Array.prototype.sort`'s handling of equal elements, whose answer depends on
+the order candidates were built in — Map insertion order, tracing back to
+database row order, which SQLite makes no promise about absent an `ORDER BY`.
+`fixture_results` exists precisely so a later recomputation can never disagree
+with what was cached at lock time (§5); a comparator that is not total would
+make that guarantee false on exactly the claims most likely to produce a tie.
+Backer ids are UUIDs and every candidate's backer set is disjoint from every
+other's, so the lowest one is stable across evaluations and never a tie
+between two genuinely different candidates.
 
 **Why two levels rather than one tally over exact claims.** Consider five
 voters: three say Bibs 3–2, two say Bibs won without a score. The squad is
@@ -161,7 +178,7 @@ and the confidence signals as they stood when it froze:
 | `outcome_backers`, `margin_backers` | numerators of the two confidence figures |
 | `voter_count` | claims filed |
 | `eligible_count` | size of the electorate at lock — the turnout denominator |
-| `distinct_outcomes`, `distinct_scores` | how contested it was |
+| `distinct_outcomes`, `distinct_scores` | how contested it was — `distinct_outcomes` is the number of outcome candidates the tally produced; `distinct_scores` is the number of distinct scores summed **across every outcome candidate**, not only the winning one, so a fixture where "Bibs won 3–2" and "Skins won 2–1" both drew backers counts both margins toward this figure |
 | `rostered` | whether the fixture had published teams to join against |
 | `teams_accurate` | `announcementOutstanding` inverted — see §12 |
 | `locked_at` | `max(deadline, earliest claim)` |
@@ -246,14 +263,23 @@ All three POSTs take the existing `wrongOrigin(c)` → 403 origin check.
 | not an active member of the game | 404 |
 | member, but neither `in` nor an active owner | 404 |
 | fixture not `played` | 404 |
-| `locked` (§4) | 422, page re-rendered with the reason |
-| score half-given, negative, non-integer, or above the cap | 422, page re-rendered with the reason |
+| `locked` (§4) | 422, the **role-correct** page re-rendered with the reason |
+| score half-given, negative, non-integer, or above the cap | 422, the **role-correct** page re-rendered with the reason |
 
 The lock refusal is a 422 rather than a 404 because it is not an entitlement
 question: the person is entitled and the window shut. The 422s re-render the
 page with a `problem`, the shape `renderDashboard(c, problem)` and the teams
 publish refusal already use — the fix is on that page, so that is where the
 answer goes.
+
+**The re-render is role-correct, not merely "the page" (review fix during
+implementation).** `/g/:id/f/:fixtureId` dispatches to two different pages
+depending on whether the viewer owns the game (§7's `GET`), and a POST refusal
+has to answer with whichever one the viewer is entitled to, not always the
+player-shaped page — an owner tripping a refusal on their own fixture's URL
+must see the organiser's page re-rendered, exactly as a plain `GET` from them
+would. `src/routes/results.ts` re-checks the viewer's role at refusal time and
+calls `renderOwnerFixture` or `renderPlayerFixture` accordingly.
 
 Scores are integers `0`–`99`. The cap is arbitrary and exists so that a pasted
 number cannot produce a row nothing can render sensibly.

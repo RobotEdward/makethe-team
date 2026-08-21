@@ -11,17 +11,21 @@ import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn, NOW } from "../support/clock.js";
 
 /**
- * The freshness bar's scope, enumerated (M24).
+ * The freshness bar's scope, enumerated (M24, M25).
  *
- * Five pages carry it, and the reason is the same for all five: each one
- * shows facts that move while it is on screen — who has answered, how many
- * places are left, whether the teams are up. An installed app resumed after
- * twenty minutes re-shows the document the browser already had, so without
- * this bar the only way to see today's answers is to navigate away and back.
+ * Six pages carry it, and the reason is the same for all six: each one shows
+ * facts that move while it is on screen — who has answered, how many places
+ * are left, whether the teams are up, whether a result has been filed. An
+ * installed app resumed after twenty minutes re-shows the document the
+ * browser already had, so without this bar the only way to see today's
+ * answers is to navigate away and back. `/g/:id/f/:fixtureId` joined the set
+ * twice over in M25: once for the organiser's page (already covered below)
+ * and again for the player's own fixture page, which shows the same moving
+ * result tally a member is watching for.
  *
  * Written as one file rather than an assertion added to each page's own suite
- * so that "which pages carry it" is answered in one place. A sixth page
- * joining the set belongs here, next to the five, with its own path.
+ * so that "which pages carry it" is answered in one place. A seventh page
+ * joining the set belongs here, next to the six, with its own path.
  */
 const SECRET = env.RESPONSE_TOKEN_SECRET;
 
@@ -91,6 +95,17 @@ describe("the freshness bar", () => {
     expectFreshness(await html(path, cookie), path);
   });
 
+  it("is on a member's fixture page, refreshing at that fixture", async () => {
+    // The sixth page (M25 review fix, I4): the player fixture page dispatches
+    // to `renderPlayerFixturePage` rather than `renderOwnerFixturePage` for a
+    // non-owner, at the same path the test above exercises for an owner — see
+    // `src/routes/games.ts`'s own comment on `/g/:id/f/:fixtureId` for why one
+    // path renders either page depending on role.
+    const { cookie, gameId, fixtureId } = await seed("player");
+    const path = fixturePath(gameId, fixtureId);
+    expectFreshness(await html(path, cookie), path);
+  });
+
   it("is on the response page, refreshing at the same token", async () => {
     // Not the path the *organiser* would use: this page is reached by a
     // signed token rather than a session, so its own URL — the only one that
@@ -108,7 +123,7 @@ describe("the freshness bar", () => {
   it("is not on a page whose facts do not move", async () => {
     // The guard on the scope: the account page is a settings screen, and a
     // "Updated 3 minutes ago" under a list of your own devices says nothing.
-    // A bar that spread to every page would stop meaning anything on the five
+    // A bar that spread to every page would stop meaning anything on the six
     // that need it.
     const { cookie } = await seed("player");
     const body = await html("/app/account", cookie);

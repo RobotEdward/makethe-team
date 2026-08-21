@@ -35,8 +35,11 @@ export interface PlayerFixtureParams {
   lifecycle: Lifecycle;
   /**
    * From `publishedTeamsFor` — `null` until the organiser publishes. Rendered
-   * in the `past` tense: a played fixture is what this page is for, and
-   * "hasn't been picked yet" is never a true sentence about one.
+   * in the `past` tense only once the fixture has been played (see `lifecycle`
+   * above and `renderPublishedTeamsSection`'s own comment) — before that,
+   * "hasn't been picked yet" is exactly the sentence Definition of Done #5
+   * requires for a promoted player with no side yet, and `past` tense is the
+   * one tense that suppresses it (M25 review fix, I2).
    */
   teams: PublishedTeams | null;
   squad: readonly SquadMember[] | null;
@@ -44,7 +47,16 @@ export interface PlayerFixtureParams {
   viewerPlayerId: string;
   /** Set only by a refusal re-render (Task 9's write routes); a plain `GET` never sets it. */
   problem?: string;
-  result: ResultPanelParams;
+  /**
+   * `undefined` for anything but a `played` fixture (M25 review fix, I1) —
+   * matching `OwnerFixtureParams.result`, whose own comment gives the reason:
+   * an open, scheduled or cancelled fixture has nothing to have a result
+   * about, and spec §15 excludes a cancelled one from results entirely. Before
+   * this fix the panel rendered unconditionally and told a player looking at
+   * next week's fixture "No result recorded yet" about a game that had not
+   * happened.
+   */
+  result?: ResultPanelParams;
   /**
    * This page's own path, for the freshness bar's refresh link (M24). Task 8
    * supplies it once the route exists — this view has no opinion on its
@@ -79,12 +91,12 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="status-badge status-${escapeHtml(lifecycle)}">${escapeHtml(fixtureStatusWords(lifecycle))}</p>
 
-    ${renderPublishedTeamsSection(teams, squad, "past")}
+    ${renderPublishedTeamsSection(teams, squad, lifecycle === "played" ? "past" : "future")}
 
     <h2>Squad</h2>
     ${renderSquadSection(squad, inCount, viewerPlayerId)}
 
-    ${renderResultPanel(result)}
+    ${result === undefined ? "" : renderResultPanel(result)}
 
     ${renderFreshness(fixturePath)}
   `;

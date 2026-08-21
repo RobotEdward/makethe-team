@@ -344,4 +344,37 @@ describe("GET /g/:id — last result", () => {
       expect(html).not.toContain(`class="result-final"`);
     },
   );
+
+  it.each(["owner", "player"] as const)(
+    "shows nothing for a claim still inside its 48-hour window (%s) (M25 review fix, I3)",
+    async (viewerRole) => {
+      // `screens.md`'s own words: "Absent until a fixture has locked." Before
+      // this fix `lastResultFor` never called `isResultLocked`, so a single
+      // claim filed minutes after full time put a bare, settled-looking line
+      // on this page while the claim was still openly arguable for another
+      // 46-odd hours.
+      const db = testDb();
+      const { cookie, viewerId } = await ownerSession();
+      const gameId = await insertGame(db, { maxPlayers: 14 });
+      if (viewerRole === "owner") {
+        await insertMembership(db, gameId, viewerId, { role: "owner" });
+      } else {
+        const otherOwnerId = await insertPlayer(db);
+        await insertMembership(db, gameId, otherOwnerId, { role: "owner" });
+        await insertMembership(db, gameId, viewerId);
+      }
+      // Kicked off one hour ago — played, but nowhere near the 48-hour
+      // deadline `resultLockedAt` would need to have passed.
+      const fixtureId = await insertFixture(db, gameId, {
+        lifecycle: "played",
+        kicksOffAt: kickoffIn(-1),
+      });
+      await insertResponse(db, fixtureId, viewerId, { status: "in" });
+      await insertResultClaim(db, fixtureId, viewerId, { outcome: "a" });
+
+      const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
+
+      expect(html).not.toContain(`class="result-final"`);
+    },
+  );
 });
