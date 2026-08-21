@@ -1,6 +1,14 @@
 import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
-import { fixtures, games, memberships, players, pushSubscriptions, responses } from "../../src/db/schema.js";
+import {
+  fixtureResultClaims,
+  fixtures,
+  games,
+  memberships,
+  players,
+  pushSubscriptions,
+  responses,
+} from "../../src/db/schema.js";
 import type { EmailMessage, Message } from "../../src/notify/notifier.js";
 import { base64UrlEncode } from "../../src/notify/web-push.js";
 import { kickoffIn, NOW } from "./clock.js";
@@ -51,6 +59,8 @@ const RESET_TABLES = [
   "notification_log",
   "email_quota",
   "push_subscriptions",
+  "fixture_results",
+  "fixture_result_claims",
   "responses",
   "memberships",
   "fixtures",
@@ -267,5 +277,26 @@ export async function insertResponse(
 ): Promise<string> {
   const id = crypto.randomUUID();
   await db.insert(responses).values({ id, fixtureId, playerId, source: "system", ...overrides });
+  return id;
+}
+
+export async function insertResultClaim(
+  db: Db,
+  fixtureId: string,
+  playerId: string,
+  overrides: Partial<typeof fixtureResultClaims.$inferInsert> = {},
+): Promise<string> {
+  const id = crypto.randomUUID();
+  // `filedAt` is pinned rather than left to the caller's wall clock: the last
+  // tie-break in `deriveResult` compares these instants, and a suite whose
+  // claims all land in the same millisecond cannot test it.
+  await db.insert(fixtureResultClaims).values({
+    id,
+    fixtureId,
+    playerId,
+    outcome: "a",
+    filedAt: NOW,
+    ...overrides,
+  });
   return id;
 }

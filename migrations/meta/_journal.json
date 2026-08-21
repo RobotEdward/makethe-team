@@ -120,6 +120,13 @@
       "when": 1787139018248,
       "tag": "0016_military_maximus",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1787329579950,
+      "tag": "0017_tan_zarda",
+      "breakpoints": true
     }
   ]
 }

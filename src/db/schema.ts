@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "../domain/audit.js";
 import { INITIAL_LIFECYCLE, LIFECYCLES } from "../domain/lifecycle.js";
+import { RESULT_OUTCOMES } from "../domain/result.js";
 import { NOTIFICATION_STATUSES, NOTIFICATION_TYPES } from "../notify/dedupe-key.js";
 import {
   INITIAL_RESPONSE_STATUS,
@@ -252,6 +253,106 @@ export const responses = sqliteTable(
     index("responses_player_idx").on(t.playerId),
   ],
 );
+
+/**
+ * One player's claim about what happened in a played fixture (BR-37, M25).
+ *
+ * **One row per (fixture, player), and that is the whole voting model.** There
+ * is no separate table of candidate results and no table of votes: a candidate
+ * *is* a `GROUP BY` over these rows, so a candidate with nobody behind it
+ * cannot exist and there is no id for a vote to dangle from. Agreeing with
+ * somebody copies their values into your own row; changing your mind updates
+ * it in place.
+ *
+ * The unique index is what makes "one player, one endorsement" a property of
+ * the database rather than a rule every write path has to remember — the same
+ * move `responses_fixture_player_unique` makes one table up.
+ *
+ * **The flip history lives in `audit_log`**, which already carries
+ * `before_json`/`after_json`. A `superseded_at` column here would put a filter
+ * on every read that somebody eventually forgets.
+ */
+export const fixtureResultClaims = sqliteTable(
+  "fixture_result_claims",
+  {
+    id: text("id").primaryKey(),
+    fixtureId: text("fixture_id").notNull().references(() => fixtures.id),
+    playerId: text("player_id").notNull().references(() => players.id),
+    /**
+     * Present on every claim, including a scored one, so the outcome tally is
+     * a single `GROUP BY` rather than a `CASE` over two nullable integers.
+     *
+     * A stored value indexing a lookup, in a bare `text NOT NULL` with no
+     * CHECK constraint — the same shape as `fixtures.lifecycle` and
+     * `responses.team`, both of which have 500'd a page by arriving as a value
+     * the TypeScript type said was impossible. Enumerated in
+     * `test/stored-lookups.test.ts`.
+     *
+     * **Derived from the score whenever one is given** (`parseClaim` in
+     * `src/domain/result.ts`), never taken from the form. A row saying
+     * "3-2, draw" would count toward an outcome its own score contradicts,
+     * and nothing in SQLite would catch it.
+     */
+    outcome: text("outcome", { enum: RESULT_OUTCOMES }).notNull(),
+    /** Both null (outcome-only) or both set. Enforced by `parseClaim`. */
+    scoreA: integer("score_a"),
+    scoreB: integer("score_b"),
+    /**
+     * When this player took *this* position — moved forward when they change
+     * it, not left at row birth.
+     *
+     * It exists to answer one question, the last tie-break in
+     * `deriveResult`: how long has this candidate been standing? A player who
+     * switched from 3-2 to 4-2 this morning has not been backing 4-2 since
+     * Thursday, and `created_at` would say they had.
+     */
+    filedAt: integer("filed_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [uniqueIndex("fixture_result_claims_fixture_player_unique").on(t.fixtureId, t.playerId)],
+);
+
+/**
+ * The derived result of a fixture, materialised once at the instant it froze
+ * (BR-37, M25).
+ *
+ * **This is a cache, and the design depends on that staying true.** Every page
+ * and every refusal reads `deriveResult` over the claims; nothing reads this
+ * table to decide anything. A sweep run that fails, or a deploy that never
+ * runs one, costs a row the next run writes — not a fixture stuck in a wrong
+ * state with nothing to notice it.
+ *
+ * It exists for exactly one reason: a purely derived result is a function
+ * evaluated at read time, so changing the tie-break rule — or fixing a bug in
+ * it — would silently rewrite last season's results underneath anything fitted
+ * on them, with no row edited and no test failing.
+ * `test/sweep/result-cache.test.ts` asserts a stored row still equals the
+ * derivation, which is what makes "only a cache" true rather than aspirational.
+ */
+export const fixtureResults = sqliteTable("fixture_results", {
+  fixtureId: text("fixture_id").primaryKey().references(() => fixtures.id),
+  outcome: text("outcome", { enum: RESULT_OUTCOMES }).notNull(),
+  /** Null means "outcome agreed, score not" — a legitimate, recordable state. */
+  scoreA: integer("score_a"),
+  scoreB: integer("score_b"),
+  outcomeBackers: integer("outcome_backers").notNull(),
+  marginBackers: integer("margin_backers").notNull(),
+  voterCount: integer("voter_count").notNull(),
+  /** The turnout denominator: the electorate's size at lock. */
+  eligibleCount: integer("eligible_count").notNull(),
+  distinctOutcomes: integer("distinct_outcomes").notNull(),
+  distinctScores: integer("distinct_scores").notNull(),
+  /** Whether the fixture had published teams for a roster join to reach. */
+  rostered: integer("rostered", { mode: "boolean" }).notNull(),
+  /**
+   * `announcementOutstanding` inverted, evaluated at lock. Spec §12: this is
+   * derivable forever from frozen rows, and is cached here only so that a
+   * future change to that predicate cannot rewrite history.
+   */
+  teamsAccurate: integer("teams_accurate", { mode: "boolean" }).notNull(),
+  lockedAt: integer("locked_at", { mode: "timestamp_ms" }).notNull(),
+  materialisedAt: integer("materialised_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+});
 
 export const notificationLog = sqliteTable(
   "notification_log",
