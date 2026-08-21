@@ -146,11 +146,12 @@ function renderActions(row: DashboardRow): string {
  * *open* fixture (`listDashboardFixtures` joins through `responses`, and
  * BR-1/BR-2 mint a response row only once a fixture opens), and that is
  * exactly the fixture a member's own `/g/:id` already shows inline, alongside
- * "Your squads" and what's coming up next — content the dedicated fixture
- * page does not carry, so sending a member there instead would show them
- * strictly less. An owner's `/g/:id` has no such inline view — it lists
- * fixtures rather than rendering one — so the organiser still needs the
- * direct link the heading's own game-page link cannot give them.
+ * what's coming up next — a list the dedicated fixture page does not carry.
+ * Sending a member there instead would trade that list for a page whose main
+ * addition, the result panel, has nothing to show until the fixture has been
+ * played. An owner's `/g/:id` has no such inline view — it lists fixtures
+ * rather than rendering one — so the organiser still needs the direct link
+ * the heading's own game-page link cannot give them.
  */
 function fixtureHref(row: DashboardRow): string {
   return row.owner ? fixturePath(row.gameId, row.fixtureId) : gamePath(row.gameId);

@@ -203,8 +203,9 @@ export function memberDetailPath(gameId: string, playerId: string): string {
  * **Not owner-only since M25.** The route dispatches by role, as `/g/:id`
  * does: an active owner gets the management page, an active squad member gets
  * their own read-mostly view, and anyone else gets a 404. It was
- * `ownerFixturePath` until then, which is why older comments and emails talk
- * about the owner's fixture page.
+ * `ownerFixturePath` until then, which is why some surviving code comments —
+ * `src/sweep/attention.ts`'s, for one — still call this the owner's fixture
+ * page.
  *
  * `/f/` rather than `/fixtures/` to keep a link that lands in a group chat
  * short; nested under the game because the entitlement check is the game's,

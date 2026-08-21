@@ -65,12 +65,18 @@ describe("GET /g/:id/f/:fixtureId dispatches by role (M25)", () => {
   });
 
   it("404s someone who is not a member", async () => {
-    const { cookie } = await viewerSession();
+    const { cookie, viewerId } = await viewerSession();
     const db = testDb();
     const otherOwner = await insertPlayer(db);
     const gameId = await insertGame(db);
     await insertMembership(db, gameId, otherOwner, { role: "owner" });
     const fixtureId = await insertFixture(db, gameId, { lifecycle: "open" });
+    // The viewer is a real, active member of a *different* game — as
+    // distinct from the next test, where they hold no membership anywhere —
+    // so this exercises `findGameForMember`'s own-game scoping rather than a
+    // viewer the system has never seen in a squad.
+    const otherGameId = await insertGame(db);
+    await insertMembership(db, otherGameId, viewerId);
 
     const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } });
 

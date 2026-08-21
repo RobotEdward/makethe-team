@@ -489,8 +489,8 @@ describe("GET /app", () => {
    * A member has been entitled to `/g/:id/f/:fid` too since M25 — this is no
    * longer an entitlement question. `fixtureHref` still sends them to the
    * game page instead, because a dashboard row is always the game's current
-   * open fixture, which their `/g/:id` already shows inline alongside "Your
-   * squads" and what's coming up — see that function's own comment
+   * open fixture, which their `/g/:id` already shows inline alongside
+   * what's coming up — see that function's own comment
    * (`src/views/dashboard.ts`) for the reasoning. This test guards the
    * routing choice, not an inability to reach the fixture page.
    */
