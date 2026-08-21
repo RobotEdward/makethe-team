@@ -486,10 +486,13 @@ describe("GET /app", () => {
   });
 
   /**
-   * A member who does not own the game is not entitled to `/g/:id/f/:fid` —
-   * it 404s them (TR-18) — and their game page *is* the open fixture, so the
-   * date links there instead. Never an owner link on a member's card: a link
-   * that lands on "Not found" is worse than plain text.
+   * A member has been entitled to `/g/:id/f/:fid` too since M25 — this is no
+   * longer an entitlement question. `fixtureHref` still sends them to the
+   * game page instead, because a dashboard row is always the game's current
+   * open fixture, which their `/g/:id` already shows inline alongside "Your
+   * squads" and what's coming up — see that function's own comment
+   * (`src/views/dashboard.ts`) for the reasoning. This test guards the
+   * routing choice, not an inability to reach the fixture page.
    */
   it("links a member's fixture date to the game page, never the owner fixture page", async () => {
     const { cookie } = await signIn();

@@ -137,14 +137,20 @@ function renderActions(row: DashboardRow): string {
  * page; this is the fix for it.
  */
 /**
- * Where the card's date links: straight to the fixture.
+ * Where the card's date links: straight to the fixture for an owner, to the
+ * game page for a member.
  *
- * The heading already links to the game, but for an organiser that page is a
- * list of fixtures, so reaching this one was "click the game, then find the
- * date" — the two-hop route this link removes. A member is not entitled to
- * `/g/:id/f/:fid` (it 404s them, TR-18), and their game page *is* the open
- * fixture, so the date links there: one link per card that always lands on
- * this fixture, and never one that lands on "Not found".
+ * **Not an entitlement fork any more.** A member has been entitled to
+ * `/g/:id/f/:fid` since M25 — this used to 404 them, and does not any more.
+ * The fork survives because a dashboard row is always the game's current
+ * *open* fixture (`listDashboardFixtures` joins through `responses`, and
+ * BR-1/BR-2 mint a response row only once a fixture opens), and that is
+ * exactly the fixture a member's own `/g/:id` already shows inline, alongside
+ * "Your squads" and what's coming up next — content the dedicated fixture
+ * page does not carry, so sending a member there instead would show them
+ * strictly less. An owner's `/g/:id` has no such inline view — it lists
+ * fixtures rather than rendering one — so the organiser still needs the
+ * direct link the heading's own game-page link cannot give them.
  */
 function fixtureHref(row: DashboardRow): string {
   return row.owner ? fixturePath(row.gameId, row.fixtureId) : gamePath(row.gameId);

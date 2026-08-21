@@ -45,9 +45,12 @@ export interface DashboardFixture {
   myStatus: ResponseStatus;
   /**
    * Whether the viewer owns this game — `memberships.role` on the same
-   * membership row the entitlement predicate already joins. The page needs it
-   * to decide where the card's date can link: an owner is entitled to the
-   * owner fixture page, a member is not (TR-18).
+   * membership row the entitlement predicate already joins. `fixtureHref`
+   * (`src/views/dashboard.ts`) reads it to pick where the card's date links:
+   * straight to the fixture for an owner, to the game page for a member — see
+   * that function's own comment for why the fork is no longer about
+   * entitlement (both roles have been entitled to the fixture page since
+   * M25) but about which page already shows the fixture inline.
    */
   owner: boolean;
 }
