@@ -140,6 +140,11 @@ describe("renderResultPanel", () => {
     // change to --danger reaches this control too.
     expect(declarations).toContain("font-weight: 600");
     expect(declarations).toContain("color: var(--danger)");
+    // On the four-step scale (test/views/layout.test.ts), not a bare rem: a
+    // quiet secondary control alongside .result-note and .result-confidence,
+    // which are --t-support in this same block, and matching the segment
+    // toggle's own reset idiom (styles.ts, ul.squad's .segment .seg).
+    expect(declarations).toContain("font-size: var(--t-support)");
     // The hazard that caused the last round's regression: a `font` (or any
     // other) shorthand here would silently reset `font-weight` back to
     // whatever the shorthand implies, the same way it reset `.danger-link`'s

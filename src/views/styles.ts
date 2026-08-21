@@ -957,7 +957,7 @@ export const RESULT_CSS = `
   .result-backers { font-size: var(--t-support); color: var(--mut); }
   .result-yours { font-size: var(--t-support); color: var(--mut); }
   .result-candidate form { margin: 0 0 0 auto; }
-  .result-final { font-size: 1.25rem; font-weight: 600; margin: 0.4rem 0 0.2rem; }
+  .result-final { font-size: var(--t-lead); font-weight: 600; margin: 0.4rem 0 0.2rem; }
   .result-confidence { font-size: var(--t-support); color: var(--mut); margin: 0; }
   .result-note { font-size: var(--t-support); color: var(--mut); }
   .result-score { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem; }
@@ -973,7 +973,7 @@ export const RESULT_CSS = `
   .result-withdraw {
     appearance: none; -webkit-appearance: none;
     background: none; border: none; padding: 0;
-    font-family: inherit; font-size: inherit; font-weight: 600;
+    font-family: inherit; font-size: var(--t-support); font-weight: 600;
     color: var(--danger); cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
 `;
