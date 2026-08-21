@@ -1,7 +1,7 @@
 import {
   fixtureMessagePath,
   gamePath,
-  ownerFixturePath,
+  fixturePath,
   ownerGuestPath,
   ownerGuestRemovePath,
   ownerResponsePath,
@@ -203,7 +203,7 @@ function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixturePa
              ${confirm.playerId === null ? `<input type="hidden" name="name" value="${escapeHtml(confirm.name)}">` : ""}
              <button class="button primary" type="submit">Add them anyway</button>
            </form>
-           <p><a href="${escapeHtml(ownerFixturePath(gameId, fixtureId))}">No, leave it</a></p>
+           <p><a href="${escapeHtml(fixturePath(gameId, fixtureId))}">No, leave it</a></p>
          </div>`;
 }
 
@@ -382,7 +382,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
 
-    ${renderFreshness(ownerFixturePath(gameId, fixtureId))}
+    ${renderFreshness(fixturePath(gameId, fixtureId))}
   `;
 
   return layout({

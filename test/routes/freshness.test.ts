@@ -1,7 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DASHBOARD_PATH, gamePath, ownerFixturePath } from "../../src/auth/paths.js";
+import { DASHBOARD_PATH, gamePath, fixturePath } from "../../src/auth/paths.js";
 import { fixtures, players } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
@@ -87,7 +87,7 @@ describe("the freshness bar", () => {
 
   it("is on the organiser's fixture page, refreshing at that fixture", async () => {
     const { cookie, gameId, fixtureId } = await seed("owner");
-    const path = ownerFixturePath(gameId, fixtureId);
+    const path = fixturePath(gameId, fixtureId);
     expectFreshness(await html(path, cookie), path);
   });
 

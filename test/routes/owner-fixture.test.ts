@@ -304,7 +304,7 @@ describe("GET /g/:id/f/:fixtureId", () => {
     expect(html).toContain("Player 0");
   });
 
-  it("404s for a player who is not an owner", async () => {
+  it("gives a non-owner member the player page, not this owner page", async () => {
     const { cookie, viewerId } = await ownerSession();
     const db = testDb();
     const strangerOwner = await insertPlayer(db);
@@ -314,7 +314,13 @@ describe("GET /g/:id/f/:fixtureId", () => {
 
     const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } });
 
-    expect(response.status).toBe(404);
+    // Since M25 this no longer 404s — it dispatches to the player page
+    // instead (full coverage in test/routes/player-fixture.test.ts). This
+    // asserts only that a non-owner member does not get *this* page: no
+    // guest-management control, which only `renderOwnerFixturePage` emits.
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).not.toContain("Add a guest");
   });
 
   it("404s for a fixture belonging to a different game", async () => {

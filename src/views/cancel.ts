@@ -1,4 +1,4 @@
-import { ownerFixturePath } from "../auth/paths.js";
+import { fixturePath } from "../auth/paths.js";
 import { cancelledMessage } from "../domain/whatsapp-message.js";
 import { escapeHtml, layout } from "./layout.js";
 import { COPY_BUTTON_JS } from "./scripts.js";
@@ -63,7 +63,7 @@ export interface CancelConfirmPageOptions extends CancelPreview {
    * dropped by 23e271d for want of a real destination — the route has both,
    * see `src/routes/cancel.ts`).
    *
-   * Links to `ownerFixturePath(gameId, fixtureId)`, which sits behind
+   * Links to `fixturePath(gameId, fixtureId)`, which sits behind
    * `requirePlayer` and entitlement — this page itself is reached by a signed
    * token that authorises cancelling and nothing else, so a visitor with no
    * session lands on sign-in rather than the fixture page. That is still an
@@ -145,7 +145,7 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
       <p class="hint">Up to ${MAX_REASON_LENGTH} characters. Leave it blank if you'd rather not say.</p>
       <button class="button danger" type="submit">${callItOffLabel(reachable)}</button>
     </form>
-    <a class="button keep-link" href="${escapeHtml(ownerFixturePath(gameId, fixtureId))}">Keep the game on</a>
+    <a class="button keep-link" href="${escapeHtml(fixturePath(gameId, fixtureId))}">Keep the game on</a>
     <p class="read-only">This can't be undone. Once it's cancelled, everyone who was in or on the waitlist gets an email, and nobody can respond to this fixture again.</p>
   `;
 

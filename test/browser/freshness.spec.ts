@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { DASHBOARD_PATH, ownerFixturePath } from "../../src/auth/paths.js";
+import { DASHBOARD_PATH, fixturePath } from "../../src/auth/paths.js";
 import { signIn, TEST_OWNER } from "./sign-in.js";
 import { JOINER_NAME, seedWorld, type World } from "./world.js";
 
@@ -101,19 +101,19 @@ test("the age counts up where the page is left open", async ({ page }) => {
 
 test("an in-progress team pick is never reloaded away", async ({ page }) => {
   await signIn(page, TEST_OWNER);
-  const fixturePath = ownerFixturePath(world.gameId, world.fixtureId);
+  const path = fixturePath(world.gameId, world.fixtureId);
 
   // The picker only renders once somebody is playing, so the joiner is put
   // `in` before the clock is faked — that put is a real navigation and would
   // clear the marker below.
-  await page.goto(fixturePath);
+  await page.goto(path);
   await page.locator("ul.squad li").filter({ hasText: JOINER_NAME }).getByRole("button", { name: "In" }).click();
   await expect(
     page.locator("ul.squad li").filter({ hasText: JOINER_NAME }).locator('button[name="intent"][value="in"]'),
   ).toHaveAttribute("aria-pressed", "true");
 
   await page.clock.install();
-  await page.goto(fixturePath);
+  await page.goto(path);
   await markLoad(page);
 
   // Randomise sets every radio from script, firing neither `input` nor

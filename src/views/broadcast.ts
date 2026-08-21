@@ -1,4 +1,4 @@
-import { ownerFixturePath, gamePath, gameMessagePath, fixtureMessagePath } from "../auth/paths.js";
+import { fixturePath, gamePath, gameMessagePath, fixtureMessagePath } from "../auth/paths.js";
 import {
   AUDIENCE_LABELS,
   FIXTURE_AUDIENCES,
@@ -146,7 +146,7 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
   const gameName = escapeHtml(params.gameName);
   const scoped = fixture !== undefined;
   const action = scoped ? fixtureMessagePath(gameId, fixture.id) : gameMessagePath(gameId);
-  const backHref = scoped ? ownerFixturePath(gameId, fixture.id) : gamePath(gameId);
+  const backHref = scoped ? fixturePath(gameId, fixture.id) : gamePath(gameId);
 
   const heading = scoped
     ? `Message the squad for ${gameName} on ${escapeHtml(fixture.whenLocal)}`

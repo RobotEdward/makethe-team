@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { ownerFixturePath } from "../auth/paths.js";
+import { fixturePath } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog } from "../db/schema.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
@@ -141,7 +141,7 @@ async function nudgeOwnersOf(
   });
   // The card, not the top of the page: a fixture page is long, and the
   // point of the tap is to post.
-  const url = `${SITE_ORIGIN}${ownerFixturePath(gameId, fixtureId)}#${WHATSAPP_CARD_ID}`;
+  const url = `${SITE_ORIGIN}${fixturePath(gameId, fixtureId)}#${WHATSAPP_CARD_ID}`;
 
   const pending: PendingNotification[] = candidates.map((owner) => {
     const dedupeKey = pushKey(groupNudgeKey(fixtureId, owner.playerId));

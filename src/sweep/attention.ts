@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { ownerFixturePath } from "../auth/paths.js";
+import { fixturePath } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { getFixtureWithSquad } from "../db/queries.js";
 import { fixtures, games, memberships, notificationLog, players } from "../db/schema.js";
@@ -321,7 +321,7 @@ async function processFixture(
           // the fixture page is where they can actually do that, and still
           // links to cancelling for the owner who decides that's the right
           // call.
-          url: `${SITE_ORIGIN}${ownerFixturePath(gameId, fixtureId)}`,
+          url: `${SITE_ORIGIN}${fixturePath(gameId, fixtureId)}`,
           // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
           // (Task 9) to the real fixture id, now that this caller holds one
           // (Task 13).

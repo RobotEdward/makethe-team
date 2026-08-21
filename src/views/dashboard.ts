@@ -7,7 +7,7 @@ import {
   ONBOARDING_DISMISS_PATH,
   PASSKEYS_PATH,
   gamePath,
-  ownerFixturePath,
+  fixturePath,
 } from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
@@ -147,7 +147,7 @@ function renderActions(row: DashboardRow): string {
  * this fixture, and never one that lands on "Not found".
  */
 function fixtureHref(row: DashboardRow): string {
-  return row.owner ? ownerFixturePath(row.gameId, row.fixtureId) : gamePath(row.gameId);
+  return row.owner ? fixturePath(row.gameId, row.fixtureId) : gamePath(row.gameId);
 }
 
 function renderRow(row: DashboardRow): string {

@@ -6,7 +6,7 @@ import {
   memberDetailPath,
   memberRemovePath,
   memberRolePath,
-  ownerFixturePath,
+  fixturePath,
 } from "../auth/paths.js";
 import { oddMaxWarning } from "../domain/game-form.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
@@ -114,7 +114,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     .map(
       (fixture) =>
         `<li>
-        <a href="${escapeHtml(ownerFixturePath(gameId, fixture.id))}">${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))}</a>
+        <a href="${escapeHtml(fixturePath(gameId, fixture.id))}">${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))}</a>
         <span class="detail">${escapeHtml(fixtureStatusWords(fixture.lifecycle))} — ${fixture.inCount} in</span>
       </li>`,
     )

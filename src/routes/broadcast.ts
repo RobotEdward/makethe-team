@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
-import { gamePath, ownerFixturePath } from "../auth/paths.js";
+import { gamePath, fixturePath } from "../auth/paths.js";
 import { requirePlayer, type Player, pageNav } from "../auth/session.js";
 import { recordAudit } from "../db/audit.js";
 import { getDb, type Db } from "../db/client.js";
@@ -456,7 +456,7 @@ broadcast.post("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
       formScope: "fixture",
       counts: countsForFixture(recipients),
       recipients,
-      redirectTo: ownerFixturePath(game.id, fixture.id),
+      redirectTo: fixturePath(game.id, fixture.id),
     },
     now,
   );

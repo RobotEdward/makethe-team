@@ -198,14 +198,30 @@ export function memberDetailPath(gameId: string, playerId: string): string {
 }
 
 /**
- * One fixture of a game, seen by its owner (J6b §3).
+ * One fixture of a game.
+ *
+ * **Not owner-only since M25.** The route dispatches by role, as `/g/:id`
+ * does: an active owner gets the management page, an active squad member gets
+ * their own read-mostly view, and anyone else gets a 404. It was
+ * `ownerFixturePath` until then, which is why older comments and emails talk
+ * about the owner's fixture page.
  *
  * `/f/` rather than `/fixtures/` to keep a link that lands in a group chat
  * short; nested under the game because the entitlement check is the game's,
  * and a fixture id alone would invite a route that forgets to scope it.
  */
-export function ownerFixturePath(gameId: string, fixtureId: string): string {
+export function fixturePath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}`;
+}
+
+/** Where a result claim posts (BR-37). Values, never a candidate id. */
+export function resultPath(gameId: string, fixtureId: string): string {
+  return `${fixturePath(gameId, fixtureId)}/result`;
+}
+
+/** Where "withdraw my answer" posts (BR-37). */
+export function resultClearPath(gameId: string, fixtureId: string): string {
+  return `${fixturePath(gameId, fixtureId)}/result/clear`;
 }
 
 /**
@@ -272,7 +288,7 @@ export function gameMessagePath(gameId: string): string {
 
 /**
  * The fixture-scoped quick-message compose page (M15 spec §2), offering the
- * four response-derived audiences. A sibling of `ownerFixturePath` rather
+ * four response-derived audiences. A sibling of `fixturePath` rather
  * than a query parameter on it, so the two scopes have distinct, bookmarkable
  * URLs and the route registration can entitle each the same way the rest of
  * this file's fixture-scoped paths do.

@@ -8,7 +8,9 @@ import {
   NEW_GAME_PATH,
   gameEditPath,
   gamePath,
-  ownerFixturePath,
+  fixturePath,
+  resultClearPath,
+  resultPath,
 } from "../auth/paths.js";
 import { requirePlayer, pageNav } from "../auth/session.js";
 import { buildAuditInsert, recordAudit } from "../db/audit.js";
@@ -26,6 +28,7 @@ import {
   type FixtureWithSquad,
   type SquadMember,
 } from "../db/queries.js";
+import { listResultClaims, resultElectorate } from "../db/result-queries.js";
 import { fixtures, games, responses } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
@@ -35,6 +38,8 @@ import { parseGameForm } from "../domain/game-form.js";
 import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
+import { deriveResult, tally } from "../domain/result.js";
+import { isResultLocked, resultDeadline, resultWritable } from "../domain/result-lock.js";
 import {
   announcementOutstanding,
   isTeamId,
@@ -56,8 +61,10 @@ import { sendTeamsEmails } from "../notify/send-teams.js";
 import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
+import { renderPlayerFixturePage } from "../views/player-fixture.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
+import { outcomeNames } from "../views/result.js";
 import { renderSquadMemberPage } from "../views/squad-member.js";
 import { rowName } from "../views/team-picker.js";
 import { notifyPromotedPlayer } from "./respond.js";
@@ -689,12 +696,82 @@ async function renderOwnerFixture(
 }
 
 gamesRoutes.get("/g/:id/f/:fixtureId", requirePlayer, async (c) => {
-  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
-  if (target === null) return c.text("Not found", 404);
-
   const now = new Date(Date.now());
-  return renderOwnerFixture(c, target, now);
+  const player = c.get("player")!;
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target !== null) return renderOwnerFixture(c, target, now);
+
+  // Not an owner. A member gets their own page; everyone else gets the same
+  // 404 an owner-entitlement failure gets, so the two are indistinguishable
+  // and a fixture id cannot be probed (TR-18).
+  const game = await findGameForMember(getDb(c.env.DB), c.req.param("id"), player.id);
+  if (game === null) return c.text("Not found", 404);
+  return renderPlayerFixture(c, game, c.req.param("fixtureId"), player.id, now);
 });
+
+/**
+ * Render `/g/:id/f/:fixtureId` for a member who is not this game's owner.
+ *
+ * `game` came from `findGameForMember`, which scopes by the path's own game
+ * id — but the fixture id is a second, independent path segment, so the
+ * fixture is loaded and checked against `game.id` before anything else. A
+ * fixture id from another game must not render (TR-18): without this check a
+ * member of one game could read a fixture belonging to a different one just
+ * by pasting its id into a URL they already have.
+ */
+export async function renderPlayerFixture(
+  c: Context<AppEnv>,
+  game: typeof games.$inferSelect,
+  fixtureId: string,
+  viewerPlayerId: string,
+  now: Date,
+) {
+  const db = getDb(c.env.DB);
+  const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+  if (!fixture || fixture.gameId !== game.id) return c.text("Not found", 404);
+
+  const withSquad = await getFixtureWithSquad(db, fixtureId);
+  if (withSquad === null) return c.text("Not found", 404);
+
+  const [claims, electorate] = await Promise.all([
+    listResultClaims(db, fixtureId),
+    resultElectorate(db, game.id, fixtureId),
+  ]);
+  const deadline = resultDeadline(fixture.kicksOffAt);
+
+  return c.html(
+    renderPlayerFixturePage({
+      nav: pageNav(c, "games"),
+      gameName: game.name,
+      venueName: game.venueName,
+      venueAddress: game.venueAddress,
+      kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
+      lifecycle: fixture.lifecycle,
+      teams: publishedTeamsFor(
+        fixture,
+        game,
+        withSquad.squad.find((member) => member.playerId === viewerPlayerId),
+      ),
+      squad: squadForViewer(game, withSquad.squad, { isOwner: false }),
+      inCount: fixture.inCount,
+      viewerPlayerId,
+      result: {
+        names: outcomeNames(game),
+        candidates: tally(claims),
+        derived: deriveResult(claims, electorate.organiserIds),
+        locked: isResultLocked(fixture.kicksOffAt, claims.length, now),
+        writable: resultWritable(fixture.lifecycle, fixture.kicksOffAt, claims.length, now),
+        eligible: electorate.eligibleIds.has(viewerPlayerId),
+        rostered: fixture.teamsPublishedAt !== null,
+        yourPlayerId: viewerPlayerId,
+        deadlineLocal: formatLocalDateTime(deadline, game.timezone),
+        actionPath: resultPath(game.id, fixtureId),
+        clearPath: resultClearPath(game.id, fixtureId),
+      },
+      fixturePath: fixturePath(game.id, fixtureId),
+    }),
+  );
+}
 
 /**
  * An owner marking a player in or out on their behalf (BR-27, §4), including
@@ -776,7 +853,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
     c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, target.fixture.id, outcome.promoted, now));
   }
 
-  return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });
 
 /**
@@ -827,7 +904,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest", requirePlayer, async (c) => {
     now,
   });
 
-  return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });
 
 /**
@@ -893,7 +970,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
     c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, target.fixture.id, outcome.promoted, now));
   }
 
-  return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });
 
 /**
@@ -997,7 +1074,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
     ),
   ]);
 
-  return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });
 
 /**
@@ -1099,7 +1176,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
   // row and `publishTeams` logs the rest.
   c.executionCtx.waitUntil(publishTeams(c.env, target.fixture.id, now));
 
-  return c.redirect(ownerFixturePath(target.game.id, target.fixture.id), 303);
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });
 
 /**
