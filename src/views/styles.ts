@@ -938,6 +938,34 @@ export const WHATSAPP_CSS = `
 `;
 
 /**
+ * The result panel (M25): the candidate list while a result is open to
+ * argument, and the locked result with its two confidence figures.
+ *
+ * All-new selectors, so nothing already on a page changes appearance by
+ * adding this block. Deliberately not reusing .squad -- a candidate row is a
+ * count and a control, not a person and two controls, and sharing the
+ * selector would put this block into the ul.squad cascade collision that
+ * SQUAD_STYLES_CSS and FORM_CSS already have.
+ */
+export const RESULT_CSS = `
+  .result-candidates { list-style: none; margin: 0.8rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
+  .result-candidate {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem 0.9rem;
+    padding: 0.7rem 0.9rem; border: 1px solid var(--line); border-radius: 0.5rem;
+  }
+  .result-claim { font-weight: 600; }
+  .result-backers { font-size: var(--t-support); color: var(--mut); }
+  .result-yours { font-size: var(--t-support); color: var(--mut); }
+  .result-candidate form { margin: 0 0 0 auto; }
+  .result-final { font-size: 1.25rem; font-weight: 600; margin: 0.4rem 0 0.2rem; }
+  .result-confidence { font-size: var(--t-support); color: var(--mut); margin: 0; }
+  .result-note { font-size: var(--t-support); color: var(--mut); }
+  .result-score { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem; }
+  .result-score label { display: grid; gap: 0.3rem; }
+  .result-score input { width: 4.5rem; }
+`;
+
+/**
  * The freshness bar at the foot of the pages whose facts move under the
  * reader (M24): the age on the left, the Refresh link beside it.
  *
@@ -980,6 +1008,7 @@ export const PAGE_STYLE_BLOCKS = [
   ADMIN_ALLOWLIST_CSS,
   ADMIN_TOOLS_CSS,
   WHATSAPP_CSS,
+  RESULT_CSS,
   FRESHNESS_CSS,
 ] as const;
 

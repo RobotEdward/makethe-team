@@ -15,6 +15,8 @@ import { renderDashboardPage } from "../src/views/dashboard.js";
 import { renderOwnerFixturePage } from "../src/views/owner-fixture.js";
 import { squadStatusLabel } from "../src/views/squad-row.js";
 import { audienceSelectsStatus } from "../src/domain/broadcast-audience.js";
+import { deriveResult, tally } from "../src/domain/result.js";
+import { outcomeNames, renderResultPanel } from "../src/views/result.js";
 import type { SquadMember } from "../src/db/queries.js";
 import { insertFixture, insertGame, insertMembership, insertPlayer, insertResponse, resetDatabase } from "./support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "./support/sign-in.js";
@@ -210,6 +212,29 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
         },
         [member({ status: "in", team: OUT_OF_UNION })],
       ),
+  },
+  {
+    name: "renderResultPanel (src/views/result.ts)",
+    column: "fixture_result_claims.outcome",
+    reach: () => {
+      const names = outcomeNames({ teamAName: "Bibs", teamBName: "Skins" });
+      const claims = [
+        { playerId: "p-1", outcome: OUT_OF_UNION, scoreA: null, scoreB: null, filedAt: NOW },
+      ];
+      return renderResultPanel({
+        names,
+        candidates: tally(claims),
+        derived: deriveResult(claims, new Set()),
+        locked: true,
+        writable: false,
+        eligible: true,
+        rostered: true,
+        yourPlayerId: "p-1",
+        deadlineLocal: "Sat 15 Aug, 7:00pm",
+        actionPath: "/g/g-1/f/f-1/result",
+        clearPath: "/g/g-1/f/f-1/result/clear",
+      });
+    },
   },
 ];
 
