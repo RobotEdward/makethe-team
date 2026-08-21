@@ -175,4 +175,21 @@ describe("deriveResult", () => {
     expect([derived?.scoreA, derived?.scoreB]).toEqual([1, 0]);
     expect(derived?.distinctScores).toBe(2);
   });
+
+  it("breaks an exact filedAt tie the same way regardless of row order", () => {
+    // putResultClaim stamps every claim in one request with a single
+    // params.now, so two players filing together tie on filedAt exactly.
+    // Without a further tiebreak the winner would depend on whatever order
+    // the candidates were built in — here, reversing the input array — which
+    // is exactly the failure mode that would make a cached fixture_results
+    // row disagree with a later recomputation over the same claims.
+    const claims = [
+      claim({ playerId: "p1", outcome: "a", filedAt: T(0) }),
+      claim({ playerId: "p2", outcome: "b", filedAt: T(0) }),
+    ];
+    const forward = deriveResult(claims, NOBODY);
+    const reversed = deriveResult([...claims].reverse(), NOBODY);
+    expect(forward?.outcome).toBe(reversed?.outcome);
+    expect(deriveResult(claims, NOBODY)?.outcome).toBe(forward?.outcome);
+  });
 });

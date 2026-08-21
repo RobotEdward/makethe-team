@@ -96,14 +96,27 @@ export interface OutcomeCandidate {
 }
 
 /**
- * Compare two candidates by the three steps every level of the tally uses, in
+ * Compare two candidates by the four steps every level of the tally uses, in
  * this order: most backers, then an organiser's backing, then the earliest
- * claim.
+ * claim, then the lowest backer id.
  *
  * Step 2 exists because step 3 alone rewards being quick over being right: a
  * wrong early claim that picks up one friend would beat a correct later one.
- * Step 3 is a total order on distinct instants, so the comparison never falls
- * through to whatever order the rows arrived in.
+ *
+ * Step 4 exists because step 3 is not actually total: `putResultClaim`
+ * stamps every claim in one request with a single `params.now`, so two
+ * players filing in the same request tie on `filedAt` exactly, and
+ * `fixture_results` caches whichever winner `deriveResult` picked at lock
+ * time. If the comparator could stop at step 3 and fall through to
+ * `Array.prototype.sort`'s handling of equal elements, the answer would
+ * depend on the order candidates were built in — Map insertion order, which
+ * traces back to database row order, which SQLite does not guarantee
+ * without an `ORDER BY` — and a later recomputation could disagree with the
+ * cached row on the exact same claims. Backer ids are UUIDs and every
+ * candidate's backer set is disjoint from every other's (a claim names one
+ * outcome, and a scored claim one score, so a player contributes to exactly
+ * one candidate at each level), so the lowest one is both stable across
+ * evaluations and never a tie between two genuinely different candidates.
  */
 function compareCandidates(
   left: { backers: readonly string[]; firstFiledAt: Date },
@@ -114,7 +127,11 @@ function compareCandidates(
   const leftOrganiser = left.backers.some((id) => organiserIds.has(id));
   const rightOrganiser = right.backers.some((id) => organiserIds.has(id));
   if (leftOrganiser !== rightOrganiser) return leftOrganiser ? -1 : 1;
-  return left.firstFiledAt.getTime() - right.firstFiledAt.getTime();
+  const byTime = left.firstFiledAt.getTime() - right.firstFiledAt.getTime();
+  if (byTime !== 0) return byTime;
+  const leftMinId = [...left.backers].sort()[0]!;
+  const rightMinId = [...right.backers].sort()[0]!;
+  return leftMinId < rightMinId ? -1 : leftMinId > rightMinId ? 1 : 0;
 }
 
 function earliest(claims: readonly ResultClaim[]): Date {
