@@ -55,7 +55,7 @@ const INTENDED_WINNERS: IntendedWinner[] = [
   // same two blocks meeting on the same two selectors, and ten copies of one
   // reason is ten places for them to drift apart. The pages are still named
   // one by one, so a sixth page pairing these blocks has to be added here.
-  ...["game-overview", "join", "leave", "owner-fixture", "player-game"].flatMap((page) => [
+  ...["game-overview", "join", "leave", "owner-fixture", "player-fixture", "player-game"].flatMap((page) => [
     {
       page: `src/views/${page}.ts#0`,
       selector: "ul.squad > li",

@@ -412,7 +412,10 @@ export function renderSquadSection(
  * A viewer who is `in` with no side yet — promoted off the waitlist after the
  * announcement — gets a sentence of their own instead. Without it they read a
  * Teams heading and both line-ups with nothing anywhere about themselves,
- * which is the one thing Definition of Done #5 says must not happen.
+ * which is the one thing Definition of Done #5 says must not happen. That
+ * sentence exists only in the `future` tense (below) — once the fixture is
+ * played, "hasn't been picked yet" is not a warning any more, it is simply
+ * false.
  *
  * Returns "" when there is neither an own side nor a visible line-up — a
  * pending player in a game that hides its squad, and equally a published pick
@@ -420,10 +423,18 @@ export function renderSquadSection(
  * "Nobody." twice) tells them a pick exists without telling them anything
  * about it, which is worse than silence. `renderTeamsReadOnly` drops out on
  * the same emptiness for the same reason.
+ *
+ * `tense` defaults to `future` so every caller before M25's player fixture
+ * page keeps its wording and its behaviour unchanged. `past` is for a fixture
+ * that has already been played (M25): the own-side line reads "You were on X."
+ * and the awaiting-side sentence is dropped rather than reworded, because
+ * there is no tense in which "your side hasn't been picked yet" is true of a
+ * finished game.
  */
 export function renderPublishedTeamsSection(
   teams: PublishedTeams | null,
   squad: readonly SquadMember[] | null,
+  tense: "future" | "past" = "future",
 ): string {
   if (teams === null) return "";
 
@@ -439,8 +450,10 @@ export function renderPublishedTeamsSection(
   const yourSideName = teams.yourSide === null ? null : (teams.names[teams.yourSide] ?? null);
   const yourSide =
     yourSideName !== null
-      ? `<p class="your-side">You're on ${escapeHtml(yourSideName)}.</p>`
-      : teams.awaitingSide
+      ? tense === "past"
+        ? `<p class="your-side">You were on ${escapeHtml(yourSideName)}.</p>`
+        : `<p class="your-side">You're on ${escapeHtml(yourSideName)}.</p>`
+      : tense === "future" && teams.awaitingSide
         ? `<p class="your-side">Your side hasn't been picked yet.</p>`
         : "";
   const placed = squad === null ? [] : squad.filter((member) => member.status === "in" && member.team !== null);

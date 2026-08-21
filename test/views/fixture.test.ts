@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   fixtureStatusWords,
   renderFixturePage,
+  renderPublishedTeamsSection,
   renderStatusLine,
   type FixturePageOptions,
 } from "../../src/views/fixture.js";
@@ -977,6 +978,24 @@ describe("fixture page — published teams (BR-35 §5)", () => {
 
     expect(html).not.toContain("<script>alert");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("past tense: tells the viewer their own side in the past tense (M25)", () => {
+    // `renderFixturePage` always calls the section in the default (future)
+    // tense; the `past` tense is exercised directly, the same way M25's
+    // player fixture page calls it.
+    const html = renderPublishedTeamsSection({ names: NAMES, yourSide: "a", awaitingSide: false }, PICKED, "past");
+    expect(html).toContain("You were on Reds.");
+    expect(html).not.toContain("You're on");
+  });
+
+  it("past tense: never tells an awaiting-side viewer their side isn't picked yet (M25)", () => {
+    // "Your side hasn't been picked yet" is a warning about what's still to
+    // come. Once the fixture is played there is no "still to come" — a side
+    // either was assigned or, same as any other unplaced player, is simply
+    // not mentioned.
+    const html = renderPublishedTeamsSection({ names: NAMES, yourSide: null, awaitingSide: true }, PICKED, "past");
+    expect(html).not.toContain("hasn't been picked yet");
   });
 
   it("still contains no JavaScript with teams on the page (TR-4)", () => {
