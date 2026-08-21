@@ -63,14 +63,23 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result", requirePlayer, async (c) => {
 
   const now = new Date(Date.now());
 
-  // Check 2: standing to vote on *this* fixture specifically — a member of
+  // Check 2: a fixture that has not been played has no result to have an
+  // opinion about — this endpoint does not exist for it, and BR-37 §7's
+  // refusal table gives that its own 404 row, separate from "locked". Kept
+  // as its own boolean rather than folded into `resultWritable` (which owns
+  // only the lock) so this guard can be exercised independently of the
+  // electorate check below — the review that asked for this line named a
+  // guard folded into another boolean as untestable in isolation.
+  if (target.fixture.lifecycle !== "played") return c.text("Not found", 404);
+
+  // Check 3: standing to vote on *this* fixture specifically — a member of
   // the game who never played it, and is not an owner, gets the same 404
   // (TR-18): the electorate is re-asked per handler, not assumed from
   // entitlement to the game.
   const electorate = await resultElectorate(target.db, target.game.id, target.fixture.id);
   if (!electorate.eligibleIds.has(player.id)) return c.text("Not found", 404);
 
-  // Check 3: the window. The caller is entitled, so a refusal here is a 422
+  // Check 4: the window. The caller is entitled, so a refusal here is a 422
   // with the page re-rendered, not a 404 — the fixture merely stopped taking
   // claims, which is not an entitlement question.
   const claims = await listResultClaims(target.db, target.fixture.id);
@@ -86,7 +95,7 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result", requirePlayer, async (c) => {
     );
   }
 
-  // Check 4: the submitted form. `parseClaim` is the single place that
+  // Check 5: the submitted form. `parseClaim` is the single place that
   // derives `outcome` from a submitted score — see its own comment for why
   // this route must not re-derive or second-guess it.
   const form = await c.req.parseBody();
@@ -144,6 +153,12 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result/clear", requirePlayer, async (c) 
   if (target === null) return c.text("Not found", 404);
 
   const now = new Date(Date.now());
+
+  // Same lifecycle guard as the filing route above, and for the same reason
+  // (BR-37 §7): a fixture that has not been played has no result to withdraw
+  // an opinion about, and this is a 404 independent of the lock the check
+  // below owns.
+  if (target.fixture.lifecycle !== "played") return c.text("Not found", 404);
 
   const electorate = await resultElectorate(target.db, target.game.id, target.fixture.id);
   if (!electorate.eligibleIds.has(player.id)) return c.text("Not found", 404);

@@ -187,7 +187,7 @@ describe("POST /g/:id/f/:fixtureId/result (M25)", () => {
     expect(response.status).toBe(404);
   });
 
-  it("404s when the fixture is open, scheduled or cancelled", async () => {
+  it("404s when the fixture is open, scheduled or cancelled, even for a player who is in", async () => {
     const { cookie, viewerId } = await viewerSession();
     const db = testDb();
     const otherOwner = await insertPlayer(db);
@@ -195,17 +195,19 @@ describe("POST /g/:id/f/:fixtureId/result (M25)", () => {
     await insertMembership(db, gameId, otherOwner, { role: "owner" });
     await insertMembership(db, gameId, viewerId);
 
-    // `resultElectorate` only knows a player was in from an "in" response, and
-    // none of these three lifecycles has one yet for this test's viewer — so
-    // each is entitlement-shaped, and answers the same 404 (TR-18) an
-    // unrelated stranger gets, rather than the 422 a locked-but-eligible
-    // fixture gets.
+    // The viewer is marked `in` on every one of these fixtures — so each
+    // *would* pass `resultElectorate` — deliberately, so this 404 can only be
+    // coming from the explicit `lifecycle !== "played"` check, not from the
+    // electorate refusal a non-participant gets (that case has its own test
+    // above). BR-37 §7 gives "not played" its own 404 row, distinct from the
+    // 422 a locked-but-eligible fixture gets.
     const lifecycles = ["open", "scheduled", "cancelled"] as const;
     for (const [index, lifecycle] of lifecycles.entries()) {
       // A distinct kickoff per lifecycle: `fixtures` has a unique index on
       // `(game_id, kicks_off_at)`, and this loop seeds three fixtures in one
       // game.
       const fixtureId = await insertFixture(db, gameId, { lifecycle, kicksOffAt: kickoffIn(24 + index) });
+      await insertResponse(db, fixtureId, viewerId, { status: "in" });
       const response = await appPost(`/g/${gameId}/f/${fixtureId}/result`, { outcome: "a" }, cookie);
       expect(response.status).toBe(404);
     }

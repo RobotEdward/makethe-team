@@ -711,8 +711,9 @@ gamesRoutes.get("/g/:id/f/:fixtureId", requirePlayer, async (c) => {
 
 /**
  * Render `/g/:id/f/:fixtureId` for a member who is not this game's owner —
- * the plain `GET` below, and (Task 9) `src/routes/results.ts`'s two 422
- * re-renders, so the three cannot drift.
+ * the plain `GET` below, and (Task 9) `src/routes/results.ts`'s three 422
+ * re-renders (the filing route's not-writable and bad-claim branches, and
+ * the clear route's not-writable branch), so none of the four can drift.
  *
  * `game` came from `findGameForMember`, which scopes by the path's own game
  * id — but the fixture id is a second, independent path segment, so the
