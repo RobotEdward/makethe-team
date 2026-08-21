@@ -53,8 +53,8 @@ describe("the script enumeration", () => {
       expect(block, "cannot break out of its own tag").not.toContain("</script");
       // Feature-detected before it touches the page: "scripting on but the
       // capability is missing" must look exactly like "scripting off". The
-      // two WebAuthn scripts detect `PublicKeyCredential`; `COPY_INVITE_JS`
-      // (M6a Task 7) is not a WebAuthn affordance at all and instead detects
+      // two WebAuthn scripts detect `PublicKeyCredential`; `COPY_BUTTON_JS`
+      // (M6a Task 7, generalised in M22) is not a WebAuthn affordance at all and instead detects
       // `navigator.clipboard`, so this checks for either rather than only the
       // one every block used to share. `TEAM_PICKER_JS` (M9 Task 7) is a third
       // kind again: it needs drag and drop, so it detects `window.DataTransfer`
@@ -85,9 +85,12 @@ describe("the script enumeration", () => {
       // return;` before anything else, so a page that never rendered
       // `renderInstallSection()` — or a future markup change that drops the
       // `.install` class — gets the same silent no-op every other block gets
-      // for a missing capability.
+      // for a missing capability. `BROADCAST_WHATSAPP_JS` (M22) is the same
+      // shape as INSTALL_JS — `encodeURIComponent` and `setAttribute` need no
+      // detecting — and guards its four DOM anchors together: `if (!panel ||
+      // !link || !subject || !message) return;`.
       expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
-        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;/,
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;/,
       );
     }
   });

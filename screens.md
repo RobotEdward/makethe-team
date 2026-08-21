@@ -138,8 +138,9 @@ Reached only from a "short of players" warning email to the organiser.
   "Pitch flooded".
 - **Actions:** `Call it off and email N people` (danger, count in the label);
   `Keep the game on` (secondary link-as-button back to the fixture).
-- **Other states:** `<game> is cancelled` (done), `<game> is already cancelled`,
-  `<game> can't be cancelled`.
+- **Other states:** `<game> is cancelled` (done — carries the `Post to WhatsApp` card, M22,
+  with "<game> on <date/time> is cancelled." plus the reason, see 3.5), `<game> is already
+  cancelled`, `<game> can't be cancelled`.
 - **Logic:** Irreversible. Affects one fixture only; next week is untouched.
 
 ### 1.8 Utility pages
@@ -299,6 +300,16 @@ The busiest organiser screen.
   asks — `Add them anyway` / `No, leave it`.
 - **`Teams` (h2)** — see 3.6.
 - **`Add a guest` (h2):** `Their name` (text) + `Add guest`.
+- **`Post to WhatsApp` card (M22)** — "Opens WhatsApp with this ready to send — pick the group
+  chat and add your own words." One read-only textarea per prepared message, each with
+  `Open in WhatsApp` (a plain `wa.me/?text=` link, secondary button, new tab) and a `Copy`
+  button (script-only; hidden without JS). Messages by state: open → **Numbers** ("⚽ <game> —
+  <date/time> at <venue> / N in so far — M more needed. | N in, M spots left. | N in — full,
+  but you can join the waitlist. / In or out? Say so on Make The Team: <game page URL>");
+  teams published → **Teams** first ("Teams: / <side>: names"), Numbers second; cancelled →
+  "<game> on <date/time> is cancelled." + reason. No card for a scheduled or played fixture.
+  Never a per-player link — the game page, which squad members sign in to. The N-11 push
+  ("Post it to the group?") deep-links to `#whatsapp` here.
 - **`Message players` action** → the fixture-scoped broadcast compose page.
 - **Footer:** `Back to the game`.
 
@@ -339,8 +350,12 @@ One renderer, two scopes.
 - **On success:** a 303 redirect back to the game or fixture page, which now (M20) shows the
   one-line receipt ("Sent to N players by email/push/both"). Still no delivery report: the
   count is recipients at send time, and push failures remain invisible to the organiser.
-- **Logic:** The page runs no script, so unticking a channel does not update the button count
-  until the server answers.
+- **`Post to WhatsApp too` panel (M22):** below the form, script-only (hidden without JS,
+  because the body is never stored and so nothing can be offered after Send) — an
+  `Open in WhatsApp` link kept filled with the subject and message as typed ("before or after
+  you send it").
+- **Logic:** Apart from that panel the page runs no script, so unticking a channel does not
+  update the button count until the server answers.
 
 ---
 

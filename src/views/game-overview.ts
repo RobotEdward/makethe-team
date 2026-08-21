@@ -14,7 +14,7 @@ import { SITE_ORIGIN } from "../notify/delivery.js";
 import { fixtureStatusWords } from "./fixture.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { qrSvg } from "./qr.js";
-import { COPY_INVITE_JS } from "./scripts.js";
+import { COPY_BUTTON_JS } from "./scripts.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 export interface GameOverviewParams {
@@ -138,7 +138,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       <p>Share this link in your group chat, or let people scan the code.</p>
       <div class="invite-link">
         <input id="invite-url" type="text" readonly value="${escapeHtml(inviteUrl)}">
-        <button class="button" type="button" id="invite-copy" hidden>Copy</button>
+        <button class="button" type="button" id="invite-copy" data-copy="invite-url" hidden>Copy</button>
       </div>
       <details class="qr-toggle">
         <summary>Show the QR code</summary>
@@ -176,6 +176,6 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     // carries is selected by a class this page never renders, so nothing
     // already on the page changes appearance by adding it.
     pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS],
-    pageScripts: [COPY_INVITE_JS],
+    pageScripts: [COPY_BUTTON_JS],
   });
 }

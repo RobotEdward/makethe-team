@@ -417,6 +417,15 @@ describe("POST /cancel/:token", () => {
     expect(body).toMatch(/3 players/i);
   });
 
+  it("hands the organiser the WhatsApp message, reason included, on the cancelled page (M22)", async () => {
+    const { fixtureId } = await seedSquad();
+    const body = await (await postCancel(await cancelToken(fixtureId), "Pitch flooded")).text();
+    expect(body).toContain('id="whatsapp"');
+    expect(body).toMatch(/Thursday 7-a-side on [^<]+ is cancelled\.\nPitch flooded<\/textarea>/);
+    expect(body).toContain("https://wa.me/?text=");
+    expect(body).toContain('data-copy="whatsapp-cancelled"');
+  });
+
   it("records an audit row naming everyone the daily send ceiling stopped being told (TR-31)", async () => {
     // `MAX_EMAILS_PER_DAY` is "50" (wrangler.jsonc); pre-filling today's
     // quota to the ceiling makes QuotaNotifier refuse every N-3 this request

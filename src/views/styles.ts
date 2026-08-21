@@ -899,6 +899,36 @@ export const ADMIN_TOOLS_CSS = `
   }
 `;
 
+/**
+ * The "Post to WhatsApp" card (M22) — `src/views/whatsapp.ts`. Every rule is
+ * namespaced under `.whatsapp` so this block cannot collide with another at
+ * equal specificity, the failure test/views/style-cascade.test.ts exists to
+ * catch; test/views/whatsapp.test.ts checks the namespacing directly.
+ */
+export const WHATSAPP_CSS = `
+  /* text-align: left because the cancelled page is a centred layout and a
+     centred message would centre every line of the textarea too. */
+  .whatsapp { margin: 1.1rem 0; padding: 1rem; border-radius: 1.25rem; background: var(--card-raised); text-align: left; }
+  .whatsapp h2 { margin: 0 0 0.35rem; font-size: var(--t-body); }
+  .whatsapp h3 { margin: 0.9rem 0 0.35rem; font-size: var(--t-support); color: var(--mut); }
+  .whatsapp p { margin: 0 0 0.6rem; color: var(--mut); font-size: var(--t-support); }
+  /* Its own field rules rather than FORM_CSS's .field textarea: this is not a
+     form field, it is the message on show, and FORM_CSS is not on every page
+     the card appears on. */
+  .whatsapp textarea {
+    display: block; width: 100%; box-sizing: border-box; margin: 0;
+    padding: 0.6rem 0.75rem; border: 1px solid var(--line); border-radius: 0.75rem;
+    background: var(--field); color: inherit; font: inherit; font-size: var(--t-body);
+    line-height: 1.45; resize: vertical;
+  }
+  .whatsapp textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  /* "Open in WhatsApp" wrapped onto two lines beside Copy at 390px (the
+     capture showed it); nowrap keeps each label on one line and flex-wrap
+     drops Copy to its own row if there really is no room. */
+  .whatsapp-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.6rem; }
+  .whatsapp-actions .button { white-space: nowrap; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -915,6 +945,7 @@ export const PAGE_STYLE_BLOCKS = [
   INVITE_CSS,
   ADMIN_ALLOWLIST_CSS,
   ADMIN_TOOLS_CSS,
+  WHATSAPP_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11"] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -135,6 +135,19 @@ export function teamsKey(fixtureId: string, playerId: string, publishedAt: strin
  */
 export function broadcastKey(broadcastId: string, playerId: string): string {
   return `n10:${broadcastId}:${playerId}`;
+}
+
+/**
+ * N-11 organiser group nudge: once per owner per fixture, ever (M22).
+ *
+ * Push-only — the one type with no email leg — so the row written for it
+ * carries `pushKey(groupNudgeKey(...))`, the same `push:` namespace every
+ * other push row lives in. No timestamp, like N-4: the nudge fires the first
+ * sweep tick after the fixture's reminder instant and is not repeated, since
+ * the N-4 attention push already covers "numbers are short, go and chase".
+ */
+export function groupNudgeKey(fixtureId: string, playerId: string): string {
+  return `n11:${fixtureId}:${playerId}`;
 }
 
 /**

@@ -654,6 +654,7 @@ function ownerFixtureParams(
     // answer "no" to half the question.
     teamsNeedAnotherLook: teamsNeedAnotherLook(assignments),
     announcementOutstanding: announcementOutstanding(fixture, assignments),
+    cancellationReason: fixture.cancellationReason,
     ...extras,
   };
 }

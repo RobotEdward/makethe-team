@@ -156,7 +156,7 @@ async function buildCspHeader(): Promise<string> {
     // else is. That set started as the two passkey scripts (M5) — the
     // original reason client JavaScript was allowed on this server-rendered
     // site at all, WebAuthn having no server-side substitute — and has since
-    // grown to five: the two passkey blocks, the invite-copy and
+    // grown to five: the two passkey blocks, the copy-button and
     // drag-and-drop enhancements, and SERVICE_WORKER_JS (M13), which ships on
     // every page rather than being opted into by one. Passkeys are no longer
     // *why* this directive is non-empty; they are just its first member.

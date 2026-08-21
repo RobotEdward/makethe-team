@@ -1,6 +1,9 @@
 import { ownerFixturePath } from "../auth/paths.js";
+import { cancelledMessage } from "../domain/whatsapp-message.js";
 import { escapeHtml, layout } from "./layout.js";
-import { CANCEL_STYLES_CSS } from "./styles.js";
+import { COPY_BUTTON_JS } from "./scripts.js";
+import { CANCEL_STYLES_CSS, WHATSAPP_CSS } from "./styles.js";
+import { renderWhatsAppCard } from "./whatsapp.js";
 
 /**
  * The pages behind `/cancel/:token` (BR-14, J5).
@@ -151,13 +154,23 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
 
 export interface CancelledPageOptions {
   gameName: string;
+  /** Already formatted in the game's timezone by the caller (TR-5). */
+  kicksOffAtLocal: string;
+  /** The reason the owner just gave, for the WhatsApp message; blank means none. */
+  reason: string | null;
   /** How many players were actually emailed. */
   emailed: number;
   /** Recipients with no usable address, plus any the send could not deliver to. */
   notEmailed: number;
 }
 
-/** The page an owner gets after a cancellation they just made succeeded. */
+/**
+ * The page an owner gets after a cancellation they just made succeeded.
+ *
+ * Carries the "Post to WhatsApp" card (M22): the squad has been emailed, and
+ * this is the moment the organiser tells the group chat too — "let them
+ * know another way" is exactly what the card is for.
+ */
 export function renderCancelledPage(options: CancelledPageOptions): string {
   const body = `
     <h1>${escapeHtml(options.gameName)} is cancelled</h1>
@@ -168,8 +181,27 @@ export function renderCancelledPage(options: CancelledPageOptions): string {
         ? `<p class="nudge">${options.notEmailed} ${plural(options.notEmailed, "player", "players")} couldn't be emailed — they have no address on file, or the message didn't go through. Let them know another way.</p>`
         : ""
     }
+    ${renderWhatsAppCard({
+      messages: [
+        {
+          id: "whatsapp-cancelled",
+          label: "Cancelled",
+          text: cancelledMessage({
+            gameName: options.gameName,
+            kicksOffAtLocal: options.kicksOffAtLocal,
+            reason: options.reason,
+          }),
+        },
+      ],
+    })}
   `;
-  return layout({ title: `${options.gameName} cancelled — Make The Team`, body, centred: true });
+  return layout({
+    title: `${options.gameName} cancelled — Make The Team`,
+    body,
+    centred: true,
+    pageStyles: [WHATSAPP_CSS],
+    pageScripts: [COPY_BUTTON_JS],
+  });
 }
 
 /**

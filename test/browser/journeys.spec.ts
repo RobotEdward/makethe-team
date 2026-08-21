@@ -87,6 +87,51 @@ for (const javaScriptEnabled of [true, false] as const) {
       }
     });
 
+    test("the Post to WhatsApp card hands over the numbers message, and its Copy button degrades (M22)", async ({
+      page,
+      browser,
+    }) => {
+      const world = await seedWorld(page, browser, { javaScriptEnabled });
+      await page.goto(`/g/${world.gameId}/f/${world.fixtureId}`);
+
+      const card = page.locator("#whatsapp");
+      await expect(card).toBeVisible();
+      // The message is a textarea's value, readable in both projections.
+      await expect(card.locator("textarea")).toHaveValue(/In or out\? Say so on Make The Team: .*\/g\//);
+      // The wa.me link is a plain anchor carrying the same text, encoded.
+      const href = await card.locator("a.button").getAttribute("href");
+      expect(href).toMatch(/^https:\/\/wa\.me\/\?text=/);
+      expect(decodeURIComponent(href!.replace("https://wa.me/?text=", ""))).toContain("In or out?");
+
+      const copy = card.locator("button[data-copy]");
+      if (javaScriptEnabled) {
+        await expect(copy).toBeVisible();
+      } else {
+        await expect(copy).toBeHidden();
+      }
+    });
+
+    test("the broadcast compose page offers WhatsApp only with script, and keeps the link in step with the text (M22)", async ({
+      page,
+      browser,
+    }) => {
+      const world = await seedWorld(page, browser, { javaScriptEnabled });
+      await page.goto(`/g/${world.gameId}/message`);
+
+      const panel = page.locator("#whatsapp");
+      if (!javaScriptEnabled) {
+        // Nothing honest to show without the script: the body is never
+        // stored, so the panel ships hidden and stays that way.
+        await expect(panel).toBeHidden();
+        return;
+      }
+      await expect(panel).toBeVisible();
+      await page.fill("#subject", "Shin pads");
+      await page.fill("#message", "Bring them & boots.");
+      const href = await page.locator("#whatsapp-link").getAttribute("href");
+      expect(decodeURIComponent(href!.replace("https://wa.me/?text=", ""))).toBe("Shin pads\n\nBring them & boots.");
+    });
+
     test("an owner can promote a member, is refused the last demotion, and can remove them", async ({
       page,
       browser,

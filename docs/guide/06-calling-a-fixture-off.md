@@ -28,4 +28,8 @@ can answer that fixture any more.
 Only that week is affected. Next week's fixture is untouched and its
 reminders will go out as usual.
 
+The page you land on afterwards carries a **Post to WhatsApp** card with the
+cancellation and your reason written out, so the group chat can be told in one
+tap too — the email reaches the squad, but the group is where people will ask.
+
 Next: [your own fixtures](07-your-own-fixtures.md).

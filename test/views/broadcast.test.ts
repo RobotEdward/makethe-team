@@ -3,7 +3,8 @@ import { renderBroadcastPage, type BroadcastPageParams } from "../../src/views/b
 import { AUDIENCE_LABELS, type BroadcastAudience } from "../../src/domain/broadcast-audience.js";
 import type { BroadcastFormValues } from "../../src/domain/broadcast-form.js";
 import { escapeHtml } from "../../src/views/layout.js";
-import { FORM_CSS } from "../../src/views/styles.js";
+import { FORM_CSS, WHATSAPP_CSS } from "../../src/views/styles.js";
+import { BROADCAST_WHATSAPP_JS } from "../../src/views/scripts.js";
 
 const COUNTS: Record<BroadcastAudience, number> = {
   everyone: 18,
@@ -193,3 +194,25 @@ describe("renderBroadcastPage", () => {
 function escapeCount(label: string, n: number): string {
   return `${escapeHtml(label)} (${n})`;
 }
+
+describe("Post to WhatsApp too (M22)", () => {
+  it("ships a hidden panel with a wa.me anchor for the script to fill, the script, and the card's styles", () => {
+    const html = renderBroadcastPage(BASE);
+    expect(html).toContain('<div class="whatsapp" id="whatsapp" hidden>');
+    expect(html).toContain('<a class="button" id="whatsapp-link" href="https://wa.me/?text=" target="_blank" rel="noopener">Open in WhatsApp</a>');
+    expect(html).toContain(BROADCAST_WHATSAPP_JS);
+    expect(html).toContain(WHATSAPP_CSS);
+  });
+
+  it("renders every id the script looks up, so it cannot silently no-op", () => {
+    const html = renderBroadcastPage(BASE);
+    const ids = [...BROADCAST_WHATSAPP_JS.matchAll(/getElementById\("([^"]+)"\)/g)].map((m) => m[1]!);
+    expect(ids.length).toBe(4);
+    for (const id of ids) expect(html, id).toContain(`id="${id}"`);
+  });
+
+  it("keeps the anchor outside the form, so tapping it cannot submit", () => {
+    const html = renderBroadcastPage(BASE);
+    expect(html.indexOf("</form>")).toBeLessThan(html.indexOf('id="whatsapp-link"'));
+  });
+});

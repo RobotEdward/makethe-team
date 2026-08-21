@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
 import { auditLog, fixtures, games, memberships, players } from "../../src/db/schema.js";
 import { formatLocalDateTime } from "../../src/domain/time/zone.js";
-import { COPY_INVITE_JS, SCRIPT_BLOCKS } from "../../src/views/scripts.js";
+import { COPY_BUTTON_JS, SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 import { interferingBinding } from "../support/interference.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { bindings, ORIGIN, signIn } from "../support/sign-in.js";
@@ -739,28 +739,26 @@ describe("editing a game", () => {
   });
 });
 
-describe("the copy-invite script's DOM ids stay in sync with the page", () => {
+describe("the copy button script's targets stay in sync with the page", () => {
   beforeEach(resetDatabase);
 
   /**
-   * `COPY_INVITE_JS` no-ops silently (`if (!input || !button) return;`) if
-   * either id it looks up is missing, so a rename on either side breaks the
-   * button with nothing failing loudly. Derives the expected ids from the
-   * script's own source — the same technique `test/security/csp.test.ts`
-   * uses to read `fetch` targets out of `SCRIPT_BLOCKS` — rather than
-   * restating them, so this fails the moment the script and the page
-   * actually disagree.
+   * `COPY_BUTTON_JS` leaves a button hidden if the id in its `data-copy`
+   * is missing, so a rename on either side breaks the button with nothing
+   * failing loudly. Reads every `data-copy` target off the rendered page and
+   * checks each names an element that is actually there — and that there is
+   * at least one, since the script is on this page for a reason.
    */
-  it("renders every id COPY_INVITE_JS looks up", async () => {
+  it("renders an element for every data-copy target on the game page", async () => {
     const { cookie } = await signIn();
     const response = await post("/g/new", cookie, VALID);
     const gameId = response.headers.get("location")!.replace("/g/", "");
 
-    const referencedIds = [...COPY_INVITE_JS.matchAll(/getElementById\("([^"]+)"\)/g)].map((m) => m[1]!);
-    expect(referencedIds.length).toBeGreaterThan(0);
-
     const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
-    for (const id of referencedIds) {
+    expect(html).toContain(COPY_BUTTON_JS);
+    const targets = [...html.matchAll(/data-copy="([^"]+)"/g)].map((m) => m[1]!);
+    expect(targets.length).toBeGreaterThan(0);
+    for (const id of targets) {
       expect(html, `page must render an element with id="${id}"`).toContain(`id="${id}"`);
     }
   });

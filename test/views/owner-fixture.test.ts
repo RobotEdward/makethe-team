@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, WHATSAPP_CSS } from "../../src/views/styles.js";
+import { COPY_BUTTON_JS } from "../../src/views/scripts.js";
 import { fixtureView } from "../../src/domain/fixture-view.js";
 
 const KICKOFF = new Date("2026-08-13T18:00:00Z");
@@ -57,6 +58,7 @@ const BASE: OwnerFixtureParams = {
   teamsPublished: false,
   teamsNeedAnotherLook: false,
   announcementOutstanding: false,
+  cancellationReason: null,
 };
 
 function params(over: Partial<OwnerFixtureParams> = {}): OwnerFixtureParams {
@@ -185,5 +187,71 @@ describe("the message-players link (M15 Task 10)", () => {
     const html = renderOwnerFixturePage(params());
     expect(html).toContain(`<a class="button" href="/g/g-1/f/f-1/message">Message players</a>`);
     expect(html).not.toContain(`<a class="button primary"`);
+  });
+});
+
+describe("the Post to WhatsApp card (M22)", () => {
+  const params = (over: Partial<OwnerFixtureParams> = {}): OwnerFixtureParams => ({ ...BASE, ...over });
+  const viewIn = (lifecycle: "scheduled" | "open" | "cancelled" | "played", inCount = 2) =>
+    fixtureView(
+      {
+        lifecycle,
+        kicksOffAt: KICKOFF,
+        inCount,
+        minPlayers: 8,
+        maxPlayers: 10,
+        prefersEvenNumbers: false,
+        shortWarningOffsetHours: 12,
+      },
+      NOW,
+    );
+
+  it("prepares the numbers message for an open fixture, linking to the game page", () => {
+    const html = renderOwnerFixturePage(params());
+    expect(html).toContain('id="whatsapp"');
+    expect(html).toContain("⚽ Thursday 7-a-side — Thursday 13 August, 19:00 at Oxford Sports Park");
+    expect(html).toContain("2 in so far — 6 more needed.");
+    expect(html).toContain("In or out? Say so on Make The Team: https://makethe.team/g/g-1");
+    expect(html).toContain("https://wa.me/?text=");
+  });
+
+  it("ships the card's style block and the copy script with it", () => {
+    const html = renderOwnerFixturePage(params());
+    expect(html).toContain(WHATSAPP_CSS);
+    expect(html).toContain(COPY_BUTTON_JS);
+  });
+
+  it("has nothing to post for a fixture that is not open yet, or has been played", () => {
+    for (const lifecycle of ["scheduled", "played"] as const) {
+      const html = renderOwnerFixturePage(params({ view: viewIn(lifecycle) }));
+      expect(html, lifecycle).not.toContain('id="whatsapp"');
+      expect(html, lifecycle).not.toContain(COPY_BUTTON_JS);
+    }
+  });
+
+  it("prepares the teams message first, then the numbers, once teams are published", () => {
+    const html = renderOwnerFixturePage(
+      params({
+        teamsPublished: true,
+        squad: [
+          { ...BASE.squad[0]!, team: "a" },
+          { ...BASE.squad[1]!, name: "Bea", status: "in", team: "b" },
+          { ...BASE.squad[1]!, playerId: "p-3", name: "Out Person", status: "out", team: "b" },
+        ],
+      }),
+    );
+    expect(html).toContain("<h3>Teams</h3>");
+    expect(html).toContain("<h3>Numbers</h3>");
+    expect(html.indexOf("<h3>Teams</h3>")).toBeLessThan(html.indexOf("<h3>Numbers</h3>"));
+    expect(html).toContain("Reds: Ada Okafor\nBlues: Bea</textarea>");
+    expect(html).not.toContain("Out Person</textarea>");
+  });
+
+  it("prepares the cancellation message, with the reason, for a cancelled fixture", () => {
+    const html = renderOwnerFixturePage(
+      params({ view: viewIn("cancelled"), cancellationReason: "Pitch flooded" }),
+    );
+    expect(html).toContain("Thursday 7-a-side on Thursday 13 August, 19:00 is cancelled.\nPitch flooded</textarea>");
+    expect(html).not.toContain("In or out?");
   });
 });

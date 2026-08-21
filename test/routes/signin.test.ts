@@ -1139,6 +1139,13 @@ describe("no password field anywhere (TR-16)", () => {
     // `PUSH_SUBSCRIBE_JS` grant above extends to the one other page that can
     // ever render the same button (spec §11's "it appears in exactly two
     // places").
+    // "message everyone", "message squad" and "cancel done" joined this set
+    // in M22, for the Post-to-WhatsApp enhancements: the compose pages carry
+    // `BROADCAST_WHATSAPP_JS` (the broadcast body is never stored, so only
+    // the browser can offer it to WhatsApp), and the cancelled page carries
+    // `COPY_BUTTON_JS` for the card's Copy button. Each page is complete
+    // without its script — the panel stays hidden, the textarea stays
+    // selectable — which is the property this set exists to police.
     const mayCarryScript = new Set([
       "sign-in",
       "sign-in error",
@@ -1147,6 +1154,9 @@ describe("no password field anywhere (TR-16)", () => {
       "owner fixture",
       "account",
       "response offer",
+      "message everyone",
+      "message squad",
+      "cancel done",
     ]);
 
     // The only two captures whose route never calls layout() at all —

@@ -5,6 +5,7 @@ import { createNotifier, parseMaxEmailsPerDay } from "../notify/factory.js";
 import type { Notifier } from "../notify/notifier.js";
 import { notifyPromotedPlayer } from "../routes/respond.js";
 import { sendOwnerAttention, type AttentionResult } from "../sweep/attention.js";
+import { sendGroupNudges, type GroupNudgeResult } from "../sweep/group-nudge.js";
 import { runDueErasures } from "../sweep/erasures.js";
 import { openAndRemind } from "../sweep/open-and-remind.js";
 import { retirePastFixtures } from "../sweep/retire.js";
@@ -77,6 +78,12 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
           `DAILY EMAIL CEILING REACHED: ${remindResult.remindersDeferred} reminder(s) deferred on this sweep run and will be retried on the next one`,
         );
       }
+
+      // Step 2b (M22): nudge each organiser, once, to post the open fixture
+      // to their group chat (N-11). After the reminders so the headcount it
+      // quotes is the one the N-1 just went out with; before attention and
+      // retirement, and wrapped for the same reason attention is below.
+      const nudgeResult = await runGroupNudgeStep(db, notifier, now);
 
       // Step 3: the owner attention email (N-4, BR-31), between the reminder
       // sweep and retirement.
@@ -171,13 +178,16 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       }
 
       const failed =
-        remindResult.failures.length + attentionResult.failures.length + erasureResult.failures.length;
+        remindResult.failures.length +
+        nudgeResult.failures.length +
+        attentionResult.failures.length +
+        erasureResult.failures.length;
       if (failed > 0) {
         throw new Error(
           // "fixture(s) and player(s)" because the erasure step counts people,
           // not fixtures; the leading "fixture(s)" wording is kept so the
           // existing log searches and tests that match on it still do.
-          `sweep failed for ${failed} fixture(s) and player(s) during open/remind/attention/erasure ` +
+          `sweep failed for ${failed} fixture(s) and player(s) during open/remind/nudge/attention/erasure ` +
             `(opened ${remindResult.fixturesOpened}, sent ${remindResult.remindersSent}, ` +
             `failed ${remindResult.remindersFailed}, attention sent ${attentionResult.attentionSent}, ` +
             `retired ${retireResult.retired}, erased ${erasureResult.erased}, ` +
@@ -189,6 +199,35 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
 
     default:
       throw new Error(`Unrecognised cron schedule "${cron}"`);
+  }
+}
+
+/**
+ * Sweep step 2b (N-11), with the same outer failure boundary as step 3 below
+ * and for the same reason: `sendGroupNudges` isolates per fixture, but a D1
+ * error in its first query would escape it, and retirement must still run.
+ */
+async function runGroupNudgeStep(db: Db, notifier: Notifier, now: Date): Promise<GroupNudgeResult> {
+  try {
+    const result = await sendGroupNudges(db, notifier, now);
+    console.log("group-nudge", JSON.stringify(result));
+    for (const failure of result.failures) {
+      console.error(
+        `group-nudge failed for fixture ${failure.fixtureId} (game ${failure.gameId ?? "unknown"}) at stage ${failure.stage}: ${failure.message}`,
+      );
+    }
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`group-nudge step failed outright and no organiser was nudged: ${message}`);
+    return {
+      fixturesConsidered: 0,
+      nudgesSent: 0,
+      nudgesFailed: 0,
+      ownersWithoutPush: 0,
+      ownersAlreadyTold: 0,
+      failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],
+    };
   }
 }
 

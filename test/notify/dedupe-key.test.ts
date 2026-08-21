@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   attentionKey,
   broadcastKey,
+  groupNudgeKey,
   cancellationKey,
   promotionKey,
   pushKey,
@@ -102,6 +103,7 @@ describe("push dedupe keys (M14)", () => {
 describe("broadcastKey", () => {
   it("is unique per broadcast and per recipient", () => {
     expect(broadcastKey("b-1", "p-1")).toBe("n10:b-1:p-1");
+    expect(groupNudgeKey("f-1", "p-1")).toBe("n11:f-1:p-1");
     expect(broadcastKey("b-1", "p-2")).not.toBe(broadcastKey("b-1", "p-1"));
     expect(broadcastKey("b-2", "p-1")).not.toBe(broadcastKey("b-1", "p-1"));
   });

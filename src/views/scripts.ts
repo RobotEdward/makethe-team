@@ -203,40 +203,92 @@ export const PASSKEY_REGISTER_JS = `
 `;
 
 /**
- * Copy the invite link to the clipboard, from `/g/:id`.
+ * Copy a field's value to the clipboard — the invite link on `/g/:id`, and
+ * each prepared WhatsApp message (M22).
  *
  * The first script in this project that is pure convenience rather than a
  * browser-only capability, and it earns its place on the terms the module
- * comment sets: the page is complete without it. The link renders in a
- * `readonly` input that can be selected and copied by hand, and this only
- * adds a button beside it. Scripting off, or an old browser without
- * `navigator.clipboard`, is the same page minus one button.
+ * comment sets: the page is complete without it. The value renders in a
+ * `readonly` input or textarea that can be selected and copied by hand, and
+ * this only adds a button beside it. Scripting off, or an old browser
+ * without `navigator.clipboard`, is the same page minus one button.
+ *
+ * Generalised from a single hard-coded pair of ids in M22: a button carries
+ * `data-copy="<id of the field>"` and ships `hidden`, so one block serves
+ * every copy button in the app and a page with none of them is untouched.
+ * A button whose target is missing is left hidden rather than revealed and
+ * broken — and `test/routes/games.test.ts` checks the targets exist, since
+ * that silence is exactly the failure it cannot report itself.
  *
  * No `fetch`, so it adds nothing to `connect-src`. If a future version of this
  * block ever does talk to the network, re-read the "a hash lets a script run"
  * section above first.
  */
-export const COPY_INVITE_JS = `
+export const COPY_BUTTON_JS = `
 (function () {
-  var input = document.getElementById("invite-url");
-  var button = document.getElementById("invite-copy");
-  if (!input || !button) return;
   if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") return;
+  var buttons = document.querySelectorAll("button[data-copy]");
+  for (var i = 0; i < buttons.length; i++) {
+    (function (button) {
+      var field = document.getElementById(button.getAttribute("data-copy"));
+      if (!field) return;
+      button.hidden = false;
+      button.addEventListener("click", function () {
+        navigator.clipboard.writeText(field.value).then(function () {
+          var original = button.textContent;
+          button.textContent = "Copied";
+          setTimeout(function () { button.textContent = original; }, 2000);
+        }).catch(function () {
+          // The field is still there and still selectable — say so rather than
+          // failing silently, which is the diagnosability lesson from the passkey
+          // scripts' bare .catch() (docs/known-issues.md).
+          button.textContent = "Press and hold to copy";
+        });
+      });
+    })(buttons[i]);
+  }
+})();
+`;
 
-  button.hidden = false;
-
-  button.addEventListener("click", function () {
-    navigator.clipboard.writeText(input.value).then(function () {
-      var original = button.textContent;
-      button.textContent = "Copied";
-      setTimeout(function () { button.textContent = original; }, 2000);
-    }).catch(function () {
-      // The input is still there and still selectable — say so rather than
-      // failing silently, which is the diagnosability lesson from the passkey
-      // scripts' bare .catch() (docs/known-issues.md).
-      button.textContent = "Press and hold to copy";
-    });
-  });
+/**
+ * "Post to WhatsApp too", on the broadcast compose page (M22).
+ *
+ * A broadcast's body is never stored (M15 spec §8), so there is no page after
+ * Send that could offer it — this keeps a `wa.me` link in step with what the
+ * organiser is typing, and reveals the panel it sits in. Scripting off, the
+ * panel stays `hidden` and the page is the M15 compose form exactly.
+ *
+ * The `wa.me` prefix is **read from the anchor's own `href`**, not written
+ * here: `test/views/scripts.test.ts` forbids any off-origin URL in a script
+ * block, and it is right to — a script holding one is a script that may be
+ * about to fetch it. This one only ever sets an anchor's `href`, which is a
+ * navigation the person performs by tapping, not a request the page makes.
+ *
+ * The text shape — subject, blank line, message; message alone when the
+ * subject is blank — is `broadcastMessage` in `src/domain/whatsapp-message.ts`,
+ * and test/views/whatsapp.test.ts runs this block against a fake DOM to hold
+ * the two to the same answer.
+ *
+ * No `fetch`, so `connect-src` is untouched.
+ */
+export const BROADCAST_WHATSAPP_JS = `
+(function () {
+  var panel = document.getElementById("whatsapp");
+  var link = document.getElementById("whatsapp-link");
+  var subject = document.getElementById("subject");
+  var message = document.getElementById("message");
+  if (!panel || !link || !subject || !message) return;
+  var base = link.getAttribute("href");
+  if (!base) return;
+  function update() {
+    var head = subject.value.trim();
+    var text = head === "" ? message.value : head + "\\n\\n" + message.value;
+    link.setAttribute("href", base + encodeURIComponent(text));
+  }
+  subject.addEventListener("input", update);
+  message.addEventListener("input", update);
+  update();
+  panel.hidden = false;
 })();
 `;
 
@@ -465,7 +517,7 @@ export const TEAM_PICKER_JS = `
  * page, and two vocabulary-guard tests — `test/routes/respond-get.test.ts`
  * and `test/views/fixture.test.ts` — happened to ban those words in the
  * pages they cover. That was the wrong fix: `PASSKEY_SIGN_IN_JS`,
- * `PASSKEY_REGISTER_JS`, `COPY_INVITE_JS` and `TEAM_PICKER_JS` already ship
+ * `PASSKEY_REGISTER_JS`, `COPY_BUTTON_JS` and `TEAM_PICKER_JS` already ship
  * `addEventListener` and bare `event` identifiers to real browsers on
  * `/sign-in`, `/app/passkeys`, `/g/:id` and the owner fixture page, so "no
  * 'event' anywhere in the served bytes" was never a real site-wide
@@ -891,7 +943,8 @@ export const PUSH_SUBSCRIBE_JS = `
 export const PAGE_SCRIPT_BLOCKS = [
   PASSKEY_SIGN_IN_JS,
   PASSKEY_REGISTER_JS,
-  COPY_INVITE_JS,
+  COPY_BUTTON_JS,
+  BROADCAST_WHATSAPP_JS,
   TEAM_PICKER_JS,
   INSTALL_JS,
   PUSH_SUBSCRIBE_JS,

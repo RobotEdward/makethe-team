@@ -265,6 +265,33 @@ function broadcast({ subject, message, gameName }: BroadcastEmailPayload): PushC
 }
 
 /**
+ * What N-11 is built from (M22). Not an email payload, unlike every other
+ * entry: the nudge has no email leg, so this is its whole input.
+ */
+export interface GroupNudgePayload {
+  gameName: string;
+  kicksOffAtLocal: string;
+  inCount: number;
+}
+
+/**
+ * N-11: the organiser's group nudge — "the fixture's open, post it to the
+ * group" — sent the first sweep tick after the reminder instant.
+ *
+ * What happened: there is something to post. When: kick-off, and the
+ * headcount that makes the post worth making. The title is a fixed question
+ * so it reads the same whatever the game is called; the game name moves to
+ * the body, where there is room for it.
+ */
+function groupNudge({ gameName, kicksOffAtLocal, inCount }: GroupNudgePayload): PushCopy {
+  return {
+    title: "Post it to the group?",
+    body: `${gameName}, ${kicksOffAtLocal}: ${inCount} in so far.`,
+    tag: `n11:${gameName}:${kicksOffAtLocal}`,
+  };
+}
+
+/**
  * The push-copy catalogue, one builder per `NotificationType`
  * (`NOTIFICATION_TYPES` in `./dedupe-key.ts`). Indexed by type rather than
  * exported as nine loose functions so that a type added to the catalogue
@@ -283,6 +310,7 @@ export const PUSH_COPY: {
   n8: typeof erasureScheduled;
   n9: typeof teams;
   n10: typeof broadcast;
+  n11: typeof groupNudge;
 } = {
   n1: reminder,
   n2: promotion,
@@ -294,6 +322,7 @@ export const PUSH_COPY: {
   n8: erasureScheduled,
   n9: teams,
   n10: broadcast,
+  n11: groupNudge,
 };
 
 // Referenced only for the mapped type above; re-exported so callers can

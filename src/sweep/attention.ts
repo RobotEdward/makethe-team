@@ -98,7 +98,7 @@ interface AttentionCandidate {
   problem: AttentionProblem;
 }
 
-interface OwnerRecipient {
+export interface OwnerRecipient {
   playerId: string;
   name: string;
   email: string;
@@ -455,7 +455,7 @@ async function processFixture(
  * Ordered deterministically so a two-owner Game produces the same batch order
  * on every run, which keeps test assertions and log lines stable.
  */
-async function activeOwners(
+export async function activeOwners(
   db: Db,
   gameId: string,
 ): Promise<{ owners: OwnerRecipient[]; skippedNoRecipient: number }> {

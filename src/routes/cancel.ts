@@ -277,6 +277,8 @@ cancel.post("/cancel/:token", async (c) => {
   return c.html(
     renderCancelledPage({
       gameName: context.game.name,
+      kicksOffAtLocal: formatLocalDateTime(context.fixture.kicksOffAt, context.game.timezone),
+      reason: rawReason,
       emailed: summary.sent,
       notEmailed: result.recipients.length - summary.sent,
     }),

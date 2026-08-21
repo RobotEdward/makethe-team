@@ -6,8 +6,11 @@ import {
 } from "../domain/broadcast-audience.js";
 import { MAX_MESSAGE_LENGTH, MAX_SUBJECT_LENGTH, type BroadcastFormValues } from "../domain/broadcast-form.js";
 import type { FieldError } from "../domain/game-form.js";
+import { whatsappShareUrl } from "../domain/whatsapp-message.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
+import { BROADCAST_WHATSAPP_JS } from "./scripts.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, WHATSAPP_CSS } from "./styles.js";
+import { WHATSAPP_CARD_ID } from "./whatsapp.js";
 
 /**
  * The compose page behind `gameMessagePath`/`fixtureMessagePath` (M15
@@ -114,6 +117,26 @@ function channelFields(values: BroadcastFormValues, errorMessage: string | undef
     </div>`;
 }
 
+/**
+ * "Post to WhatsApp too" (M22): a `wa.me` link `BROADCAST_WHATSAPP_JS` keeps
+ * filled with the subject and message as typed. Ships `hidden` and the
+ * script reveals it — there is no server-side text to put in it, since a
+ * broadcast's body is never stored (M15 spec §8), so without the script
+ * there is nothing honest to show. Outside the form on purpose: an anchor
+ * inside it would read as one of its controls, and tapping it must not
+ * submit anything.
+ */
+function renderWhatsAppCompose(): string {
+  return `
+    <div class="whatsapp" id="${WHATSAPP_CARD_ID}" hidden>
+      <h2>Post to WhatsApp too</h2>
+      <p>Opens WhatsApp with what you've written here — before or after you send it.</p>
+      <div class="whatsapp-actions">
+        <a class="button" id="whatsapp-link" href="${escapeHtml(whatsappShareUrl(""))}" target="_blank" rel="noopener">Open in WhatsApp</a>
+      </div>
+    </div>`;
+}
+
 export function renderBroadcastPage(params: BroadcastPageParams): string {
   const { gameId, fixture, counts, values } = params;
   const errors = params.errors ?? [];
@@ -168,6 +191,7 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
         <button class="button primary" type="submit">${sendLabel(buttonCount)}</button>
       </div>
     </form>
+    ${renderWhatsAppCompose()}
     <p class="back-link"><a href="${escapeHtml(backHref)}">Back</a></p>
   `;
 
@@ -175,6 +199,7 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
     nav: params.nav,
     title: `Message the squad — ${params.gameName} — Make The Team`,
     body,
-    pageStyles: [FORM_CSS, FIXTURE_STYLES_CSS],
+    pageStyles: [FORM_CSS, FIXTURE_STYLES_CSS, WHATSAPP_CSS],
+    pageScripts: [BROADCAST_WHATSAPP_JS],
   });
 }

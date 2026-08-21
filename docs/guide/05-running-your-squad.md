@@ -225,6 +225,30 @@ squad that has been told something from one that never has.
 Once the fixture has been played or called off, the teams stay on the page as
 a record of who was on which side. The controls go; the pick doesn't.
 
+## Posting to your WhatsApp group
+
+Most squads already live in a group chat, and the app doesn't try to replace
+it. What it does is save you typing: the fixture page carries a **Post to
+WhatsApp** card with the message written for you — the date, the venue, how
+many are in and how many you still need, and the link people answer on.
+**Open in WhatsApp** opens WhatsApp with it ready to send; pick the group, add
+your own words if you like, and send. **Copy** puts the same text on your
+clipboard for anywhere else.
+
+The message changes with the fixture. Once you've published teams it offers
+the line-ups first, with the numbers message still underneath; a cancelled
+fixture offers the cancellation instead. Nothing in it is personal to one
+player — the link is the game page, which everyone in the squad signs in to —
+so it's safe to post where the whole group can see it.
+
+If you've turned on notifications, you'll get one nudge per fixture the
+morning the reminders go out — **Post it to the group?** — which lands you on
+the card. After that, the numbers-short warning does the same job later on.
+
+There's a matching **Post to WhatsApp too** button under the **Message
+players** form, for when what you're sending the squad by email is worth a
+line in the group as well.
+
 ## Replacing the invite link
 
 If the link ends up somewhere you'd rather it hadn't — a public group, a work

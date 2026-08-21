@@ -18,6 +18,7 @@ import {
   insertGame,
   insertMembership,
   insertPlayer,
+  insertSubscription,
   resetDatabase,
   testDb,
 } from "../support/factories.js";
@@ -292,6 +293,35 @@ describe("handleScheduled: the sweep", () => {
       .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n4")));
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("sent");
+  });
+
+  it("nudges a subscribed organiser to post the open fixture to the group as sweep step 2b (N-11, M22)", async () => {
+    // Past the game's reminder instant (1 day before, 09:00 Europe/London =
+    // 2026-08-12T08:00Z) and before kickoff: the same moment the N-1 goes
+    // out. Times constructed explicitly, never derived from the clock.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const sweepNow = new Date("2026-08-12T10:00:00Z");
+    const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
+    const owner = await addOwner("game-1", "owner@example.com");
+    await insertSubscription(db, owner, "https://push.example.com/owner-device");
+
+    await expect(handleScheduled(CRON_SWEEP, env, sweepNow)).resolves.toBeUndefined();
+
+    const rows = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n11")));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.playerId).toBe(owner);
+    expect(rows[0]?.dedupeKey).toBe(`push:n11:${fixtureId}:${owner}`);
+
+    // And once only, however many sweeps follow.
+    await expect(handleScheduled(CRON_SWEEP, env, new Date(sweepNow.getTime() + 3_600_000))).resolves.toBeUndefined();
+    const again = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n11")));
+    expect(again).toHaveLength(1);
   });
 
   it("retires past fixtures even when the attention step fails for want of CANCEL_TOKEN_SECRET", async () => {

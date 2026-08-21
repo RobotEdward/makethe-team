@@ -11,12 +11,15 @@ import { RESPONSE_STATUSES } from "../domain/response-status.js";
 import { displayName } from "../domain/display-name.js";
 import { takingChanges, type FixtureView } from "../domain/fixture-view.js";
 import { sideCounts, type TeamId } from "../domain/teams.js";
+import { cancelledMessage, openMessage, teamsMessage } from "../domain/whatsapp-message.js";
+import { SITE_ORIGIN } from "../notify/delivery.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
-import { TEAM_PICKER_JS } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { COPY_BUTTON_JS, TEAM_PICKER_JS, type PageScriptBlock } from "./scripts.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS, WHATSAPP_CSS } from "./styles.js";
+import { renderWhatsAppCard, type WhatsAppMessage } from "./whatsapp.js";
 
 export interface OwnerFixtureParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
@@ -70,6 +73,13 @@ export interface OwnerFixtureParams {
   problem?: string;
   /** The broadcast receipt (M20 B4), from `broadcastNoticeFrom` — never caller-chosen text. */
   broadcastNotice?: string;
+  /**
+   * `fixtures.cancellation_reason`, for the WhatsApp cancellation message
+   * (M22). Required rather than optional so a caller cannot forget it and
+   * silently post "is cancelled." with the reason the organiser typed left
+   * off; `null` is the honest "there wasn't one".
+   */
+  cancellationReason: string | null;
 }
 
 /**
@@ -269,6 +279,59 @@ function renderTeams(params: OwnerFixtureParams): string {
   });
 }
 
+/**
+ * What the organiser can post to their WhatsApp group for this fixture
+ * (M22), derived from the same state the rest of the page shows so the
+ * numbers in the message are the numbers on the page above it.
+ *
+ * Nothing for a `scheduled` fixture (not open yet — there is nothing to
+ * announce, and opening it early is a click away) or a `played` one. Teams
+ * come first once published because that is the newer news; the numbers
+ * message stays beside it since a published pick does not close the squad.
+ * Only players who are `in` and placed are listed — a dropout keeps their
+ * side on purpose (`renderTeams`), and naming them here would claim they
+ * are playing.
+ */
+function whatsappMessages(params: OwnerFixtureParams): WhatsAppMessage[] {
+  const { gameName, kicksOffAtLocal, venueName, view, squad, teamNames } = params;
+  const gameUrl = `${SITE_ORIGIN}${gamePath(params.gameId)}`;
+
+  if (view.status === "cancelled") {
+    return [
+      {
+        id: "whatsapp-cancelled",
+        label: "Cancelled",
+        text: cancelledMessage({ gameName, kicksOffAtLocal, reason: params.cancellationReason }),
+      },
+    ];
+  }
+  if (view.status === "scheduled" || view.status === "played") return [];
+
+  const messages: WhatsAppMessage[] = [];
+  if (params.teamsPublished) {
+    const playing = squad.filter((member) => member.status === "in");
+    const lineUps = (["a", "b"] as const).map((side) => ({
+      name: teamNames[side],
+      players: playing.filter((member) => member.team === side).map((member) => displayName(member.name, member.erasedAt)),
+    }));
+    messages.push({ id: "whatsapp-teams", label: "Teams", text: teamsMessage({ gameName, kicksOffAtLocal, lineUps }) });
+  }
+  messages.push({
+    id: "whatsapp-open",
+    label: "Numbers",
+    text: openMessage({
+      gameName,
+      venueName,
+      kicksOffAtLocal,
+      inCount: view.inCount,
+      minPlayers: view.minPlayers,
+      maxPlayers: view.maxPlayers,
+      gameUrl,
+    }),
+  });
+  return messages;
+}
+
 export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   const { gameId, fixtureId, gameName, kicksOffAtLocal, venueName, inCount, maxPlayers, view, squad } = params;
 
@@ -283,6 +346,14 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   // `src/views/player-game.ts`, which has no roster to count when the
   // organiser has squad visibility off. Each surface counts what it shows.
   const waitlistCount = squad.filter((member) => member.status === "waitlisted").length;
+
+  const whatsapp = whatsappMessages(params);
+
+  // The copy script only when there is a Copy button for it to reveal; the
+  // picker's drag enhancement only where the picker is (see `renderTeams`).
+  const pageScripts: PageScriptBlock[] = [];
+  if (takingChanges(view)) pageScripts.push(TEAM_PICKER_JS);
+  if (whatsapp.length > 0) pageScripts.push(COPY_BUTTON_JS);
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
@@ -300,6 +371,8 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${renderTeams(params)}
 
     ${renderGuestForm(gameId, fixtureId, params)}
+
+    ${whatsapp.length === 0 ? "" : renderWhatsAppCard({ messages: whatsapp })}
 
     <div class="actions">
       <a class="button" href="${escapeHtml(fixtureMessagePath(gameId, fixtureId))}">Message players</a>
@@ -336,11 +409,10 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     // stays 390px wide. The trade is real and worth naming: a waitlisted
     // member's row and a guest's row are two lines here rather than one. Two
     // lines that fit beat one line that is partly off the screen.
-    pageStyles: [SQUAD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS],
-    // Gated on the same predicate `renderTeams` picks the picker with, so the
-    // enhancement ships exactly where the thing it enhances does. A closed
-    // fixture renders the read-only line-ups, which have no form to move a
-    // name in and nothing for this block to find.
-    pageScripts: takingChanges(view) ? [TEAM_PICKER_JS] : [],
+    //
+    // WHATSAPP_CSS is namespaced under .whatsapp and collides with nothing, so
+    // its position is not load-bearing; last keeps it out of the pair above.
+    pageStyles: [SQUAD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS, WHATSAPP_CSS],
+    pageScripts,
   });
 }

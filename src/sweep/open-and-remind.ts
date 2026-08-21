@@ -112,7 +112,7 @@ interface GameTiming {
   reminderLocalTime: string;
 }
 
-interface DueFixture {
+export interface DueFixture {
   id: string;
   gameId: string;
   kicksOffAt: Date;
@@ -169,7 +169,7 @@ const MINUTE_MS = 60_000;
  * Read-only — never touches the Durable Object, which is correct here
  * because nothing about deciding *which* fixtures are due affects capacity.
  */
-async function fixturesDueByLifecycle(
+export async function fixturesDueByLifecycle(
   db: Db,
   lifecycle: "scheduled" | "open",
   now: Date,

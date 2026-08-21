@@ -207,11 +207,11 @@ describe("pageStyles cascade order", () => {
     const ownerFixture = arrays.find(({ id }) => id.startsWith("src/views/owner-fixture.ts"));
     expect(
       ownerFixture?.blocks,
-      "src/views/owner-fixture.ts passes four blocks and is the page whose " +
+      "src/views/owner-fixture.ts passes five blocks and is the page whose " +
         "440px-wide squad rows at a 390px viewport this guard was written for. " +
         "If the scan can no longer see it, fix the scan before trusting the " +
         "assertions below.",
-    ).toHaveLength(4);
+    ).toHaveLength(5);
   });
 
   it("lists every selector two of a page's blocks declare", () => {

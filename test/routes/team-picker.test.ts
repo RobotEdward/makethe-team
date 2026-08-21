@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { auditLog, fixtures, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { SCRIPT_BLOCKS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { COPY_BUTTON_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, TEAM_PICKER_JS } from "../../src/views/scripts.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
@@ -230,7 +230,7 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
    * knows what this page is *for* can ask — that the pick itself is still
    * expressible once all of it is deleted.
    */
-  it("ships one enumerated script, and the whole pick survives its removal", async () => {
+  it("ships exactly its two enumerated scripts, and the whole pick survives their removal", async () => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId, ada, bram } = await seedPickableFixture(viewerId);
 
@@ -239,30 +239,37 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     // M13 Task 5 put the site-wide service worker registration on every
     // page, so "the picker page carries exactly the one enhancement" is no
     // longer true of the raw count — every page now carries that plus
-    // whatever it opts into. The picker's *own* opt-in is still exactly one
-    // script, so the assertion is narrowed to the scripts that are not the
-    // site-wide block.
+    // whatever it opts into. M22 added a second opt-in to an open fixture's
+    // page: the Post-to-WhatsApp card's Copy button. The page's *own* opt-ins
+    // are therefore exactly those two, named here so a third cannot arrive
+    // unnoticed, and the assertion is narrowed to the scripts that are not
+    // the site-wide block.
     const scripts = [...served.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
     const ownScripts = scripts.filter(([, , js]) => js !== SERVICE_WORKER_JS);
     expect(scripts.some(([, , js]) => js === SERVICE_WORKER_JS), "the page must register the service worker").toBe(
       true,
     );
-    expect(ownScripts, "the picker page carries exactly the one enhancement").toHaveLength(1);
+    expect(
+      ownScripts.map(([, , js]) => js),
+      "the picker page carries exactly the picker and the copy button",
+    ).toEqual([TEAM_PICKER_JS, COPY_BUTTON_JS]);
     // Guards against layout() emitting the site-wide block twice: the two
-    // assertions above (some() finds it, ownScripts has length 1) would both
+    // assertions above (some() finds it, ownScripts has length 2) would both
     // still pass if SERVICE_WORKER_JS appeared a second time, since a
     // duplicate is filtered into neither bucket's failure. Pinning the total
     // count against ownScripts.length + 1 is what actually catches that.
-    expect(scripts.length, "exactly one site-wide script plus the picker's own").toBe(ownScripts.length + 1);
+    expect(scripts.length, "exactly one site-wide script plus the page's own").toBe(ownScripts.length + 1);
     // No `src`, no `type`, no `nonce`: only a bare inline tag is covered by a
     // SHA-256 hash of its own text.
     for (const [, attributes] of scripts) {
       expect(attributes, "every script tag must carry no attributes").toBe("");
     }
-    expect(
-      SCRIPT_BLOCKS as readonly string[],
-      "the picker ships script that is not in SCRIPT_BLOCKS, so the CSP will not hash it",
-    ).toContain(ownScripts[0]![2]);
+    for (const [, , js] of ownScripts) {
+      expect(
+        SCRIPT_BLOCKS as readonly string[],
+        "the picker page ships script that is not in SCRIPT_BLOCKS, so the CSP will not hash it",
+      ).toContain(js);
+    }
 
     // What a browser with scripting off is left holding. Behaviour lives only
     // in the blocks — no inline handler, no `javascript:` URL — so deleting

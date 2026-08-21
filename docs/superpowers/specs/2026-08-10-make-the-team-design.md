@@ -300,6 +300,7 @@ The complete set for v1. Do not add others without a decision.
 | N-8 | Erasure scheduled | The requesting player | 1 per request | Email |
 | N-9 | Teams published | Players who are `in`, never guests (BR-32) | 1 per player per publish | Email |
 | N-10 | Organiser broadcast | Chosen audience of a game or fixture, never guests (BR-32) | 1 per send per player | Email + Push |
+| N-11 | Organiser group nudge — "post it to the group?" at the fixture's reminder instant | Active owners with a registered device | 1 per fixture per owner, ever | Push only |
 
 **Amended, M9.** N-9 is added by BR-35 — the decision this table asks for
 before anything joins it. Nothing but the publish button sends it: no sweep
@@ -314,6 +315,16 @@ body, and either channel or both; the send is capped at
 `MAX_BROADCASTS_PER_GAME_PER_DAY` (three) per Game per UTC day, and a send
 whose audience resolves to no addressable recipient is refused before it
 spends one of those three.
+
+**Amended, M22.** N-11 is added with the "Post to WhatsApp" card. The product
+never posts into a group chat itself (no phone numbers are stored, and WhatsApp
+offers no way into somebody else's group), so the card prepares the message —
+the open fixture with its headcount, the published teams, a cancellation, or
+a broadcast as typed — and a `wa.me` link hands it to WhatsApp for the organiser
+to send. N-11 is the prompt to go and do that: push only, since an email saying
+"open WhatsApp" is noise beside the N-1 the organiser already gets as a player,
+and the N-4 attention push (numbers short inside the warning window) already
+serves as the later "chase them" prompt, landing on the same page.
 
 **Amended, M7b.** N-7 shipped in M7a and was described in BR-22 but never
 added to this table, which calls itself the complete set — so the table said
@@ -549,6 +560,7 @@ Notes:
   | N-8 erasure scheduled | `n8:<player_id>:<erases_at>` | Once per request; a re-request moves the deadline, so its key differs and it is told again |
   | N-9 teams published | `n9:<fixture_id>:<player_id>:<published_at>` | Once per publish per player; re-publishing after a late change mints a new key and genuinely tells everyone again |
   | N-10 organiser broadcast | `n10:<broadcast_id>:<player_id>` | Once per recipient per send; the id is minted per request, so a second broadcast always sends |
+  | N-11 organiser group nudge | `push:n11:<fixture_id>:<player_id>` | Once per owner per fixture, ever; push-only, so the row lives under the `push:` namespace every push row uses |
 
   **Amended, M6a.** The table above originally gave N-6's key as
   `n6:<membership_id>` alone, which contradicts its own "rejoining sends
@@ -673,6 +685,7 @@ Each milestone is independently deployable and demonstrable.
 | **M11** | Player account — a home-page sign-in link, a player's own `/app/account` (editable name, read-only email, a passkeys link, their last 20 fixtures across every game), and an organiser's read-only `/g/:id/squad/:playerId` (name, email, role, joined date, no fixture history) | A player can rename themselves and see their last 20 fixtures from `/app/account`; an organiser can open `/g/:id/squad/:playerId` for anyone in their squad and see who they are with nothing about what they've played; anyone else signed in gets a 404 |
 | **M12** | Visual standards everywhere — M10's tokens, layout rules and component vocabulary applied to the twelve views M10 did not reach, plus four new CSS primitives (`.capacity`, `.switch-row`, `.danger-link`, `INVITE_CSS`) | Every screen has one primary action, a back link if it is behind a session, no centred body text outside the terminal pages, and no raw enum value on a player-facing page |
 | **M15** | Quick message to players (BR-36) — a compose page reached from a game or a fixture, a chosen audience, email and/or push, capped at three sends per game per UTC day, and N-10 | An organiser can message their squad from the fixture page and a phone with a registered device receives it |
+| **M22** | Post to WhatsApp — a prepared group-chat message (open fixture with headcount, published teams, cancellation, broadcast as typed) with a `wa.me` link and a Copy button on the fixture page, the cancelled page and the compose page, plus N-11 nudging the organiser to post at the reminder instant | An organiser taps once from the fixture page and WhatsApp opens with the message ready; a subscribed organiser is nudged once per fixture, landing on the card |
 
 M1–M4 are the product. M5–M7 make it shareable. Score recording and the funding page come after, as separate specs — as team picking did, delivered as M9.
 
