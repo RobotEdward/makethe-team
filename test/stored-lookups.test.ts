@@ -49,6 +49,10 @@ import { eq } from "drizzle-orm";
  * A CHECK constraint is the real fix and is recorded as a follow-up; it is a
  * migration, which this milestone does not allow.
  *
+ * The sibling invariant is `test/played-fixture-freeze.test.ts`: this file
+ * proves a renderer survives a value it has never heard of, that one proves a
+ * played fixture's rows never change under one.
+ *
  * The value below is what a row like that looks like. `as never` is how it is
  * written in a test the type system would otherwise forbid.
  */
