@@ -32,6 +32,20 @@ export function outcomeLabel(
   return names[outcome] ?? null;
 }
 
+/**
+ * The short summary `renderLocked` shows inside the full panel — "Reds won
+ * 3–2", "Draw" — exposed on its own for callers that want just the words
+ * without the panel's live forms (the game pages' "last result" line, M25
+ * Task 13). Sharing this rather than a second phrasing is what stops the
+ * summary line and the panel from ever naming the same result differently.
+ */
+export function derivedResultWords(
+  names: Record<ResultOutcome, string>,
+  derived: DerivedResult,
+): string | null {
+  return claimWords(names, derived.outcome, derived.scoreA, derived.scoreB);
+}
+
 function claimWords(
   names: Record<ResultOutcome, string>,
   outcome: ResultOutcome,

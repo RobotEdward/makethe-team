@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseSource, ResponseStatus } from "../domain/response-status.js";
@@ -413,6 +413,29 @@ export async function listUpcomingFixtures(
     .from(fixtures)
     .where(and(eq(fixtures.gameId, gameId), gte(fixtures.kicksOffAt, now)))
     .orderBy(fixtures.kicksOffAt);
+}
+
+/**
+ * The most recently played fixture of a game, if it has one — the "last
+ * result" line on both game pages (M25 Task 13).
+ *
+ * Its own query rather than a widening of `listUpcomingFixtures`: that
+ * function's contract is "from `now` onward", stated in its own comment
+ * above, and a fixture that has been played is by definition in the past. A
+ * function named `listUpcoming…` that started returning past fixtures would
+ * be a trap for the next reader who trusts the name.
+ */
+export async function findLastPlayedFixture(
+  db: Db,
+  gameId: string,
+): Promise<{ id: string; kicksOffAt: Date } | null> {
+  const [fixture] = await db
+    .select({ id: fixtures.id, kicksOffAt: fixtures.kicksOffAt })
+    .from(fixtures)
+    .where(and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "played")))
+    .orderBy(desc(fixtures.kicksOffAt))
+    .limit(1);
+  return fixture ?? null;
 }
 
 export interface MembershipInGame {

@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "./client.js";
 import { fixtureResultClaims, memberships, players, responses } from "./schema.js";
 import type { ResultClaim, ResultOutcome } from "../domain/result.js";
@@ -97,6 +97,65 @@ export async function resultElectorate(
   const eligibleIds = new Set(playedRows.map((row) => row.playerId));
   organiserIds.forEach((id) => eligibleIds.add(id));
   return { eligibleIds, organiserIds };
+}
+
+/** One claim, tagged with the fixture it belongs to — `listClaimsForFixtures`'s row shape. */
+export interface FixtureClaim extends ResultClaim {
+  fixtureId: string;
+}
+
+/**
+ * Every claim on a batch of fixtures, no player join — for callers that need
+ * only what `deriveResult`/`isResultLocked` take (the dashboard's "results
+ * needed" list and the account history's locked rows, M25 Task 13), across
+ * however many fixtures in one round trip rather than one query per fixture.
+ * `listResultClaims` above stays the single-fixture, name-carrying read the
+ * write routes and the fixture pages use.
+ */
+export async function listClaimsForFixtures(db: Db, fixtureIds: readonly string[]): Promise<FixtureClaim[]> {
+  if (fixtureIds.length === 0) return [];
+  return db
+    .select({
+      fixtureId: fixtureResultClaims.fixtureId,
+      playerId: fixtureResultClaims.playerId,
+      outcome: fixtureResultClaims.outcome,
+      scoreA: fixtureResultClaims.scoreA,
+      scoreB: fixtureResultClaims.scoreB,
+      filedAt: fixtureResultClaims.filedAt,
+    })
+    .from(fixtureResultClaims)
+    .where(inArray(fixtureResultClaims.fixtureId, fixtureIds));
+}
+
+/**
+ * Every active owner of a batch of games, grouped by game id — the organiser
+ * half of `resultElectorate`, batched across games rather than one game at a
+ * time, for the account history's per-row `deriveResult` tie-break (M25 Task
+ * 13). A history can span many games in one page load; this is one query
+ * for all of them rather than one per row.
+ */
+export async function activeOwnersByGame(
+  db: Db,
+  gameIds: readonly string[],
+): Promise<Map<string, Set<string>>> {
+  const result = new Map<string, Set<string>>();
+  if (gameIds.length === 0) return result;
+  const rows = await db
+    .select({ gameId: memberships.gameId, playerId: memberships.playerId })
+    .from(memberships)
+    .where(
+      and(
+        inArray(memberships.gameId, gameIds),
+        eq(memberships.role, "owner"),
+        eq(memberships.active, true),
+      ),
+    );
+  for (const row of rows) {
+    const set = result.get(row.gameId) ?? new Set<string>();
+    set.add(row.playerId);
+    result.set(row.gameId, set);
+  }
+  return result;
 }
 
 export async function findResultClaim(

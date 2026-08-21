@@ -198,6 +198,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
           },
         ],
         squads: [],
+        resultsNeeded: [],
       }),
   },
   {

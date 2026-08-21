@@ -19,6 +19,7 @@ import {
   countCommitments,
   findGameForMember,
   findGameForOwner,
+  findLastPlayedFixture,
   findMembershipInGame,
   getFixtureWithSquad,
   listOpenFixtureIds,
@@ -64,7 +65,7 @@ import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-
 import { renderPlayerFixturePage } from "../views/player-fixture.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
-import { outcomeNames, type ResultPanelParams } from "../views/result.js";
+import { derivedResultWords, outcomeNames, type ResultPanelParams } from "../views/result.js";
 import { renderSquadMemberPage } from "../views/squad-member.js";
 import { rowName } from "../views/team-picker.js";
 import { notifyPromotedPlayer } from "./respond.js";
@@ -142,6 +143,42 @@ gamesRoutes.post(NEW_GAME_PATH, requirePlayer, async (c) => {
   return c.redirect(gamePath(created.gameId), 303);
 });
 
+/**
+ * The "last result" line both game pages show (M25 Task 13, BR-37): the
+ * words for the game's most recently played fixture, and its own id to link
+ * to — or `null` for "nothing to show", which covers two different states
+ * identically: no fixture has ever been played, and one has but nobody has
+ * filed a claim on it yet.
+ *
+ * A read-only summary, never the panel (`renderResultPanel`) — that carries
+ * live forms, and `POST …/result` 404s a submission to anything but the
+ * fixture page's own played fixture (Task 9), so a form here would invite a
+ * submit this page cannot honour. The words themselves come from
+ * `derivedResultWords`, the same function `renderLocked` uses inside the
+ * panel, so this line and that one can never disagree about what a result
+ * was called.
+ */
+async function lastResultFor(
+  db: Db,
+  game: { id: string; teamAName: string; teamBName: string },
+): Promise<{ fixtureId: string; words: string } | null> {
+  const last = await findLastPlayedFixture(db, game.id);
+  if (last === null) return null;
+
+  const claims = await listResultClaims(db, last.id);
+  if (claims.length === 0) return null;
+
+  const { organiserIds } = await resultElectorate(db, game.id, last.id);
+  const derived = deriveResult(claims, organiserIds);
+  // `claims` is non-empty here, so `deriveResult` cannot return null — see
+  // `src/sweep/result-cache.ts`'s own comment on the identical guarantee.
+  if (derived === null) return null;
+
+  const words = derivedResultWords(outcomeNames(game), derived);
+  if (words === null) return null;
+  return { fixtureId: last.id, words };
+}
+
 // `/g/:id` and friends are registered here, after `NEW_GAME_PATH` above — see
 // this file's module comment for why the order is load-bearing.
 
@@ -162,9 +199,10 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
     return renderPlayerGame(c, asMember, player.id, now);
   }
 
-  const [squad, upcoming] = await Promise.all([
+  const [squad, upcoming, lastResult] = await Promise.all([
     listSquad(db, game.id),
     listUpcomingFixtures(db, game.id, now),
+    lastResultFor(db, game),
   ]);
 
   return c.html(
@@ -181,6 +219,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       squad,
       upcoming,
       viewerPlayerId: player.id,
+      lastResult,
       broadcastNotice: broadcastNoticeFrom(c),
     }),
   );
@@ -230,9 +269,10 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
   // `listOpenFixtureIds` returns them kickoff-ordered; a game has at most one
   // open fixture at a time in practice, but the first is the right answer
   // either way.
-  const [openFixtureIds, upcoming] = await Promise.all([
+  const [openFixtureIds, upcoming, lastResult] = await Promise.all([
     listOpenFixtureIds(db, game.id),
     listUpcomingFixtures(db, game.id, now),
+    lastResultFor(db, game),
   ]);
 
   let openFixture: NonNullable<Parameters<typeof renderPlayerGamePage>[0]["openFixture"]> | null = null;
@@ -283,6 +323,7 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
       timezone: game.timezone,
       openFixture,
       upcoming,
+      lastResult,
       viewerPlayerId,
     }),
   );
@@ -1359,7 +1400,11 @@ async function renderSquadRefusal(
   const db = getDb(c.env.DB);
   const game = await findGameForOwner(db, gameId, c.get("player")!.id);
   if (game === null) return c.text("Not found", 404);
-  const [squad, upcoming] = await Promise.all([listSquad(db, game.id), listUpcomingFixtures(db, game.id, now)]);
+  const [squad, upcoming, lastResult] = await Promise.all([
+    listSquad(db, game.id),
+    listUpcomingFixtures(db, game.id, now),
+    lastResultFor(db, game),
+  ]);
   return c.html(
     renderGameOverviewPage({
       nav: pageNav(c, "games"),
@@ -1373,6 +1418,7 @@ async function renderSquadRefusal(
       inviteToken: game.inviteToken,
       squad,
       upcoming,
+      lastResult,
       viewerPlayerId: c.get("player")!.id,
       problem: "A game needs at least one organiser. Make someone else an organiser first.",
     }),

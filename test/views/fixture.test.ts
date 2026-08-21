@@ -1184,6 +1184,7 @@ describe("the capacity bar", () => {
         teams: null,
       },
       upcoming: [],
+      lastResult: null,
       viewerPlayerId: "p-1",
     });
     expect(playerHtml).toContain(`<div class="capacity">`);

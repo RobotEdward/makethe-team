@@ -17,7 +17,7 @@ import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { qrSvg } from "./qr.js";
 import { renderFreshness } from "./freshness.js";
 import { COPY_BUTTON_JS, FRESHNESS_JS } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, INVITE_CSS, RESULT_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 export interface GameOverviewParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
@@ -39,6 +39,14 @@ export interface GameOverviewParams {
    * and have it print the raw token at whoever is reading.
    */
   upcoming: ReadonlyArray<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>;
+  /**
+   * The game's most recently played fixture and its result, or `null` when
+   * there is nothing to show — no fixture has been played yet, or one has
+   * but nobody has filed a claim on it (M25 Task 13, BR-37). A link, never a
+   * form: see `lastResultFor` in `src/routes/games.ts` for why this page
+   * carries no result panel.
+   */
+  lastResult: { fixtureId: string; words: string } | null;
   /** The id of the player viewing this page, so their row can be marked as "(you)". */
   viewerPlayerId: string;
   /** A refusal to explain on this page, e.g. J6a's last-organiser guard. Escaped and shown near the top. */
@@ -120,6 +128,13 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     )
     .join("");
 
+  // A link, never a form (see `GameOverviewParams.lastResult`'s own comment):
+  // this page carries no result panel, only a way to the fixture that does.
+  const lastResultLine =
+    params.lastResult === null
+      ? ""
+      : `<p class="result-final"><a href="${escapeHtml(fixturePath(gameId, params.lastResult.fixtureId))}">${escapeHtml(params.lastResult.words)}</a></p>`;
+
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     ${problem}
@@ -128,6 +143,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     ${addressLine}
     ${oddMax}
     <p><a href="${escapeHtml(gameEditPath(gameId))}">Edit this game</a></p>
+    ${lastResultLine}
 
     <h2>Coming up</h2>
     <ul class="fixtures">${fixtureItems || "<li>No fixtures scheduled.</li>"}</ul>
@@ -179,7 +195,10 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     // FIXTURE_STYLES_CSS is here for .back-link alone. Everything else it
     // carries is selected by a class this page never renders, so nothing
     // already on the page changes appearance by adding it.
-    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS, FRESHNESS_CSS],
+    // `RESULT_CSS` for `.result-final` alone (M25 Task 13) — an all-new
+    // selector (see that block's own comment in `src/views/styles.ts`), so
+    // nothing already on this page changes appearance by adding it.
+    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS, RESULT_CSS, FRESHNESS_CSS],
     pageScripts: [COPY_BUTTON_JS, FRESHNESS_JS],
   });
 }

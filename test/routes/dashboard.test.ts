@@ -10,13 +10,15 @@ import {
   DELETE_ACCOUNT_CANCEL_PATH,
   DELETE_ACCOUNT_PATH,
   SIGN_IN_PATH,
+  fixturePath,
 } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, passkey, players, pushSubscriptions, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { FRESHNESS_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
-import { insertGame, insertMembership, resetDatabase } from "../support/factories.js";
+import { insertGame, insertMembership, insertResultClaim, resetDatabase } from "../support/factories.js";
+import { kickoffIn } from "../support/clock.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
@@ -1225,5 +1227,92 @@ describe("the onboarding card (M19)", () => {
   it("needs a session: a bare request is redirected away, not an error", async () => {
     const response = await dismiss(undefined);
     expect([302, 303]).toContain(response.status);
+  });
+});
+
+/**
+ * "Results needed" (M25 Task 13, BR-37): every played fixture the viewer may
+ * still file a result on. `listResultsNeededCandidates` widens only the
+ * *lifecycle* filter `listDashboardFixtures` uses — see that function's own
+ * comment in `src/db/dashboard-queries.ts` for why this is not a widening of
+ * `entitledTo`'s three security conditions. Every negative case here seeds
+ * the fixture the positive case shows, and removes exactly one thing, so a
+ * dashboard that simply never queried played fixtures at all could not pass
+ * these by having nothing to list either way.
+ */
+describe("GET /app — results needed", () => {
+  it("lists a played fixture the viewer has not filed a result on", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { gameId, fixtureId } = await seedFixtureFor(playerId, {
+      gameName: "Thursday 7-a-side",
+      lifecycle: "played",
+    });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Results needed");
+    expect(body).toContain(`href="${fixturePath(gameId, fixtureId)}"`);
+  });
+
+  it("does not list one they have already filed on", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { fixtureId } = await seedFixtureFor(playerId, {
+      gameName: "Thursday 7-a-side",
+      lifecycle: "played",
+    });
+    // The same fixture the test above proves would otherwise show — the only
+    // difference is the viewer's own claim.
+    await insertResultClaim(db, fixtureId, playerId, { outcome: "a" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("Results needed");
+  });
+
+  it("does not list one that is locked", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const otherId = crypto.randomUUID();
+    await db.insert(players).values({ id: otherId, name: "Other Player", email: `${otherId}@example.com` });
+    // More than 48 hours ago (BR-37), relative to the real wall clock the
+    // route reads — `kickoffIn`, not the fixed `KICKOFF` this file otherwise
+    // uses, which sits in 2030 and would never reach its own deadline on the
+    // day this suite actually runs.
+    const { fixtureId } = await seedFixtureFor(playerId, {
+      gameName: "Thursday 7-a-side",
+      lifecycle: "played",
+      kicksOffAt: kickoffIn(-72),
+    });
+    // Somebody else's claim is what locks it — the viewer never files their
+    // own, so this is genuinely the lock excluding the row, not the
+    // "already filed" branch above doing it by another name.
+    await insertResultClaim(db, fixtureId, otherId, { outcome: "a" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("Results needed");
+  });
+
+  /**
+   * The active-membership condition in `entitledTo` (TR-18), exercised
+   * through the widened lifecycle rather than the to-do list: leaving a game
+   * removes its fixtures from the results-needed list exactly as it already
+   * removes them from the rest of the dashboard.
+   */
+  it("does not list a fixture from a game they have left", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await seedFixtureFor(playerId, {
+      gameName: "Left This One",
+      lifecycle: "played",
+      memberActive: false,
+    });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("Results needed");
+    expect(body).not.toContain("Left This One");
   });
 });

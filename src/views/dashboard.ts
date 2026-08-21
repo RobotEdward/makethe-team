@@ -71,6 +71,22 @@ export interface SquadListEntry {
   owned: boolean;
 }
 
+/**
+ * One played fixture waiting on the viewer's own result claim (M25 Task 13,
+ * BR-37) — a link, never a form. `POST …/result` 404s anything that is not
+ * a played fixture reached through the fixture page (Task 9), so this card
+ * offers no way to file from here; it exists to get the viewer to the
+ * fixture page, which does.
+ */
+export interface ResultsNeededRow {
+  fixtureId: string;
+  gameId: string;
+  gameName: string;
+  venueName: string;
+  /** Already formatted in the game's timezone by the caller (TR-5). */
+  kicksOffAtLocal: string;
+}
+
 export interface DashboardPageOptions {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
@@ -78,6 +94,8 @@ export interface DashboardPageOptions {
   rows: readonly DashboardRow[];
   /** Every game this player is an active member of — `listMemberGames` (M20 B3). */
   squads: readonly SquadListEntry[];
+  /** Played fixtures still waiting on the viewer's own result claim (M25 Task 13). */
+  resultsNeeded: readonly ResultsNeededRow[];
   /** The one refusal `POST /app/games/:gameId/leave` can produce (M7a Task 4). */
   problem?: string;
   /** Set when this player has an erasure pending — already formatted (M7b). */
@@ -328,11 +346,39 @@ function renderOnboardingCard(hints: OnboardingHints): string {
   `;
 }
 
+/**
+ * "Results needed" — every played fixture waiting on the viewer's own claim
+ * (M25 Task 13). Plain links to the fixture page, never a form: filing
+ * happens there, where `POST …/result` actually accepts it.
+ *
+ * No section at all when the list is empty, matching `renderYourSquadsSection`'s
+ * own reasoning: a heading over nothing reads as a broken page, and there is
+ * nothing here worth an empty state's sentence — the fixture list above
+ * already says what is coming up.
+ */
+function renderResultsNeededSection(rows: readonly ResultsNeededRow[]): string {
+  if (rows.length === 0) return "";
+  const items = rows
+    .map(
+      (row) => `
+      <li class="fixture-card">
+        <h2><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></h2>
+        <p class="kickoff"><a href="${escapeHtml(fixturePath(row.gameId, row.fixtureId))}">${escapeHtml(row.kicksOffAtLocal)}</a></p>
+        <p class="venue">${escapeHtml(row.venueName)}</p>
+      </li>`,
+    )
+    .join("");
+  return `
+    <h2>Results needed</h2>
+    <ul class="fixture-list">${items}</ul>`;
+}
+
 export function renderDashboardPage({
   nav,
   playerName,
   rows,
   squads,
+  resultsNeeded,
   problem,
   erasesAtLocal,
   erasureHeldUp,
@@ -360,6 +406,7 @@ export function renderDashboardPage({
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
+    ${renderResultsNeededSection(resultsNeeded)}
     ${renderYourSquadsSection(squads)}
     ${renderFreshness(DASHBOARD_PATH)}
   `;

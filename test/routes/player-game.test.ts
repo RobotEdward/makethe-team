@@ -4,7 +4,17 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { DASHBOARD_PATH } from "../../src/auth/paths.js";
 import { fixtures, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { insertGame, insertMembership, insertPlayer, playerRow, resetDatabase, testDb } from "../support/factories.js";
+import {
+  insertFixture,
+  insertGame,
+  insertMembership,
+  insertPlayer,
+  insertResponse,
+  insertResultClaim,
+  playerRow,
+  resetDatabase,
+  testDb,
+} from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
 
@@ -270,4 +280,68 @@ describe("GET /g/:id as a member — published teams (BR-35 §5)", () => {
     expect(html).toContain("You're on Reds.");
     expect(html).not.toContain("Player 0");
   });
+});
+
+/**
+ * The "last result" line (M25 Task 13, BR-37): both the owner's `GET /g/:id`
+ * (`renderGameOverviewPage`) and the member's (`renderPlayerGamePage`) show
+ * the game's most recently played fixture's result, linked to the fixture
+ * page — never a live form, since `POST …/result` (Task 9) only accepts a
+ * write reached through the fixture page itself.
+ */
+describe("GET /g/:id — last result", () => {
+  beforeEach(resetDatabase);
+
+  /** A game with one played fixture, more than 48 hours ago (BR-37's window). */
+  async function seedPlayedFixture(
+    viewerRole: "owner" | "player",
+  ): Promise<{ gameId: string; fixtureId: string; cookie: string; viewerId: string }> {
+    const db = testDb();
+    const { cookie, viewerId } = await ownerSession();
+
+    const gameId = await insertGame(db, { maxPlayers: 14 });
+    if (viewerRole === "owner") {
+      await insertMembership(db, gameId, viewerId, { role: "owner" });
+    } else {
+      const otherOwnerId = await insertPlayer(db);
+      await insertMembership(db, gameId, otherOwnerId, { role: "owner" });
+      await insertMembership(db, gameId, viewerId);
+    }
+
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: kickoffIn(-72),
+    });
+    await insertResponse(db, fixtureId, viewerId, { status: "in" });
+
+    return { gameId, fixtureId, cookie, viewerId };
+  }
+
+  it.each(["owner", "player"] as const)(
+    "shows the last played fixture's result and links to it (%s)",
+    async (viewerRole) => {
+      const { gameId, fixtureId, cookie, viewerId } = await seedPlayedFixture(viewerRole);
+      const db = testDb();
+      await insertResultClaim(db, fixtureId, viewerId, { outcome: "a" });
+
+      const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
+
+      // "Team A" is the schema's own default team name, left unset by
+      // `insertGame`'s override-less call — see `insertResultClaim`'s
+      // default outcome ("a") in `test/support/factories.ts`.
+      expect(html).toContain(`<p class="result-final"><a href="/g/${gameId}/f/${fixtureId}">Team A won</a></p>`);
+    },
+  );
+
+  it.each(["owner", "player"] as const)(
+    "shows nothing when the last fixture has no result yet (%s)",
+    async (viewerRole) => {
+      const { gameId, cookie } = await seedPlayedFixture(viewerRole);
+      // No claim filed — a played fixture on its own is not a result.
+
+      const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
+
+      expect(html).not.toContain(`class="result-final"`);
+    },
+  );
 });

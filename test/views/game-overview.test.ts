@@ -17,6 +17,7 @@ const BASE = {
   inviteToken: "invite-token",
   squad: [] as Array<{ playerId: string; name: string; role: "player" | "owner"; isGuest: boolean }>,
   upcoming: [] as Array<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>,
+  lastResult: null as { fixtureId: string; words: string } | null,
 };
 
 const KICKOFF = new Date("2026-03-05T19:00:00Z");

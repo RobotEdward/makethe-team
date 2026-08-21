@@ -15,6 +15,7 @@ const BASE: PlayerGameParams = {
   timezone: "Europe/London",
   openFixture: null,
   upcoming: [],
+  lastResult: null,
   viewerPlayerId: "p-me",
 };
 

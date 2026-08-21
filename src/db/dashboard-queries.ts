@@ -218,6 +218,34 @@ export async function findActionableFixture(
  * `responses.player_id = :viewer`, so there is no other player's row for it to
  * reach even if a future caller passed a hostile `limit`.
  */
+/**
+ * Every `played` fixture the viewer is entitled to see, most recent first —
+ * candidates for the dashboard's "results needed" list (M25 Task 13).
+ *
+ * **This looks like a widening of a security boundary, and is not.** M11
+ * moved the lifecycle filter out to the caller *specifically* so that a
+ * caller could widen what it shows without widening what it may reach: the
+ * three conditions in `entitledTo` — the viewer's own response row, an
+ * active membership, and `withdrawn` excluded — are untouched by this and
+ * stay the only thing deciding which rows exist to be shown. This function
+ * widens only the lifecycle from "not finished" to "played"; it goes through
+ * the same `selectEntitledFixtures` as every other reader in this module, so
+ * there is no other player's row, and no other game's row, for it to reach.
+ *
+ * A fixture the viewer has already filed a claim on, or whose window has
+ * locked, is not a "need" — `src/routes/dashboard.ts` filters both out after
+ * this returns, from a batched claims read rather than one query per row.
+ */
+export async function listResultsNeededCandidates(
+  db: Db,
+  playerId: string,
+): Promise<DashboardFixture[]> {
+  const rows = await selectEntitledFixtures(db, playerId, eq(fixtures.lifecycle, "played")).orderBy(
+    desc(fixtures.kicksOffAt),
+  );
+  return rows.map(toDashboardFixture);
+}
+
 export async function listPlayerFixtureHistory(
   db: Db,
   playerId: string,

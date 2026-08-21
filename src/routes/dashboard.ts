@@ -8,15 +8,26 @@ import type { ResponseIntent } from "../capacity/types.js";
 import { getDb } from "../db/client.js";
 import type { Db } from "../db/client.js";
 import { passkey, players, pushSubscriptions } from "../db/schema.js";
-import { findActionableFixture, listDashboardFixtures } from "../db/dashboard-queries.js";
+import {
+  findActionableFixture,
+  listDashboardFixtures,
+  listResultsNeededCandidates,
+} from "../db/dashboard-queries.js";
 import type { DashboardFixture } from "../db/dashboard-queries.js";
 import { listMemberGames } from "../db/queries.js";
+import { listClaimsForFixtures } from "../db/result-queries.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { fixtureView } from "../domain/fixture-view.js";
+import { isResultLocked } from "../domain/result-lock.js";
 import { removeMember } from "../domain/remove-member.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
-import { renderDashboardPage, type DashboardRow, type OnboardingHints } from "../views/dashboard.js";
+import {
+  renderDashboardPage,
+  type DashboardRow,
+  type OnboardingHints,
+  type ResultsNeededRow,
+} from "../views/dashboard.js";
 
 
 export const dashboard = new Hono<AppEnv>();
@@ -50,10 +61,11 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
   const player = c.get("player")!;
   const db = getDb(c.env.DB);
 
-  const [rows, squads, onboarding] = await Promise.all([
+  const [rows, squads, onboarding, resultsNeeded] = await Promise.all([
     listDashboardFixtures(db, player.id),
     listMemberGames(db, player.id),
     onboardingHintsFor(db, player, c.get("session")!.user.id, now),
+    resultsNeededFor(db, player.id, now),
   ]);
 
   // §6's third clause: a blocked erasure "surfaces on the player's dashboard
@@ -77,6 +89,7 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
       playerName: player.name,
       rows: rows.map((row) => toRow(row, now)),
       squads,
+      resultsNeeded,
       problem,
       // `player` already carries `erasesAt` — `sessionMiddleware` selects the
       // whole row, so this is a field read, not a second query. Not scoped to
@@ -106,6 +119,53 @@ function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
     waitlistCount: fixture.waitlistCount,
     owner: fixture.owner,
   };
+}
+
+/**
+ * The dashboard's "results needed" list (M25 Task 13, BR-37): every played
+ * fixture the viewer is entitled to see, minus the two that are not a "need"
+ * — one they have already filed a claim on, and one whose 48-hour window has
+ * already locked.
+ *
+ * `isResultLocked` takes only a claim *count*, never whose claims they are,
+ * so this needs no organiser set and no `deriveResult` — unlike the account
+ * history's locked rows, this list only ever says "needs a result", never
+ * what the result was.
+ *
+ * One extra query beyond the candidate list itself: every candidate's claims
+ * in a single batched read (`listClaimsForFixtures`), rather than one query
+ * per fixture — the same broad-select-then-JS-filter idiom
+ * `src/sweep/result-cache.ts` documents at length for the same reason.
+ */
+async function resultsNeededFor(db: Db, playerId: string, now: Date): Promise<ResultsNeededRow[]> {
+  const candidates = await listResultsNeededCandidates(db, playerId);
+  if (candidates.length === 0) return [];
+
+  const claims = await listClaimsForFixtures(
+    db,
+    candidates.map((candidate) => candidate.fixtureId),
+  );
+  const claimsByFixture = new Map<string, typeof claims>();
+  for (const claim of claims) {
+    const bucket = claimsByFixture.get(claim.fixtureId) ?? [];
+    bucket.push(claim);
+    claimsByFixture.set(claim.fixtureId, bucket);
+  }
+
+  return candidates
+    .filter((candidate) => {
+      const fixtureClaims = claimsByFixture.get(candidate.fixtureId) ?? [];
+      const alreadyFiled = fixtureClaims.some((claim) => claim.playerId === playerId);
+      if (alreadyFiled) return false;
+      return !isResultLocked(candidate.kicksOffAt, fixtureClaims.length, now);
+    })
+    .map((candidate) => ({
+      fixtureId: candidate.fixtureId,
+      gameId: candidate.gameId,
+      gameName: candidate.gameName,
+      venueName: candidate.venueName,
+      kicksOffAtLocal: formatLocalDateTime(candidate.kicksOffAt, candidate.timezone),
+    }));
 }
 
 function parseIntent(value: unknown): ResponseIntent | null {

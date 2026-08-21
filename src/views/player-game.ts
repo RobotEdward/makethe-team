@@ -1,4 +1,4 @@
-import { gamePath } from "../auth/paths.js";
+import { fixturePath, gamePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
@@ -8,7 +8,15 @@ import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection, re
 import { renderFreshness } from "./freshness.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, INVITE_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import {
+  FIXTURE_STYLES_CSS,
+  FORM_CSS,
+  FRESHNESS_CSS,
+  INVITE_CSS,
+  RESULT_CSS,
+  SQUAD_STYLES_CSS,
+  TEAM_PICKER_CSS,
+} from "./styles.js";
 
 export interface PlayerGameParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
@@ -53,6 +61,14 @@ export interface PlayerGameParams {
    * for why the column can hold a value outside the union whatever this says.
    */
   upcoming: readonly { kicksOffAt: Date; lifecycle: Lifecycle }[];
+  /**
+   * The game's most recently played fixture and its result, or `null` when
+   * there is nothing to show — no fixture has been played yet, or one has
+   * but nobody has filed a claim on it (M25 Task 13, BR-37). A link, never a
+   * form: see `lastResultFor` in `src/routes/games.ts` for why this page
+   * carries no result panel.
+   */
+  lastResult: { fixtureId: string; words: string } | null;
   viewerPlayerId: string;
 }
 
@@ -104,10 +120,18 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     )
     .join("");
 
+  // A link, never a form (see `PlayerGameParams.lastResult`'s own comment):
+  // this page carries no result panel, only a way to the fixture that does.
+  const lastResultLine =
+    params.lastResult === null
+      ? ""
+      : `<p class="result-final"><a href="${escapeHtml(fixturePath(gameId, params.lastResult.fixtureId))}">${escapeHtml(params.lastResult.words)}</a></p>`;
+
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}
+    ${lastResultLine}
 
     ${fixtureSection}
 
@@ -141,7 +165,18 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     // matches nothing, and the `.squad` container properties they share carry
     // identical values. Pinned so the page is not the one place a reader
     // finds the rule written backwards.
-    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS, TEAM_PICKER_CSS, FRESHNESS_CSS],
+    // `RESULT_CSS` for `.result-final` alone (M25 Task 13) — an all-new
+    // selector (see that block's own comment in `src/views/styles.ts`), so
+    // nothing already on this page changes appearance by adding it.
+    pageStyles: [
+      SQUAD_STYLES_CSS,
+      FORM_CSS,
+      INVITE_CSS,
+      FIXTURE_STYLES_CSS,
+      TEAM_PICKER_CSS,
+      RESULT_CSS,
+      FRESHNESS_CSS,
+    ],
     pageScripts: [FRESHNESS_JS],
   });
 }

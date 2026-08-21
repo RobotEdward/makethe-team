@@ -3,7 +3,7 @@ import {
   DELETE_ACCOUNT_PATH,
   PASSKEYS_PATH,
   PRIVACY_PATH,
-  gamePath,
+  fixturePath,
 } from "../auth/paths.js";
 import { renderDeviceSections, type PushDeviceRow } from "./install.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
@@ -15,6 +15,7 @@ import {
   FORM_CSS,
   INSTALL_STYLES_CSS,
   PUSH_STYLES_CSS,
+  RESULT_CSS,
 } from "./styles.js";
 
 /**
@@ -28,6 +29,8 @@ import {
  */
 export interface AccountFixtureRow {
   gameId: string;
+  /** So the row can link to the fixture itself, not just to the game (M25 Task 13). */
+  fixtureId: string;
   gameName: string;
   venueName: string;
   /** Already formatted in the game's timezone by the caller (TR-5). */
@@ -36,6 +39,14 @@ export interface AccountFixtureRow {
   statusLabel: string;
   /** What the viewer answered: "You were in", "You couldn't make it"… */
   myStatusLabel: string;
+  /**
+   * The result summary — "Reds won 3–2", "Draw" — set only once this
+   * fixture's 48-hour window has locked (BR-37, M25 Task 13). Undefined for
+   * every other row: an unplayed fixture has no result, and a played one
+   * still inside its window is not final yet, so neither gets a line that
+   * would read as settled.
+   */
+  resultWords?: string;
 }
 
 export interface AccountPageOptions {
@@ -73,11 +84,12 @@ export interface AccountPageOptions {
 function renderFixture(row: AccountFixtureRow): string {
   return `
     <li class="fixture-card">
-      <h3><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></h3>
+      <h3><a href="${escapeHtml(fixturePath(row.gameId, row.fixtureId))}">${escapeHtml(row.gameName)}</a></h3>
       <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
       <p class="status-line">${escapeHtml(row.statusLabel)}</p>
       ${row.myStatusLabel ? `<p class="viewer-headline">${escapeHtml(row.myStatusLabel)}</p>` : ""}
+      ${row.resultWords === undefined ? "" : `<p class="result-final">${escapeHtml(row.resultWords)}</p>`}
     </li>`;
 }
 
@@ -187,7 +199,17 @@ export function renderAccountPage({
     nav,
     title: "Your account — Make The Team",
     body,
-    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FORM_CSS, INSTALL_STYLES_CSS, PUSH_STYLES_CSS],
+    // `RESULT_CSS` for `.result-final` alone (M25 Task 13) — an all-new
+    // selector (see that block's own comment), so nothing already on this
+    // page changes appearance by adding it.
+    pageStyles: [
+      FIXTURE_STYLES_CSS,
+      DASHBOARD_STYLES_CSS,
+      FORM_CSS,
+      INSTALL_STYLES_CSS,
+      PUSH_STYLES_CSS,
+      RESULT_CSS,
+    ],
     // `PUSH_SUBSCRIBE_JS` is opted in unconditionally, even while
     // `vapidPublicKey` is `undefined` and no button exists for it to find —
     // matching `INSTALL_JS`'s own doc comment: the guard is inside the

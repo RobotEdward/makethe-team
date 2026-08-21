@@ -1,7 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ACCOUNT_PATH, DELETE_ACCOUNT_PATH, PASSKEYS_PATH, SIGN_IN_PATH } from "../../src/auth/paths.js";
+import { ACCOUNT_PATH, DELETE_ACCOUNT_PATH, PASSKEYS_PATH, SIGN_IN_PATH, fixturePath } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
 import { auditLog, players } from "../../src/db/schema.js";
 import {
@@ -10,9 +10,11 @@ import {
   insertMembership,
   insertPlayer,
   insertResponse,
+  insertResultClaim,
   insertSubscription,
   resetDatabase,
 } from "../support/factories.js";
+import { kickoffIn } from "../support/clock.js";
 import {
   PUSH_BUTTON_ID,
   PUSH_KEY_ATTRIBUTE,
@@ -126,6 +128,67 @@ describe("GET /app/account", () => {
 
     const body = await (await get(cookie)).text();
     expect(body).toContain("Thursday 7-a-side");
+  });
+
+  it("links each history row to its fixture, not to the game", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    await insertMembership(db, gameId, me);
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: LAST_WEEK,
+    });
+    await insertResponse(db, fixtureId, me, { status: "in" });
+
+    const body = await (await get(cookie)).text();
+
+    // Not merely present: the game-name heading's own href, so a page that
+    // still linked to the game and happened to also mention the fixture path
+    // somewhere else could not pass this by accident.
+    expect(body).toContain(`<h3><a href="${fixturePath(gameId, fixtureId)}">Thursday 7-a-side</a></h3>`);
+    expect(body).not.toContain(`<h3><a href="/g/${gameId}">Thursday 7-a-side</a></h3>`);
+  });
+
+  it("shows the result on a locked row", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    await insertMembership(db, gameId, me);
+    // More than 48 hours ago (BR-37), relative to the real wall clock the
+    // route reads — `kickoffIn`, not the fixed `LAST_WEEK`, which sits in
+    // 2030 and would still be inside its own window on the day this suite
+    // actually runs.
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: kickoffIn(-72),
+    });
+    await insertResponse(db, fixtureId, me, { status: "in" });
+    await insertResultClaim(db, fixtureId, me, { outcome: "a" });
+
+    const body = await (await get(cookie)).text();
+
+    // "Team A" is the default team name `gameRow` leaves unset (schema
+    // default). If this ever prints nothing, the omission is silent — the
+    // negative half of this test is `test/routes/account.test.ts`'s sibling
+    // above, which seeds no claim at all and must not show a result line.
+    expect(body).toContain(`<p class="result-final">Team A won</p>`);
+  });
+
+  it("shows no result on a played fixture nobody has filed on yet", async () => {
+    const { cookie } = await signIn();
+    const me = await viewerId();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    await insertMembership(db, gameId, me);
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: kickoffIn(-72),
+    });
+    await insertResponse(db, fixtureId, me, { status: "in" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain(`class="result-final"`);
   });
 
   it("shows at most 20 fixtures, most recent first", async () => {
