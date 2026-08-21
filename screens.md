@@ -168,6 +168,11 @@ The signed-in home.
   response page so the two can never disagree.
 - **Empty state:** "You've nothing coming up. When your next game opens for responses, it'll
   show up here."
+- **`Results needed` (h2, M25):** every played fixture the viewer is entitled to see that is
+  still writable and that they have not yet filed a claim on — a genuine to-do, since the
+  dashboard is a to-do list. One card per fixture: game name (linking to the game), kickoff
+  (linking to the fixture, §2.6). A plain link, never a form — filing happens on the fixture
+  page. Omitted entirely, heading included, when the list is empty.
 - **`Your squads` (h2, M20):** every membership, each game name a link to its game page,
   owned games marked `· you own this`; then a `Set up a game` link. The section is omitted
   entire — heading included — when the player has no squads (the link stays). This gives a
@@ -195,7 +200,11 @@ The signed-in home.
 - **`Signing in` (h2):** the email address, read-only, with an explanation of why it can't be
   edited; `Manage your passkeys` link.
 - **`Your fixtures` (h2):** the last 20 fixtures across every game, most recent first, each
-  with the game name as a link. Games left are excluded.
+  with the game name as a link **to the fixture, not the game (M25)** — this is where "what
+  happened in March?" is answered — and, once its result has locked, the result underneath it
+  ("Reds won 3–2"), from the same shared words the fixture's own panel shows. Games left are
+  excluded, and so is any fixture the viewer has since lost standing in
+  (`selectEntitledFixtures` filters on `memberships.active`).
 - **`Install the app` (h2, M21):** the heading sits *outside* its card, at the same level as
   `Your fixtures` (M20's merged "This device" panel is split back in two, without the intro
   sentence). The card holds the install instructions/button.
@@ -230,12 +239,50 @@ One page in four states, all under `Delete my data` (h1) + "You're signed in as 
   headcount and show "a former player".
 
 ### 2.5 A game, as a player — `GET /g/:id` (non-organiser rendering)
-- Game name (h1); venue; address; the open fixture (kickoff, status badge, capacity bar,
-  published teams, `Squad`) or "Nothing open yet — you'll get an email the day before the next
-  game."; `Coming up` (h2) — a list of dates each with its status in words.
+- Game name (h1); venue; address.
+- **Last result (M25):** a line naming the most recent played fixture's locked result — "Reds
+  won 3–2" — linking to that fixture's own page (§2.6), directly under the address and above
+  the open fixture. Absent until a fixture has locked; the same words a fixture's own result
+  panel shows, from one shared function, so the two can never disagree.
+- The open fixture (kickoff, status badge, capacity bar, published teams, `Squad`) or "Nothing
+  open yet — you'll get an email the day before the next game."; `Coming up` (h2) — a list of
+  dates each with its status in words.
 - **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **No invite link, no QR, no controls, no edit link** — a separate renderer from the
   organiser's page so that capability cannot leak in by accident.
+
+### 2.6 A fixture, as a player — `GET /g/:id/f/:fixtureId` (member rendering, M25)
+The first per-fixture URL a player has ever had — until now their only stable per-fixture link
+was `/r/:token` out of an email, and `/g/:id` shows only the *open* fixture, so a played
+fixture's published teams vanished from a player's view the moment the sweep retired it.
+- Game name (h1); optional problem notice (a 422 re-render only); venue; address; kickoff;
+  status badge.
+- **Published teams, past tense:** "You were on Bibs." rather than the open-fixture page's
+  present tense — a played fixture is what this page is for, and "you're on" is never true of
+  one. Follows the same visibility rule as everywhere else (BR-33, BR-35): a player always sees
+  their own side.
+- **`Squad` (h2):** who was in, same as the player's game page.
+- **`Result` (h2) — the result panel**, shared with the organiser's fixture page (§3.5):
+  - **Writable** (fixture played, window still open): each candidate claim with its backer
+    count, an `Agree` submit per candidate, "your pick" on the viewer's own, a "What happened?"
+    form (a score, or just who won, radios only), a `Withdraw my answer` button once the viewer
+    has filed, and how long is left. Nothing filed yet reads "No result recorded yet." and
+    offers the same form.
+  - **Locked:** the outcome and the margin, each with its own confidence figure ("Result 4 of
+    5", "Score 3 of 5"); "Teams weren't picked in the app for this fixture, so we don't know who
+    played on which side." when the fixture was never rostered.
+  - **Nothing filed, deadline passed:** still writable, and says so — the window never closes on
+    an empty fixture.
+- **Freshness bar (M24):** the page's last line — the sixth page to carry one, and the
+  strongest case yet: this page's content is a live tally. `Updated 3 minutes ago` on the left,
+  a `Refresh` link on the right. See §5 for what it does.
+- **No footer back-link, no invite card, no squad-management controls** — a member-only
+  rendering of the same route the organiser's page (§3.5) answers; an owner viewing their own
+  fixture always gets the organiser page, never this one.
+- **Refusals:** a squad member who was `out` that week can read the page but cannot file (no
+  form renders); anyone not an active member of the game gets a 404; a fixture that has not
+  been played gets a 404 on the write routes, distinct from the 422 a locked fixture's write
+  gets.
 
 ---
 
@@ -265,6 +312,10 @@ One form serves both.
 The organiser's home for one game.
 - Game name (h1); venue; address; `Edit this game` link. Order after that (M20): `Coming up`
   first, `Squad` second, the invite card third, `Message everyone` last.
+- **Last result (M25):** a line naming the most recent played fixture's locked result — "Reds
+  won 3–2" — linking to that fixture's own page (§3.5), directly under `Edit this game` and
+  above `Coming up`. Absent until a fixture has locked; the same shared function the player
+  game page's own last-result line (§2.5) uses, so the two can never disagree.
 - **Broadcast receipt (M20):** returning from a send shows a one-line green notice — "Sent to
   11 players by email." — driven by a validated redirect flag, never echoed text.
 - **`Invite people` (h2) card:** the invite URL, a `Copy` button (JS-only, hidden without it),
@@ -317,6 +368,12 @@ The busiest organiser screen.
   Never a per-player link — the game page, which squad members sign in to. The N-11 push
   ("Post it to the group?") deep-links to `#whatsapp` here.
 - **`Message players` action** → the fixture-scoped broadcast compose page.
+- **`Result` (h2, M25) — the result panel, once the fixture is `played`:** identical to the
+  player fixture page's own panel (§2.6), shared through one renderer so the organiser and every
+  player read the same tally — writable with each candidate and its backers, locked with the
+  outcome and its two confidence figures, or (nothing filed, deadline passed) still writable.
+  Absent entirely for an `open`, `scheduled` or `cancelled` fixture — there is nothing yet to
+  have a result about.
 - **Footer:** `Back to the game`.
 
 ### 3.6 Team picker (a section of 3.5)
@@ -466,8 +523,10 @@ but opinions, and a design review is welcome to challenge any of them.
   removing a guest, which is immediate.
 - **Broadcasts get a receipt but no delivery report** — the organiser sees "Sent to N
   players…" (recipients at send time); push failures are still invisible to them.
-- **Five pages carry a freshness bar (M24)** — the dashboard, both game renderings, and both
-  fixture pages: the ones whose facts move while they are on screen. It reads
+- **Six pages carry a freshness bar (M24, M25)** — the dashboard, both game renderings, and all
+  three fixture pages (`/r/:token`, the organiser's, and the player's, §2.6, added by M25): the
+  ones whose facts move while they are on screen, and a page whose content is a live tally of
+  claims is the strongest case for it yet. It reads
   `Updated 3 minutes ago`, counting client-side from page load, beside a `Refresh` link that
   is an ordinary GET of the page's own path (so it works with scripting off, and it is the
   whole of the feature for anyone without script). With script, coming back to a page left

@@ -193,6 +193,14 @@
       "shows": "A fixture card for a player who is already in, with the buttons they'd use to change their answer."
     },
     {
+      "id": "result-panel",
+      "chapter": "07-your-own-fixtures",
+      "title": "Recording a result",
+      "route": "/g/:id/f/:fixtureId",
+      "image": "images/result-panel.png",
+      "shows": "A played fixture's result panel, as a player who was in it sees it: the organiser's claim of a 3–1 score with its one backer, an Agree button to back it, and the form to say something different happened instead."
+    },
+    {
       "id": "passkeys",
       "chapter": "07-your-own-fixtures",
       "title": "Signing in faster",

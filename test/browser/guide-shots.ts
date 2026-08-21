@@ -11,7 +11,18 @@ export interface Shot {
   /** What this screenshot shows, in plain language. Written, not derived. */
   shows: string;
   path: (w: GuideWorld) => string;
-  persona: "anonymous" | "organiser";
+  /**
+   * `"player"` signs in as a squad member who is not the game's organiser —
+   * `signInAs` says which one. Added for M25's result-panel shot: every
+   * other player-facing page in this guide is reached anonymously, through a
+   * token, but the result panel's writable state as a *second* voter (an
+   * Agree button, someone else's claim already on the row) can only be shown
+   * from a signed-in, non-owner session, since `/g/:id/f/:fixtureId` has no
+   * token form.
+   */
+  persona: "anonymous" | "organiser" | "player";
+  /** Required when `persona` is `"player"` — which squad member to sign in as. */
+  signInAs?: (w: GuideWorld) => string;
   /**
    * Capture just this element rather than the whole page.
    *
@@ -329,6 +340,22 @@ export const SHOTS: Shot[] = [
     // matches every card on the page and Playwright's strict mode would
     // otherwise fail the run.
     element: "li.fixture-card >> nth=0",
+  },
+  {
+    id: "result-panel",
+    chapter: "07-your-own-fixtures",
+    title: "Recording a result",
+    route: "/g/:id/f/:fixtureId",
+    shows:
+      "A played fixture's result panel, as a player who was in it sees it: the " +
+      "organiser's claim of a 3–1 score with its one backer, an Agree button to " +
+      "back it, and the form to say something different happened instead.",
+    path: (w) => `/g/${w.resultDemoGameId}/f/${w.resultDemoFixtureId}`,
+    // Signed in as a squad member, not the organiser who filed the claim
+    // this shot depends on — see `Shot.persona`'s own comment for why this
+    // page needs a session rather than a token.
+    persona: "player",
+    signInAs: (w) => w.resultDemoPlayerEmail,
   },
   {
     id: "passkeys",

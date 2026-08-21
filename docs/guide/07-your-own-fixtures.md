@@ -41,6 +41,32 @@ it — half way through picking the teams, say — because refreshing would thro
 that away. Then the line is there to tell you the page is old, and the link is
 there for when you're ready.
 
+## Recording a result
+
+![A played fixture's result panel: the organiser's claim of a 3–1 score with its one backer, an Agree button, and the form to say something different happened instead](images/result-panel.png)
+
+Once a game's been played, anyone who was in it — and your organiser, whether
+or not they played — can say what happened. Tap the fixture from your games
+list or your account page and the result is right there under the squad.
+
+If you know the score, put it in and tap **Record it** — Make The Team works
+out who won from the numbers, so you don't say both. If nobody remembers the
+exact score, the three buttons underneath let you just say who won, or that it
+was a draw.
+
+Somebody else may have already said what they think happened. If you agree,
+tap **Agree** on their claim rather than typing it again — the count next to
+it goes up, so the squad can see how sure everyone is. If you remember it
+differently, fill in the form with your own answer instead; both are shown,
+each with its own backers, until enough of the squad has settled on one. Typed
+something by mistake? **Withdraw my answer** takes your claim back off the
+board.
+
+Nothing is final straight away. The result locks two days after kick-off, so
+there's time for the squad to agree on it — and if the fixture's teams were
+never picked in the app, the locked result says so rather than guessing who
+played on which side.
+
 ## Signing in faster
 
 ![The passkeys page, offering to add a passkey](images/passkeys.png)

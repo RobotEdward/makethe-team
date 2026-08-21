@@ -5,7 +5,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { fixturePath } from "../../src/auth/paths.js";
 import type { ResultOutcome } from "../../src/domain/result.js";
 import { BASE_URL } from "../../playwright.config.js";
-import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
+import { signIn, TEST_PLAYER } from "./sign-in.js";
 import { seedWorld, type World } from "./world.js";
 
 const run = promisify(execFile);

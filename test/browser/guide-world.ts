@@ -102,6 +102,20 @@ async function query<T>(sql: string): Promise<T[]> {
   return (JSON.parse(stdout.slice(start)) as { results?: T[] }[])[0]?.results ?? [];
 }
 
+/**
+ * Write access to local D1, via the same supported path `query` reads
+ * through. Reserved for the one thing no product route can do — backdating a
+ * kickoff so a fixture retires to `played` inside a capture run that itself
+ * takes only seconds (see `buildResultDemo`, and `test/browser/result.spec.ts`'s
+ * `playFixture`, whose pattern this matches exactly).
+ */
+async function execSql(sql: string): Promise<void> {
+  await run("npx", ["wrangler", "d1", "execute", "makethe-team", "--local", "--command", sql], {
+    cwd: process.cwd(),
+    maxBuffer: 4 * 1024 * 1024,
+  });
+}
+
 export interface GuideWorld {
   gameId: string;
   fixtureId: string;
@@ -161,6 +175,20 @@ export interface GuideWorld {
    * toggling the Meadow Park Kickabout's own setting.
    */
   hiddenSquadToken: string;
+  /**
+   * A fourth, small game solely for chapter 7's "recording a result"
+   * screenshot (M25) — see `buildResultDemo` for why this needs its own game
+   * rather than the Meadow Park Kickabout's own (still-future) fixture.
+   */
+  resultDemoGameId: string;
+  resultDemoFixtureId: string;
+  /**
+   * The squad member — never the organiser, who already filed the claim
+   * this shot's candidate row belongs to — the capture run signs in as to
+   * take the screenshot: the writable panel with someone else's claim
+   * already on it and an Agree button of their own.
+   */
+  resultDemoPlayerEmail: string;
 }
 
 export async function buildGuideWorld(page: Page, browser: Browser): Promise<GuideWorld> {
@@ -291,6 +319,7 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
 
   const demo = await buildOverrideDemo(page, browser, slot);
   const hiddenSquadToken = await buildVisibilityDemo(page, browser, slot);
+  const resultDemo = await buildResultDemo(page, browser, slot);
 
   return {
     gameId,
@@ -308,6 +337,9 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     demoGameId: demo.gameId,
     demoFixtureId: demo.fixtureId,
     hiddenSquadToken,
+    resultDemoGameId: resultDemo.gameId,
+    resultDemoFixtureId: resultDemo.fixtureId,
+    resultDemoPlayerEmail: resultDemo.agreeingPlayerEmail,
     cancelToken: await signCancelToken(
       {
         ownerPlayerId: idFor(GUIDE_ORGANISER),
@@ -539,6 +571,123 @@ async function buildVisibilityDemo(
   await page.waitForURL(new RegExp(`/g/${gameId}$`));
 
   return hiddenSquadToken;
+}
+
+/**
+ * A fourth, small game solely for chapter 7's "recording a result"
+ * screenshot (M25, BR-37). It cannot reuse the Meadow Park Kickabout's own
+ * fixture: that one kicks off later today or tomorrow (`guideSlot`), and a
+ * result can only be recorded once a fixture has actually been played — so
+ * this game's own fixture is backdated directly, the same way
+ * `test/browser/result.spec.ts`'s `playFixture` does it, since there is no
+ * product route that edits a kickoff once a fixture exists.
+ *
+ * The state this leaves for the shot: the organiser has filed "3–1", through
+ * the app's own form, so the panel a second squad member opens shows a real
+ * candidate with a real backer count and their own Agree button — not an
+ * empty panel, which chapter 7's prose has more to say about than a picture
+ * of nothing could show.
+ */
+async function buildResultDemo(
+  page: Page,
+  browser: Browser,
+  slot: { weekday: string; kickoffTime: string },
+): Promise<{ gameId: string; fixtureId: string; agreeingPlayerEmail: string }> {
+  const RESULT_SQUAD = [
+    { name: "Ella Whitmore", email: "ella@example.test" },
+    { name: "Marcus Aidoo", email: "marcus@example.test" },
+  ] as const;
+  const agreeingPlayer = RESULT_SQUAD[1];
+
+  await page.goto("/g/new");
+  await page.fill('input[name="name"]', "Bellview Five-a-side");
+  await page.fill('input[name="venueName"]', "Bellview Astro");
+  await page.fill('input[name="venueAddress"]', "3 Bell Row");
+  await page.selectOption('select[name="weekday"]', slot.weekday);
+  // Later again than every other demo game's kickoff, same weekday and
+  // reminder instant, so it never displaces the Meadow Park fixture from
+  // `dashboard`'s `nth=0` card while it is still `scheduled`/`open` — and,
+  // once backdated below, it is `played` and off the dashboard's upcoming
+  // list entirely.
+  await page.fill('input[name="kickoffTime"]', "22:00");
+  await page.fill('input[name="minPlayers"]', "1");
+  await page.fill('input[name="maxPlayers"]', "3");
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/\/g\/[^/]+$/);
+
+  const gameId = new URL(page.url()).pathname.split("/")[2]!;
+  const inviteToken = (await page.inputValue("#invite-url")).split("/j/")[1]!;
+
+  for (const person of RESULT_SQUAD) {
+    const context = await browser.newContext();
+    const joinerPage = await context.newPage();
+    await joinerPage.goto(`/j/${inviteToken}`);
+    await joinerPage.fill('input[name="name"]', person.name);
+    await joinerPage.fill('input[name="email"]', person.email);
+    await joinerPage.click('button[type="submit"]');
+    await joinerPage.waitForLoadState("networkidle");
+    await context.close();
+  }
+
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=15+3+*+*+*`);
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=0+*+*+*+*`);
+
+  const [fixture] = await query<{ id: string }>(
+    `SELECT id FROM fixtures WHERE game_id = '${gameId}'
+       AND lifecycle = 'open' ORDER BY kicks_off_at LIMIT 1`,
+  );
+  if (!fixture) throw new Error(`buildResultDemo: game ${gameId} has no open fixture`);
+
+  const players = await query<{ id: string; email: string }>(
+    `SELECT id, email FROM players WHERE email LIKE '%@example.test'`,
+  );
+  const idFor = (email: string): string => {
+    const found = players.find((p) => p.email === email);
+    if (!found) throw new Error(`buildResultDemo: no player row for ${email}`);
+    return found.id;
+  };
+
+  // Everyone answers in, including the agreeing player: BR-37 §6's
+  // electorate needs a `responses.status = 'in'` row for this fixture, and
+  // without one there is nothing for `resultElectorate` to admit them by.
+  const answering = [GUIDE_ORGANISER, ...RESULT_SQUAD.map((p) => p.email)];
+  for (const email of answering) {
+    const token = await signResponseToken(
+      { playerId: idFor(email), fixtureId: fixture.id, expiresAt: Date.now() + 7 * 864e5 },
+      RESPONSE_SECRET,
+    );
+    await page.request.post(`${BASE_URL}/r/${token}`, {
+      form: { intent: "in" },
+      headers: { origin: BASE_URL },
+    });
+  }
+
+  // Backdate the kickoff and ask the sweep to retire it — the only way a
+  // fixture becomes `played` (see this function's own doc comment).
+  await execSql(
+    `UPDATE fixtures SET kicks_off_at = ${Date.now() - 3 * 60 * 60 * 1000} WHERE id = '${fixture.id}'`,
+  );
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=0+*+*+*+*`);
+
+  const [retired] = await query<{ lifecycle: string }>(
+    `SELECT lifecycle FROM fixtures WHERE id = '${fixture.id}'`,
+  );
+  if (retired?.lifecycle !== "played") {
+    throw new Error(
+      `buildResultDemo: ${fixture.id} did not retire to 'played' (lifecycle now ${retired?.lifecycle})`,
+    );
+  }
+
+  // File the claim through the app's own form, as the organiser — signed in
+  // already, and the page this call leaves `page` on is what the next demo
+  // (or the capture run itself) navigates away from next.
+  await page.goto(`/g/${gameId}/f/${fixture.id}`);
+  await page.fill('input[name="scoreA"]', "3");
+  await page.fill('input[name="scoreB"]', "1");
+  await page.click('button:has-text("Record it")');
+  await page.waitForLoadState("networkidle");
+
+  return { gameId, fixtureId: fixture.id, agreeingPlayerEmail: agreeingPlayer.email };
 }
 
 /** The squad, for the guide's prose and its tests. */

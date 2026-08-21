@@ -39,20 +39,27 @@ test("@guide capture every screen the guide shows", async ({ page, browser }) =>
   // bounces an already-signed-in visitor straight to the dashboard (see
   // `src/routes/signin.ts`), so calling `signIn` again while that session is
   // still live never reaches the email field and hangs. Only act when the
-  // shot's persona actually differs from the page's current one: sign in once
-  // when moving to an organiser shot, and drop the session cookie when moving
-  // to an anonymous one so it renders as a real visitor would see it.
-  let signedIn = true;
+  // shot's identity actually differs from the page's current one — a plain
+  // email for `"organiser"` and `"player"`, `null` for `"anonymous"` — and
+  // drop the session cookie first whenever the *previous* identity was
+  // signed in at all, whether the next one is a different signed-in identity
+  // or none: switching between two squad members needs the same sign-out
+  // step an organiser-to-anonymous switch does, since `/sign-in` bounces any
+  // live session, not only the organiser's.
+  let currentIdentity: string | null = GUIDE_ORGANISER;
 
   for (const shot of SHOTS) {
-    if (shot.persona === "organiser") {
-      if (!signedIn) {
-        await signIn(page, GUIDE_ORGANISER);
-        signedIn = true;
-      }
-    } else if (signedIn) {
-      await page.context().clearCookies();
-      signedIn = false;
+    const targetIdentity: string | null =
+      shot.persona === "organiser"
+        ? GUIDE_ORGANISER
+        : shot.persona === "player"
+          ? shot.signInAs!(world)
+          : null;
+
+    if (targetIdentity !== currentIdentity) {
+      if (currentIdentity !== null) await page.context().clearCookies();
+      if (targetIdentity !== null) await signIn(page, targetIdentity);
+      currentIdentity = targetIdentity;
     }
 
     const response = await page.goto(shot.path(world), { waitUntil: "networkidle" });

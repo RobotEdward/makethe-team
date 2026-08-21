@@ -180,8 +180,8 @@ M2's carry-forward note about nothing being able to produce an `open` fixture is
 — M3's hourly sweep now owns the `scheduled → open` transition — and has been removed from
 this list per the rule above.
 
-Two notes remain. Neither is a defect: the first is relevant to whichever milestone adds a
-second environment, the second to the milestone that records results.
+One note remains, relevant to whichever milestone adds a second environment. The second,
+below, was resolved by M25 rather than deleted, so nobody re-litigates what it asked for.
 
 **Notes 2 and 4 have been discharged, not deleted.** They existed to be read off onto
 `/privacy`, and M7c wrote that page — the three things erasure cannot reach are now under
@@ -221,28 +221,48 @@ standard, not an implementation choice made here.
    two environments running the reminder sweep against real people. The runbook documents
    the required move; the configuration does not yet enforce it.
 
-2. **`responses.team` (BR-35, M9) records the teams as *published*, not as *played* —
-   which matters to results recording and to anything trained on it.**
+2. ~~`responses.team` (BR-35, M9) records the teams as *published*, not as *played* —
+   which matters to results recording and to anything trained on it.~~
 
-   Team picking stores each player's side on their response row, so a results table joined
-   on `fixture_id` yields the full history — roster A, roster B, outcome — with no backfill
-   needed. That is the point of building it in this order, and it is sound.
+   **Closed by M25, and not in the way this note expected.** It asked for a flag stored on
+   the result, computed once and read back later. No column was needed: every input to the
+   judgement — `teams_saved_at`, `teams_published_at`, and every `responses.status` /
+   `responses.team` — is frozen once a fixture is `played`. The picker and publish routes
+   both refuse a non-`open` fixture, and responses lock under BR-15, so
+   `announcementOutstanding` (`src/domain/teams.ts`) — already a pure, clock-free predicate
+   over exactly those four columns — answers the teams-accuracy question forever from rows
+   the database already has, evaluated at read time rather than pinned at write time.
 
-   The gap is accuracy at kickoff. Teams published on Wednesday describe Wednesday's squad.
-   If someone drops out on Thursday and the organiser does not re-pick and re-publish, the
-   stored rosters describe a match that did not happen. Nothing is wrong with the data
-   model; the fixture simply went stale and nobody acted on the prompt.
+   `test/played-fixture-freeze.test.ts` is what makes that true rather than assumed: it
+   enumerates every write path this codebase has and asserts none of them can mutate those
+   four columns on a `played` fixture. **If it ever fails, this note comes back and the
+   column with it** — a result's teams-accuracy figure would then be a claim about rows
+   that can still move underneath it, exactly the silent-noise failure this note originally
+   raised.
 
-   **For a ratings or balanced-picker dataset this is silent noise, which is the dangerous
-   kind** — a model would learn from line-ups that never took the pitch, and nothing in the
-   rows would say so. The remedy is available and cheap, and belongs to the results
-   milestone rather than to M9: the two staleness conditions in the team-picking spec's
-   §3.1 are computable at any moment, including at kickoff, so a result can record whether
-   its fixture's teams were still accurate when it started. Reliable fixtures can then be
-   distinguished from unreliable ones rather than averaged together.
+   `fixture_results.teams_accurate` (BR-37 §5) does exist as a stored column, but it caches
+   the predicate's answer at lock — a snapshot, so a later change to the predicate cannot
+   rewrite last season's results — rather than storing a fact that could not otherwise be
+   derived. Nothing reads it to decide anything; every page and every refusal reads the live
+   derivation, never this column.
 
-   Decide this when results are designed, not after a season of data has accumulated
-   without it.
+## Ratings and erasure — decided, not deferred (21 August 2026)
+
+M25 ("recording the result", BR-37) attaches every claim about what happened in a fixture to
+the `players` row of whoever filed it, and that row survives `erasePlayer` — a played
+fixture's participants are deliberately kept (`src/db/queries.ts`), because a squad's history
+should still count the people who were there. A future ratings model fitted on this data
+would therefore attach a derived judgement about a person's play to a row that outlives their
+account.
+
+**Decided, not deferred: this is accepted**, on the maintainer's own reasoning — "reasonably
+comfortable that it's not a problem due to the anonymisation already in place." By the time
+any such model could be fitted, the row it attaches to has had its name replaced with a
+placeholder and its `email`, `auth_user_id` and `email_verified_at` all set to null (BR-34):
+a pseudonym, not a person. `test/domain/erase-player.test.ts` already asserts that zero rows
+survive erasure that identify anyone, which is the guarantee this position rests on. Recorded
+here, as this file is for, so that the milestone which does fit a ratings model finds the
+question already answered rather than answering it in passing.
 
 ## Repository and deploy hardening — applied 11 August 2026
 
