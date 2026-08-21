@@ -15,6 +15,7 @@ import { passkeys } from "./routes/passkeys.js";
 import { push } from "./routes/push.js";
 import { pwa } from "./routes/pwa.js";
 import { respond } from "./routes/respond.js";
+import { resultsRoutes } from "./routes/results.js";
 import { robots } from "./routes/robots.js";
 import { cspHeader } from "./security/csp.js";
 import { signIn } from "./routes/signin.js";
@@ -168,6 +169,11 @@ export function createApp(): Hono<AppEnv> {
   // and per-fixture responses, exactly the confidentiality argument that
   // scopes that mount.
   app.route("/", broadcast);
+  // `/g/:id/f/:fixtureId/result` (M25), under the same `/g/*` prefix as
+  // `gamesRoutes` and so behind the same session mount and `private,
+  // no-store` header — the panel shows who voted for what, which is squad
+  // membership by another name.
+  app.route("/", resultsRoutes);
 
   app.notFound((c) => c.text("Not found", 404));
 

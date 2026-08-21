@@ -1493,6 +1493,22 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "plain-text 403 (wrong origin), a plain-text 404 (entitlement " +
       "failure) or a 303 redirect (src/routes/broadcast.ts); its own " +
       "status-code coverage lives in test/routes/broadcast-post.test.ts.",
+    "POST /g/:id/f/:fixtureId/result":
+      "on its one HTML-returning branch (the not-writable or bad-claim " +
+      "refusal, both 422) it renders through the same renderPlayerFixturePage " +
+      "as the member branch of GET /g/:id/f/:fixtureId — no template of its " +
+      "own that could carry an un-enumerated script — and its other branches " +
+      "are a plain-text 403 (wrong origin), a plain-text 404 (entitlement or " +
+      "electorate failure) or a 303 redirect (src/routes/results.ts); its own " +
+      "status-code coverage lives in test/routes/results.test.ts.",
+    "POST /g/:id/f/:fixtureId/result/clear":
+      "on its one HTML-returning branch (the not-writable refusal, 422) it " +
+      "renders through the same renderPlayerFixturePage as " +
+      "POST /g/:id/f/:fixtureId/result above — no template of its own that " +
+      "could carry an un-enumerated script — and its other branches are a " +
+      "plain-text 403 (wrong origin), a plain-text 404 (entitlement or " +
+      "electorate failure) or a 303 redirect (src/routes/results.ts); its " +
+      "own status-code coverage lives in test/routes/results.test.ts.",
   };
 
   const ROUTE_TO_PAGE: Readonly<Record<string, string>> = {

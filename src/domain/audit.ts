@@ -174,6 +174,16 @@ export const AUDIT_ACTIONS = [
   // `notification_log` row, so without this there is no evidence anyone was
   // ever owed the message.
   "game.broadcast_email_deferred",
+  // M25 (BR-37). Recorded against the fixture, so one fixture's whole result
+  // history reads in `entity_id` order. `result_changed` carries the claim
+  // before and after — it is the flip history, which is what lets
+  // `fixture_result_claims` stay one row per player with no `superseded_at`
+  // column for every read to remember to filter.
+  "fixture.result_filed",
+  "fixture.result_changed",
+  "fixture.result_cleared",
+  // Written by the sweep with a null actor, like every other system action.
+  "fixture.result_locked",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

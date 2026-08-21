@@ -42,6 +42,8 @@ export interface PlayerFixtureParams {
   squad: readonly SquadMember[] | null;
   inCount: number;
   viewerPlayerId: string;
+  /** Set only by a refusal re-render (Task 9's write routes); a plain `GET` never sets it. */
+  problem?: string;
   result: ResultPanelParams;
   /**
    * This page's own path, for the freshness bar's refresh link (M24). Task 8
@@ -67,9 +69,11 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
   } = params;
 
   const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
+  const problem = params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
+    ${problem}
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>

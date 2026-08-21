@@ -710,7 +710,9 @@ gamesRoutes.get("/g/:id/f/:fixtureId", requirePlayer, async (c) => {
 });
 
 /**
- * Render `/g/:id/f/:fixtureId` for a member who is not this game's owner.
+ * Render `/g/:id/f/:fixtureId` for a member who is not this game's owner —
+ * the plain `GET` below, and (Task 9) `src/routes/results.ts`'s two 422
+ * re-renders, so the three cannot drift.
  *
  * `game` came from `findGameForMember`, which scopes by the path's own game
  * id — but the fixture id is a second, independent path segment, so the
@@ -725,6 +727,8 @@ export async function renderPlayerFixture(
   fixtureId: string,
   viewerPlayerId: string,
   now: Date,
+  extras: { problem?: string } = {},
+  status: 200 | 422 = 200,
 ) {
   const db = getDb(c.env.DB);
   const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
@@ -755,6 +759,7 @@ export async function renderPlayerFixture(
       squad: squadForViewer(game, withSquad.squad, { isOwner: false }),
       inCount: fixture.inCount,
       viewerPlayerId,
+      problem: extras.problem,
       result: {
         names: outcomeNames(game),
         candidates: tally(claims),
@@ -770,6 +775,7 @@ export async function renderPlayerFixture(
       },
       fixturePath: fixturePath(game.id, fixtureId),
     }),
+    status,
   );
 }
 
