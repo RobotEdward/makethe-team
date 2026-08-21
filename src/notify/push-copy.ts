@@ -7,6 +7,7 @@ import type { MagicLinkEmailPayload } from "./templates/magic-link.js";
 import type { PromotionEmailPayload } from "./templates/promotion.js";
 import type { RemovedEmailPayload } from "./templates/removed.js";
 import type { ReminderEmailPayload } from "./templates/reminder.js";
+import type { ResultNudgeEmailPayload } from "./templates/result-nudge.js";
 import type { TeamsEmailParams } from "./templates/teams.js";
 import type { WelcomeEmailPayload } from "./templates/welcome.js";
 
@@ -292,6 +293,23 @@ function groupNudge({ gameName, kicksOffAtLocal, inCount }: GroupNudgePayload): 
 }
 
 /**
+ * N-12: "how did it go?".
+ *
+ * What happened: full time, and nobody has recorded the score yet — a fixed
+ * title so it reads the same for every game, mirroring N-11's own choice to
+ * put the game name in the body instead. When/where: nothing to add — the
+ * email's `whenLocal` is about the fixture that already happened, and the
+ * tray has no room for it once the game name is spelled out too.
+ */
+function resultNudge({ gameName }: ResultNudgeEmailPayload): PushCopy {
+  return {
+    title: "How did it go?",
+    body: `Tell us the score for ${gameName}.`,
+    tag: `n12:${gameName}`,
+  };
+}
+
+/**
  * The push-copy catalogue, one builder per `NotificationType`
  * (`NOTIFICATION_TYPES` in `./dedupe-key.ts`). Indexed by type rather than
  * exported as nine loose functions so that a type added to the catalogue
@@ -311,6 +329,7 @@ export const PUSH_COPY: {
   n9: typeof teams;
   n10: typeof broadcast;
   n11: typeof groupNudge;
+  n12: typeof resultNudge;
 } = {
   n1: reminder,
   n2: promotion,
@@ -323,6 +342,7 @@ export const PUSH_COPY: {
   n9: teams,
   n10: broadcast,
   n11: groupNudge,
+  n12: resultNudge,
 };
 
 // Referenced only for the mapped type above; re-exported so callers can

@@ -184,6 +184,12 @@ export const AUDIT_ACTIONS = [
   "fixture.result_cleared",
   // Written by the sweep with a null actor, like every other system action.
   "fixture.result_locked",
+  // N-12 (M25). Deferred by TR-31's daily ceiling, which deletes the
+  // `notification_log` row so a retry stays possible — this is the only
+  // durable trace that anybody was ever owed the prompt. The mildest of the
+  // deferrals: nothing depends on it, and the panel is on the fixture page
+  // whenever they next open it.
+  "fixture.result_nudge_email_deferred",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

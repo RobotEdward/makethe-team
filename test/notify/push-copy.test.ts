@@ -42,6 +42,7 @@ const sampleContext = {
   expiresInLabel: "5 minutes",
   dashboardUrl: "https://makethe.team/dashboard",
   yourSideName: "Reds",
+  fixtureUrl: "https://makethe.team/g/game-1/f/fixture-1",
   lineUps: [
     { name: "Reds", players: ["Sam", "Jamie"] },
     { name: "Blues", players: ["Alex", "Chris"] },

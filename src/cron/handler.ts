@@ -3,6 +3,7 @@ import { materialiseFixtures } from "../domain/materialise.js";
 import type { Bindings } from "../env.js";
 import { createNotifier, parseMaxEmailsPerDay } from "../notify/factory.js";
 import type { Notifier } from "../notify/notifier.js";
+import { sendResultNudges, type ResultNudgeResult } from "../notify/send-result-nudge.js";
 import { notifyPromotedPlayer } from "../routes/respond.js";
 import { sendOwnerAttention, type AttentionResult } from "../sweep/attention.js";
 import { sendGroupNudges, type GroupNudgeResult } from "../sweep/group-nudge.js";
@@ -126,6 +127,17 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       // throw for an ordinary failure is not the same as cannot throw.
       const materialiseResultsOutcome = await runMaterialiseResultsStep(db, now);
 
+      // Step 4b (M25, N-12): nudge everyone entitled to file a result, once,
+      // that a fixture of theirs has had its full time. After materialising
+      // (so this reads the same lifecycle state, though it does not read the
+      // cache row itself) and before the erasures, for the identical reason
+      // materialising is positioned there: this step only ever sends
+      // messages and writes `notification_log` rows, and an erasure failure
+      // must never be allowed to stop that. Wrapped whole, on top of the
+      // per-fixture isolation `sendResultNudges` already applies internally,
+      // for the same reason attention and materialise-results are.
+      const resultNudgeResult = await runResultNudgeStep(db, notifier, now);
+
       // Step 5: perform every erasure whose 48-hour window has elapsed
       // (BR-34). Last, and deliberately so, in both directions: an erasure
       // walks a player's whole squad and every open fixture behind it, so
@@ -193,6 +205,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
         nudgeResult.failures.length +
         attentionResult.failures.length +
         materialiseResultsOutcome.failures.length +
+        resultNudgeResult.failures.length +
         erasureResult.failures.length;
       if (failed > 0) {
         throw new Error(
@@ -334,6 +347,46 @@ async function runMaterialiseResultsStep(db: Db, now: Date): Promise<Materialise
     return {
       considered: 0,
       written: 0,
+      failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],
+    };
+  }
+}
+
+/**
+ * Step 4b, with its own outer failure boundary — the same shape as
+ * `runMaterialiseResultsStep` above and for the same reason: `sendResultNudges`
+ * isolates per fixture internally, but a D1 error in its very first query
+ * would escape that isolation entirely, and the erasures that follow this
+ * step must run regardless of whether a nudge went out.
+ */
+async function runResultNudgeStep(db: Db, notifier: Notifier, now: Date): Promise<ResultNudgeResult> {
+  try {
+    const result = await sendResultNudges(db, notifier, now);
+    console.log("result-nudge", JSON.stringify(result));
+    for (const failure of result.failures) {
+      console.error(
+        `result-nudge failed for fixture ${failure.fixtureId} (game ${failure.gameId ?? "unknown"}) at stage ${failure.stage}: ${failure.message}`,
+      );
+    }
+    if (result.emailDeferred > 0) {
+      // TR-31's ceiling, same signal as every other deferral this sweep logs.
+      console.warn(
+        `DAILY EMAIL CEILING REACHED: ${result.emailDeferred} result nudge email(s) deferred on this sweep run; they will be retried on the next one, and an audit_log row records each`,
+      );
+    }
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`result-nudge step failed outright and nobody was asked to file a result: ${message}`);
+    return {
+      fixturesConsidered: 0,
+      emailSent: 0,
+      emailFailed: 0,
+      emailDeferred: 0,
+      pushSent: 0,
+      pushFailed: 0,
+      alreadyNudged: 0,
+      skippedNoAddress: 0,
       failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],
     };
   }

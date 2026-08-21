@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11", "n12"] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -148,6 +148,17 @@ export function broadcastKey(broadcastId: string, playerId: string): string {
  */
 export function groupNudgeKey(fixtureId: string, playerId: string): string {
   return `n11:${fixtureId}:${playerId}`;
+}
+
+/**
+ * N-12 "how did it go?": once per player per fixture, ever.
+ *
+ * No timestamp, like N-4 and unlike N-2: there is one full-time per fixture,
+ * and a second prompt to record a result somebody has already chosen not to
+ * record is nagging.
+ */
+export function resultNudgeKey(fixtureId: string, playerId: string): string {
+  return `n12:${fixtureId}:${playerId}`;
 }
 
 /**

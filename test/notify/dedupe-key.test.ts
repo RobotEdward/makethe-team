@@ -8,6 +8,7 @@ import {
   pushKey,
   reminderKey,
   removalKey,
+  resultNudgeKey,
   welcomeKey,
 } from "../../src/notify/dedupe-key.js";
 
@@ -106,5 +107,15 @@ describe("broadcastKey", () => {
     expect(groupNudgeKey("f-1", "p-1")).toBe("n11:f-1:p-1");
     expect(broadcastKey("b-1", "p-2")).not.toBe(broadcastKey("b-1", "p-1"));
     expect(broadcastKey("b-2", "p-1")).not.toBe(broadcastKey("b-1", "p-1"));
+  });
+});
+
+describe("resultNudgeKey", () => {
+  it("n12 result nudge: n12:<fixture_id>:<player_id>, no timestamp", () => {
+    // No timestamp, like n4 attention: there is one full-time per fixture,
+    // and a repeated key is what makes the second sweep tick a no-op rather
+    // than a second nag.
+    expect(resultNudgeKey("fix-1", "ply-1")).toBe("n12:fix-1:ply-1");
+    expect(resultNudgeKey("fix-1", "ply-1")).toBe(resultNudgeKey("fix-1", "ply-1"));
   });
 });
