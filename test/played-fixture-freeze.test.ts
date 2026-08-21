@@ -12,6 +12,7 @@ import {
   resetDatabase,
   testDb,
 } from "./support/factories.js";
+import { kickoffIn } from "./support/clock.js";
 import { ALLOWED, ORIGIN, signIn } from "./support/sign-in.js";
 
 /**
@@ -105,8 +106,15 @@ describe("a played fixture is frozen", () => {
   });
 
   it("refuses a response through the token route", async () => {
+    // Expiry is checked against the real wall clock (`src/routes/respond.ts`),
+    // not against this fixture's stored (fixed, and by now historical)
+    // `kicksOffAt` — a token built from `KICKOFF` would already read as
+    // expired and never reach the lifecycle check at all. `kickoffIn` keeps
+    // the signed expiry live relative to whenever the suite actually runs;
+    // see its doc comment in test/support/clock.ts for why a fixed date here
+    // is a "ticking bomb".
     const token = await signResponseToken(
-      { playerId, fixtureId, expiresAt: KICKOFF.getTime() + 86_400_000 },
+      { playerId, fixtureId, expiresAt: kickoffIn(9).getTime() + 86_400_000 },
       env.RESPONSE_TOKEN_SECRET,
     );
 
@@ -115,7 +123,14 @@ describe("a played fixture is frozen", () => {
       body: new URLSearchParams({ intent: "out" }),
     });
 
+    // A bare 200 is also what the generic expired/malformed-token page
+    // returns, so it cannot tell a lifecycle refusal from the token simply
+    // being rejected before ever reaching that check. This wording
+    // (`src/views/fixture.ts`) is produced only by the played/cancelled
+    // branch, so it is what actually proves this request got there.
     expect(response.status).toBe(200);
+    expect(await response.text()).toMatch(/already been played/i);
+
     const [row] = await testDb().select().from(responses).where(eq(responses.fixtureId, fixtureId));
     expect(row?.status).toBe("in");
     expect(row?.team).toBe("a");
