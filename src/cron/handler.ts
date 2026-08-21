@@ -8,6 +8,7 @@ import { sendOwnerAttention, type AttentionResult } from "../sweep/attention.js"
 import { sendGroupNudges, type GroupNudgeResult } from "../sweep/group-nudge.js";
 import { runDueErasures } from "../sweep/erasures.js";
 import { openAndRemind } from "../sweep/open-and-remind.js";
+import { materialiseResults, type MaterialiseResultsOutcome } from "../sweep/result-cache.js";
 import { retirePastFixtures } from "../sweep/retire.js";
 
 // TEMPORARY TESTING CADENCE: every 5 minutes instead of hourly, so the
@@ -115,6 +116,16 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       const retireResult = await retirePastFixtures(db, now);
       console.log("retire-past-fixtures", JSON.stringify(retireResult));
 
+      // Step 4a (M25, BR-37): cache the derived result of every fixture whose
+      // 48-hour window has closed. After retirement, which is what makes a
+      // fixture `played` in the first place; before the erasures, because
+      // this step only ever writes a cache row and an erasure failure must
+      // never be allowed to stop that write, whereas the reverse — a slow or
+      // failing cache write delaying erasure — has no such asymmetry to
+      // justify it. Wrapped for the same reason attention is: written not to
+      // throw for an ordinary failure is not the same as cannot throw.
+      const materialiseResultsOutcome = await runMaterialiseResultsStep(db, now);
+
       // Step 5: perform every erasure whose 48-hour window has elapsed
       // (BR-34). Last, and deliberately so, in both directions: an erasure
       // walks a player's whole squad and every open fixture behind it, so
@@ -181,6 +192,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
         remindResult.failures.length +
         nudgeResult.failures.length +
         attentionResult.failures.length +
+        materialiseResultsOutcome.failures.length +
         erasureResult.failures.length;
       if (failed > 0) {
         throw new Error(
@@ -293,6 +305,35 @@ async function runAttentionStep(
       pushAttentionFailed: 0,
       ownersSkippedNoRecipient: 0,
       alreadyLogged: 0,
+      failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],
+    };
+  }
+}
+
+/**
+ * Step 4a, with its own outer failure boundary — the same shape as
+ * `runAttentionStep` above, and for the same reason: `materialiseResults`
+ * isolates per fixture internally, but a D1 error in its very first query (the
+ * candidate select) would escape that isolation entirely, and retirement has
+ * already run by the time this executes, so nothing here may stop the
+ * erasures that follow it.
+ */
+async function runMaterialiseResultsStep(db: Db, now: Date): Promise<MaterialiseResultsOutcome> {
+  try {
+    const result = await materialiseResults(db, now);
+    console.log("materialise-results", JSON.stringify(result));
+    for (const failure of result.failures) {
+      console.error(
+        `materialise-results failed for fixture ${failure.fixtureId} (game ${failure.gameId ?? "unknown"}) at stage ${failure.stage}: ${failure.message}`,
+      );
+    }
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`materialise-results step failed outright and no fixture's result was cached: ${message}`);
+    return {
+      considered: 0,
+      written: 0,
       failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],
     };
   }
