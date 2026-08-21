@@ -937,6 +937,32 @@ export const WHATSAPP_CSS = `
   .whatsapp-actions .button { white-space: nowrap; }
 `;
 
+/**
+ * The freshness bar at the foot of the pages whose facts move under the
+ * reader (M24): the age on the left, the Refresh link beside it.
+ *
+ * Support-sized muted text above a rule, deliberately the quietest thing on
+ * the page — it is a reassurance, not a control, and the reload it describes
+ * usually happens without anyone tapping. `--mut` on `--bg`, `--card` and
+ * `--card-raised` all clear 4.5:1 (`test/views/contrast.test.ts`).
+ *
+ * All-new selectors, so nothing already on a page changes appearance by
+ * adding this block. `.updated` was not reused: that is the privacy page's
+ * "last updated" line for a document, a different thing that happens to
+ * share a word.
+ */
+export const FRESHNESS_CSS = `
+  .freshness {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.9rem;
+    margin: 2.5rem 0 0; padding-top: 0.9rem;
+    border-top: 1px solid var(--line);
+    font-size: var(--t-support); color: var(--mut);
+  }
+  /* Pushed to the end of the row on anything wider than a narrow phone, where
+     the two sitting adjacent read as one sentence with a link in it. */
+  .freshness-refresh { margin-left: auto; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -954,6 +980,7 @@ export const PAGE_STYLE_BLOCKS = [
   ADMIN_ALLOWLIST_CSS,
   ADMIN_TOOLS_CSS,
   WHATSAPP_CSS,
+  FRESHNESS_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

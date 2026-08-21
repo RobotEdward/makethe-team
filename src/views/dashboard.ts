@@ -18,8 +18,10 @@ import {
   renderStatusLine,
   viewerHeadlineOpen,
 } from "./fixture.js";
+import { renderFreshness } from "./freshness.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
-import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS } from "./styles.js";
+import { FRESHNESS_JS } from "./scripts.js";
+import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FRESHNESS_CSS } from "./styles.js";
 
 /**
  * One fixture as the dashboard shows it: the game, when and where, the derived
@@ -352,12 +354,14 @@ export function renderDashboardPage({
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
     ${renderYourSquadsSection(squads)}
+    ${renderFreshness(DASHBOARD_PATH)}
   `;
 
   return layout({
     nav,
     title: "Your games — Make The Team",
     body,
-    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS],
+    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FRESHNESS_CSS],
+    pageScripts: [FRESHNESS_JS],
   });
 }

@@ -91,6 +91,7 @@ reminder email; the tap *on this page* is what saves the answer.
   own facts — status badge + capacity bar, nudge, over-capacity notice; optional push offer;
   published teams; `Squad` (h2). The block tints by state: plain when unanswered, amber when
   waitlisted, green-tinted when in, quiet field-grey when read-only.
+- **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **Viewer headline** (the "did it work?" line): `Can you make it?` / `You're in.` /
   `You're on the waitlist.` / `You said you can't make it.` / `You're no longer in this squad.`
   A waitlisted headline is styled amber and sits *above* the confirmed badge.
@@ -178,6 +179,7 @@ The signed-in home.
   self-retire once done (server-side checks); the install hint is hidden by a
   `display-mode: standalone` media query inside the installed app, since only the client
   knows. A `Dismiss` button removes the card permanently.
+- **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **Erasure banner:** appears while a deletion is pending, with a `Keep my account` button and
   a `More about this` link; a second variant names the games that are holding the erasure up.
 - **No footer links (M21):** `Delete my account and data` and `Privacy` moved to the account
@@ -231,6 +233,7 @@ One page in four states, all under `Delete my data` (h1) + "You're signed in as 
 - Game name (h1); venue; address; the open fixture (kickoff, status badge, capacity bar,
   published teams, `Squad`) or "Nothing open yet — you'll get an email the day before the next
   game."; `Coming up` (h2) — a list of dates each with its status in words.
+- **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **No invite link, no QR, no controls, no edit link** — a separate renderer from the
   organiser's page so that capability cannot leak in by accident.
 
@@ -273,6 +276,7 @@ The organiser's home for one game.
   (`Make an organiser` / `Make an ordinary member`), and `Remove`.
 - **`Coming up` (h2):** upcoming fixtures, each date a link to its own fixture page.
 - **Footer:** `Back to your games`.
+- **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **Logic:** A game always keeps at least one organiser; the last one cannot demote themselves.
 
 ### 3.3 Squad member detail — `GET /g/:id/squad/:playerId`
@@ -291,6 +295,7 @@ The organiser's home for one game.
 The busiest organiser screen.
 - Game name (h1); optional problem notice; kickoff; venue; status badge + capacity bar;
   over-capacity notice — "Over capacity — 6 in, 4 places."
+- **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **`Squad` (h2)** — one row per person:
   - **Member:** name, an `In` / `Out` segmented control that both shows and sets the current
     answer, and (waitlist only) a label naming their place in line.
@@ -461,6 +466,17 @@ but opinions, and a design review is welcome to challenge any of them.
   removing a guest, which is immediate.
 - **Broadcasts get a receipt but no delivery report** — the organiser sees "Sent to N
   players…" (recipients at send time); push failures are still invisible to them.
+- **Five pages carry a freshness bar (M24)** — the dashboard, both game renderings, and both
+  fixture pages: the ones whose facts move while they are on screen. It reads
+  `Updated 3 minutes ago`, counting client-side from page load, beside a `Refresh` link that
+  is an ordinary GET of the page's own path (so it works with scripting off, and it is the
+  whole of the feature for anyone without script). With script, coming back to a page left
+  more than a minute ago re-fetches it silently — an installed app resumed after twenty
+  minutes otherwise re-shows the document it already had, which is what made people navigate
+  away and back to see today's answers. Touching any form on the page retires that reload for
+  good, so an unsaved team pick is never destroyed. **Not the same thing as the update overlay
+  below**, which is about a new deploy rather than stale data; the two are deliberately
+  separate, one answering "this page is old" and the other "this app is old".
 - **In the installed app only, a new deploy raises a bottom overlay** — "A new version is
   available." plus a `Refresh` button — because an installed PWA can sit open for days with no
   reload control of its own; a browser tab gets fresh pages on every navigation and never

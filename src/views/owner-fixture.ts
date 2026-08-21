@@ -17,8 +17,9 @@ import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
-import { COPY_BUTTON_JS, TEAM_PICKER_JS, type PageScriptBlock } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS, WHATSAPP_CSS } from "./styles.js";
+import { renderFreshness } from "./freshness.js";
+import { COPY_BUTTON_JS, FRESHNESS_JS, TEAM_PICKER_JS, type PageScriptBlock } from "./scripts.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS, WHATSAPP_CSS } from "./styles.js";
 import { renderWhatsAppCard, type WhatsAppMessage } from "./whatsapp.js";
 
 export interface OwnerFixtureParams {
@@ -354,6 +355,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   const pageScripts: PageScriptBlock[] = [];
   if (takingChanges(view)) pageScripts.push(TEAM_PICKER_JS);
   if (whatsapp.length > 0) pageScripts.push(COPY_BUTTON_JS);
+  pageScripts.push(FRESHNESS_JS);
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
@@ -379,6 +381,8 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     </div>
 
     <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
+
+    ${renderFreshness(ownerFixturePath(gameId, fixtureId))}
   `;
 
   return layout({
@@ -412,7 +416,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     //
     // WHATSAPP_CSS is namespaced under .whatsapp and collides with nothing, so
     // its position is not load-bearing; last keeps it out of the pair above.
-    pageStyles: [SQUAD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS, WHATSAPP_CSS],
+    pageStyles: [SQUAD_STYLES_CSS, FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS, WHATSAPP_CSS, FRESHNESS_CSS],
     pageScripts,
   });
 }

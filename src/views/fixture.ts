@@ -5,12 +5,13 @@ import type { ResponseStatus } from "../domain/response-status.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
+import { renderFreshness } from "./freshness.js";
 import { renderPushOffer } from "./install.js";
 import { escapeHtml, layout } from "./layout.js";
-import { PUSH_SUBSCRIBE_JS } from "./scripts.js";
+import { FRESHNESS_JS, PUSH_SUBSCRIBE_JS } from "./scripts.js";
 import { ordinal } from "./squad-row.js";
 import { renderTeamSides } from "./team-picker.js";
-import { FIXTURE_STYLES_CSS, PUSH_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FRESHNESS_CSS, PUSH_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 /**
  * Why this page is read-only, if it is.
@@ -680,6 +681,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     ${renderPublishedTeamsSection(teams, squad)}
     <h2>Squad</h2>
     ${renderSquadSection(squad, inCount, viewer.playerId)}
+    ${renderFreshness(`/r/${encodeURIComponent(token)}`)}
   `;
 
   return layout({
@@ -693,7 +695,7 @@ export function renderFixturePage(options: FixturePageOptions): string {
     // fixture's publish state is a harder thing to reason about than a few
     // unused rules. `PUSH_STYLES_CSS` joins it on the same grounds — the
     // one-time offer is the rare case, not the common one.
-    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS, PUSH_STYLES_CSS],
+    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS, PUSH_STYLES_CSS, FRESHNESS_CSS],
     // Unlike the styles above, the script is opted in only when the markup
     // that needs it exists: `pushOffer` is the one thing on this page that is
     // not always rendered the way `.install`'s hidden elements always are on
@@ -701,6 +703,8 @@ export function renderFixturePage(options: FixturePageOptions): string {
     // button in its DOM for it to find is exactly the gap
     // `test/routes/signin.test.ts`'s "must carry the enhancement it is
     // listed for" assertion exists to catch.
-    pageScripts: pushOffer === undefined ? undefined : [PUSH_SUBSCRIBE_JS],
+    // The freshness bar is on every render of this page, so its block is
+    // unconditional; the push one keeps its own condition above.
+    pageScripts: pushOffer === undefined ? [FRESHNESS_JS] : [PUSH_SUBSCRIBE_JS, FRESHNESS_JS],
   });
 }

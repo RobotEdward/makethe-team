@@ -1146,6 +1146,11 @@ describe("no password field anywhere (TR-16)", () => {
     // `COPY_BUTTON_JS` for the card's Copy button. Each page is complete
     // without its script — the panel stays hidden, the textarea stays
     // selectable — which is the property this set exists to police.
+    // "dashboard" joined this set in M24, for the freshness bar: an installed
+    // app resumed after twenty minutes re-shows the document it already had,
+    // and only script can notice the resume. The page is complete without it —
+    // the bar's Refresh link is an ordinary GET of the dashboard's own path,
+    // which is what this set exists to insist on.
     const mayCarryScript = new Set([
       "sign-in",
       "sign-in error",
@@ -1157,6 +1162,7 @@ describe("no password field anywhere (TR-16)", () => {
       "message everyone",
       "message squad",
       "cancel done",
+      "dashboard",
     ]);
 
     // The only two captures whose route never calls layout() at all —

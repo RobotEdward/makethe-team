@@ -269,6 +269,7 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
   return c.html(
     renderPlayerGamePage({
       nav: pageNav(c, "games"),
+      gameId: game.id,
       gameName: game.name,
       venueName: game.venueName,
       venueAddress: game.venueAddress,

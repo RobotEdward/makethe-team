@@ -14,7 +14,7 @@ import {
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, passkey, players, pushSubscriptions, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { FRESHNESS_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import { insertGame, insertMembership, resetDatabase } from "../support/factories.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
@@ -243,18 +243,24 @@ describe("GET /app", () => {
     expect(body).toContain("You&#39;re in");
   });
 
-  it("needs no JavaScript and offers both responses as ordinary form submits", async () => {
+  it("needs no JavaScript to answer, and offers both responses as ordinary form submits", async () => {
     const { cookie } = await signIn();
     const playerId = await viewerId();
     await seedFixtureFor(playerId);
 
     const body = await (await get(cookie)).text();
 
-    // Every page carries the site-wide service worker registration (M13
-    // Task 5); stripped first so this keeps proving nothing *else* needs
-    // script.
+    // Two blocks stripped first, so this keeps proving nothing *else* needs
+    // script: the site-wide service worker registration (M13 Task 5), and the
+    // freshness bar's re-fetch-on-resume (M24). Answering is unaffected by
+    // either — the buttons below are the same form posts they were, and the
+    // bar's own Refresh is a link, not a control.
     expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
-    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
+    expect(body).toContain(`<script>${FRESHNESS_JS}</script>`);
+    const rest = body
+      .replace(`<script>${SERVICE_WORKER_JS}</script>`, "")
+      .replace(`<script>${FRESHNESS_JS}</script>`, "");
+    expect(rest).not.toContain("<script");
     expect(body).not.toMatch(/type=.?password/i);
     expect(body).toContain('method="post"');
     expect(body).toContain(`action="${DASHBOARD_PATH}"`);

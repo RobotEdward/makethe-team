@@ -1,15 +1,20 @@
+import { gamePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
+import { renderFreshness } from "./freshness.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { FRESHNESS_JS } from "./scripts.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, INVITE_CSS, SQUAD_STYLES_CSS, TEAM_PICKER_CSS } from "./styles.js";
 
 export interface PlayerGameParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
+  /** Only so the freshness bar can link back at this page (M24). */
+  gameId: string;
   gameName: string;
   venueName: string;
   venueAddress: string | null;
@@ -66,7 +71,7 @@ export interface PlayerGameParams {
  * plain markup, so it works with JavaScript off.
  */
 export function renderPlayerGamePage(params: PlayerGameParams): string {
-  const { gameName, venueName, venueAddress, timezone, openFixture, upcoming, viewerPlayerId } = params;
+  const { gameId, gameName, venueName, venueAddress, timezone, openFixture, upcoming, viewerPlayerId } = params;
 
   const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
 
@@ -109,6 +114,8 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     <h2>Coming up</h2>
     <ul class="fixtures">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>
 
+    ${renderFreshness(gamePath(gameId))}
+
   `;
 
   return layout({
@@ -134,6 +141,7 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     // matches nothing, and the `.squad` container properties they share carry
     // identical values. Pinned so the page is not the one place a reader
     // finds the rule written backwards.
-    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS, TEAM_PICKER_CSS],
+    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS, TEAM_PICKER_CSS, FRESHNESS_CSS],
+    pageScripts: [FRESHNESS_JS],
   });
 }

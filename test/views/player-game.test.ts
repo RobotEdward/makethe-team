@@ -8,6 +8,7 @@ const KICKOFF = new Date("2026-03-05T19:00:00Z");
 
 const BASE: PlayerGameParams = {
   nav: { isAdmin: false, current: "games" } as const,
+  gameId: "g-1",
   gameName: "Thursday 7-a-side",
   venueName: "Venue Name",
   venueAddress: null,

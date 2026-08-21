@@ -1,6 +1,7 @@
 import {
   gameEditPath,
   gameMessagePath,
+  gamePath,
   joinPath,
   memberDetailPath,
   memberRemovePath,
@@ -14,8 +15,9 @@ import { SITE_ORIGIN } from "../notify/delivery.js";
 import { fixtureStatusWords } from "./fixture.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { qrSvg } from "./qr.js";
-import { COPY_BUTTON_JS } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "./styles.js";
+import { renderFreshness } from "./freshness.js";
+import { COPY_BUTTON_JS, FRESHNESS_JS } from "./scripts.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 export interface GameOverviewParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
@@ -154,6 +156,8 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
          in that form read as one of its controls. -->
     <p class="actions"><a class="button" href="${escapeHtml(gameMessagePath(gameId))}">Message everyone</a></p>
 
+    ${renderFreshness(gamePath(gameId))}
+
   `;
 
   return layout({
@@ -175,7 +179,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     // FIXTURE_STYLES_CSS is here for .back-link alone. Everything else it
     // carries is selected by a class this page never renders, so nothing
     // already on the page changes appearance by adding it.
-    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS],
-    pageScripts: [COPY_BUTTON_JS],
+    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS, FRESHNESS_CSS],
+    pageScripts: [COPY_BUTTON_JS, FRESHNESS_JS],
   });
 }

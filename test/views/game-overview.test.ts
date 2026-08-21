@@ -142,14 +142,16 @@ describe("the invite card (M12 §4)", () => {
     // opens it. A second *page* script here would mean it does not — but M13
     // Task 5 put the site-wide service worker registration on every page, so
     // the raw <script> count is no longer the right thing to assert (it's now
-    // 2: SERVICE_WORKER_JS plus this page's own). Filtered out the same way
-    // nine other test files on this branch already do (see
+    // 3: SERVICE_WORKER_JS plus this page's two own — the Copy button and,
+    // since M24, the freshness bar). Filtered out the same way nine other
+    // test files on this branch already do (see
     // test/routes/team-picker.test.ts) so the assertion still means what it
-    // says: exactly one script this page opts into beyond the site-wide one.
+    // says: exactly the scripts this page opts into beyond the site-wide one,
+    // and the QR is not among them.
     expect(html).toMatch(/<details class="qr-toggle">\s*<summary>Show the QR code<\/summary>\s*<div class="qr">/);
     const scripts = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
     const ownScripts = scripts.filter(([, , js]) => js !== SERVICE_WORKER_JS);
-    expect(ownScripts).toHaveLength(1);
+    expect(ownScripts).toHaveLength(2);
   });
 
   it("keeps the rotate form an outlined button, not a second filled one", () => {

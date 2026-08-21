@@ -5,7 +5,7 @@ import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
-import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { FRESHNESS_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW } from "../support/clock.js";
 
@@ -176,11 +176,19 @@ describe("GET /r/:token — rendering", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(body).toContain("Thursday 7-a-side");
     expect(body).toContain("Oxford Sports Park");
-    // Every page carries the site-wide service worker registration (M13
-    // Task 5), so it is stripped before checking that nothing else needing
-    // script has crept onto this one.
+    // Two blocks stripped before checking that nothing *else* needing script
+    // has crept onto this one: the site-wide service worker registration (M13
+    // Task 5), and the freshness bar's re-fetch-on-resume (M24). Both are
+    // enhancements over markup that stands without them, and neither can
+    // record a response — `location.reload()` is a GET, and this route
+    // mutates nothing on a GET (TR-15), which is the property that makes any
+    // script safe on a URL that sits in an email.
     expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
-    expect(body.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
+    expect(body).toContain(`<script>${FRESHNESS_JS}</script>`);
+    const rest = body
+      .replace(`<script>${SERVICE_WORKER_JS}</script>`, "")
+      .replace(`<script>${FRESHNESS_JS}</script>`, "");
+    expect(rest).not.toContain("<script");
   });
 
   /**

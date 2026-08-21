@@ -27,6 +27,20 @@ tap rather than two: tapping a button on the card saves your answer there and
 then. It's the same answer, recorded the same way, as tapping one on the page
 in chapter 3.
 
+## Is this up to date?
+
+Every one of these pages ends with a quiet line telling you when it was
+loaded — **Updated just now**, and later **Updated 12 minutes ago** — with a
+**Refresh** link beside it.
+
+Most of the time you won't need the link. Come back to the app after a few
+minutes away and it fetches the page again by itself, so what you're reading
+is what's true now rather than what was true when you last looked. The one
+time it leaves the page alone is when you're in the middle of something on
+it — half way through picking the teams, say — because refreshing would throw
+that away. Then the line is there to tell you the page is old, and the link is
+there for when you're ready.
+
 ## Signing in faster
 
 ![The passkeys page, offering to add a passkey](images/passkeys.png)

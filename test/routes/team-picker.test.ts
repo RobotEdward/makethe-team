@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { auditLog, fixtures, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { COPY_BUTTON_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, TEAM_PICKER_JS } from "../../src/views/scripts.js";
+import { COPY_BUTTON_JS, FRESHNESS_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, TEAM_PICKER_JS } from "../../src/views/scripts.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
@@ -230,7 +230,7 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
    * knows what this page is *for* can ask — that the pick itself is still
    * expressible once all of it is deleted.
    */
-  it("ships exactly its two enumerated scripts, and the whole pick survives their removal", async () => {
+  it("ships exactly its three enumerated scripts, and the whole pick survives their removal", async () => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId, ada, bram } = await seedPickableFixture(viewerId);
 
@@ -240,8 +240,9 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     // page, so "the picker page carries exactly the one enhancement" is no
     // longer true of the raw count — every page now carries that plus
     // whatever it opts into. M22 added a second opt-in to an open fixture's
-    // page: the Post-to-WhatsApp card's Copy button. The page's *own* opt-ins
-    // are therefore exactly those two, named here so a third cannot arrive
+    // page: the Post-to-WhatsApp card's Copy button. M24 added a third, the
+    // freshness bar's re-fetch-on-resume. The page's *own* opt-ins are
+    // therefore exactly those three, named here so a fourth cannot arrive
     // unnoticed, and the assertion is narrowed to the scripts that are not
     // the site-wide block.
     const scripts = [...served.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
@@ -251,8 +252,8 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     );
     expect(
       ownScripts.map(([, , js]) => js),
-      "the picker page carries exactly the picker and the copy button",
-    ).toEqual([TEAM_PICKER_JS, COPY_BUTTON_JS]);
+      "the picker page carries exactly the picker, the copy button and the freshness bar",
+    ).toEqual([TEAM_PICKER_JS, COPY_BUTTON_JS, FRESHNESS_JS]);
     // Guards against layout() emitting the site-wide block twice: the two
     // assertions above (some() finds it, ownScripts has length 2) would both
     // still pass if SERVICE_WORKER_JS appeared a second time, since a

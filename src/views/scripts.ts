@@ -964,6 +964,111 @@ export const PUSH_SUBSCRIBE_JS = `
 `;
 
 /**
+ * The DOM contract `FRESHNESS_JS` reads, exported by name for the same reason
+ * `PUSH_BUTTON_ID` above is: the markup lives in `src/views/freshness.ts` and
+ * the reader lives here, and two strings typed independently in two files
+ * agree only by convention. A typo on either side typechecks, lints, and
+ * leaves the bar permanently inert.
+ */
+export const FRESHNESS_ATTRIBUTE = "data-freshness";
+/** The element `FRESHNESS_JS` writes "Updated 3 minutes ago" into. */
+export const FRESHNESS_AGE_ATTRIBUTE = "data-freshness-age";
+
+/**
+ * Keeps a resumed page from lying about what it shows (M24).
+ *
+ * The problem this solves is not caching — every page carrying this bar is
+ * `private, no-store` (`src/app.ts`), so a navigation always re-renders. It
+ * is that an installed app reopened after twenty minutes performs no
+ * navigation at all: the browser re-shows the document it already had, and
+ * the only way to see today's answers is to tap something. So the resume
+ * itself becomes the trigger.
+ *
+ * Enhancement over markup that already works, like every block here. The bar
+ * ships a plain link to the page's own path, which refreshes it with no
+ * script at all; this block adds the age and the automatic re-fetch on top.
+ *
+ * `location.reload()` is a GET, and this page renders only from a GET, so
+ * TR-15 is untouched — nothing here can record a response. That matters most
+ * on `/r/:token`, whose URL sits in an email that scanners and prefetchers
+ * follow with scripting on: the worst this block can make one of them do is
+ * issue a second read of a page it had already read.
+ *
+ * Guards on its DOM anchor rather than a capability, the shape `INSTALL_JS`
+ * uses: every API it touches (`Date.now`, `setInterval`, `document.hidden`)
+ * predates service workers by years, so the only absence worth short-
+ * circuiting on is the bar itself.
+ */
+export const FRESHNESS_JS = `
+(function () {
+  var bar = document.querySelector("[${FRESHNESS_ATTRIBUTE}]");
+  if (!bar) return;
+
+  var age = bar.querySelector("[${FRESHNESS_AGE_ATTRIBUTE}]");
+  // Loaded, not rendered — but the two are the same moment to within one
+  // round trip, because these pages are no-store and so were built for this
+  // request. Reading the clock here rather than interpolating a server
+  // timestamp keeps a wall clock out of five view signatures and their tests,
+  // and keeps TR-5's timezone rule out of a string no server ever writes.
+  var loadedAt = Date.now();
+  var staleAfter = 60000;
+
+  // Any interaction with a form retires the reload for the life of this
+  // document. The organiser's fixture page carries the team picker, whose
+  // in-progress pick lives nowhere but the DOM until Save, and reloading over
+  // it destroys work. \`dragend\` and a click inside a form are here because
+  // the picker moves rows both ways without firing \`input\` or \`change\`:
+  // a drop and Randomise both set \`.checked\` from script, which fires
+  // neither. Listened for in the capture phase so a handler that stops
+  // propagation cannot hide the interaction from this one.
+  var dirty = false;
+  function markDirty() {
+    dirty = true;
+  }
+  document.addEventListener("input", markDirty, true);
+  document.addEventListener("change", markDirty, true);
+  document.addEventListener("dragend", markDirty, true);
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (target && target.closest && target.closest("form")) markDirty();
+  }, true);
+
+  function words(elapsed) {
+    var minutes = Math.floor(elapsed / 60000);
+    if (minutes < 1) return "Updated just now";
+    if (minutes === 1) return "Updated 1 minute ago";
+    if (minutes < 60) return "Updated " + minutes + " minutes ago";
+    return "Updated over an hour ago";
+  }
+
+  function tick() {
+    if (age) age.textContent = words(Date.now() - loadedAt);
+  }
+
+  // Three triggers for one question, because no single one covers every way
+  // an installed app comes back: \`visibilitychange\` is the ordinary resume,
+  // \`pageshow\` is the back-forward cache restoring a document whose script
+  // never re-ran, and \`focus\` catches a window that was never hidden at all.
+  // All three are cheap — a clock comparison — and all three land on the same
+  // two refusals below, so firing several at once costs one reload, not three.
+  function refreshIfStale() {
+    if (document.hidden) return;
+    if (dirty) return;
+    if (Date.now() - loadedAt < staleAfter) return;
+    location.reload();
+  }
+
+  document.addEventListener("visibilitychange", refreshIfStale);
+  window.addEventListener("pageshow", refreshIfStale);
+  window.addEventListener("focus", refreshIfStale);
+
+  setInterval(tick, 30000);
+  tick();
+  if (age) age.hidden = false;
+})();
+`;
+
+/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
  *
@@ -977,6 +1082,7 @@ export const PAGE_SCRIPT_BLOCKS = [
   TEAM_PICKER_JS,
   INSTALL_JS,
   PUSH_SUBSCRIBE_JS,
+  FRESHNESS_JS,
 ] as const;
 
 export type PageScriptBlock = (typeof PAGE_SCRIPT_BLOCKS)[number];

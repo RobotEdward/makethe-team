@@ -88,9 +88,14 @@ describe("the script enumeration", () => {
       // for a missing capability. `BROADCAST_WHATSAPP_JS` (M22) is the same
       // shape as INSTALL_JS — `encodeURIComponent` and `setAttribute` need no
       // detecting — and guards its four DOM anchors together: `if (!panel ||
-      // !link || !subject || !message) return;`.
+      // !link || !subject || !message) return;`. `FRESHNESS_JS` (M24) is the
+      // same shape again and for the same reason: `Date.now`, `setInterval`
+      // and `document.hidden` all predate service workers by years, so there
+      // is no capability whose absence should silence it — only its own bar,
+      // `if (!bar) return;`, which a page that never called `renderFreshness`
+      // has not rendered.
       expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
-        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;/,
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!bar\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;/,
       );
     }
   });

@@ -7,7 +7,7 @@ import {
 } from "../../src/views/fixture.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
 import { renderPlayerGamePage } from "../../src/views/player-game.js";
-import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { FRESHNESS_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import { fixtureView, type FixtureFacts } from "../../src/domain/fixture-view.js";
 import type { SquadMember } from "../../src/db/queries.js";
@@ -79,10 +79,20 @@ function member(
 describe("fixture page", () => {
   it("contains no JavaScript at all (TR-4)", () => {
     const html = renderFixturePage(BASE);
-    // Every page carries the site-wide service worker registration (M13
-    // Task 5); stripped first so this keeps proving TR-4 for everything else.
+    // Two blocks are stripped before the assertion, and both are enhancements
+    // over markup that already works: the site-wide service worker
+    // registration (M13 Task 5), and the freshness bar's re-fetch-on-resume
+    // (M24), whose Refresh link is an ordinary GET of this page's own URL.
+    // Neither can answer for anybody — `location.reload()` is a GET, and this
+    // page records nothing on a GET (TR-15), which is what makes the block
+    // safe on a URL that sits in an email scanners follow with scripting on.
+    // Stripping them keeps this proving TR-4 for everything else.
     expect(html).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
-    expect(html.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
+    expect(html).toContain(`<script>${FRESHNESS_JS}</script>`);
+    const rest = html
+      .replace(`<script>${SERVICE_WORKER_JS}</script>`, "")
+      .replace(`<script>${FRESHNESS_JS}</script>`, "");
+    expect(rest).not.toContain("<script");
   });
 
   it("offers two explicit POST buttons, not an auto-submit (TR-15)", () => {
@@ -977,10 +987,20 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
-    // Every page carries the site-wide service worker registration (M13
-    // Task 5); stripped first so this keeps proving TR-4 for everything else.
+    // Two blocks are stripped before the assertion, and both are enhancements
+    // over markup that already works: the site-wide service worker
+    // registration (M13 Task 5), and the freshness bar's re-fetch-on-resume
+    // (M24), whose Refresh link is an ordinary GET of this page's own URL.
+    // Neither can answer for anybody — `location.reload()` is a GET, and this
+    // page records nothing on a GET (TR-15), which is what makes the block
+    // safe on a URL that sits in an email scanners follow with scripting on.
+    // Stripping them keeps this proving TR-4 for everything else.
     expect(html).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
-    expect(html.replace(`<script>${SERVICE_WORKER_JS}</script>`, "")).not.toContain("<script");
+    expect(html).toContain(`<script>${FRESHNESS_JS}</script>`);
+    const rest = html
+      .replace(`<script>${SERVICE_WORKER_JS}</script>`, "")
+      .replace(`<script>${FRESHNESS_JS}</script>`, "");
+    expect(rest).not.toContain("<script");
   });
 });
 
@@ -1120,6 +1140,7 @@ describe("the capacity bar", () => {
 
     const playerHtml = renderPlayerGamePage({
       nav: { isAdmin: false, current: "games" } as const,
+      gameId: "g-1",
       gameName: "Thursday 7-a-side",
       venueName: "Oxford Sports Park",
       venueAddress: null,
