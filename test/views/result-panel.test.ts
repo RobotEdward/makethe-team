@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderResultPanel, outcomeNames, type ResultPanelParams } from "../../src/views/result.js";
 import { deriveResult, tally, type ResultClaim } from "../../src/domain/result.js";
+import { RESULT_CSS } from "../../src/views/styles.js";
 
 const NAMES = outcomeNames({ teamAName: "Bibs", teamBName: "Skins" });
 
@@ -109,5 +110,23 @@ describe("renderResultPanel", () => {
     // `escapeHtml(undefined)` throws and 500s the page.
     const derived = deriveResult([claim("p1", { outcome: "abandoned" as never })], new Set());
     expect(() => renderResultPanel(params({ derived, locked: true, writable: false }))).not.toThrow();
+  });
+
+  it("gives the withdraw control a working reset, not just a link's colour", () => {
+    // `.danger-link` (STYLES) is coloured text with no button reset -- its
+    // only other user is an `<a>`. Put on a bare `<button>` it would keep
+    // default platform chrome (background, border, padding) around red
+    // text: the exact shape CLAUDE.md names for `.keep-link` vs `.button`,
+    // and the same shape test/views/remove-member.test.ts guards for.
+    const html = renderResultPanel(params({ candidates: tally([claim("p1")]) }));
+    expect(html).toContain('class="danger-link result-reset"');
+
+    const match = RESULT_CSS.match(/\.result-reset\s*\{([^}]*)\}/);
+    expect(match, "expected .result-reset to be declared in RESULT_CSS").not.toBeNull();
+    const declarations = match![1]!;
+    expect(declarations).toContain("appearance: none");
+    expect(declarations).toContain("background: none");
+    expect(declarations).toContain("border: none");
+    expect(declarations).toContain("padding: 0");
   });
 });

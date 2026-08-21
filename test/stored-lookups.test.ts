@@ -214,7 +214,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
       ),
   },
   {
-    name: "renderResultPanel (src/views/result.ts)",
+    name: "renderResultPanel, locked branch (src/views/result.ts)",
     column: "fixture_result_claims.outcome",
     reach: () => {
       const names = outcomeNames({ teamAName: "Bibs", teamBName: "Skins" });
@@ -227,6 +227,34 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
         derived: deriveResult(claims, new Set()),
         locked: true,
         writable: false,
+        eligible: true,
+        rostered: true,
+        yourPlayerId: "p-1",
+        deadlineLocal: "Sat 15 Aug, 7:00pm",
+        actionPath: "/g/g-1/f/f-1/result",
+        clearPath: "/g/g-1/f/f-1/result/clear",
+      });
+    },
+  },
+  {
+    // The locked branch above reaches `outcomeLabel` through `renderLocked`.
+    // The candidate list reaches the same lookup through a different
+    // function (`renderRow`, via `renderCandidates`) while the panel is
+    // still open to argument -- a separate call site the locked case cannot
+    // exercise, and the shape a real claim takes before any lock.
+    name: "renderResultPanel, writable candidate list (src/views/result.ts)",
+    column: "fixture_result_claims.outcome",
+    reach: () => {
+      const names = outcomeNames({ teamAName: "Bibs", teamBName: "Skins" });
+      const claims = [
+        { playerId: "p-1", outcome: OUT_OF_UNION, scoreA: null, scoreB: null, filedAt: NOW },
+      ];
+      return renderResultPanel({
+        names,
+        candidates: tally(claims),
+        derived: null,
+        locked: false,
+        writable: true,
         eligible: true,
         rostered: true,
         yourPlayerId: "p-1",

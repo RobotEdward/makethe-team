@@ -963,6 +963,17 @@ export const RESULT_CSS = `
   .result-score { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem; }
   .result-score label { display: grid; gap: 0.3rem; }
   .result-score input { width: 4.5rem; }
+  /* .danger-link (STYLES) carries only colour and weight -- every other use
+     of it is on an <a>, which needs nothing more. The withdraw control is a
+     <button>, and without a reset it would keep the platform's default
+     button chrome (background, border, padding) with red bold text inside
+     it. This class carries the reset half of the job; .danger-link still
+     carries the colour, so the two are applied together. */
+  .result-reset {
+    appearance: none; -webkit-appearance: none;
+    background: none; border: none; padding: 0;
+    font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
 `;
 
 /**
