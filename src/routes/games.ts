@@ -713,12 +713,13 @@ async function ownerFixtureParams(
 }
 
 /**
- * Render `/g/:id/f/:fixtureId` for a loaded target — the plain `GET` above
- * and both of `POST …/response/:playerId`'s refusal paths, so the three
- * cannot drift (see `ownerFixtureParams`'s own comment for why that builder
- * exists).
+ * Render `/g/:id/f/:fixtureId` for a loaded target — the plain `GET` above,
+ * this file's own POST refusal paths, and (M25 review fix) the owner branch
+ * of each of `src/routes/results.ts`'s three 422 refusals, exported for that
+ * reason. See `ownerFixtureParams`'s own comment for why that builder
+ * exists.
  */
-async function renderOwnerFixture(
+export async function renderOwnerFixture(
   c: Context<AppEnv>,
   target: NonNullable<Awaited<ReturnType<typeof loadFixtureTarget>>>,
   now: Date,
@@ -764,9 +765,11 @@ gamesRoutes.get("/g/:id/f/:fixtureId", requirePlayer, async (c) => {
 
 /**
  * Render `/g/:id/f/:fixtureId` for a member who is not this game's owner —
- * the plain `GET` below, and (Task 9) `src/routes/results.ts`'s three 422
- * re-renders (the filing route's not-writable and bad-claim branches, and
- * the clear route's not-writable branch), so none of the four can drift.
+ * the plain `GET` below, and (Task 9) `src/routes/results.ts`'s member-role
+ * 422 refusals (the filing route's not-writable and bad-claim branches, and
+ * the clear route's not-writable branch — an owner tripping any of the three
+ * gets `renderOwnerFixture` instead, per the M25 review fix that added the
+ * role branch), so none of the four can drift.
  *
  * `game` came from `findGameForMember`, which scopes by the path's own game
  * id — but the fixture id is a second, independent path segment, so the

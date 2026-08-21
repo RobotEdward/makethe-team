@@ -18,7 +18,7 @@ import { fixtures } from "../db/schema.js";
 import { parseClaim } from "../domain/result.js";
 import { resultWritable } from "../domain/result-lock.js";
 import type { AppEnv } from "../env.js";
-import { renderPlayerFixture } from "./games.js";
+import { renderOwnerFixture, renderPlayerFixture } from "./games.js";
 
 export const resultsRoutes = new Hono<AppEnv>();
 
@@ -29,18 +29,44 @@ export const resultsRoutes = new Hono<AppEnv>();
  * Tries `findGameForOwner` first, then `findGameForMember`, the same order
  * `GET /g/:id/f/:fixtureId` uses to decide which page to render (see that
  * route in `src/routes/games.ts`) — but unlike that route, both branches here
- * lead to the same next step, because filing a claim is not a role-dispatched
- * page. The fixture id is a second, independent path segment, so it is loaded
- * and checked against `game.id` before anything else: a fixture id from
- * another game must not be reachable (TR-18).
+ * lead to the same next step as far as the write itself goes: filing a claim
+ * is not a role-dispatched page. `isOwner` records which branch matched, not
+ * because the write differs, but because a 422 refusal still has to pick a
+ * page — see `renderRefusal` below. The fixture id is a second, independent
+ * path segment, so it is loaded and checked against `game.id` before
+ * anything else: a fixture id from another game must not be reachable
+ * (TR-18).
  */
 async function loadEntitledFixture(c: Context<AppEnv>, gameId: string, fixtureId: string, playerId: string) {
   const db = getDb(c.env.DB);
-  const game = (await findGameForOwner(db, gameId, playerId)) ?? (await findGameForMember(db, gameId, playerId));
+  const ownerGame = await findGameForOwner(db, gameId, playerId);
+  const game = ownerGame ?? (await findGameForMember(db, gameId, playerId));
   if (game === null) return null;
   const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
   if (!fixture || fixture.gameId !== game.id) return null;
-  return { db, game, fixture };
+  return { db, game, fixture, isOwner: ownerGame !== null };
+}
+
+/**
+ * Render a 422 refusal for whichever role the caller holds — the owner page
+ * (`renderOwnerFixture`, exported from `src/routes/games.ts`) for an owner,
+ * the player page (`renderPlayerFixture`, same file) for anyone else — so
+ * neither refusal strands an owner on the player-shaped page their own
+ * fixture URL would otherwise never show them (M25 review fix). Called from
+ * all three 422 sites below (the filing route's not-writable and bad-claim
+ * branches, and the clear route's not-writable branch); both routes' success
+ * paths still redirect to the plain `GET`, which does this same dispatch
+ * fresh.
+ */
+async function renderRefusal(
+  c: Context<AppEnv>,
+  target: NonNullable<Awaited<ReturnType<typeof loadEntitledFixture>>>,
+  playerId: string,
+  now: Date,
+  problem: string,
+) {
+  if (target.isOwner) return renderOwnerFixture(c, target, now, { problem }, 422);
+  return renderPlayerFixture(c, target.game, target.fixture.id, playerId, now, { problem }, 422);
 }
 
 /**
@@ -84,15 +110,7 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result", requirePlayer, async (c) => {
   // claims, which is not an entitlement question.
   const claims = await listResultClaims(target.db, target.fixture.id);
   if (!resultWritable(target.fixture.lifecycle, target.fixture.kicksOffAt, claims.length, now)) {
-    return renderPlayerFixture(
-      c,
-      target.game,
-      target.fixture.id,
-      player.id,
-      now,
-      { problem: "That fixture isn't taking a result any more." },
-      422,
-    );
+    return renderRefusal(c, target, player.id, now, "That fixture isn't taking a result any more.");
   }
 
   // Check 5: the submitted form. `parseClaim` is the single place that
@@ -105,7 +123,7 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result", requirePlayer, async (c) => {
     scoreB: typeof form["scoreB"] === "string" ? form["scoreB"] : undefined,
   });
   if (!parsed.ok) {
-    return renderPlayerFixture(c, target.game, target.fixture.id, player.id, now, { problem: parsed.problem }, 422);
+    return renderRefusal(c, target, player.id, now, parsed.problem);
   }
 
   // The before-value for the audit row, read before the write replaces it.
@@ -165,15 +183,7 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result/clear", requirePlayer, async (c) 
 
   const claims = await listResultClaims(target.db, target.fixture.id);
   if (!resultWritable(target.fixture.lifecycle, target.fixture.kicksOffAt, claims.length, now)) {
-    return renderPlayerFixture(
-      c,
-      target.game,
-      target.fixture.id,
-      player.id,
-      now,
-      { problem: "That fixture isn't taking a result any more." },
-      422,
-    );
+    return renderRefusal(c, target, player.id, now, "That fixture isn't taking a result any more.");
   }
 
   const removed = await deleteResultClaim(target.db, target.fixture.id, player.id);

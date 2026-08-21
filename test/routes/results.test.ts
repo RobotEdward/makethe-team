@@ -159,6 +159,24 @@ describe("POST /g/:id/f/:fixtureId/result (M25)", () => {
     expect(rows[0]).toMatchObject({ playerId: otherPlayer });
   });
 
+  it("renders the owner page, not the player page, when an owner trips clear's locked-window 422", async () => {
+    const { cookie, viewerId } = await viewerSession();
+    const db = testDb();
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, viewerId, { role: "owner" });
+    const fixtureId = await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt: kickoffIn(-72) });
+    const otherPlayer = await insertPlayer(db);
+    await insertMembership(db, gameId, otherPlayer);
+    await insertResponse(db, fixtureId, otherPlayer, { status: "in" });
+    await insertResultClaim(db, fixtureId, otherPlayer, { outcome: "a" });
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/result/clear`, {}, cookie);
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+    expect(html).toContain("Back to the game");
+  });
+
   it("404s a non-member", async () => {
     const { cookie } = await viewerSession();
     const db = testDb();
@@ -234,6 +252,10 @@ describe("POST /g/:id/f/:fixtureId/result (M25)", () => {
     expect(response.status).toBe(422);
     const html = await response.text();
     expect(html).toContain("taking a result any more");
+    // The caller is an ordinary member, not an owner — the player page, never
+    // the owner page's unconditional "Back to the game" link (M25 review fix
+    // pins the two roles apart).
+    expect(html).not.toContain("Back to the game");
     const rows = await db
       .select()
       .from(fixtureResultClaims)
@@ -254,12 +276,52 @@ describe("POST /g/:id/f/:fixtureId/result (M25)", () => {
     expect(response.status).toBe(422);
     const html = await response.text();
     expect(html).toContain("Give both scores");
+    expect(html).not.toContain("Back to the game");
     const db = testDb();
     const rows = await db
       .select()
       .from(fixtureResultClaims)
       .where(and(eq(fixtureResultClaims.fixtureId, fixtureId), eq(fixtureResultClaims.playerId, viewerId)));
     expect(rows).toHaveLength(0);
+  });
+
+  it("renders the owner page, not the player page, when an owner trips the locked-window 422", async () => {
+    const { cookie, viewerId } = await viewerSession();
+    const db = testDb();
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, viewerId, { role: "owner" });
+    // Kicked off 72 hours ago and already carrying a claim, so the 48-hour
+    // window is shut (`isResultLocked`) rather than the empty, still-writable
+    // case.
+    const fixtureId = await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt: kickoffIn(-72) });
+    const otherPlayer = await insertPlayer(db);
+    await insertMembership(db, gameId, otherPlayer);
+    await insertResponse(db, fixtureId, otherPlayer, { status: "in" });
+    await insertResultClaim(db, fixtureId, otherPlayer, { outcome: "a" });
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/result`, { outcome: "b" }, cookie);
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+    // `renderOwnerFixturePage` alone emits this link (`src/views/owner-fixture.ts`
+    // — unconditional, unlike its guest form, which only shows while the
+    // fixture is still open and so would not appear on this played one);
+    // `src/views/player-fixture.ts` has no such link at all.
+    expect(html).toContain("Back to the game");
+  });
+
+  it("renders the owner page, not the player page, when an owner trips the bad-claim 422", async () => {
+    const { cookie, viewerId } = await viewerSession();
+    const db = testDb();
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, viewerId, { role: "owner" });
+    const fixtureId = await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt: kickoffIn(-24) });
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/result`, { scoreA: "2" }, cookie);
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+    expect(html).toContain("Back to the game");
   });
 
   it("403s a request from the wrong origin", async () => {
