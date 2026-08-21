@@ -958,11 +958,32 @@ export const RESULT_CSS = `
   .result-yours { font-size: var(--t-support); color: var(--mut); }
   .result-candidate form { margin: 0 0 0 auto; }
   .result-final { font-size: var(--t-lead); font-weight: 600; margin: 0.4rem 0 0.2rem; }
+  /* Two of these render back to back in the locked view -- "Result 2 of 2"
+     then "Score 2 of 2" -- and margin: 0 on both left them touching with no
+     line gap at all, which a capture at 390px (M25 Task 14) showed reading as
+     one run-on line rather than two distinct figures. Only the second gets
+     the gap: collapsing top margins would otherwise stack it against
+     .result-final's own bottom margin above the first line, widening a space
+     that was already right. */
   .result-confidence { font-size: var(--t-support); color: var(--mut); margin: 0; }
+  .result-confidence + .result-confidence { margin-top: 0.3rem; }
   .result-note { font-size: var(--t-support); color: var(--mut); }
   .result-score { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem; }
   .result-score label { display: grid; gap: 0.3rem; }
-  .result-score input { width: 4.5rem; }
+  /* Bare width only, before this fix -- every other text input on the site
+     gets .field input's padding/background/radius, but these two aren't
+     inside a .field, so a capture at 390px (M25 Task 14) showed a stock
+     browser number box beside the app's own styled fields. Repeats
+     .field input's declarations rather than adding the class to the
+     markup: .field label also sets display: block, which would stack
+     "Team A" above its input and break the side-by-side layout
+     .result-score exists for. */
+  .result-score input {
+    width: 4.5rem; padding: 0.6rem 0.7rem; font: inherit;
+    color: var(--fg); background: var(--field);
+    border: none; border-radius: 0.75rem;
+  }
+  .result-score input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
   /* A single class, not .danger-link plus a reset: a <button> and STYLES's
      .danger-link (colour and weight only, its only other user an <a>) would
      both land on this element at equal specificity, and STYLE_BLOCKS always
