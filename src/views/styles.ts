@@ -963,16 +963,18 @@ export const RESULT_CSS = `
   .result-score { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem; }
   .result-score label { display: grid; gap: 0.3rem; }
   .result-score input { width: 4.5rem; }
-  /* .danger-link (STYLES) carries only colour and weight -- every other use
-     of it is on an <a>, which needs nothing more. The withdraw control is a
-     <button>, and without a reset it would keep the platform's default
-     button chrome (background, border, padding) with red bold text inside
-     it. This class carries the reset half of the job; .danger-link still
-     carries the colour, so the two are applied together. */
-  .result-reset {
+  /* A single class, not .danger-link plus a reset: a <button> and STYLES's
+     .danger-link (colour and weight only, its only other user an <a>) would
+     both land on this element at equal specificity, and STYLE_BLOCKS always
+     emits RESULT_CSS after STYLES -- so any shorthand here (font, background,
+     border) silently wins over a .danger-link longhand it never meant to
+     touch. One class with no earlier block to collide with sidesteps that
+     rather than relying on two blocks to keep composing correctly. */
+  .result-withdraw {
     appearance: none; -webkit-appearance: none;
     background: none; border: none; padding: 0;
-    font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+    font-family: inherit; font-size: inherit; font-weight: 600;
+    color: var(--danger); cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
 `;
 

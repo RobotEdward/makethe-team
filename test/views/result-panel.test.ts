@@ -112,21 +112,38 @@ describe("renderResultPanel", () => {
     expect(() => renderResultPanel(params({ derived, locked: true, writable: false }))).not.toThrow();
   });
 
-  it("gives the withdraw control a working reset, not just a link's colour", () => {
-    // `.danger-link` (STYLES) is coloured text with no button reset -- its
-    // only other user is an `<a>`. Put on a bare `<button>` it would keep
-    // default platform chrome (background, border, padding) around red
-    // text: the exact shape CLAUDE.md names for `.keep-link` vs `.button`,
-    // and the same shape test/views/remove-member.test.ts guards for.
+  it("gives the withdraw control its own reset button, not a link styled over one", () => {
+    // A single class rather than `.danger-link` plus a reset class: a
+    // `<button>` and STYLES's `.danger-link` would land on this element at
+    // equal specificity, and STYLE_BLOCKS always emits RESULT_CSS after
+    // STYLES, so any shorthand in the later block -- `font`, `background`,
+    // `border` -- silently overrides a `.danger-link` longhand it never
+    // meant to touch (exactly the `.keep-link`/`.button` shape
+    // test/views/remove-member.test.ts guards, one layer down: a shorthand
+    // reset in RESULT_CSS is a second, invisible way to collide with STYLES
+    // even through a different selector). One class with nothing shipped
+    // ahead of it to collide with sidesteps that rather than relying on two
+    // blocks to keep composing correctly.
     const html = renderResultPanel(params({ candidates: tally([claim("p1")]) }));
-    expect(html).toContain('class="danger-link result-reset"');
+    expect(html).toContain('class="result-withdraw"');
 
-    const match = RESULT_CSS.match(/\.result-reset\s*\{([^}]*)\}/);
-    expect(match, "expected .result-reset to be declared in RESULT_CSS").not.toBeNull();
+    const match = RESULT_CSS.match(/\.result-withdraw\s*\{([^}]*)\}/);
+    expect(match, "expected .result-withdraw to be declared in RESULT_CSS").not.toBeNull();
     const declarations = match![1]!;
+    // The chrome reset.
     expect(declarations).toContain("appearance: none");
     expect(declarations).toContain("background: none");
     expect(declarations).toContain("border: none");
     expect(declarations).toContain("padding: 0");
+    // The look: bold and the same red as every other destructive control,
+    // tracking the token rather than a value copied out of it, so a future
+    // change to --danger reaches this control too.
+    expect(declarations).toContain("font-weight: 600");
+    expect(declarations).toContain("color: var(--danger)");
+    // The hazard that caused the last round's regression: a `font` (or any
+    // other) shorthand here would silently reset `font-weight` back to
+    // whatever the shorthand implies, the same way it reset `.danger-link`'s
+    // weight when this button wore both classes.
+    expect(declarations).not.toMatch(/(?<![-\w])font\s*:/);
   });
 });

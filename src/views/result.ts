@@ -158,12 +158,6 @@ function renderFileForm(params: ResultPanelParams): string {
   `;
 }
 
-/**
- * `.danger-link result-reset` together: `.danger-link` (STYLES) is coloured
- * text with no button reset, because its only other users are `<a>`
- * elements. `.result-reset` (RESULT_CSS) supplies the reset this `<button>`
- * needs so it doesn't render with default platform chrome around red text.
- */
 function renderClearForm(params: ResultPanelParams): string {
   const youFiled = params.candidates.some((candidate) =>
     candidate.backers.includes(params.yourPlayerId),
@@ -171,7 +165,7 @@ function renderClearForm(params: ResultPanelParams): string {
   if (!params.writable || !params.eligible || !youFiled) return "";
   return `
     <form method="post" action="${escapeHtml(params.clearPath)}">
-      <button type="submit" class="danger-link result-reset">Withdraw my answer</button>
+      <button type="submit" class="result-withdraw">Withdraw my answer</button>
     </form>
   `;
 }
