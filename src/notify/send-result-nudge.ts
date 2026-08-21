@@ -5,6 +5,7 @@ import type { Db } from "../db/client.js";
 import { resultElectorate } from "../db/result-queries.js";
 import { fixtures, games, notificationLog, players } from "../db/schema.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
+import { leaveTokenExpiry, signLeaveToken } from "../domain/token.js";
 import type { SweepFailure } from "../sweep/open-and-remind.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "./ceiling-audit.js";
 import { pushKey, resultNudgeKey } from "./dedupe-key.js";
@@ -74,17 +75,31 @@ function emptyResult(): ResultNudgeResult {
  * played — the same audience the fixture page itself asks to file.
  *
  * **One message per player, on whichever channel they actually have** —
- * unlike N-9, which sends both an email and a push to the same player. Email
- * is preferred (the product's default channel); a player with no email but a
- * registered device gets the push instead. BR-32 excludes a guest (already
- * done by `resultElectorate`) and anyone with neither.
+ * unlike N-9, which sends both an email and a push to the same player.
+ * **Push is preferred here, email is the fallback** — the reverse of the
+ * product's usual default — because TR-31's daily send ceiling is email-only.
+ * N-12 is explicitly low-urgency (nobody has to act on it, the fixture page
+ * carries the same ask indefinitely), while N-1 is the reminder this product
+ * cannot afford to drop; sending N-12 by email first would spend allowance
+ * N-1 may need for a notification nobody is required to read. Push-only
+ * (N-11's pattern) was rejected because N-12 addresses the whole squad, not
+ * just engaged organisers with a device; sending both (`send-teams.ts`'s
+ * pattern) was rejected as the worst option for the ceiling of the three. The
+ * cost of any fallback scheme — a player's channel flips if they register or
+ * remove a device between two sweep ticks — is inherent to this design, not
+ * particular to the direction of preference.
  *
  * **Evaluated every tick within the window, sent once ever.** `resultNudgeKey`
  * carries no timestamp; the pre-check below only avoids building messages
  * that the unique index on `notification_log.dedupe_key` would discard, the
  * same reasoning `sendGroupNudges` documents for its own pre-check.
  */
-export async function sendResultNudges(db: Db, notifier: Notifier, now: Date): Promise<ResultNudgeResult> {
+export async function sendResultNudges(
+  db: Db,
+  notifier: Notifier,
+  now: Date,
+  responseTokenSecret: string,
+): Promise<ResultNudgeResult> {
   const candidateRows = await db
     .select({
       id: fixtures.id,
@@ -111,7 +126,7 @@ export async function sendResultNudges(db: Db, notifier: Notifier, now: Date): P
 
   for (const fixture of due) {
     try {
-      await nudgeOneFixture(db, notifier, now, fixture, result);
+      await nudgeOneFixture(db, notifier, now, responseTokenSecret, fixture, result);
     } catch (error) {
       result.failures.push({
         fixtureId: fixture.id,
@@ -137,6 +152,7 @@ async function nudgeOneFixture(
   db: Db,
   notifier: Notifier,
   now: Date,
+  responseTokenSecret: string,
   fixture: { id: string; gameId: string; gameName: string; timezone: string; kicksOffAt: Date; durationMinutes: number },
   result: ResultNudgeResult,
 ): Promise<void> {
@@ -182,23 +198,10 @@ async function nudgeOneFixture(
       continue;
     }
 
-    const email = player.email?.trim() ?? "";
-    const emailPayload = { playerName: player.name, gameName: fixture.gameName, whenLocal, fixtureUrl };
-
-    if (email !== "") {
-      const rendered = renderResultNudgeEmail(emailPayload);
-      const dedupeKey = resultNudgeKey(fixture.id, playerId);
-      pending.push({
-        logId: crypto.randomUUID(),
-        dedupeKey,
-        playerId,
-        message: { channel: "email", to: email, subject: rendered.subject, html: rendered.html, text: rendered.text, dedupeKey },
-      });
-      continue;
-    }
-
+    // Push-preferred, email-fallback (see this module's doc comment for why
+    // this is the reverse of `send-teams.ts`'s email-first default).
     if (subscribed.has(playerId)) {
-      const copy = PUSH_COPY.n12(emailPayload);
+      const copy = PUSH_COPY.n12({ gameName: fixture.gameName });
       const dedupeKey = pushKey(resultNudgeKey(fixture.id, playerId));
       pending.push({
         logId: crypto.randomUUID(),
@@ -217,7 +220,30 @@ async function nudgeOneFixture(
       continue;
     }
 
-    // BR-32: no usable email and no registered device. Not a
+    const email = player.email?.trim() ?? "";
+    if (email !== "") {
+      // A leave token scoped to `(gameId, playerId)`, not to this fixture
+      // (BR-22) — the same shape `send-teams.ts` signs its own leave link
+      // with, and deliberately not a fixture-scoped token: leaving works long
+      // after this one fixture is history, and a leave link is about the
+      // squad, not any particular game.
+      const leaveToken = await signLeaveToken(
+        { gameId: fixture.gameId, playerId, expiresAt: leaveTokenExpiry(now).getTime() },
+        responseTokenSecret,
+      );
+      const leaveUrl = `${SITE_ORIGIN}/leave/${leaveToken}`;
+      const rendered = renderResultNudgeEmail({ playerName: player.name, gameName: fixture.gameName, whenLocal, fixtureUrl, leaveUrl });
+      const dedupeKey = resultNudgeKey(fixture.id, playerId);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey,
+        playerId,
+        message: { channel: "email", to: email, subject: rendered.subject, html: rendered.html, text: rendered.text, dedupeKey },
+      });
+      continue;
+    }
+
+    // BR-32: no registered device and no usable email. Not a
     // `notification_log` row — there is nothing to send and nothing to
     // retry — so this is a plain count, the same treatment BR-32 gets in
     // `send-teams.ts` and `send-broadcast.ts`.

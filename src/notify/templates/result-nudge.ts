@@ -15,6 +15,15 @@ export interface ResultNudgeEmailPayload {
   whenLocal: string;
   /** Absolute URL of the fixture page (`fixturePath`), built by the caller against `SITE_ORIGIN`. */
   fixtureUrl: string;
+  /**
+   * A working leave-game/unsubscribe link (BR-22): `/leave/:token`, scoped to
+   * `(gameId, playerId)` rather than to this fixture — the master spec's one
+   * documented exception to BR-22 is N-7, and only because its recipient has
+   * already left by the time it sends; N-12's recipients are current squad
+   * members about a game they are still in, so the exception does not reach
+   * this notification and the link is required like every other one here.
+   */
+  leaveUrl: string;
 }
 
 export interface ResultNudgeEmail {
@@ -29,17 +38,10 @@ function href(url: string): string {
 }
 
 /**
- * Render the email asking somebody to record what happened (N-12).
- *
- * **No leave link, unlike most of this catalogue.** BR-22's leave link
- * exists because a notification type can recur indefinitely for as long as
- * somebody stays in a squad; `resultNudgeKey` (`src/notify/dedupe-key.ts`)
- * is sent at most once per player per fixture, ever, about a fixture that
- * closes to further claims 48 hours after its own kick-off — there is
- * nothing here to opt out of that would not already have stopped on its own.
+ * Render the email asking somebody to record what happened (N-12, BR-22).
  */
 export function renderResultNudgeEmail(payload: ResultNudgeEmailPayload): ResultNudgeEmail {
-  const { playerName, gameName, whenLocal, fixtureUrl } = payload;
+  const { playerName, gameName, whenLocal, fixtureUrl, leaveUrl } = payload;
 
   const subject = `How did it go? ${gameName}, ${whenLocal}`;
   const ask =
@@ -87,6 +89,8 @@ ${escapeHtml(ask)}
 
 <p style="margin:0; font-size:12px; line-height:1.6; color:#645c50;">
 Make The Team — organising this Game for your squad.
+<br>
+Not playing any more? <a href="${href(leaveUrl)}" style="color:#645c50;">Leave this game</a>.
 </p>
 
 </td>
@@ -115,6 +119,7 @@ Make The Team — organising this Game for your squad.
     "",
     "---",
     "Make The Team — organising this Game for your squad.",
+    `Not playing any more? Leave this game: ${leaveUrl}`,
     "",
   ].join("\n");
 

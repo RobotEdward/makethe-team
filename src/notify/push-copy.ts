@@ -301,7 +301,7 @@ function groupNudge({ gameName, kicksOffAtLocal, inCount }: GroupNudgePayload): 
  * email's `whenLocal` is about the fixture that already happened, and the
  * tray has no room for it once the game name is spelled out too.
  */
-function resultNudge({ gameName }: ResultNudgeEmailPayload): PushCopy {
+function resultNudge({ gameName }: Pick<ResultNudgeEmailPayload, "gameName">): PushCopy {
   return {
     title: "How did it go?",
     body: `Tell us the score for ${gameName}.`,

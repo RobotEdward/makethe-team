@@ -136,7 +136,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       // must never be allowed to stop that. Wrapped whole, on top of the
       // per-fixture isolation `sendResultNudges` already applies internally,
       // for the same reason attention and materialise-results are.
-      const resultNudgeResult = await runResultNudgeStep(db, notifier, now);
+      const resultNudgeResult = await runResultNudgeStep(db, notifier, now, env.RESPONSE_TOKEN_SECRET);
 
       // Step 5: perform every erasure whose 48-hour window has elapsed
       // (BR-34). Last, and deliberately so, in both directions: an erasure
@@ -359,9 +359,14 @@ async function runMaterialiseResultsStep(db: Db, now: Date): Promise<Materialise
  * would escape that isolation entirely, and the erasures that follow this
  * step must run regardless of whether a nudge went out.
  */
-async function runResultNudgeStep(db: Db, notifier: Notifier, now: Date): Promise<ResultNudgeResult> {
+async function runResultNudgeStep(
+  db: Db,
+  notifier: Notifier,
+  now: Date,
+  responseTokenSecret: string,
+): Promise<ResultNudgeResult> {
   try {
-    const result = await sendResultNudges(db, notifier, now);
+    const result = await sendResultNudges(db, notifier, now, responseTokenSecret);
     console.log("result-nudge", JSON.stringify(result));
     for (const failure of result.failures) {
       console.error(
