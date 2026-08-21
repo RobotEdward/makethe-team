@@ -76,6 +76,47 @@ function dbThatFailsReadingClaimsFor(brokenFixtureId: string): Db {
   return getDb(proxied);
 }
 
+/**
+ * A `db` that throws when *writing* `fixture_results` for one specific
+ * fixture — the write-phase counterpart to `dbThatFailsReadingClaimsFor`
+ * above, standing in for a genuine D1 outage on the batch that commits the
+ * cache row and its audit row together.
+ *
+ * Scoped to an `insert into "fixture_results"` statement specifically (not
+ * merely any statement mentioning the table) so the read-only `alreadyCached`
+ * lookup in `materialiseResults` — which also names `fixture_results`, in a
+ * `select` — is untouched.
+ */
+function dbThatFailsWritingResultFor(brokenFixtureId: string): Db {
+  const proxied = new Proxy(env.DB, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (prop !== "prepare") return typeof value === "function" ? value.bind(target) : value;
+      const prepare = value as (sql: string) => D1PreparedStatement;
+      return (sql: string) => {
+        const stmt = prepare.call(target, sql);
+        if (!sql.toLowerCase().startsWith('insert into "fixture_results"')) return stmt;
+        return new Proxy(stmt, {
+          get(stmtTarget, stmtProp) {
+            const stmtValue = Reflect.get(stmtTarget, stmtProp, stmtTarget);
+            if (stmtProp !== "bind") {
+              return typeof stmtValue === "function" ? stmtValue.bind(stmtTarget) : stmtValue;
+            }
+            const bind = stmtValue as (...args: unknown[]) => unknown;
+            return (...args: unknown[]) => {
+              if (args.includes(brokenFixtureId)) {
+                throw new Error(`simulated D1 failure writing fixture_results for fixture ${brokenFixtureId}`);
+              }
+              return bind.apply(stmtTarget, args);
+            };
+          },
+        });
+      };
+    },
+  }) as D1Database;
+  return getDb(proxied);
+}
+
 beforeEach(resetDatabase);
 
 describe("materialiseResults", () => {
@@ -298,7 +339,7 @@ describe("materialiseResults", () => {
     });
   });
 
-  it("isolates a failure to one fixture and still processes the rest", async () => {
+  it("isolates a read-phase failure to one fixture and still processes the rest", async () => {
     const brokenGameId = await insertGame(db);
     const healthyGameId = await insertGame(db);
     const brokenPlayer = await insertPlayer(db, { email: "broken@example.com" });
@@ -328,6 +369,52 @@ describe("materialiseResults", () => {
     expect(healthyRow?.outcome).toBe("b");
   });
 
+  it("isolates a write-phase failure to one fixture, and the failed fixture's write is all-or-nothing", async () => {
+    // Distinct from the read-phase test above: that one breaks
+    // `listResultClaims`, before any row is even built. This one breaks the
+    // `db.batch()` call itself — the cache row and its audit row committing
+    // together or not at all — which is the failure mode the Important
+    // review finding named: a cache row landing while its audit row is lost
+    // would be unrecoverable, because a written fixture is never selected
+    // again.
+    const brokenGameId = await insertGame(db);
+    const healthyGameId = await insertGame(db);
+    const brokenPlayer = await insertPlayer(db, { email: "broken-write@example.com" });
+    const healthyPlayer = await insertPlayer(db, { email: "healthy-write@example.com" });
+    const broken = await insertFixture(db, brokenGameId, { lifecycle: "played", kicksOffAt: KICKOFF });
+    const healthy = await insertFixture(db, healthyGameId, { lifecycle: "played", kicksOffAt: KICKOFF });
+    await insertResponse(db, broken, brokenPlayer, { status: "in" });
+    await insertResponse(db, healthy, healthyPlayer, { status: "in" });
+    await insertResultClaim(db, broken, brokenPlayer, { outcome: "a", filedAt: KICKOFF });
+    await insertResultClaim(db, healthy, healthyPlayer, { outcome: "b", filedAt: KICKOFF });
+
+    const brokenDb = dbThatFailsWritingResultFor(broken);
+    const outcome = await materialiseResults(brokenDb, AFTER_DEADLINE);
+
+    expect(outcome.considered).toBe(2);
+    // The healthy fixture's write still counts; the broken one does not —
+    // proving the counts reflect what actually committed, not what was
+    // merely attempted.
+    expect(outcome.written).toBe(1);
+    expect(outcome.failures).toHaveLength(1);
+    expect(outcome.failures[0]?.fixtureId).toBe(broken);
+    expect(outcome.failures[0]?.stage).toBe("prepare");
+
+    // Nothing landed for the broken fixture: neither the cache row nor its
+    // audit row. If the batch were not atomic, or if the write happened
+    // outside the per-fixture `try`, this would be the one place a
+    // half-written state could show up undetected.
+    expect(await cachedRow(broken)).toBeUndefined();
+    const brokenAuditRows = await db.select().from(auditLog).where(eq(auditLog.entityId, broken));
+    expect(brokenAuditRows.filter((row) => row.action === "fixture.result_locked")).toHaveLength(0);
+
+    // The other fixture in the same run is untouched by the failure.
+    const healthyRow = await cachedRow(healthy);
+    expect(healthyRow?.outcome).toBe("b");
+    const healthyAuditRows = await db.select().from(auditLog).where(eq(auditLog.entityId, healthy));
+    expect(healthyAuditRows.filter((row) => row.action === "fixture.result_locked")).toHaveLength(1);
+  });
+
   it("writes a fixture.result_locked audit row with a null actor", async () => {
     const gameId = await insertGame(db);
     const playerId = await insertPlayer(db, { email: "a@example.com" });
@@ -347,3 +434,4 @@ describe("materialiseResults", () => {
     expect(lockedRows[0]?.entityType).toBe("fixture");
   });
 });
+

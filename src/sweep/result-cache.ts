@@ -1,6 +1,5 @@
 import { eq, inArray } from "drizzle-orm";
-import { recordAudit } from "../db/audit.js";
-import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
+import { buildAuditInsert } from "../db/audit.js";
 import type { Db } from "../db/client.js";
 import { listTeamAssignments } from "../db/queries.js";
 import { listResultClaims, resultElectorate } from "../db/result-queries.js";
@@ -38,16 +37,23 @@ export interface MaterialiseResultsOutcome {
  * `fixture_results` row — read as two separate selects (candidate ids, then
  * existing ids) and filtered in JS against a `Set`, rather than a `LEFT JOIN
  * ... IS NULL`, because this table is small enough that the extra round trip
- * costs nothing and the two-select shape matches `retirePastFixtures`'s
- * candidate-then-filter pattern next to it in this directory. This is also
- * what makes a second run idempotent without a single `INSERT` needing
- * `onConflictDoNothing`: an already-materialised fixture is simply never
- * selected again.
+ * costs nothing. This is *not* `retirePastFixtures`'s pattern next to it in
+ * this directory — that function needs only one select plus a JS time filter,
+ * because its `lifecycle` column already excludes every non-candidate row.
+ * The two share only the broader idiom both this codebase's sweep steps use:
+ * a broad SQL select, then a precise JS filter for the boundary that matters.
+ * The second select here exists because "already cached" isn't expressible as
+ * a column on `fixtures` — it lives in a different table entirely. This
+ * selection is also what makes a second run idempotent: an already-cached
+ * fixture is simply never selected again, and — because it can never be
+ * selected again — is also never given a second chance if its own write
+ * below failed the first time. See `materialiseOne` for what that means for
+ * where the write has to happen.
  *
  * Every fixture is processed in its own `try`, exactly as `sendOwnerAttention`
- * does and for the same reason: one fixture whose claims or roster data can't
- * be read must not stop the rest of the run's fixtures being cached, nor the
- * erasure step that follows this one in the sweep.
+ * does and for the same reason: one fixture whose claims, roster data, or
+ * write can't complete must not stop the rest of the run's fixtures being
+ * cached, nor the erasure step that follows this one in the sweep.
  */
 export async function materialiseResults(db: Db, now: Date): Promise<MaterialiseResultsOutcome> {
   const outcome: MaterialiseResultsOutcome = { considered: 0, written: 0, failures: [] };
@@ -72,11 +78,10 @@ export async function materialiseResults(db: Db, now: Date): Promise<Materialise
 
   outcome.considered = candidates.length;
 
-  const rows: (typeof fixtureResults.$inferInsert)[] = [];
   for (const candidate of candidates) {
     try {
-      const written = await materialiseOne(db, candidate, now);
-      if (written) rows.push(written);
+      const wrote = await materialiseOne(db, candidate, now);
+      if (wrote) outcome.written++;
     } catch (error) {
       outcome.failures.push({
         fixtureId: candidate.id,
@@ -87,48 +92,45 @@ export async function materialiseResults(db: Db, now: Date): Promise<Materialise
     }
   }
 
-  for (const batch of chunk(rows, INSERT_CHUNK_SIZE)) {
-    await db.insert(fixtureResults).values(batch);
-  }
-  for (const row of rows) {
-    // A separate insert per fixture, not batched with the row above: the two
-    // tables' column counts differ, so chunking them together would not keep
-    // either under D1's bound-parameter ceiling (TR-38), and an audit row
-    // failing to write must still leave the cache row it describes intact —
-    // the cache is what every page reads, the audit trail is history about it.
-    await recordAudit(db, {
-      actorPlayerId: null,
-      entityType: "fixture",
-      entityId: row.fixtureId,
-      action: "fixture.result_locked",
-      after: { outcome: row.outcome, scoreA: row.scoreA, scoreB: row.scoreB },
-      now,
-    });
-  }
-
-  outcome.written = rows.length;
   return outcome;
 }
 
 /**
- * Read one fixture's claims and roster, and build the row to insert if its
- * result has locked — or `null` if it hasn't (not a failure: most fixtures on
- * most runs simply haven't reached their deadline yet, or nobody has filed).
+ * Read one fixture's claims and roster, and — if its result has locked —
+ * write the cache row and its audit row, both inside this function's own
+ * `try` at the call site above.
+ *
+ * **The write is not something a caught failure here can leave half done.**
+ * A fixture whose `fixture_results` row lands is excluded from every future
+ * run's candidate selection (see the module comment) — so a cache row that
+ * commits while its audit row fails would not merely be missing an audit
+ * entry until the next tick, the way a deferred email is; it would be
+ * unrecoverable, silently, forever, with nothing to notice it. `db.batch()`
+ * is D1's only atomicity primitive (there are no interactive transactions),
+ * so the two statements are submitted together: either both land, or neither
+ * does, and a fixture whose write fails stays a candidate for the next run to
+ * try again. `buildAuditInsert` (not `recordAudit`, which issues its own
+ * statement and could not join a batch) is what `cancelFixture` in
+ * `src/domain/cancel-fixture.ts` already uses for exactly this reason.
+ *
+ * Returns `false` for "not locked yet" (not a failure: most fixtures on most
+ * runs simply haven't reached their deadline, or nobody has filed) and `true`
+ * for "written".
  */
 async function materialiseOne(
   db: Db,
   candidate: { id: string; gameId: string; kicksOffAt: Date },
   now: Date,
-): Promise<(typeof fixtureResults.$inferInsert) | null> {
+): Promise<boolean> {
   const claims = await listResultClaims(db, candidate.id);
-  if (!isResultLocked(candidate.kicksOffAt, claims.length, now)) return null;
+  if (!isResultLocked(candidate.kicksOffAt, claims.length, now)) return false;
 
   const { eligibleIds, organiserIds } = await resultElectorate(db, candidate.gameId, candidate.id);
   const derived = deriveResult(claims, organiserIds);
   // `isResultLocked` requires `claimCount > 0`, so a locked fixture always has
   // at least one claim and `deriveResult` never returns null here — this is
   // just what makes that guarantee visible to the type checker.
-  if (derived === null) return null;
+  if (derived === null) return false;
 
   const [fixtureRow] = await db
     .select({ teamsPublishedAt: fixtures.teamsPublishedAt, teamsSavedAt: fixtures.teamsSavedAt })
@@ -137,7 +139,7 @@ async function materialiseOne(
   // The fixture disappeared between the candidate select and now, which
   // cannot happen in production (fixtures are never deleted) but would
   // otherwise read `undefined.teamsPublishedAt` below.
-  if (!fixtureRow) return null;
+  if (!fixtureRow) return false;
 
   // Unfiltered rows, not `getFixtureWithSquad`'s — see `src/domain/teams.ts`'s
   // module comment: a `withdrawn` row that still carries a `team` is exactly
@@ -148,9 +150,9 @@ async function materialiseOne(
   const lockedAt = resultLockedAt(candidate.kicksOffAt, claims);
   // Same guarantee as `derived` above: claims is non-empty here, so
   // `resultLockedAt` cannot return null.
-  if (lockedAt === null) return null;
+  if (lockedAt === null) return false;
 
-  return {
+  const row: typeof fixtureResults.$inferInsert = {
     fixtureId: candidate.id,
     outcome: derived.outcome,
     scoreA: derived.scoreA,
@@ -166,4 +168,18 @@ async function materialiseOne(
     lockedAt,
     materialisedAt: now,
   };
+
+  await db.batch([
+    db.insert(fixtureResults).values(row),
+    buildAuditInsert(db, {
+      actorPlayerId: null,
+      entityType: "fixture",
+      entityId: candidate.id,
+      action: "fixture.result_locked",
+      after: { outcome: row.outcome, scoreA: row.scoreA, scoreB: row.scoreB },
+      now,
+    }),
+  ]);
+
+  return true;
 }
