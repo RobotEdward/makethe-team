@@ -69,6 +69,8 @@ async function seedFixtureFor(
     /** Names of other squad members to add. */
     others?: string[];
     lifecycle?: "open" | "played" | "cancelled";
+    /** The viewer owns the game (membership role `owner`). */
+    owner?: boolean;
   } = {},
 ): Promise<Seeded> {
   const maxPlayers = overrides.maxPlayers ?? 14;
@@ -90,7 +92,13 @@ async function seedFixtureFor(
     durationMinutes: 60,
   });
 
-  await db.insert(memberships).values({ id: crypto.randomUUID(), gameId, playerId, active: true });
+  await db.insert(memberships).values({
+    id: crypto.randomUUID(),
+    gameId,
+    playerId,
+    active: true,
+    role: overrides.owner ? "owner" : "player",
+  });
 
   const otherPlayerIds: string[] = [];
   for (const name of overrides.others ?? []) {
@@ -453,6 +461,39 @@ describe("GET /app", () => {
 
     expect(html).not.toContain("you own this");
     expect(html).toContain(`href="/g/${gameId}"`);
+  });
+
+  /**
+   * The card's date is a link to the fixture itself. The heading already links
+   * to the game, but for an organiser that page is a list of fixtures, and
+   * "click the game, then find the fixture" was the two-hop route this link
+   * removes. An owner goes straight to `/g/:id/f/:fid`.
+   */
+  it("links an owner's fixture date straight to the owner fixture page", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { gameId, fixtureId } = await seedFixtureFor(playerId, { owner: true });
+
+    const html = await (await get(cookie)).text();
+
+    expect(html).toContain(`<p class="kickoff"><a href="/g/${gameId}/f/${fixtureId}">${KICKOFF_LOCAL}</a></p>`);
+  });
+
+  /**
+   * A member who does not own the game is not entitled to `/g/:id/f/:fid` —
+   * it 404s them (TR-18) — and their game page *is* the open fixture, so the
+   * date links there instead. Never an owner link on a member's card: a link
+   * that lands on "Not found" is worse than plain text.
+   */
+  it("links a member's fixture date to the game page, never the owner fixture page", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { gameId, fixtureId } = await seedFixtureFor(playerId);
+
+    const html = await (await get(cookie)).text();
+
+    expect(html).toContain(`<p class="kickoff"><a href="/g/${gameId}">${KICKOFF_LOCAL}</a></p>`);
+    expect(html).not.toContain(`/f/${fixtureId}`);
   });
 
   it("carries no footer links — delete, privacy, passkey nudge and sign-out all live on the account page (M21)", async () => {

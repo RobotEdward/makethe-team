@@ -164,6 +164,11 @@ phone or computer that allows it you can drag a name straight into one.
 Dragging ticks the same button you would have tapped, so it's the same pick
 either way, and on a device that won't drag, tapping is all there ever was.
 
+If you'd rather not pick at all, **Randomise teams** deals everyone who's in
+onto the two sides at random, as evenly as the numbers allow. It only sets the
+choices — nothing is saved until you press **Save teams** — so press it again
+if you don't like the draw, or move a name or two by hand first.
+
 The sides are called **Team A** and **Team B** until you say otherwise.
 **First team's name** and **Second team's name**, on the **Edit this game**
 form a little below the setting above, rename them for every week the game

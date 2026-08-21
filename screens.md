@@ -161,7 +161,8 @@ The signed-in home.
   fixture cards (each ending in the same answer block as the response page, facts first);
   `Your squads`; footer links.
 - **Fixture card** (one per upcoming fixture, nearest first): game name as an `<h2>` **link**
-  to the game page; kickoff; venue; status badge + capacity bar + count; the viewer's own
+  to the game page; kickoff, itself a **link** to the fixture (the owner fixture page for an
+  owner, the game page for a member — who is not entitled to the owner page); venue; status badge + capacity bar + count; the viewer's own
   headline; `I'm in` / `Can't make it` buttons; full-warning. Copy is imported from the
   response page so the two can never disagree.
 - **Empty state:** "You've nothing coming up. When your next game opens for responses, it'll
@@ -318,7 +319,9 @@ The busiest organiser screen.
 - Below, one `<fieldset>` per player who is **In** (waitlisted players are excluded on purpose;
   guests are included), with radios: `Not picked yet` | Team A | Team B.
 - **Drag-and-drop** into a column is a progressive enhancement that ticks the same radio.
-- **Actions:** `Save teams`; `Publish teams` (appears once a pick is saved), which becomes
+- **`Randomise teams`** (script only; hidden without JavaScript): shuffles everyone onto the two
+  sides, differing by at most one, through the same radios. Nothing is saved until `Save teams`.
+- **Actions:** `Randomise teams` (with script); `Save teams`; `Publish teams` (appears once a pick is saved), which becomes
   `Publish again` permanently after the first publish.
 - **Copy:** "Only players who are in can be given a side. Nobody is told anything until you
   publish."

@@ -105,6 +105,20 @@ function renderColumns(names: Record<TeamId, string>): string {
 }
 
 /**
+ * "Randomise teams", shipped `hidden` like the columns above it.
+ *
+ * `TEAM_PICKER_JS` reveals it and wires the click: a shuffle that sets the
+ * radios through the same `place` the drag and the radios use, so the form
+ * posts the random pick exactly as it posts a hand-made one. With scripting
+ * off it stays hidden — a button with no handler is not an affordance.
+ * `type="button"` so it can never submit the form it sits in; the pick is
+ * not saved until Save is pressed, and the test counting submits depends on it.
+ */
+function renderRandomise(): string {
+  return `<button class="button" type="button" id="team-randomise" hidden>Randomise teams</button>`;
+}
+
+/**
  * One member's row: their name, and a radio group named exactly their player
  * id.
  *
@@ -247,7 +261,10 @@ export function renderTeamPicker(params: TeamPickerParams): string {
             ${unevenNote}
             ${renderColumns(names)}
             <ul class="teams team-drop" id="team-pool" data-team="">${members.map((member) => renderRow(member, names)).join("")}</ul>
-            <button class="button" type="submit">Save teams</button>
+            <div class="team-actions">
+              ${renderRandomise()}
+              <button class="button" type="submit">Save teams</button>
+            </div>
           </form>
           ${renderPublish(params)}`;
 }

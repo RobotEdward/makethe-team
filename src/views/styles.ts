@@ -658,6 +658,14 @@ export const TEAM_PICKER_CSS = `
      pool is the empty one, and it is the only way to drag somebody back off. */
   .team-drop { min-height: 3.5rem; }
   .teams li.dragging { opacity: 0.5; }
+  /* Randomise and Save side by side; flex-wrap so a narrow phone stacks them
+     rather than squashing the labels. Randomise ships hidden and flex does
+     not override the hidden attribute on a flex *item*, so with scripting
+     off the row holds Save alone. */
+  .team-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
+  /* nowrap: at 390px "Randomise teams" broke across two lines inside its
+     button (the capture showed it); wrapping belongs to the row, not the label. */
+  .team-actions .button { white-space: nowrap; }
   .teams.over { outline: 2px dashed var(--accent); outline-offset: 2px; }
   .team-counts { display: flex; gap: 1.25rem; margin: 0.75rem 0; font-weight: 600; }
   .team-counts .count { color: var(--mut); font-weight: 400; }

@@ -470,6 +470,35 @@ export const TEAM_PICKER_JS = `
     if (row) place(row, input.value);
   });
 
+  // Randomise: a Fisher-Yates shuffle of the rows, then alternate sides, so
+  // the two differ by at most one. Every placement goes through \`place\`,
+  // which sets the radio first — the form posts this pick exactly as it
+  // would a hand-made one, and nothing is stored until Save. The button is
+  // revealed only here, once the handler exists: with scripting off it
+  // stays hidden.
+  var randomise = document.getElementById("team-randomise");
+  if (randomise) {
+    randomise.addEventListener("click", function () {
+      var order = [];
+      for (var i = 0; i < rows.length; i++) order.push(rows[i]);
+      for (var j = order.length - 1; j > 0; j--) {
+        var k = Math.floor(Math.random() * (j + 1));
+        var swap = order[j];
+        order[j] = order[k];
+        order[k] = swap;
+      }
+      // The sides are whichever drop targets are not the pool, read off the
+      // page rather than spelt here, so this block never names a team id.
+      var sides = [];
+      for (var l = 0; l < lists.length; l++) {
+        if (lists[l].getAttribute("data-team")) sides.push(lists[l].getAttribute("data-team"));
+      }
+      if (sides.length === 0) return;
+      for (var n = 0; n < order.length; n++) place(order[n], sides[n % sides.length]);
+    });
+    randomise.hidden = false;
+  }
+
   columns.hidden = false;
   // Sort what the server already rendered into the columns, so the two
   // pictures start out agreeing. A pick saved earlier arrives with its radios

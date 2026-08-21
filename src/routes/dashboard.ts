@@ -104,6 +104,7 @@ function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
     view: fixtureView(fixture, now),
     myStatus: fixture.myStatus,
     waitlistCount: fixture.waitlistCount,
+    owner: fixture.owner,
   };
 }
 

@@ -43,6 +43,13 @@ export interface DashboardFixture {
   shortWarningOffsetHours: number;
   /** The viewer's own response. Never anybody else's. */
   myStatus: ResponseStatus;
+  /**
+   * Whether the viewer owns this game — `memberships.role` on the same
+   * membership row the entitlement predicate already joins. The page needs it
+   * to decide where the card's date can link: an owner is entitled to the
+   * owner fixture page, a member is not (TR-18).
+   */
+  owner: boolean;
 }
 
 /**
@@ -121,6 +128,7 @@ function selectEntitledFixtures(db: Db, playerId: string, extra?: SQL) {
       prefersEvenNumbers: fixtures.prefersEvenNumbers,
       shortWarningOffsetHours: fixtures.shortWarningOffsetHours,
       myStatus: responses.status,
+      role: memberships.role,
     })
     .from(responses)
     .innerJoin(fixtures, eq(fixtures.id, responses.fixtureId))
@@ -135,8 +143,8 @@ function selectEntitledFixtures(db: Db, playerId: string, extra?: SQL) {
 type EntitledRow = Awaited<ReturnType<typeof selectEntitledFixtures>>[number];
 
 function toDashboardFixture(row: EntitledRow): DashboardFixture {
-  const { gameVenueName, venueOverride, ...rest } = row;
-  return { ...rest, venueName: venueOverride ?? gameVenueName };
+  const { gameVenueName, venueOverride, role, ...rest } = row;
+  return { ...rest, venueName: venueOverride ?? gameVenueName, owner: role === "owner" };
 }
 
 /**

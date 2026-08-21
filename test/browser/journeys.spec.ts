@@ -577,6 +577,8 @@ test.describe("the team picker, javascript off", () => {
     // The columns the script would reveal must stay hidden here: an empty
     // drop target nobody can drop into is worse than no drop target at all.
     await expect(page.locator("#team-columns")).toBeHidden();
+    // So must the Randomise button: without the script it has no handler.
+    await expect(page.locator("#team-randomise")).toBeHidden();
 
     await sideRadio(page, JOINER_NAME, "Team A").check();
     await sideRadio(page, GUEST_NAME, "Team B").check();
@@ -780,4 +782,41 @@ test("the two identities never share a session", async ({ page, browser }) => {
   expect(response?.url()).toContain("/sign-in");
   await other.close();
   expect(TEST_PLAYER).not.toBe(TEST_OWNER);
+});
+
+/**
+ * Randomise teams, with the script running.
+ *
+ * The button only exists with scripting on — it is revealed by the same block
+ * that reveals the columns — so like the drag journey this one cannot run
+ * JS-off. It asserts the radios, never the picture: a randomise that moved
+ * names and left the form alone would save nothing, and a save that posts the
+ * random pick is the whole point.
+ */
+test("randomise puts everyone on a side, evenly, through the radios the save posts", async ({ page, browser }) => {
+  const seen = observe(page);
+  const { fixturePath } = await seedTwoPlayersIn(page, browser, true);
+  await expect(page.locator("#team-columns")).toBeVisible();
+
+  const randomise = page.getByRole("button", { name: "Randomise teams" });
+  await expect(randomise).toBeVisible();
+  await randomise.click();
+
+  // Two players, two sides: exactly one each, whichever way the coin fell.
+  await expect(page.locator("#team-pool li[data-player]")).toHaveCount(0);
+  await expect(page.locator('ul[data-team="a"] li[data-player]')).toHaveCount(1);
+  await expect(page.locator('ul[data-team="b"] li[data-player]')).toHaveCount(1);
+  await expect(page.locator('[data-count="a"]')).toHaveText("1");
+  await expect(page.locator('[data-count="b"]')).toHaveText("1");
+  await expect(page.locator('li[data-player] input[type="radio"][value=""]:checked')).toHaveCount(0);
+
+  // Nothing is saved until Save is pressed; the random pick posts like any other.
+  const joinerOnA = await sideRadio(page, JOINER_NAME, "Team A").isChecked();
+  await page.getByRole("button", { name: "Save teams" }).click();
+  await page.waitForURL(new RegExp(`${fixturePath}$`));
+  await expect(sideRadio(page, JOINER_NAME, joinerOnA ? "Team A" : "Team B")).toBeChecked();
+  await expect(sideRadio(page, GUEST_NAME, joinerOnA ? "Team B" : "Team A")).toBeChecked();
+
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
 });

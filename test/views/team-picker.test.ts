@@ -74,3 +74,34 @@ describe("one filled button per screen", () => {
     expect(html.match(/type="submit"/g)).toHaveLength(2);
   });
 });
+
+/**
+ * "Randomise teams" (M23 tweak). Script-only sugar on the picker, shipped the
+ * way the side columns are: present in the markup, `hidden`, and revealed by
+ * `TEAM_PICKER_JS`, which is also what gives it a click handler. With
+ * scripting off an organiser never sees a button that would do nothing.
+ */
+describe("the Randomise teams button", () => {
+  it("ships hidden, as a non-submitting button inside the picker's form", () => {
+    const html = renderTeamPicker(BASE);
+    const button = `<button class="button" type="button" id="team-randomise" hidden>Randomise teams</button>`;
+    expect(html).toContain(button);
+    // Inside the picker's form, before its Save — so the tab order reads
+    // "randomise, then save", and never inside the publish form.
+    const form = html.indexOf('id="team-picker"');
+    const save = html.indexOf(">Save teams<");
+    expect(form).toBeGreaterThan(-1);
+    expect(save).toBeGreaterThan(-1);
+    expect(html.indexOf(button)).toBeGreaterThan(form);
+    expect(html.indexOf(button)).toBeLessThan(save);
+  });
+
+  it("is never a submit: the picker still has exactly Save and Publish as submits", () => {
+    const html = renderTeamPicker({ ...BASE, members: [member("p-1", "a"), member("p-2", "b")] });
+    expect(html.match(/type="submit"/g)).toHaveLength(2);
+  });
+
+  it("is absent when nobody is in, along with the rest of the picker", () => {
+    expect(renderTeamPicker({ ...BASE, members: [] })).not.toContain("team-randomise");
+  });
+});

@@ -188,6 +188,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
             view: fixtureView(facts(), NOW),
             waitlistCount: 0,
             myStatus: OUT_OF_UNION,
+            owner: false,
           },
         ],
         squads: [],

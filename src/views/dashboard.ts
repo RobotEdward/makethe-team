@@ -7,6 +7,7 @@ import {
   ONBOARDING_DISMISS_PATH,
   PASSKEYS_PATH,
   gamePath,
+  ownerFixturePath,
 } from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { ResponseStatus } from "../domain/response-status.js";
@@ -54,6 +55,11 @@ export interface DashboardRow {
    * about what tapping it will do (M10 whole-branch review, Important 2).
    */
   waitlistCount: number;
+  /**
+   * The viewer owns this game. Decides where the card's date links: the owner
+   * fixture page for an owner, the game page for a member — see `renderRow`.
+   */
+  owner: boolean;
 }
 
 /** One game the viewer is a member of, as the "Your squads" list needs it (M20 B3). */
@@ -128,6 +134,20 @@ function renderActions(row: DashboardRow): string {
  * exists to prevent for `/g/new` had happened again for the member's own game
  * page; this is the fix for it.
  */
+/**
+ * Where the card's date links: straight to the fixture.
+ *
+ * The heading already links to the game, but for an organiser that page is a
+ * list of fixtures, so reaching this one was "click the game, then find the
+ * date" — the two-hop route this link removes. A member is not entitled to
+ * `/g/:id/f/:fid` (it 404s them, TR-18), and their game page *is* the open
+ * fixture, so the date links there: one link per card that always lands on
+ * this fixture, and never one that lands on "Not found".
+ */
+function fixtureHref(row: DashboardRow): string {
+  return row.owner ? ownerFixturePath(row.gameId, row.fixtureId) : gamePath(row.gameId);
+}
+
 function renderRow(row: DashboardRow): string {
   // Same sentences the fixture page uses for the same statuses — imported, not
   // restated, so a waitlisted player can never read as confirmed on one page
@@ -144,7 +164,7 @@ function renderRow(row: DashboardRow): string {
   return `
     <li class="fixture-card">
       <h2><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></h2>
-      <p class="kickoff">${escapeHtml(row.kicksOffAtLocal)}</p>
+      <p class="kickoff"><a href="${escapeHtml(fixtureHref(row))}">${escapeHtml(row.kicksOffAtLocal)}</a></p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
       ${renderStatusLine(row.view, row.waitlistCount)}
       <section class="answer answer-${answerStateOf(row.myStatus, false)}">
