@@ -29,7 +29,7 @@ export function renderAdminIndexPage(params: AdminIndexPageParams): string {
       <ul class="admin-tools">
         <li>
           <a href="${escapeHtml(ADMIN_ALLOWLIST_PATH)}">Sign-up allow list</a>
-          <p class="tool-note">Who can create an account without an invite.</p>
+          <p class="tool-note">Who can create an account without an invite, and whether the list is in effect at all.</p>
         </li>
         <li>
           <a href="${escapeHtml(ADMIN_SIGNIN_DOCTOR_PATH)}">Sign-in doctor</a>

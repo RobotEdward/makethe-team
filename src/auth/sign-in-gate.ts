@@ -1,12 +1,19 @@
 import { and, desc, eq, notInArray } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { memberships, players, signinRefusals, signupAllowlist } from "../db/schema.js";
+import { isOpenSignups } from "../domain/app-settings.js";
 
 /**
  * The trial sign-in gate (TR-35, widened in M16): may this address be sent a
  * magic link at all?
  *
- * Three doors, checked cheapest first, any one of which opens the gate:
+ * Four doors, any one of which opens the gate:
+ *
+ * 0. the operator's **open sign ups** switch (M30) — when it is on the allow
+ *    list is not in effect at all and any plausible address is permitted. It
+ *    is checked first because it makes the other three moot, and it is stored
+ *    rather than configured so the operator can close it again without a
+ *    deploy;
  *
  * 1. the `SIGNIN_ALLOWLIST` secret — no database round trip, and the only
  *    door that survives a database wipe, which is why the secret is a union
@@ -29,6 +36,7 @@ export async function isSignInPermitted(
   const wanted = foldAsciiCase(email);
   if (wanted === "") return false;
 
+  if (await isOpenSignups(db)) return true;
   if (isSignInAllowlisted(raw, email)) return true;
   if (await isOnAllowlistTable(db, wanted)) return true;
   return hasActiveMembership(db, wanted);
@@ -57,6 +65,15 @@ async function hasActiveMembership(db: Db, wanted: string): Promise<boolean> {
 
 /** Each gate door's own answer for one address, for the admin sign-in doctor. */
 export interface SignInDoors {
+  /**
+   * Door 0: the operator's open-sign-ups switch (M30). True for every
+   * non-blank address while it is on.
+   *
+   * Adding a field here is not optional bookkeeping: `admin-signin-doctor.ts`
+   * recomputes "permitted" as the union of these fields, so a door the gate
+   * honours and this shape omits makes the doctor contradict the gate.
+   */
+  open: boolean;
   /** Door 1: the `SIGNIN_ALLOWLIST` secret. */
   secret: boolean;
   /** Door 2: the `signup_allowlist` table. */
@@ -66,7 +83,7 @@ export interface SignInDoors {
 }
 
 /**
- * All three doors, answered independently (M17).
+ * All four doors, answered independently (M17; the open door added in M30).
  *
  * The admin doctor's view of the gate. Built from the same door checks
  * `isSignInPermitted` composes, so the doctor and the real gate cannot
@@ -79,8 +96,9 @@ export async function explainSignIn(
   email: string,
 ): Promise<SignInDoors> {
   const wanted = foldAsciiCase(email);
-  if (wanted === "") return { secret: false, table: false, member: false };
+  if (wanted === "") return { open: false, secret: false, table: false, member: false };
   return {
+    open: await isOpenSignups(db),
     secret: isSignInAllowlisted(raw, email),
     table: await isOnAllowlistTable(db, wanted),
     member: await hasActiveMembership(db, wanted),

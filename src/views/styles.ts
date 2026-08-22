@@ -930,6 +930,15 @@ export const ADMIN_ALLOWLIST_CSS = `
   /* Secret-sourced entries have no remove button; mark them so the asymmetry
      reads as designed rather than broken. */
   ul.allowlist .provenance { color: var(--mut); font-size: var(--t-support); }
+  /* The open-sign-ups switch (M30). Namespaced under .signup-mode so these
+     rules cannot collide with another block at equal specificity. */
+  .signup-mode {
+    margin: 1.1rem 0; padding: 0.9rem 1rem; border-radius: 1.25rem;
+    background: var(--card-raised);
+  }
+  .signup-mode h2 { margin: 0 0 0.2rem; font-size: var(--t-body); }
+  .signup-mode p { margin: 0 0 0.7rem; color: var(--mut); font-size: var(--t-support); }
+  .signup-mode .state { color: var(--fg); font-weight: 600; }
   .allowlist-add { display: flex; gap: 0.75rem; align-items: flex-end; }
   .allowlist-add .field { flex: 1; margin: 0; }
 `;

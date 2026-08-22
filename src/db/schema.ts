@@ -706,3 +706,23 @@ export const passkey = sqliteTable(
     index("passkey_credentialID_idx").on(t.credentialID),
   ],
 );
+
+/**
+ * App-wide operator settings, as one key/value row each (M30).
+ *
+ * A key/value table rather than a one-row settings table with a column per
+ * setting: adding the next operator switch is an insert, not a migration, and
+ * a missing row is the natural "not configured" that every reader here has to
+ * handle anyway.
+ *
+ * `value` is a bare `text NOT NULL` with no CHECK constraint, so — like every
+ * other stored lookup in this schema — the string in a row is whatever was
+ * written there, not what this build expects. Readers must treat an
+ * unrecognised value as the safe default rather than indexing a table with it;
+ * `isOpenSignups` in `src/domain/app-settings.ts` is the pattern.
+ */
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+});

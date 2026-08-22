@@ -68,11 +68,19 @@ export function renderAdminSigninDoctorPage(params: AdminSigninDoctorPageParams)
 
   const verdictHtml = verdict
     ? (() => {
-        const permitted = verdict.doors.secret || verdict.doors.table || verdict.doors.member;
+        // The union of every door the gate honours. `SignInDoors` gaining a
+        // field and this line not is how the doctor comes to contradict the
+        // gate it exists to explain.
+        const permitted =
+          verdict.doors.open ||
+          verdict.doors.secret ||
+          verdict.doors.table ||
+          verdict.doors.member;
         return `
       <h2>${escapeHtml(verdict.email)}</h2>
       <p>${permitted ? "Can sign in." : "Cannot sign in — every door is closed."}</p>
       <ul class="doors">
+        ${door("Open sign ups (allow list not in effect)", verdict.doors.open)}
         ${door("Server config allow list", verdict.doors.secret)}
         ${door("Sign-up allow list", verdict.doors.table)}
         ${door("Invited player with an active squad place", verdict.doors.member)}

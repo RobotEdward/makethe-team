@@ -6,6 +6,7 @@ import {
   REFUSAL_ROWS_KEPT,
 } from "../../src/auth/sign-in-gate.js";
 import { signinRefusals, signupAllowlist } from "../../src/db/schema.js";
+import { setOpenSignups } from "../../src/domain/app-settings.js";
 import {
   insertGame,
   insertMembership,
@@ -66,6 +67,23 @@ describe("isSignInPermitted", () => {
     expect(await isSignInPermitted(db, SECRET, "stranger@example.com")).toBe(false);
   });
 
+  it("permits a stranger while open sign ups is on", async () => {
+    await setOpenSignups(db, true);
+    expect(await isSignInPermitted(db, undefined, "stranger@example.com")).toBe(true);
+  });
+
+  it("refuses that same stranger again once open sign ups is turned back off", async () => {
+    await setOpenSignups(db, true);
+    await setOpenSignups(db, false);
+    expect(await isSignInPermitted(db, SECRET, "stranger@example.com")).toBe(false);
+  });
+
+  it("still refuses a blank address while open sign ups is on", async () => {
+    await setOpenSignups(db, true);
+    expect(await isSignInPermitted(db, SECRET, "")).toBe(false);
+    expect(await isSignInPermitted(db, SECRET, "   ")).toBe(false);
+  });
+
   it("never matches a blank address against any door", async () => {
     // A guest player's email is NULL; a blank probe must not find it — and
     // must not reach SQL at all, mirroring isSignInAllowlisted's guard.
@@ -94,6 +112,7 @@ describe("explainSignIn", () => {
     // "fix" a problem that does not exist.
     await db.insert(signupAllowlist).values({ email: "operator@example.com" });
     expect(await explainSignIn(db, SECRET, "operator@example.com")).toEqual({
+      open: false,
       secret: true,
       table: true,
       member: false,
@@ -101,7 +120,7 @@ describe("explainSignIn", () => {
   });
 
   it("reports all doors closed for a stranger and for a blank address", async () => {
-    const shut = { secret: false, table: false, member: false };
+    const shut = { open: false, secret: false, table: false, member: false };
     expect(await explainSignIn(db, SECRET, "stranger@example.com")).toEqual(shut);
     expect(await explainSignIn(db, SECRET, "   ")).toEqual(shut);
   });
@@ -111,10 +130,39 @@ describe("explainSignIn", () => {
     const playerId = await insertPlayer(db, { email: "invitee@example.com" });
     await insertMembership(db, gameId, playerId);
     expect(await explainSignIn(db, undefined, "invitee@example.com")).toEqual({
+      open: false,
       secret: false,
       table: false,
       member: true,
     });
+  });
+
+  it("reports the open door, and still answers the others behind it", async () => {
+    // The doctor must not stop at the open door either: an operator about to
+    // close open sign ups needs to see which addresses keep a way in.
+    await setOpenSignups(db, true);
+    await db.insert(signupAllowlist).values({ email: "friend@example.com" });
+    expect(await explainSignIn(db, undefined, "friend@example.com")).toEqual({
+      open: true,
+      secret: false,
+      table: true,
+      member: false,
+    });
+  });
+
+  /**
+   * The doctor page recomputes "permitted" as the union of the doors it is
+   * given (`admin-signin-doctor.ts`). If a door existed in the gate and not in
+   * this shape, the doctor would call an address refused that the real gate
+   * lets straight through.
+   */
+  it("agrees with isSignInPermitted that an open door alone permits a stranger", async () => {
+    await setOpenSignups(db, true);
+    const doors = await explainSignIn(db, undefined, "stranger@example.com");
+    expect(doors).toEqual({ open: true, secret: false, table: false, member: false });
+    expect(doors.open || doors.secret || doors.table || doors.member).toBe(
+      await isSignInPermitted(db, undefined, "stranger@example.com"),
+    );
   });
 });
 

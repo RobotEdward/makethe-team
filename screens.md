@@ -554,26 +554,34 @@ admin handler re-checks it per request, and a non-admin gets a 404, not a 403.
 
 ### 4.1 Admin index — `GET /app/admin`
 - `Admin` (h1); a plain list of three tool links, each with a one-line note underneath
-  ("Who can create an account without an invite." / "Check whether an address can sign in,
+  ("Who can create an account without an invite, and whether the list is in effect at all." / "Check whether an address can sign in,
   and see recent refused attempts." / "Today's send count against the daily ceiling, and
   recent notification outcomes.").
 - Deliberately a menu rather than a dashboard of live numbers — each tool page carries its
   own data, so this page has nothing to go stale.
 
-### 4.2 Sign-up allow list — `GET /app/admin/allowlist` + add/remove POSTs
+### 4.2 Sign-up allow list — `GET /app/admin/allowlist` + add/remove/mode POSTs
+- `Who can sign up` card at the top (M30): the current state in a sentence ("Allow list
+  only." / "Open to everyone.") and one button that sets the *other* state. Opening sign
+  ups is styled as the consequential press, not closing them again. Off by default, and off
+  is what an unrecognised stored value reads as — the wrong-way failure here would open a
+  trial-only site to the internet silently.
+- While sign ups are open the list stays on screen but says so: it is kept for when sign ups
+  are restricted again, and changes nothing meanwhile.
 - Opens by scoping itself: the list only lets someone in *ahead of* their first invite;
   anyone already invited to a squad can sign in regardless.
 - One list, two provenances: entries from a server-config secret are labelled "from server
   config" and have no remove button (the screen cannot write a Cloudflare secret, and hiding
   them would leave the list disagreeing with who can actually sign in); table entries each
   carry `Remove`.
-- Empty state: "Nobody is on the allow list. Only invited players can sign in."
+- Empty state: "Nobody is on the allow list." — plus "Only invited players can sign in."
+  when the list is actually in effect.
 - Add form: email field + `Add`; invalid input re-renders at 422 with an inline error.
 
 ### 4.3 Sign-in doctor — `GET /app/admin/sign-in` (+ check POST)
 - A check form: enter an address, get a verdict ("Can sign in." / "Cannot sign in — every
-  door is closed.") plus a per-door breakdown: server config allow list, sign-up allow list,
-  invited player with an active squad place.
+  door is closed.") plus a per-door breakdown: open sign ups, server config allow list,
+  sign-up allow list, invited player with an active squad place.
 - `Link requests in the last few minutes` (h2): pending magic-link requests, each with what
   the gate would say *now*; entries disappear as the links expire, so this is "what just
   happened", not history.

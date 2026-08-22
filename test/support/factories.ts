@@ -53,6 +53,9 @@ export async function insertGame(db: Db, overrides: Partial<GameInsert> = {}): P
  * before parents).
  */
 const RESET_TABLES = [
+  // A leaked `open_signups` row would open the sign-in gate for every
+  // subsequent test, turning refusal assertions green for the wrong reason.
+  "app_settings",
   "signup_allowlist",
   "signin_refusals",
   "audit_log",

@@ -124,6 +124,8 @@ export const ACCOUNT_PATH = `${DASHBOARD_PATH}/account`;
 export const ADMIN_ALLOWLIST_PATH = `${DASHBOARD_PATH}/admin/allowlist`;
 export const ADMIN_ALLOWLIST_ADD_PATH = `${ADMIN_ALLOWLIST_PATH}/add`;
 export const ADMIN_ALLOWLIST_REMOVE_PATH = `${ADMIN_ALLOWLIST_PATH}/remove`;
+/** The open-sign-ups switch on the allow-list screen (M30). */
+export const ADMIN_SIGNUP_MODE_PATH = `${ADMIN_ALLOWLIST_PATH}/mode`;
 
 /**
  * The admin index (M17): the page the header's Admin link opens, linking out

@@ -10,11 +10,13 @@ import {
   ADMIN_PATH,
   ADMIN_SIGNIN_CHECK_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
+  ADMIN_SIGNUP_MODE_PATH,
 } from "../auth/paths.js";
 import { requireSession, pageNav } from "../auth/session.js";
 import { explainSignIn, foldAsciiCase, isSignInPermitted } from "../auth/sign-in-gate.js";
 import { getDb, type Db } from "../db/client.js";
 import { emailQuota, notificationLog, signinRefusals, signupAllowlist, user, verification } from "../db/schema.js";
+import { isOpenSignups, setOpenSignups } from "../domain/app-settings.js";
 import { isPlausibleEmail } from "../domain/join-squad.js";
 import type { AppEnv } from "../env.js";
 import { dayKey } from "../notify/quota.js";
@@ -76,6 +78,7 @@ async function renderPage(c: Context<AppEnv>, db: Db, error?: string, status: 20
       nav: pageNav(c, "admin"),
       secretEntries: secretEntries(c.env.SIGNIN_ALLOWLIST),
       tableEntries: rows.map((r) => r.email),
+      openSignups: await isOpenSignups(db),
       error,
     }),
     status,
@@ -242,6 +245,24 @@ admin.post(ADMIN_ALLOWLIST_ADD_PATH, requireSession, async (c) => {
   // Folded on insert so the gate's folded-equality lookup is exact, and
   // idempotent so re-submitting the form is a no-op rather than a 500.
   await db.insert(signupAllowlist).values({ email }).onConflictDoNothing();
+  return c.redirect(ADMIN_ALLOWLIST_PATH, 303);
+});
+
+/**
+ * The open-sign-ups switch (M30): does the allow list apply at all?
+ *
+ * The form posts the state it wants rather than "toggle", so an operator
+ * pressing back and submitting a stale page sets the state that page showed a
+ * button for instead of flipping whatever the current one happens to be.
+ * Anything other than `"on"` turns it off, matching `isOpenSignups`' own
+ * refusal to read a value it does not recognise as on.
+ */
+admin.post(ADMIN_SIGNUP_MODE_PATH, requireSession, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+  const db = await loadAdminDb(c);
+  if (db === null) return c.text("Not found", 404);
+
+  await setOpenSignups(db, String((await c.req.formData()).get("open") ?? "") === "on");
   return c.redirect(ADMIN_ALLOWLIST_PATH, 303);
 });
 

@@ -1378,6 +1378,11 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "which GET /g/:id/f/:fixtureId already covers through the \"owner fixture\" " +
       "capture (src/routes/games.ts); its own coverage lives in " +
       "test/routes/picker-delegation.test.ts.",
+    "POST /app/admin/allowlist/mode":
+      "never returns HTML of its own — a plain-text 403 (wrong origin), a " +
+      "plain-text 404 (not an admin), or a 303 redirect back to " +
+      "GET /app/admin/allowlist, which this enumeration already covers " +
+      "(src/routes/admin.ts); its own coverage lives in test/routes/admin.test.ts.",
     "POST /g/:id/mute":
       "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
       "plain-text 400 (a duration outside the catalogue), a plain-text 404 " +

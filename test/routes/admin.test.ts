@@ -10,10 +10,12 @@ import {
   ADMIN_PATH,
   ADMIN_SIGNIN_CHECK_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
+  ADMIN_SIGNUP_MODE_PATH,
   SIGN_IN_PATH,
 } from "../../src/auth/paths.js";
 import { recordSignInRefusal } from "../../src/auth/sign-in-gate.js";
 import { getDb } from "../../src/db/client.js";
+import { isOpenSignups, setOpenSignups } from "../../src/domain/app-settings.js";
 import { notificationLog, signupAllowlist, user } from "../../src/db/schema.js";
 import { insertPlayer, resetDatabase } from "../support/factories.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
@@ -127,6 +129,96 @@ describe("the admin allow-list screen", () => {
   });
 });
 
+/** A post to the open-sign-ups switch, which carries `open` rather than `email`. */
+function postMode(cookie: string, open: string, origin: string = ORIGIN) {
+  return new Request(`${ORIGIN}${ADMIN_SIGNUP_MODE_PATH}`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/x-www-form-urlencoded", origin },
+    body: new URLSearchParams({ open }),
+  });
+}
+
+describe("the open-sign-ups switch (M30)", () => {
+  beforeEach(async () => {
+    await resetDatabase();
+  });
+
+  it("answers 404, not 403, to a signed-in non-admin", async () => {
+    const cookie = await signInAs({ admin: false });
+    const response = await createApp().fetch(postMode(cookie, "on"), bindings());
+    expect(response.status).toBe(404);
+    expect(await isOpenSignups(db)).toBe(false);
+  });
+
+  it("refuses a cross-origin post before touching the setting", async () => {
+    const cookie = await signInAs({ admin: true });
+    const response = await createApp().fetch(postMode(cookie, "on", "https://evil.test"), bindings());
+    expect(response.status).toBe(403);
+    expect(await isOpenSignups(db)).toBe(false);
+  });
+
+  it("turns the switch on and back off, redirecting to the list each time", async () => {
+    const cookie = await signInAs({ admin: true });
+    const app = createApp();
+
+    const opened = await app.fetch(postMode(cookie, "on"), bindings());
+    expect(opened.status).toBe(303);
+    expect(opened.headers.get("location")).toBe(ADMIN_ALLOWLIST_PATH);
+    expect(await isOpenSignups(db)).toBe(true);
+
+    const closed = await app.fetch(postMode(cookie, "off"), bindings());
+    expect(closed.status).toBe(303);
+    expect(await isOpenSignups(db)).toBe(false);
+  });
+
+  it("sets the state the form asked for rather than flipping the current one", async () => {
+    // A stale page resubmitted must not toggle: it asks for the state its own
+    // button offered, and asking for a state already set is a no-op.
+    const cookie = await signInAs({ admin: true });
+    const app = createApp();
+    await app.fetch(postMode(cookie, "on"), bindings());
+    await app.fetch(postMode(cookie, "on"), bindings());
+    expect(await isOpenSignups(db)).toBe(true);
+  });
+
+  it("treats a value it does not recognise as off", async () => {
+    const cookie = await signInAs({ admin: true });
+    const app = createApp();
+    await app.fetch(postMode(cookie, "on"), bindings());
+    await app.fetch(postMode(cookie, "yes"), bindings());
+    expect(await isOpenSignups(db)).toBe(false);
+  });
+
+  it("shows the allow-list page in each state, with the button offering the other", async () => {
+    const cookie = await signInAs({ admin: true });
+    const app = createApp();
+
+    const restricted = await (await app.fetch(get(cookie), bindings())).text();
+    expect(restricted).toContain("Allow list only.");
+    expect(restricted).toContain("Open sign ups to everyone");
+
+    await setOpenSignups(db, true);
+    const open = await (await app.fetch(get(cookie), bindings())).text();
+    expect(open).toContain("Open to everyone.");
+    expect(open).toContain("Restrict to the allow list");
+    expect(open).toContain("not in effect");
+  });
+
+  it("makes the sign-in doctor report a stranger as able to sign in", async () => {
+    // The route, the gate and the doctor's own union, in one pass: the doctor
+    // recomputes "permitted" from the doors it is handed, so a door the gate
+    // honours and the doctor omits would show up here as a contradiction.
+    const cookie = await signInAs({ admin: true });
+    const app = createApp();
+    await app.fetch(postMode(cookie, "on"), bindings());
+
+    const response = await app.fetch(post(ADMIN_SIGNIN_CHECK_PATH, cookie, "stranger@example.com"), bindings());
+    const html = await response.text();
+    expect(html).toContain("Can sign in.");
+    expect(html).toContain("Open sign ups (allow list not in effect)");
+  });
+});
+
 describe("the admin index and diagnostic pages (M17)", () => {
   beforeEach(async () => {
     await resetDatabase();
@@ -200,7 +292,8 @@ describe("the admin index and diagnostic pages (M17)", () => {
     const stranger = await app.fetch(post(ADMIN_SIGNIN_CHECK_PATH, cookie, "stranger@example.com"), bindings());
     const strangerHtml = await stranger.text();
     expect(strangerHtml).toContain("Cannot sign in");
-    expect(strangerHtml.match(/"door-shut"/g)).toHaveLength(3);
+    // Four doors since M30 added the open-sign-ups one.
+    expect(strangerHtml.match(/"door-shut"/g)).toHaveLength(4);
   });
 
   it("re-renders the doctor at 422 for an implausible address", async () => {
