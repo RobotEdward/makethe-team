@@ -69,6 +69,8 @@ interface SeedOptions {
   durationMinutes?: number;
   /** Defaults to the factory's own default ("Europe/London"). Overridden only to make `formatLocalDateTime` throw for one fixture in isolation tests. */
   timezone?: string;
+  /** The owner's N-4 switch (M26). Defaults on, as a real game does. */
+  shortWarningEnabled?: boolean;
 }
 
 let seq = 0;
@@ -82,6 +84,7 @@ async function seed(opts: SeedOptions): Promise<{ gameId: string; fixtureId: str
     prefersEvenNumbers: opts.prefersEvenNumbers ?? true,
     minPlayers: opts.minPlayers ?? 10,
     maxPlayers: opts.maxPlayers ?? 14,
+    shortWarningEnabled: opts.shortWarningEnabled ?? true,
     ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
   });
   const fixtureId = nextId("fixture");
@@ -599,4 +602,42 @@ describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
 
     expect(requireEmailMessage(notifier.sent.flat()[0]!).text).not.toContain("daily email limit");
   });
+
+});
+
+describe("sendOwnerAttention and the owner's warning switch (M26)", () => {
+/**
+ * The owner's warning switch (M26). Read live from `games`, unlike
+ * `shortWarningOffsetHours`, which each fixture snapshots at
+ * materialisation: turning the warning off has to silence the fixtures that
+ * already exist, since nothing re-materialises them.
+ */
+it("sends nothing for a game whose short/uneven warning is switched off", async () => {
+  const { fixtureId } = await seed({
+    kicksOffAt: KICKOFF_INSIDE_WINDOW,
+    inCount: 4,
+    shortWarningEnabled: false,
+    owners: [{ name: "Owner", email: "owner@example.com" }],
+  });
+  const notifier = new RecordingNotifier();
+
+  const result = await sendOwnerAttention({
+    db,
+    notifier,
+    now: NOW,
+    cancelTokenSecret: SECRET,
+    ceilingReached: false,
+  });
+
+  expect(result.fixturesNeedingAttention).toBe(0);
+  expect(result.attentionSent).toBe(0);
+  expect(notifier.sent).toHaveLength(0);
+  // N-4 is once per fixture per owner *ever*, so an unsent warning must also
+  // be an unlogged one — otherwise switching it back on would never send.
+  const rows = await db
+    .select()
+    .from(notificationLog)
+    .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n4")));
+  expect(rows).toHaveLength(0);
+});
 });

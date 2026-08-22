@@ -463,6 +463,36 @@ export const FORM_CSS = `
   .switch-row label { font-weight: 600; }
   .switch-row .hint { grid-column: 1; font-size: var(--t-support); color: var(--mut); }
   .switch-row input { grid-column: 2; grid-row: 1 / span 2; width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
+  /* The notification settings section (M26). Each row is a .switch-row, so
+     the switch itself needs nothing new; what is new is the timing strip that
+     hangs beneath the hint on its own grid row.
+
+     Both inner rules are written .switch-row .notify-timing X, at (0,2,1),
+     rather than .notify-timing X at (0,1,1). The (0,1,1) form ties
+     .switch-row input and .switch-row label above and would win only by
+     coming later in this block — and .switch-row input is not a cosmetic
+     tie to lose: it would size every number and time input here to a 1.4rem
+     square in grid column 2, on top of the checkbox. Specificity settles it
+     instead, so re-ordering this block cannot silently break the section. */
+  .notify-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 1rem; margin: 1.5rem 0; }
+  .notify-group legend { font-weight: 600; padding: 0 0.3rem; }
+  .notify-row:last-of-type { border-bottom: none; }
+  .notify-timing { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
+  .notify-timing-field { display: flex; flex-direction: column; gap: 0.2rem; }
+  .switch-row .notify-timing label { font-weight: 400; font-size: var(--t-support); color: var(--mut); }
+  /* The filled-field treatment .field input gives every other control on this
+     form, restated rather than inherited: these inputs sit inside a
+     .switch-row, not a .field, so without it they render as the browser's
+     default thin-bordered boxes among a page of rounded filled ones — visibly
+     unfinished, and invisible to any string assertion. */
+  .switch-row .notify-timing input {
+    grid-column: auto; grid-row: auto; height: auto; max-width: 9rem;
+    width: 100%; padding: 0.6rem 0.7rem; font: inherit;
+    color: var(--fg); background: var(--field);
+    border: none; border-radius: 0.75rem;
+  }
+  .switch-row .notify-timing input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+  .switch-row .notify-timing .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
   /* The fixture-message audience radios (audienceFields in broadcast.ts).
      Without this, .field input above turns each radio into a full-width
      bordered box that centres its own dot, while .field label stacks the

@@ -223,3 +223,76 @@ describe("localDateToday", () => {
     expect(localDateToday(instant, "America/Los_Angeles")).toBe("2026-08-12");
   });
 });
+
+describe("parseGameForm — notification settings (M26)", () => {
+  /** What the edit form always submits: every marker present, every box ticked. */
+  function notifyBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return body({
+      reminderEnabledSubmitted: "1",
+      reminderEnabled: "on",
+      shortWarningEnabledSubmitted: "1",
+      shortWarningEnabled: "on",
+      groupNudgeEnabledSubmitted: "1",
+      groupNudgeEnabled: "on",
+      resultPromptEnabledSubmitted: "1",
+      resultPromptEnabled: "on",
+      teamsPublishedEmailEnabledSubmitted: "1",
+      teamsPublishedEmailEnabled: "on",
+      resultPromptOffsetHours: "0",
+      ...overrides,
+    });
+  }
+
+  it("defaults every switch on when the section was not rendered", () => {
+    // The create form has no notification section, so nothing about it is
+    // submitted. Absent must not read as "the owner unticked all five".
+    const result = parseGameForm(body());
+    if (!result.ok) throw new Error("expected ok");
+
+    expect(result.values.reminderEnabled).toBe(true);
+    expect(result.values.shortWarningEnabled).toBe(true);
+    expect(result.values.groupNudgeEnabled).toBe(true);
+    expect(result.values.resultPromptEnabled).toBe(true);
+    expect(result.values.teamsPublishedEmailEnabled).toBe(true);
+    expect(result.values.resultPromptOffsetHours).toBe(0);
+  });
+
+  it("reads every switch back when the section was submitted", () => {
+    const result = parseGameForm(notifyBody());
+    if (!result.ok) throw new Error("expected ok");
+
+    expect(result.values.reminderEnabled).toBe(true);
+    expect(result.values.teamsPublishedEmailEnabled).toBe(true);
+  });
+
+  it("treats an unticked box in a submitted section as off", () => {
+    // The marker is the whole point: without it this body is indistinguishable
+    // from the create form's, and the owner's untick would be discarded.
+    const result = parseGameForm(
+      notifyBody({
+        reminderEnabled: undefined,
+        groupNudgeEnabled: undefined,
+        resultPromptEnabled: undefined,
+      }),
+    );
+    if (!result.ok) throw new Error("expected ok");
+
+    expect(result.values.reminderEnabled).toBe(false);
+    expect(result.values.groupNudgeEnabled).toBe(false);
+    expect(result.values.resultPromptEnabled).toBe(false);
+    expect(result.values.shortWarningEnabled).toBe(true);
+    expect(result.values.teamsPublishedEmailEnabled).toBe(true);
+  });
+
+  it("accepts a result-prompt offset inside the range", () => {
+    const result = parseGameForm(notifyBody({ resultPromptOffsetHours: "12" }));
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.values.resultPromptOffsetHours).toBe(12);
+  });
+
+  it("rejects a result-prompt offset outside the range", () => {
+    expect(errorsFor({ resultPromptOffsetHours: "-1" })).toContain("resultPromptOffsetHours");
+    expect(errorsFor({ resultPromptOffsetHours: "49" })).toContain("resultPromptOffsetHours");
+    expect(errorsFor({ resultPromptOffsetHours: "later" })).toContain("resultPromptOffsetHours");
+  });
+});

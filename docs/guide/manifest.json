@@ -137,6 +137,14 @@
       "shows": "The Let players see who else is playing checkbox on the edit form, checked because that's the default every game starts with."
     },
     {
+      "id": "notification-settings",
+      "chapter": "05-running-your-squad",
+      "title": "Choosing what your game sends",
+      "route": "/g/:id/edit",
+      "image": "images/notification-settings.png",
+      "shows": "The Notifications section of the edit form: one switch per message the game sends, each with the timing it governs, all on by default."
+    },
+    {
       "id": "squad-member",
       "chapter": "05-running-your-squad",
       "title": "Looking somebody up",

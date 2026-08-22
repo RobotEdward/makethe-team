@@ -738,6 +738,7 @@ describe("fixture page", () => {
         teamsPublished: false,
         teamsNeedAnotherLook: false,
         announcementOutstanding: false,
+        teamsEmailEnabled: true,
         cancellationReason: null,
       };
       const ownerHtml = renderOwnerFixturePage(ownerParams);
@@ -1152,6 +1153,7 @@ describe("the capacity bar", () => {
       teamsPublished: false,
       teamsNeedAnotherLook: false,
       announcementOutstanding: false,
+      teamsEmailEnabled: true,
       cancellationReason: null,
     });
     expect(ownerHtml).toContain(`<div class="capacity">`);

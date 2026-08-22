@@ -66,7 +66,12 @@ export async function sendGroupNudges(db: Db, notifier: Notifier, now: Date): Pr
   // reported each one, so repeating them would count one bad Game twice in
   // the run's failure total. A fixture that cannot say when its reminder is
   // simply is not due a nudge either.
-  const { due } = await fixturesDueByLifecycle(db, "open", now);
+  const { due: allDue } = await fixturesDueByLifecycle(db, "open", now);
+  // The owner's switch (M26). Filtered here rather than skipped in the loop so
+  // `fixturesConsidered` keeps meaning "fixtures this step could have nudged
+  // for" — a run that considered nothing because every game has the nudge off
+  // is not the same as one that found nothing due.
+  const due = allDue.filter((fixture) => fixture.switches.groupNudgeEnabled);
   const result: GroupNudgeResult = {
     fixturesConsidered: due.length,
     nudgesSent: 0,

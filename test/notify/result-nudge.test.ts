@@ -387,4 +387,69 @@ describe("sendResultNudges", () => {
     expect(resultNudgeKey("fix-1", "ply-1")).toBe("n12:fix-1:ply-1");
     expect(pushKey(resultNudgeKey("fix-1", "ply-1"))).toBe("push:n12:fix-1:ply-1");
   });
+
+  /**
+   * N-12's two owner controls (M26). The switch and the delay are read live
+   * from `games`, so a fixture already played takes the setting as it stands
+   * on the run, not as it stood at kickoff.
+   */
+  describe("the owner's switch and delay", () => {
+    async function playedFixtureWithOnePlayer(gameOverrides: Record<string, unknown>) {
+      const gameId = await insertGame(db, gameOverrides);
+      const alice = await insertPlayer(db, { name: "Alice", email: "alice@example.com" });
+      await insertMembership(db, gameId, alice);
+      const fixtureId = await insertFixture(db, gameId, {
+        lifecycle: "played",
+        kicksOffAt: KICKOFF,
+        durationMinutes: DURATION_MINUTES,
+      });
+      await insertResponse(db, fixtureId, alice, { status: "in" });
+      return { gameId, fixtureId };
+    }
+
+    it("sends nothing when the prompt is switched off", async () => {
+      await playedFixtureWithOnePlayer({ resultPromptEnabled: false });
+
+      const notifier = new RecordingNotifier();
+      const result = await sendResultNudges(db, notifier, WITHIN_WINDOW_NOW, SECRET);
+
+      expect(result.fixturesConsidered).toBe(0);
+      expect(notifier.all).toHaveLength(0);
+      // Nothing logged either, so switching it back on before the window
+      // closes leaves the fixture still eligible.
+      expect(await db.select().from(notificationLog)).toHaveLength(0);
+    });
+
+    it("holds the prompt back until the delay has passed", async () => {
+      await playedFixtureWithOnePlayer({ resultPromptOffsetHours: 6 });
+
+      // WITHIN_WINDOW_NOW is one hour after full time: inside the window the
+      // default would have sent on, and well short of six hours.
+      const early = new RecordingNotifier();
+      expect((await sendResultNudges(db, early, WITHIN_WINDOW_NOW, SECRET)).fixturesConsidered).toBe(0);
+      expect(early.all).toHaveLength(0);
+
+      const due = new RecordingNotifier();
+      const sixHoursAfterFullTime = new Date(FULL_TIME.getTime() + 6 * 60 * 60 * 1000);
+      const result = await sendResultNudges(db, due, sixHoursAfterFullTime, SECRET);
+      expect(result.fixturesConsidered).toBe(1);
+      expect(result.emailSent).toBe(1);
+    });
+
+    it("gives a delayed prompt the same catch-up window as an immediate one", async () => {
+      // The window runs from the delay, not from full time — otherwise a delay
+      // at the ceiling would leave no room to recover a missed run at all.
+      await playedFixtureWithOnePlayer({ resultPromptOffsetHours: 6 });
+
+      const earliest = FULL_TIME.getTime() + 6 * 60 * 60 * 1000;
+      const lastMoment = new Date(earliest + RESULT_NUDGE_WINDOW_MS - 1);
+      const justPast = new Date(earliest + RESULT_NUDGE_WINDOW_MS);
+
+      expect((await sendResultNudges(db, new RecordingNotifier(), justPast, SECRET)).fixturesConsidered).toBe(0);
+
+      const inTime = new RecordingNotifier();
+      expect((await sendResultNudges(db, inTime, lastMoment, SECRET)).emailSent).toBe(1);
+    });
+  });
+
 });

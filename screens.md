@@ -298,15 +298,27 @@ One form serves both.
   toggle `Let players see who else is playing` — hint "When off, players see only how many are
   in; you always see the names.";
   [`First team's name` | `Second team's name`].
-- **`Advanced` (`<details>`, collapsed):** `Time zone` (select); `Venue link` (url);
-  `Send the reminder this many days before` (number); `Send the reminder at` (time);
-  `Warn owners this many hours before kickoff` (number).
+- **`Notifications` (`<fieldset>`, edit only, M26):** one row per notification the game sends
+  on a schedule or on publish — a switch, a hint, and the timing the switch governs:
+  `Remind players before kickoff` [`Days before` (number) | `At` (time)];
+  `Warn me when a fixture is short or uneven` [`Hours before kickoff` (number)];
+  `Nudge me to post it to the group chat` (no timing — it rides with the reminder);
+  `Ask players how it went` [`Hours after full time` (number, 0–48)];
+  `Email players when I publish teams` (no timing — it is sent on publish).
+  Every switch defaults on. Each carries a hidden `<field>Submitted` marker, which the parser
+  reads: without it the create form's submission, which has no section at all, is
+  indistinguishable from an owner who turned all five off.
+- **`Advanced` (`<details>`, collapsed):** `Time zone` (select); `Venue link` (url).
 - **Actions:** `Create the game` / `Save changes`.
 - **Notices:** "Some details need another look." on validation failure; per-field inline errors;
   warnings; on edit, an affected-fixtures notice ("This will update 4 scheduled fixtures…" and
   that an already-emailed fixture is left alone).
 - **Logic:** Rejected submissions come back with everything still typed in. Editing never moves
-  a fixture people have already been emailed about.
+  a fixture people have already been emailed about. The notification switches are read live from
+  `games` on every send, never snapshotted onto a fixture, so turning one off silences fixtures
+  that already exist; the short/uneven *offset* keeps its per-fixture snapshot. Turning reminders
+  off does not stop fixtures opening — opening is not a notification, and it stays on the same
+  schedule.
 
 ### 3.2 Game overview — `GET /g/:id` (organiser rendering)
 The organiser's home for one game.

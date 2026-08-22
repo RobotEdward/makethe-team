@@ -402,6 +402,14 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
         reminderDaysBefore: String(game.reminderDaysBefore),
         reminderLocalTime: game.reminderLocalTime,
         shortWarningOffsetHours: String(game.shortWarningOffsetHours),
+        // "" rather than absent for a saved false: the renderer's fallback for
+        // "the caller said nothing" is on, for every one of these (M26).
+        reminderEnabled: game.reminderEnabled ? "on" : "",
+        shortWarningEnabled: game.shortWarningEnabled ? "on" : "",
+        groupNudgeEnabled: game.groupNudgeEnabled ? "on" : "",
+        resultPromptEnabled: game.resultPromptEnabled ? "on" : "",
+        teamsPublishedEmailEnabled: game.teamsPublishedEmailEnabled ? "on" : "",
+        resultPromptOffsetHours: String(game.resultPromptOffsetHours),
       },
       errors: [],
       warnings: [],
@@ -758,6 +766,10 @@ async function ownerFixtureParams(
     // answer "no" to half the question.
     teamsNeedAnotherLook: teamsNeedAnotherLook(assignments),
     announcementOutstanding: announcementOutstanding(fixture, assignments),
+    // M26. The picker says publishing emails the squad, and for a game with
+    // that switch off it does not — an organiser reading the unqualified
+    // sentence would believe the squad had been told.
+    teamsEmailEnabled: game.teamsPublishedEmailEnabled,
     cancellationReason: fixture.cancellationReason,
     result,
     ...extras,
@@ -1301,7 +1313,12 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
   // depends on delivery, and a slow provider must not hold up their redirect.
   // Failures are not silent — every outcome is a durable `notification_log`
   // row and `publishTeams` logs the rest.
-  c.executionCtx.waitUntil(publishTeams(c.env, target.fixture.id, now));
+  // M26. The publish itself still happened — `teams_published_at` is set
+  // above and players can see their side — but this game has asked for no
+  // email, so none is sent and no `notification_log` row is written.
+  if (target.game.teamsPublishedEmailEnabled) {
+    c.executionCtx.waitUntil(publishTeams(c.env, target.fixture.id, now));
+  }
 
   return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });

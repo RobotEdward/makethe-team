@@ -117,6 +117,17 @@ export interface DueFixture {
   gameId: string;
   kicksOffAt: Date;
   game: GameTiming;
+  /**
+   * The owner's switches for the two notifications keyed off this due-set
+   * (M26). Carried here rather than filtered in the query because all three
+   * callers share the query and only two of them care: **opening a fixture is
+   * not a notification**, and a game with reminders off must still have its
+   * fixtures opened on the same schedule, or nobody can respond at all.
+   *
+   * Read live from `games`, never from the fixture's own snapshot: turning a
+   * switch off means the fixtures that already exist.
+   */
+  switches: { reminderEnabled: boolean; groupNudgeEnabled: boolean };
 }
 
 /** Step 1: open every `scheduled` fixture whose reminder instant has passed. */
@@ -183,6 +194,8 @@ export async function fixturesDueByLifecycle(
       timezone: games.timezone,
       reminderDaysBefore: games.reminderDaysBefore,
       reminderLocalTime: games.reminderLocalTime,
+      reminderEnabled: games.reminderEnabled,
+      groupNudgeEnabled: games.groupNudgeEnabled,
     })
     .from(fixtures)
     .innerJoin(games, eq(fixtures.gameId, games.id))
@@ -203,6 +216,10 @@ export async function fixturesDueByLifecycle(
         timezone: row.timezone,
         reminderDaysBefore: row.reminderDaysBefore,
         reminderLocalTime: row.reminderLocalTime,
+      },
+      switches: {
+        reminderEnabled: row.reminderEnabled,
+        groupNudgeEnabled: row.groupNudgeEnabled,
       },
     };
     try {
@@ -247,6 +264,12 @@ async function sendDueReminders(
   let guestsSkipped = 0;
 
   for (const fixture of due) {
+    // The owner's switch (M26). Skipped before the per-fixture query, and
+    // before any `notification_log` row is written, so turning reminders back
+    // on later leaves the next due fixture still eligible rather than
+    // already-logged.
+    if (!fixture.switches.reminderEnabled) continue;
+
     try {
       const [row] = await db
         .select({ fixture: fixtures, game: games })

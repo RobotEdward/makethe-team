@@ -108,6 +108,8 @@ export async function sendResultNudges(
       timezone: games.timezone,
       kicksOffAt: fixtures.kicksOffAt,
       durationMinutes: fixtures.durationMinutes,
+      resultPromptEnabled: games.resultPromptEnabled,
+      resultPromptOffsetHours: games.resultPromptOffsetHours,
     })
     .from(fixtures)
     .innerJoin(games, eq(fixtures.gameId, games.id))
@@ -117,8 +119,17 @@ export async function sendResultNudges(
   // own idiom (a broad SQL select, then a precise JS filter for the boundary
   // that matters) rather than inline date arithmetic in the `WHERE` clause.
   const due = candidateRows.filter((row) => {
+    // The owner's switch (M26).
+    if (!row.resultPromptEnabled) return false;
+
+    // The owner's delay (M26), measured from full time. The window runs from
+    // the delay rather than from full time, so a game that asks twelve hours
+    // later still gets the same twelve hours of catch-up after a missed run —
+    // subtracting the delay from a window anchored at full time would silently
+    // shrink it, and a delay at the ceiling would leave none at all.
     const fullTime = row.kicksOffAt.getTime() + row.durationMinutes * 60_000;
-    return fullTime <= now.getTime() && now.getTime() - fullTime < RESULT_NUDGE_WINDOW_MS;
+    const earliest = fullTime + row.resultPromptOffsetHours * 60 * 60_000;
+    return earliest <= now.getTime() && now.getTime() - earliest < RESULT_NUDGE_WINDOW_MS;
   });
 
   const result = emptyResult();

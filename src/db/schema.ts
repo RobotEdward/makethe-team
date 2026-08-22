@@ -138,6 +138,38 @@ export const games = sqliteTable("games", {
   reminderDaysBefore: integer("reminder_days_before").notNull().default(1),
   reminderLocalTime: text("reminder_local_time").notNull().default("09:00"),
   shortWarningOffsetHours: integer("short_warning_offset_hours").notNull().default(12),
+  /**
+   * The owner's notification switches (M26), one per scheduled or
+   * owner-triggered notification the game can send.
+   *
+   * **Read live, never snapshotted onto `fixtures`** — unlike
+   * `shortWarningOffsetHours` one line up, which is copied at materialisation
+   * so an edit cannot rewrite history. A switch is not history: an owner who
+   * turns reminders off means the fixtures that already exist, and a
+   * snapshotted flag would keep emailing next week's fixture until it was
+   * re-materialised, which never happens.
+   *
+   * Every one defaults on, so a game created before this milestone behaves
+   * exactly as it did.
+   */
+  reminderEnabled: integer("reminder_enabled", { mode: "boolean" }).notNull().default(true),
+  shortWarningEnabled: integer("short_warning_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  groupNudgeEnabled: integer("group_nudge_enabled", { mode: "boolean" }).notNull().default(true),
+  resultPromptEnabled: integer("result_prompt_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  teamsPublishedEmailEnabled: integer("teams_published_email_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  /**
+   * How long after full time the "how did it go?" prompt (N-12) may first go
+   * out. Zero — the default — is the pre-M26 behaviour: the first sweep run
+   * after the whistle. `RESULT_NUDGE_WINDOW_MS` still bounds how late it may
+   * be sent, measured from this offset rather than from full time.
+   */
+  resultPromptOffsetHours: integer("result_prompt_offset_hours").notNull().default(0),
   inviteToken: text("invite_token").notNull(),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),

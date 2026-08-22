@@ -763,3 +763,136 @@ describe("the copy button script's targets stay in sync with the page", () => {
     }
   });
 });
+
+/**
+ * The notification settings section (M26). Edit-only, like Advanced, and the
+ * one place an owner can see what their game sends and when.
+ */
+describe("notification settings on the edit form", () => {
+  beforeEach(resetDatabase);
+
+  async function ownedGame() {
+    const { cookie } = await signIn();
+    const response = await post("/g/new", cookie, VALID);
+    const gameId = response.headers.get("location")!.replace("/g/", "");
+    return { cookie, gameId };
+  }
+
+  /** Every switch and marker a browser submits from the rendered section. */
+  const NOTIFY_FIELDS: Record<string, string> = {
+    reminderEnabled: "on",
+    reminderEnabledSubmitted: "1",
+    shortWarningEnabled: "on",
+    shortWarningEnabledSubmitted: "1",
+    groupNudgeEnabled: "on",
+    groupNudgeEnabledSubmitted: "1",
+    resultPromptEnabled: "on",
+    resultPromptEnabledSubmitted: "1",
+    teamsPublishedEmailEnabled: "on",
+    teamsPublishedEmailEnabledSubmitted: "1",
+    resultPromptOffsetHours: "0",
+  };
+
+  it("renders a row for every notification, ticked by default", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+
+    expect(html).toContain("<legend>Notifications</legend>");
+    for (const field of Object.keys(NOTIFY_FIELDS)) {
+      if (field.endsWith("Submitted") || field === "resultPromptOffsetHours") continue;
+      const box = html.match(new RegExp(`<input id="${field}"[^>]*>`))?.[0] ?? "";
+      expect(box, field).toContain('type="checkbox"');
+      expect(box, field).toContain("checked");
+      expect(html, field).toContain(`<input type="hidden" name="${field}Submitted" value="1">`);
+    }
+  });
+
+  it("puts the reminder timing in the reminder's own row, not in Advanced", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+
+    const section = html.slice(html.indexOf("<legend>Notifications</legend>"), html.indexOf("<summary>Advanced</summary>"));
+    expect(section).toContain('id="reminderDaysBefore"');
+    expect(section).toContain('id="reminderLocalTime"');
+    expect(section).toContain('id="shortWarningOffsetHours"');
+    expect(section).toContain('id="resultPromptOffsetHours"');
+
+    // Presence above is what stops this pair passing vacuously on an absent block.
+    const advanced = html.slice(html.indexOf("<summary>Advanced</summary>"));
+    expect(advanced).not.toContain('id="reminderDaysBefore"');
+    expect(advanced).not.toContain('id="shortWarningOffsetHours"');
+  });
+
+  it("has no notification section on the create form", async () => {
+    const { cookie } = await signIn();
+    const html = await (await SELF.fetch(`${ORIGIN}/g/new`, { headers: { cookie } })).text();
+    expect(html).not.toContain("<legend>Notifications</legend>");
+  });
+
+  it("leaves every switch on for a game created without the section", async () => {
+    // The create form submits none of these fields. Absent must not read as
+    // "the owner turned all five off" — the whole reason the markers exist.
+    const { gameId } = await ownedGame();
+    const [row] = await testDb().select().from(games).where(eq(games.id, gameId));
+
+    expect(row!.reminderEnabled).toBe(true);
+    expect(row!.shortWarningEnabled).toBe(true);
+    expect(row!.groupNudgeEnabled).toBe(true);
+    expect(row!.resultPromptEnabled).toBe(true);
+    expect(row!.teamsPublishedEmailEnabled).toBe(true);
+    expect(row!.resultPromptOffsetHours).toBe(0);
+  });
+
+  it("saves the switches and the result-prompt offset", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const body: Record<string, string> = { ...VALID, ...NOTIFY_FIELDS, resultPromptOffsetHours: "10" };
+    delete body["reminderEnabled"];
+    delete body["teamsPublishedEmailEnabled"];
+
+    expect((await post(`/g/${gameId}/edit`, cookie, body)).status).toBe(303);
+
+    const [row] = await testDb().select().from(games).where(eq(games.id, gameId));
+    expect(row!.reminderEnabled).toBe(false);
+    expect(row!.teamsPublishedEmailEnabled).toBe(false);
+    expect(row!.groupNudgeEnabled).toBe(true);
+    expect(row!.resultPromptOffsetHours).toBe(10);
+  });
+
+  it("shows a saved-off switch as unticked when the form reloads", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const body: Record<string, string> = { ...VALID, ...NOTIFY_FIELDS };
+    delete body["resultPromptEnabled"];
+    await post(`/g/${gameId}/edit`, cookie, body);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+    const box = html.match(/<input id="resultPromptEnabled"[^>]*>/)?.[0] ?? "";
+    expect(box).toContain('type="checkbox"');
+    expect(box).not.toContain("checked");
+  });
+
+  it("keeps a switch unticked through a 422 redisplay", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const body: Record<string, string> = { ...VALID, ...NOTIFY_FIELDS, kickoffTime: "not a time" };
+    delete body["groupNudgeEnabled"];
+
+    const response = await post(`/g/${gameId}/edit`, cookie, body);
+    expect(response.status).toBe(422);
+    const box = (await response.text()).match(/<input id="groupNudgeEnabled"[^>]*>/)?.[0] ?? "";
+    expect(box).not.toContain("checked");
+  });
+
+  it("rejects an out-of-range result-prompt offset without saving anything", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const response = await post(`/g/${gameId}/edit`, cookie, {
+      ...VALID,
+      ...NOTIFY_FIELDS,
+      name: "Renamed",
+      resultPromptOffsetHours: "99",
+    });
+
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("Ask between 0 and 48 hours after full time.");
+    const [row] = await testDb().select().from(games).where(eq(games.id, gameId));
+    expect(row!.name).toBe("Thursday 7-a-side");
+  });
+});

@@ -58,6 +58,7 @@ const BASE: OwnerFixtureParams = {
   teamsPublished: false,
   teamsNeedAnotherLook: false,
   announcementOutstanding: false,
+  teamsEmailEnabled: true,
   cancellationReason: null,
 };
 

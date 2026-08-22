@@ -42,8 +42,14 @@ class RecordingNotifier implements Notifier {
 let seq = 0;
 const nextId = (kind: string) => `${kind}-${++seq}`;
 
-async function seedFixture(opts: { lifecycle?: "scheduled" | "open"; inCount?: number } = {}) {
-  const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+async function seedFixture(
+  opts: { lifecycle?: "scheduled" | "open"; inCount?: number; groupNudgeEnabled?: boolean } = {},
+) {
+  const gameId = await insertGame(db, {
+    name: "Thursday 7-a-side",
+    // The owner's N-11 switch (M26). Defaults on, as a real game does.
+    groupNudgeEnabled: opts.groupNudgeEnabled ?? true,
+  });
   const fixtureId = nextId("fixture");
   await db.insert(fixtures).values({
     id: fixtureId,
@@ -221,4 +227,20 @@ describe("sendGroupNudges (N-11, M22)", () => {
     expect(result.nudgesSent).toBe(1);
     expect((await n11Rows("broken-fixture")).length).toBe(0);
   });
+
+  it("nudges nobody for a game whose group nudge is switched off", async () => {
+    const { gameId, fixtureId } = await seedFixture({ groupNudgeEnabled: false });
+    await addMember(gameId, "owner", { push: true });
+    const notifier = new RecordingNotifier();
+
+    const result = await sendGroupNudges(db, notifier, DUE_NOW);
+
+    // Not merely "sent nothing": the fixture is not considered at all, so the
+    // counter keeps meaning "fixtures this step could have nudged for".
+    expect(result.fixturesConsidered).toBe(0);
+    expect(result.nudgesSent).toBe(0);
+    expect(notifier.pushes()).toHaveLength(0);
+    expect(await n11Rows(fixtureId)).toHaveLength(0);
+  });
+
 });

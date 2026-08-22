@@ -145,7 +145,7 @@ export const CATALOGUE: CataloguePage[] = [
     title: "Edit game",
     path: (w) => `/g/${w.gameId}/edit`,
     persona: "owner",
-    note: "The same form as creation, populated.",
+    note: "The same form as creation, populated, plus the edit-only Notifications section (M26).",
   },
   {
     id: "game-message",

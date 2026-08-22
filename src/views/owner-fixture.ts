@@ -79,6 +79,8 @@ export interface OwnerFixtureParams {
    * `teamsPublished` is.
    */
   announcementOutstanding: boolean;
+  /** Whether publishing emails the squad for this game (N-9's switch, M26). */
+  teamsEmailEnabled: boolean;
   /** A refusal to explain near the top, e.g. Task 6's guard. Escaped and shown. */
   problem?: string;
   /** The broadcast receipt (M20 B4), from `broadcastNoticeFrom` — never caller-chosen text. */
@@ -297,6 +299,7 @@ function renderTeams(params: OwnerFixtureParams): string {
     published: params.teamsPublished,
     needsAnotherLook: params.teamsNeedAnotherLook,
     announcementOutstanding: params.announcementOutstanding,
+    teamsEmailEnabled: params.teamsEmailEnabled,
   });
 }
 

@@ -51,6 +51,8 @@ export interface TeamPickerParams {
   needsAnotherLook: boolean;
   /** From `announcementOutstanding` — what was sent no longer describes the pick. */
   announcementOutstanding: boolean;
+  /** Whether publishing emails the squad for this game (N-9's switch, M26). */
+  teamsEmailEnabled: boolean;
 }
 
 /**
@@ -193,7 +195,16 @@ function renderPublish(params: TeamPickerParams): string {
       ? `<p class="team-note">The squad has changed since you started picking. Worth another look before you publish.</p>`
       : "";
 
-  return `${prompt}
+  // With N-9 switched off (M26) publishing sends nothing, so the two prompts
+  // above — both of which offer to send the teams out again — describe an act
+  // this game does not perform. Said once, under the button, rather than by
+  // rewording each prompt: the button still does something worth doing, and
+  // what changes is only who hears about it.
+  const emailNote = params.teamsEmailEnabled
+    ? ""
+    : `<p class="team-note">Email is off for this game, so publishing shows the teams on players' pages without sending anything.</p>`;
+
+  return `${prompt}${emailNote}
           <form method="post" action="${escapeHtml(ownerTeamsPublishPath(gameId, fixtureId))}">
             <button class="button primary" type="submit">${published ? "Publish again" : "Publish teams"}</button>
           </form>`;

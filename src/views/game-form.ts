@@ -1,5 +1,5 @@
 import type { FieldError } from "../domain/game-form.js";
-import { supportedTimezones } from "../domain/game-form.js";
+import { NOTIFICATION_SWITCHES, supportedTimezones } from "../domain/game-form.js";
 import { WEEKDAYS } from "../domain/recurrence/parse.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FORM_CSS } from "./styles.js";
@@ -86,6 +86,34 @@ function switchRow(row: {
       </div>`;
 }
 
+/**
+ * The marker name for one notification switch, taken from the parser's own
+ * list rather than written out again here (M26).
+ *
+ * `parseGameForm` reads these markers to tell "the owner turned this off" from
+ * "this form has no notification section" — the create form's case — so a name
+ * typed twice and spelled differently once would silently turn every switch
+ * off on save, with the form still showing them on.
+ */
+function markerFor(field: string): string {
+  const known = NOTIFICATION_SWITCHES.find((entry) => entry.field === field);
+  if (known === undefined) throw new Error(`no notification switch named ${field}`);
+  return known.submitted;
+}
+
+/**
+ * Whether one notification switch renders ticked.
+ *
+ * Mirrors `prefersEvenChecked` above: a submitted section is authoritative
+ * (absent means unticked), and a fresh render with nothing said falls back to
+ * the default, which is on for every one of these. The edit route says `""`
+ * explicitly for a saved false.
+ */
+function switchChecked(values: Partial<Record<string, string>>, field: string): boolean {
+  if (values[markerFor(field)] !== undefined) return values[field] === "on";
+  return values[field] === undefined || values[field] === "on";
+}
+
 export interface GameFormPageParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
@@ -151,15 +179,106 @@ export function renderGameFormPage(params: GameFormPageParams): string {
     }>${escapeHtml(zone)}</option>`,
   ).join("");
 
+  /**
+   * One timing control inside a notification row: its own label, the input,
+   * and the field error if there is one.
+   *
+   * Separate from `field()` because these sit inside a `.switch-row` grid,
+   * where `.field`'s block layout would put each control on a line of its own
+   * and push the row past three times the height of its neighbours.
+   */
+  const timing = (name: string, label: string, type: string, extra: string): string => {
+    const message = errorFor(name);
+    return `
+        <span class="notify-timing-field">
+          <label for="${name}">${escapeHtml(label)}</label>
+          ${textInput(name, type, extra)}
+          ${message ? `<span class="error" id="${name}-error">${escapeHtml(message)}</span>` : ""}
+        </span>`;
+  };
+
+  /**
+   * One notification: the switch that turns it on, and — for the ones that
+   * fire on a schedule — when it fires.
+   *
+   * The timing controls live in the row rather than in Advanced, where three
+   * of them used to sit, because a time is meaningless without the switch it
+   * belongs to: an owner reading "Send the reminder this many days before"
+   * two sections away from "Remind players before kickoff" has no way to tell
+   * that turning the switch off makes the number moot.
+   *
+   * The inputs stay enabled when the switch is off. Disabling them would drop
+   * them from the POST body, and `parseGameForm` treats an absent timing field
+   * as "use the default" — so unticking a box and saving would quietly reset
+   * that game's reminder time to 09:00.
+   */
+  const notification = (row: {
+    field: string;
+    label: string;
+    hint: string;
+    timings?: string;
+  }): string => `
+      <div class="switch-row notify-row">
+        <input type="hidden" name="${markerFor(row.field)}" value="1">
+        <label for="${row.field}">${escapeHtml(row.label)}</label>
+        <input id="${row.field}" name="${row.field}" type="checkbox"${
+          switchChecked(values, row.field) ? " checked" : ""
+        }>
+        <span class="hint">${escapeHtml(row.hint)}</span>
+        ${row.timings ?? ""}
+      </div>`;
+
+  const notifications = showAdvanced
+    ? `
+      <fieldset class="notify-group">
+        <legend>Notifications</legend>
+        ${notification({
+          field: "reminderEnabled",
+          label: "Remind players before kickoff",
+          hint: "The message that asks players if they are in. Fixtures still open on this schedule when it is off.",
+          timings: `
+        <div class="notify-timing">
+          ${timing("reminderDaysBefore", "Days before", "number", ` min="0" max="7"`)}
+          ${timing("reminderLocalTime", "At", "time", "")}
+        </div>`,
+        })}
+        ${notification({
+          field: "shortWarningEnabled",
+          label: "Warn me when a fixture is short or uneven",
+          hint: "Emails you once per fixture. Only fixtures scheduled from now on take a changed warning time.",
+          timings: `
+        <div class="notify-timing">
+          ${timing("shortWarningOffsetHours", "Hours before kickoff", "number", ` min="1" max="168"`)}
+        </div>`,
+        })}
+        ${notification({
+          field: "groupNudgeEnabled",
+          label: "Nudge me to post it to the group chat",
+          hint: "A phone notification, sent with the reminder above, so it needs no time of its own.",
+        })}
+        ${notification({
+          field: "resultPromptEnabled",
+          label: "Ask players how it went",
+          hint: "Asks everyone who played for the score. Zero hours means as soon after full time as we can.",
+          timings: `
+        <div class="notify-timing">
+          ${timing("resultPromptOffsetHours", "Hours after full time", "number", ` min="0" max="48"`)}
+        </div>`,
+        })}
+        ${notification({
+          field: "teamsPublishedEmailEnabled",
+          label: "Email players when I publish teams",
+          hint: "Sent when you publish, so it needs no time of its own. Teams still appear on the fixture page.",
+        })}
+      </fieldset>`
+    : "";
+
   const advanced = showAdvanced
     ? `
       <details>
         <summary>Advanced</summary>
         ${field("timezone", "Time zone", `<select id="timezone" name="timezone">${timezoneOptions}</select>`)}
         ${field("venueUrl", "Venue link", textInput("venueUrl", "url"))}
-        ${field("reminderDaysBefore", "Send the reminder this many days before", textInput("reminderDaysBefore", "number"))}
-        ${field("reminderLocalTime", "Send the reminder at", textInput("reminderLocalTime", "time"))}
-        ${field("shortWarningOffsetHours", "Warn owners this many hours before kickoff", textInput("shortWarningOffsetHours", "number"))}
       </details>`
     : "";
 
@@ -202,6 +321,7 @@ export function renderGameFormPage(params: GameFormPageParams): string {
         ${field("teamAName", "First team's name", textInput("teamAName"))}
         ${field("teamBName", "Second team's name", textInput("teamBName"))}
       </div>
+      ${notifications}
       ${advanced}
       <div class="actions">
         <button class="button primary" type="submit">${escapeHtml(submitLabel)}</button>

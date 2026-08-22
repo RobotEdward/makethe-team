@@ -33,6 +33,7 @@ const MAX_PLAYERS_CEILING = 200;
 const MAX_WARNING_OFFSET_HOURS = 168;
 const MAX_REMINDER_DAYS_BEFORE = 7;
 const MAX_TEAM_NAME_LENGTH = 40;
+const MAX_RESULT_PROMPT_OFFSET_HOURS = 48;
 
 export const DEFAULT_TIMEZONE = "Europe/London";
 export const DEFAULT_TEAM_A_NAME = "Team A";
@@ -40,6 +41,29 @@ export const DEFAULT_TEAM_B_NAME = "Team B";
 export const DEFAULT_REMINDER_DAYS_BEFORE = 1;
 export const DEFAULT_REMINDER_LOCAL_TIME = "09:00";
 export const DEFAULT_SHORT_WARNING_OFFSET_HOURS = 12;
+export const DEFAULT_RESULT_PROMPT_OFFSET_HOURS = 0;
+
+/**
+ * The notification switches (M26), and the hidden marker that rides with each.
+ *
+ * An unticked checkbox is absent from the POST body, so "the owner turned this
+ * off" and "this form never showed the section" arrive as the same
+ * `undefined`. The notification section is edit-only, and every switch
+ * defaults on, so without a marker the create form's submission would read as
+ * an owner who had turned all five off.
+ *
+ * The marker is therefore parsed, not merely rendered — unlike
+ * `prefersEvenNumbersSubmitted`, whose section appears on both forms and whose
+ * marker exists only for the 422 redisplay. Both halves live here so the view
+ * cannot name a field the parser does not read.
+ */
+export const NOTIFICATION_SWITCHES = [
+  { field: "reminderEnabled", submitted: "reminderEnabledSubmitted" },
+  { field: "shortWarningEnabled", submitted: "shortWarningEnabledSubmitted" },
+  { field: "groupNudgeEnabled", submitted: "groupNudgeEnabledSubmitted" },
+  { field: "resultPromptEnabled", submitted: "resultPromptEnabledSubmitted" },
+  { field: "teamsPublishedEmailEnabled", submitted: "teamsPublishedEmailEnabledSubmitted" },
+] as const;
 
 export interface GameFormValues {
   name: string;
@@ -59,6 +83,12 @@ export interface GameFormValues {
   reminderDaysBefore: number;
   reminderLocalTime: string;
   shortWarningOffsetHours: number;
+  reminderEnabled: boolean;
+  shortWarningEnabled: boolean;
+  groupNudgeEnabled: boolean;
+  resultPromptEnabled: boolean;
+  teamsPublishedEmailEnabled: boolean;
+  resultPromptOffsetHours: number;
 }
 
 export interface FieldError {
@@ -264,6 +294,33 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
     fail("shortWarningOffsetHours", `Warn between 1 and ${MAX_WARNING_OFFSET_HOURS} hours before.`);
   }
 
+  // A switch the form never showed stays on; see NOTIFICATION_SWITCHES.
+  const switchValue = (field: string, submitted: string): boolean =>
+    body[submitted] === undefined ? true : typeof body[field] === "string";
+
+  const reminderEnabled = switchValue("reminderEnabled", "reminderEnabledSubmitted");
+  const shortWarningEnabled = switchValue("shortWarningEnabled", "shortWarningEnabledSubmitted");
+  const groupNudgeEnabled = switchValue("groupNudgeEnabled", "groupNudgeEnabledSubmitted");
+  const resultPromptEnabled = switchValue("resultPromptEnabled", "resultPromptEnabledSubmitted");
+  const teamsPublishedEmailEnabled = switchValue(
+    "teamsPublishedEmailEnabled",
+    "teamsPublishedEmailEnabledSubmitted",
+  );
+
+  const resultPromptOffsetHours = body["resultPromptOffsetHours"] === undefined
+    ? DEFAULT_RESULT_PROMPT_OFFSET_HOURS
+    : integer(body["resultPromptOffsetHours"]);
+  if (
+    resultPromptOffsetHours === null ||
+    resultPromptOffsetHours < 0 ||
+    resultPromptOffsetHours > MAX_RESULT_PROMPT_OFFSET_HOURS
+  ) {
+    fail(
+      "resultPromptOffsetHours",
+      `Ask between 0 and ${MAX_RESULT_PROMPT_OFFSET_HOURS} hours after full time.`,
+    );
+  }
+
   if (errors.length > 0) return { ok: false, errors, warnings };
 
   return {
@@ -291,6 +348,12 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
       reminderDaysBefore: reminderDaysBefore!,
       reminderLocalTime,
       shortWarningOffsetHours: shortWarningOffsetHours!,
+      reminderEnabled,
+      shortWarningEnabled,
+      groupNudgeEnabled,
+      resultPromptEnabled,
+      teamsPublishedEmailEnabled,
+      resultPromptOffsetHours: resultPromptOffsetHours!,
     },
   };
 }

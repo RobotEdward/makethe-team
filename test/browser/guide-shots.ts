@@ -245,6 +245,18 @@ export const SHOTS: Shot[] = [
     element: '.switch-row:has(#squadVisibleToPlayers)',
   },
   {
+    id: "notification-settings",
+    chapter: "05-running-your-squad",
+    title: "Choosing what your game sends",
+    route: "/g/:id/edit",
+    shows:
+      "The Notifications section of the edit form: one switch per message the game sends, " +
+      "each with the timing it governs, all on by default.",
+    path: (w) => `/g/${w.gameId}/edit`,
+    persona: "organiser",
+    element: ".notify-group",
+  },
+  {
     id: "squad-member",
     chapter: "05-running-your-squad",
     title: "Looking somebody up",

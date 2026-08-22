@@ -56,6 +56,8 @@ class RejectingNotifier implements Notifier {
 
 interface SeedOptions {
   kicksOffAt: Date;
+  /** The owner's N-1 switch (M26). Defaults on, as a real game does. */
+  reminderEnabled?: boolean;
   timezone?: string;
   reminderDaysBefore?: number;
   reminderLocalTime?: string;
@@ -70,6 +72,7 @@ async function seedFixture(opts: SeedOptions): Promise<{ gameId: string; fixture
     timezone: opts.timezone ?? "Europe/London",
     reminderDaysBefore: opts.reminderDaysBefore ?? 1,
     reminderLocalTime: opts.reminderLocalTime ?? "09:00",
+    reminderEnabled: opts.reminderEnabled ?? true,
   });
   const fixtureId = crypto.randomUUID();
 
@@ -731,4 +734,39 @@ describe("openAndRemind", () => {
     expect(second.remindersFailed).toBe(0);
     expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(3);
   });
+
+  /**
+   * The owner's reminder switch (M26). The pair of assertions matters more
+   * than either alone: opening a fixture is not a notification, and a game
+   * that has turned reminders off must still have its fixtures opened on the
+   * same schedule — otherwise nobody can respond to them at all.
+   */
+  it("sends no reminder when the owner has switched them off, but still opens the fixture", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const { fixtureId } = await seedFixture({
+      kicksOffAt,
+      lifecycle: "scheduled",
+      reminderEnabled: false,
+      squad: squad(3),
+    });
+    const notifier = new RecordingNotifier();
+
+    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+
+    expect(result.fixturesOpened).toBe(1);
+    expect(result.remindersSent).toBe(0);
+    expect(notifier.sent).toHaveLength(0);
+
+    const [row] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(row!.lifecycle).toBe("open");
+
+    // Nothing logged, so switching reminders back on before kickoff leaves the
+    // next sweep free to send.
+    const logRows = await db
+      .select()
+      .from(notificationLog)
+      .where(eq(notificationLog.fixtureId, fixtureId));
+    expect(logRows).toHaveLength(0);
+  });
+
 });

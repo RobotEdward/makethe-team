@@ -1,7 +1,7 @@
 import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditLog, emailQuota, fixtures, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, emailQuota, fixtures, games, notificationLog, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
@@ -594,5 +594,53 @@ describe("the publish control on GET /g/:id/f/:fixtureId", () => {
     // a real POST, and a submit button.
     expect(withoutScript).toContain(`action="/g/${seed.gameId}/f/${seed.fixtureId}/teams/publish"`);
     expect(withoutScript).toMatch(/<button[^>]*type="submit">Publish teams<\/button>/);
+  });
+});
+
+/**
+ * N-9's switch (M26). Publishing is two things — the teams becoming visible,
+ * and the squad being told — and only the second is optional.
+ */
+describe("publishing with the teams email switched off", () => {
+  beforeEach(resetDatabase);
+
+  it("publishes the teams and emails nobody", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const seed = await seedPublishableFixture(viewerId);
+    await testDb()
+      .update(games)
+      .set({ teamsPublishedEmailEnabled: false })
+      .where(eq(games.id, seed.gameId));
+    await savePick(seed, cookie, completePick(seed));
+
+    const response = await publish(seed, cookie);
+    expect(response.status).toBe(303);
+    // The publish itself still happened: players can see their side.
+    expect(await publishedAt(seed.fixtureId)).toBeInstanceOf(Date);
+
+    // No `waitUntil` was scheduled, so there is nothing to settle — the wait
+    // is here to give a send that *should not* exist time to appear.
+    const rows = await settleNotifications(0);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("says on the fixture page that publishing sends nothing", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const seed = await seedPublishableFixture(viewerId);
+    await savePick(seed, cookie, completePick(seed));
+
+    const page = () =>
+      SELF.fetch(`${ORIGIN}/g/${seed.gameId}/f/${seed.fixtureId}`, { headers: { cookie } }).then((r) => r.text());
+
+    const withEmail = await page();
+    expect(withEmail).not.toContain("Email is off for this game");
+
+    await testDb()
+      .update(games)
+      .set({ teamsPublishedEmailEnabled: false })
+      .where(eq(games.id, seed.gameId));
+
+    const withoutEmail = await page();
+    expect(withoutEmail).toContain("Email is off for this game");
   });
 });

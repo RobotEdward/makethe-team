@@ -174,6 +174,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
         teamsPublished: false,
         teamsNeedAnotherLook: false,
         announcementOutstanding: false,
+        teamsEmailEnabled: true,
         cancellationReason: null,
       }),
   },

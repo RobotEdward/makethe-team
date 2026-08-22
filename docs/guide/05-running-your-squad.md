@@ -70,8 +70,32 @@ told a time, moving it under them would be worse than leaving it. Rescheduling
 the imminent game is a job for the group chat, or for calling it off — see
 [calling a fixture off](06-calling-a-fixture-off.md).
 
-**Advanced** hides the settings you'll rarely want. **Save changes** applies
-everything at once.
+**Advanced** hides the settings you'll rarely want — the time zone and a link
+to the venue. **Save changes** applies everything at once.
+
+## Choosing what your game sends
+
+![The Notifications section of the edit form: one switch per message the game sends, each with the timing it governs](images/notification-settings.png)
+
+**Notifications**, on the same form, lists every message the game sends by
+itself, with a switch for each and the timing it uses. All five start on.
+
+- **Remind players before kickoff** is the message that asks people if they're
+  in, and **Days before** and **At** decide when it goes. Turning it off stops
+  the message, not the fixture: fixtures still open on the same schedule, so
+  anyone with the link can still answer.
+- **Warn me when a fixture is short or uneven** emails you once about a fixture
+  that needs a hand, **Hours before kickoff** ahead of the game. Changing the
+  hours applies to fixtures scheduled from now on, not to ones already made.
+- **Nudge me to post it to the group chat** is the phone notification that
+  reminds you to share the fixture. It rides with the reminder above, so it has
+  no time of its own.
+- **Ask players how it went** is the prompt for the score after full time.
+  **Hours after full time** holds it back if you'd rather it landed the next
+  morning; zero means as soon as we can.
+- **Email players when I publish teams** decides whether publishing tells the
+  squad. With it off, publishing still puts the teams on everyone's page — it
+  just sends nothing, and the fixture page says so.
 
 ## Choosing who sees the squad
 

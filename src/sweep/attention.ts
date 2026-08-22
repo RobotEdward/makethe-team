@@ -191,6 +191,7 @@ async function fixturesNeedingAttention(db: Db, now: Date): Promise<AttentionCan
       maxPlayers: fixtures.maxPlayers,
       prefersEvenNumbers: fixtures.prefersEvenNumbers,
       shortWarningOffsetHours: fixtures.shortWarningOffsetHours,
+      shortWarningEnabled: games.shortWarningEnabled,
     })
     .from(fixtures)
     .innerJoin(games, eq(fixtures.gameId, games.id))
@@ -198,6 +199,12 @@ async function fixturesNeedingAttention(db: Db, now: Date): Promise<AttentionCan
 
   const candidates: AttentionCandidate[] = [];
   for (const row of rows) {
+    // The owner's switch (M26). Read live from `games`, unlike the offset one
+    // line up, which is the fixture's own snapshot: an owner who turns the
+    // warning off means the fixtures already scheduled, and re-materialisation
+    // is not something that happens to them.
+    if (!row.shortWarningEnabled) continue;
+
     if (row.kicksOffAt.getTime() + row.durationMinutes * MINUTE_MS <= now.getTime()) continue;
 
     // The whole of the decision, made in one place for the whole product.
