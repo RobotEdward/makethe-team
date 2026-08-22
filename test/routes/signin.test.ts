@@ -21,6 +21,7 @@ import {
   ADMIN_DELIVERY_PATH,
   ADMIN_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
+  ADMIN_USAGE_PATH,
   DELETE_ACCOUNT_PATH,
   MANIFEST_PATH,
   OFFLINE_PATH,
@@ -808,6 +809,11 @@ describe("no password field anywhere (TR-16)", () => {
         /Email delivery/,
         new Request(`${ORIGIN}${ADMIN_DELIVERY_PATH}`, { headers: { cookie } }),
       );
+      await capture(
+        "admin usage",
+        /<h1>Usage<\/h1>/,
+        new Request(`${ORIGIN}${ADMIN_USAGE_PATH}`, { headers: { cookie } }),
+      );
 
       // The delete-my-data page (M7b Task 4). Captured *before* the membership
       // below is promoted to `owner`: an ordinary member reaches the `offer`
@@ -1087,6 +1093,7 @@ describe("no password field anywhere (TR-16)", () => {
         "admin delivery",
         "admin index",
         "admin sign-in doctor",
+        "admin usage",
         "privacy",
         "offline",
         "robots",
@@ -1306,6 +1313,7 @@ describe("no password field anywhere (TR-16)", () => {
       "admin delivery",
       "admin index",
       "admin sign-in doctor",
+      "admin usage",
       "game form",
       "game overview",
       "game edit",
@@ -1628,6 +1636,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /app/admin": "admin index",
     "GET /app/admin/sign-in": "admin sign-in doctor",
     "GET /app/admin/delivery": "admin delivery",
+    "GET /app/admin/usage": "admin usage",
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",

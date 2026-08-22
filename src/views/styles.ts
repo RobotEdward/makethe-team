@@ -957,6 +957,39 @@ export const ADMIN_TOOLS_CSS = `
     border-bottom: 1px solid var(--line); overflow-wrap: anywhere;
     font-size: var(--t-support); vertical-align: top;
   }
+  /* M32. Right-aligned so a column of counts can be compared down its digits;
+     tabular figures so 11 and 99 occupy the same width. */
+  table.admin-log th.usage-number, table.admin-log td.usage-number {
+    text-align: right; font-variant-numeric: tabular-nums;
+    /* The shared cell rule sets overflow-wrap to anywhere, which hyphenates a
+       header like "Fixtures" mid-word once the column is narrow enough. These
+       columns hold short labels and short numbers; neither may break. */
+    white-space: nowrap; padding: 0.45rem 0 0.45rem 0.8rem;
+  }
+  table.admin-log th.usage-day, table.admin-log td.usage-day {
+    white-space: nowrap; padding-left: 0.9rem;
+  }
+  /* The per-game table is the widest thing on the page; this box lets it
+     scroll rather than the whole page, if it ever outgrows the column. */
+  .usage-scroll { overflow-x: auto; }
+  /* The shared cell rule would otherwise break a game name mid-word
+     ("Thurs / day / 7-a- / side") as soon as the four numeric columns
+     squeeze this one. Between words is fine; inside one is not. */
+  table.admin-log td.usage-name { overflow-wrap: normal; }
+  dl.usage-figures {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    gap: 0.9rem; margin: 1.1rem 0;
+  }
+  dl.usage-figures > div { border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; }
+  dl.usage-figures dt { color: var(--mut); font-size: var(--t-support); }
+  dl.usage-figures dd {
+    margin: 0.15rem 0 0; font-size: var(--t-lead); font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  p.usage-warning {
+    background: var(--warn-bg); color: var(--warn);
+    padding: 0.6rem 0.8rem; border-radius: 6px; margin: 1.1rem 0;
+  }
 `;
 
 /**

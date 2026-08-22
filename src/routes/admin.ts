@@ -11,6 +11,7 @@ import {
   ADMIN_SIGNIN_CHECK_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
   ADMIN_SIGNUP_MODE_PATH,
+  ADMIN_USAGE_PATH,
 } from "../auth/paths.js";
 import { requireSession, pageNav } from "../auth/session.js";
 import { explainSignIn, foldAsciiCase, isSignInPermitted } from "../auth/sign-in-gate.js";
@@ -19,12 +20,20 @@ import { emailQuota, notificationLog, signinRefusals, signupAllowlist, user, ver
 import { isOpenSignups, setOpenSignups } from "../domain/app-settings.js";
 import { isPlausibleEmail } from "../domain/join-squad.js";
 import type { AppEnv } from "../env.js";
+import {
+  getActivityCounts,
+  getLimitCounts,
+  getOutcomeCounts,
+  getScaleCounts,
+  listGameUsage,
+} from "../db/usage-queries.js";
 import { dayKey } from "../notify/quota.js";
 import { parseMaxEmailsPerDay } from "../notify/factory.js";
 import { renderAdminAllowlistPage } from "../views/admin-allowlist.js";
 import { renderAdminDeliveryPage } from "../views/admin-delivery.js";
 import { renderAdminIndexPage } from "../views/admin-index.js";
 import { renderAdminSigninDoctorPage } from "../views/admin-signin-doctor.js";
+import { renderAdminUsagePage } from "../views/admin-usage.js";
 
 export const admin = new Hono<AppEnv>();
 
@@ -276,4 +285,49 @@ admin.post(ADMIN_ALLOWLIST_REMOVE_PATH, requireSession, async (c) => {
   // one that is; no 404 here — the resource this screen is about is the list.
   await db.delete(signupAllowlist).where(eq(signupAllowlist.email, email));
   return c.redirect(ADMIN_ALLOWLIST_PATH, 303);
+});
+
+/** The two windows the usage screen reports activity over (M32). */
+const RECENT_DAYS = 7;
+const EXTENDED_DAYS = 28;
+
+/** How many games the per-game table lists before it truncates. */
+const GAMES_SHOWN = 25;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+admin.get(ADMIN_USAGE_PATH, requireSession, async (c) => {
+  const db = await loadAdminDb(c);
+  if (db === null) return c.text("Not found", 404);
+
+  // The one wall-clock read at this edge, as on the delivery page above: every
+  // window below is derived from this single instant, so the 7-day and 28-day
+  // columns cannot be measured against clocks a few milliseconds apart.
+  const now = new Date(Date.now());
+  const recentFrom = new Date(now.getTime() - RECENT_DAYS * DAY_MS);
+  const extendedFrom = new Date(now.getTime() - EXTENDED_DAYS * DAY_MS);
+
+  const [scale, recent, extended, outcomes, limits, games] = await Promise.all([
+    getScaleCounts(db),
+    getActivityCounts(db, recentFrom),
+    getActivityCounts(db, extendedFrom),
+    getOutcomeCounts(db, extendedFrom, now),
+    getLimitCounts(db, now),
+    listGameUsage(db, extendedFrom, now, GAMES_SHOWN),
+  ]);
+
+  return c.html(
+    renderAdminUsagePage({
+      nav: pageNav(c, "admin"),
+      generatedAt: now,
+      scale,
+      recent,
+      extended,
+      outcomes,
+      limits,
+      emailCeiling: parseMaxEmailsPerDay(c.env.MAX_EMAILS_PER_DAY),
+      games,
+      gamesShown: GAMES_SHOWN,
+    }),
+  );
 });

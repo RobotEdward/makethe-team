@@ -2,6 +2,7 @@ import {
   ADMIN_ALLOWLIST_PATH,
   ADMIN_DELIVERY_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
+  ADMIN_USAGE_PATH,
 } from "../auth/paths.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { ADMIN_TOOLS_CSS } from "./styles.js";
@@ -38,6 +39,10 @@ export function renderAdminIndexPage(params: AdminIndexPageParams): string {
         <li>
           <a href="${escapeHtml(ADMIN_DELIVERY_PATH)}">Email delivery</a>
           <p class="tool-note">Today's send count against the daily ceiling, and recent notification outcomes.</p>
+        </li>
+        <li>
+          <a href="${escapeHtml(ADMIN_USAGE_PATH)}">Usage</a>
+          <p class="tool-note">How many teams, how much activity, and how close anything is to a limit.</p>
         </li>
       </ul>
     `,

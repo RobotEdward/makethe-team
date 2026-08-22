@@ -3,6 +3,7 @@ import { LocalTimeError } from "../../../src/domain/time/local.js";
 import {
   formatLocalDate,
   formatLocalDateTime,
+  formatLocalShortDate,
   formatterCacheSize,
   localWeekday,
   toLocalParts,
@@ -114,6 +115,19 @@ describe("formatter cache canonicalisation", () => {
     // Every case permutation resolves to the same canonical zone, so the cache
     // should grow by exactly one entry no matter how many spellings were looked up.
     expect(after).toBe(before + 1);
+  });
+});
+
+describe("formatLocalShortDate", () => {
+  it("carries the year, which the long form does not", () => {
+    // The usage screen (M32) lists dormant games beside active ones, so
+    // "Tuesday 30 June" would leave a two-year-old date reading as a recent
+    // one. Nothing on that page cares which weekday it was.
+    expect(formatLocalShortDate(new Date("2026-08-13T18:00:00Z"), LONDON)).toBe("13 Aug 2026");
+  });
+
+  it("reads the date in the target zone, not London's", () => {
+    expect(formatLocalShortDate(new Date("2026-08-13T23:30:00Z"), LONDON)).toBe("14 Aug 2026");
   });
 });
 

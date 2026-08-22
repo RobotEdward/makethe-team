@@ -553,10 +553,11 @@ A signed-in player whose `is_admin` flag is set. The flag only draws the header 
 admin handler re-checks it per request, and a non-admin gets a 404, not a 403.
 
 ### 4.1 Admin index — `GET /app/admin`
-- `Admin` (h1); a plain list of three tool links, each with a one-line note underneath
+- `Admin` (h1); a plain list of four tool links, each with a one-line note underneath
   ("Who can create an account without an invite, and whether the list is in effect at all." / "Check whether an address can sign in,
   and see recent refused attempts." / "Today's send count against the daily ceiling, and
-  recent notification outcomes.").
+  recent notification outcomes." / "How many teams, how much activity, and how close anything
+  is to a limit.").
 - Deliberately a menu rather than a dashboard of live numbers — each tool page carries its
   own data, so this page has nothing to go stale.
 
@@ -595,6 +596,36 @@ admin handler re-checks it per request, and a non-admin gets a 404, not a 403.
 - `Recent notifications` (h2): a when/type/channel/status/error table, newest first, max 20.
   Sign-in link emails count against the ceiling but are not logged here — deliberately two
   facts, not one.
+
+### 4.5 Usage — `GET /app/admin/usage` (M32)
+
+Five stacked sections, every number counted live at request time — no rollup table, nothing
+cached, nothing for a write path to keep up to date.
+
+- **Scale now**: a grid of figures — games, active squad places, people (split into signed-in,
+  guests and erased), push devices.
+- **Activity**: a table of six measures against two columns, `7 days` and `28 days` — games
+  created, fixtures created / opened / cancelled, answers given, sign-ins. "Answers given"
+  counts `responses.responded_at`, not row creation: materialisation writes a row per squad
+  member, so counting rows would report squad size as engagement.
+- **Did it work**: over fixtures whose *kickoff* fell in the last 28 days — how many reached
+  min players, got teams published, got a result filed, each with a share. A cancelled fixture
+  counts in the total but in none of the three, even if it had filled before being called off.
+  On a deployment where nothing kicked off, the sentence is replaced rather than dividing by
+  zero.
+- **Limits**: emails sent today against the ceiling, failed sends over 7 days, and a row count
+  per growing table. Row counts and not a byte estimate — nothing available to a Worker
+  converts one to the other, so there is no honest figure to show against D1's 5 GB ceiling.
+  A warning banner appears **only** when at least one fixture reached kickoff having never
+  been opened, which means the hourly sweep has stopped.
+- **Per game**: name, squad size, fixtures in the window, share answered, last activity —
+  most recently active first, capped at 25. "Last activity" is the newest answer over the
+  game's whole history (not the window), so a dormant game sorts below a live one; it is
+  dated to the day, since a full timestamp made the five-column table unreadable on a phone.
+
+No chart, deliberately: three numbers in a row answer "is this going up" as well as a
+sparkline, and a chart needs either a script this page does not have or an inline `style`
+attribute the CSP strips.
 
 ---
 

@@ -12,6 +12,7 @@ const SECOND_MS = 1_000;
 const formatters = new Map<string, Intl.DateTimeFormat>();
 const dateOnlyFormatters = new Map<string, Intl.DateTimeFormat>();
 const displayFormatters = new Map<string, Intl.DateTimeFormat>();
+const shortDateFormatters = new Map<string, Intl.DateTimeFormat>();
 
 /** Read-only view of the formatter cache size, for tests only. */
 export function formatterCacheSize(): number {
@@ -80,6 +81,16 @@ function dateOnlyFormatterFor(timeZone: string): Intl.DateTimeFormat {
   });
 }
 
+function shortDateFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  // A third cache for a third option set, for the reason above: one cache
+  // keyed by zone alone would hand a caller whichever options got there first.
+  return cachedFormatter(timeZone, shortDateFormatters, "en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 function displayFormatterFor(timeZone: string): Intl.DateTimeFormat {
   // en-GB, not en-US: this is what src/routes/respond.ts used before this
   // formatter moved here, and it's what produces "Thursday 13 August at
@@ -123,6 +134,17 @@ export function formatLocalDateTime(instant: Date, timeZone: string): string {
  */
 export function formatLocalDate(instant: Date, timeZone: string): string {
   return dateOnlyFormatterFor(timeZone).format(instant);
+}
+
+/**
+ * The day with its year, in the shortest form that stays unambiguous.
+ *
+ * Distinct from `formatLocalDate` above, which gives the weekday and omits
+ * the year: that form suits a deadline days away, and misleads in a list
+ * spanning months, where a two-year-old date reads as a recent one.
+ */
+export function formatLocalShortDate(instant: Date, timeZone: string): string {
+  return shortDateFormatterFor(timeZone).format(instant);
 }
 
 export function toLocalParts(instant: Date, timeZone: string): LocalParts {

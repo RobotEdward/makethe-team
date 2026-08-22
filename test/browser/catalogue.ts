@@ -2,6 +2,7 @@ import {
   ACCOUNT_PATH,
   ADMIN_ALLOWLIST_PATH,
   ADMIN_DELIVERY_PATH,
+  ADMIN_USAGE_PATH,
   ADMIN_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
   DASHBOARD_PATH,
@@ -269,6 +270,11 @@ export const NOT_CATALOGUED = new Map<string, string>([
     ADMIN_DELIVERY_PATH,
     "reachable only with user.is_admin, which no UI sets — same exclusion " +
       "and same coverage as the allow-list entry above (M17).",
+  ],
+  [
+    ADMIN_USAGE_PATH,
+    "reachable only with user.is_admin, which no UI sets — same exclusion " +
+      "and same coverage as the allow-list entry above (M32).",
   ],
   ["/robots.txt", "plain text, no document, no CSP surface"],
   ["/sign-in/complete", "a redirect-through, not a page anyone dwells on"],

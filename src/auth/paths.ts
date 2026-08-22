@@ -143,6 +143,13 @@ export const ADMIN_SIGNIN_CHECK_PATH = `${ADMIN_SIGNIN_DOCTOR_PATH}/check`;
 export const ADMIN_DELIVERY_PATH = `${ADMIN_PATH}/delivery`;
 
 /**
+ * The usage screen (M32): how much the product is being used and whether it
+ * is working. A `GET` and nothing else — the page only counts rows, so there
+ * is no state for a form to change and no origin check to get wrong.
+ */
+export const ADMIN_USAGE_PATH = `${ADMIN_PATH}/usage`;
+
+/**
  * Better Auth's own mount point: every endpoint it owns (`/sign-in/magic-link`,
  * `/magic-link/verify`, `/sign-out`, …) hangs off this. It is the framework's
  * default `basePath`, restated here because this project's own code builds
