@@ -64,6 +64,7 @@ const ROUTE_TO_ID = new Map<string, string>([
   ["/g/:id/fixtures", "past-fixtures"],
   ["/g/:id/message", "game-message"],
   ["/g/:id/f/:fixtureId", "owner-fixture"],
+  ["/g/:id/f/:fixtureId/teams", "team-picker"],
   ["/g/:id/f/:fixtureId/message", "fixture-message"],
   ["/g/:id/squad/:playerId/remove", "remove-member"],
   ["/g/:id/squad/:playerId", "squad-member"],

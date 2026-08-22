@@ -650,6 +650,19 @@ export const FORM_CSS = `
  * every member of the squad.
  */
 export const TEAM_PICKER_CSS = `
+  /* The M29 hand-over control. Its own selectors (.picker-control,
+     .picker-choice) collide with nothing in any other block — checked
+     against test/views/style-cascade.test.ts's enumeration — so it lives
+     here rather than in a block of its own, and there is nothing new to
+     register in PAGE_STYLE_BLOCKS (src/security/csp.ts). */
+  .picker-control { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
+  /* The same 44px hit area every other radio row on this page gets, for the
+     same reason: these are chosen on a phone, standing on a touchline. */
+  .picker-choice {
+    display: flex; align-items: center; gap: 0.5rem;
+    min-height: 44px; font-size: var(--t-body); color: var(--mut);
+  }
+  .picker-choice input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
   .teams { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
   .teams li { border-bottom: 1px solid var(--line); }
   .teams fieldset { margin: 0; padding: 0.4rem 0.1rem; border: 0; }

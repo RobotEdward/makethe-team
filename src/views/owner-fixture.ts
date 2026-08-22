@@ -1,5 +1,6 @@
 import {
   fixtureMessagePath,
+  pickerModePath,
   gamePath,
   fixturePath,
   ownerGuestPath,
@@ -10,6 +11,7 @@ import type { SquadMember } from "../db/queries.js";
 import { RESPONSE_STATUSES } from "../domain/response-status.js";
 import { displayName } from "../domain/display-name.js";
 import { takingChanges, type FixtureView } from "../domain/fixture-view.js";
+import { PICKER_MODES, type PickerMode } from "../domain/picker.js";
 import { sideCounts, type TeamId } from "../domain/teams.js";
 import { cancelledMessage, openMessage, teamsMessage } from "../domain/whatsapp-message.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
@@ -81,6 +83,14 @@ export interface OwnerFixtureParams {
   announcementOutstanding: boolean;
   /** Whether publishing emails the squad for this game (N-9's switch, M26). */
   teamsEmailEnabled: boolean;
+  /**
+   * Who picks this fixture's teams, and who could (M29).
+   *
+   * Absent on a fixture that is no longer taking changes: there is nothing to
+   * hand over on a game that has been played or called off, and the control
+   * would be an act with no effect.
+   */
+  picker?: PickerControlParams;
   /** A refusal to explain near the top, e.g. Task 6's guard. Escaped and shown. */
   problem?: string;
   /** The broadcast receipt (M20 B4), from `broadcastNoticeFrom` — never caller-chosen text. */
@@ -267,6 +277,97 @@ function renderGuestForm(gameId: string, fixtureId: string, params: OwnerFixture
 }
 
 /**
+ * What the "who picks the teams?" control needs to know (M29).
+ *
+ * `candidates` is the squad the organiser may hand the job to: active
+ * members, guests excluded. A guest has no way to sign in — they were added
+ * by name from this very page — so offering one would produce a delegation
+ * whose holder can never reach the picker, and an N-13 with nowhere to send.
+ */
+export interface PickerControlParams {
+  mode: PickerMode;
+  /** The current delegate, or null. Null in `organiser` and `open` mode. */
+  delegatePlayerId: string | null;
+  /** Already formatted date-only, or undefined when nobody holds the job. */
+  handedOverOnLocal?: string;
+  candidates: readonly { playerId: string; name: string }[];
+}
+
+/**
+ * The organiser's hand-over control: themselves, one named player, or the
+ * squad at large.
+ *
+ * Three radios and a select rather than one select with the members inlined
+ * among the modes. The modes and the people are different kinds of thing —
+ * "anyone in the squad" is not a person — and a single list mixing them makes
+ * the delegate case indistinguishable from the other two at a glance, which
+ * is the case an organiser most needs to read back correctly before they walk
+ * away from it.
+ *
+ * The select is not `disabled` when another radio is chosen: disabling it
+ * needs script, this page must work without any (see this file's own comment
+ * on the picker), and a submitted `delegate` mode with no name posts back a
+ * refusal that says so. What a person sees is a select that is only consulted
+ * when the radio beside it is the one chosen — which is what the route does
+ * with it.
+ */
+function renderPickerControl(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
+  const picker = params.picker;
+  if (picker === undefined) return "";
+
+  const label: Record<PickerMode, string> = {
+    organiser: "Just me",
+    delegate: "One of the squad",
+    open: "Anyone in the squad",
+  };
+
+  const radios = PICKER_MODES.map(
+    (mode) => `<label class="picker-choice">
+                 <input type="radio" name="mode" value="${escapeHtml(mode)}"${
+                   picker.mode === mode ? " checked" : ""
+                 }>
+                 <span>${escapeHtml(label[mode])}</span>
+               </label>`,
+  ).join("");
+
+  // No "nobody" option: the select is only read when the `delegate` radio is
+  // chosen, and choosing that mode without naming anybody is the thing the
+  // route refuses. A blank first option would look like a fourth mode.
+  const options = picker.candidates
+    .map(
+      (candidate) =>
+        `<option value="${escapeHtml(candidate.playerId)}"${
+          candidate.playerId === picker.delegatePlayerId ? " selected" : ""
+        }>${escapeHtml(candidate.name)}</option>`,
+    )
+    .join("");
+
+  // Said only when somebody actually holds it: "handed over on ..." beside
+  // "Just me" would be describing a hand-over that never happened.
+  const held =
+    picker.mode === "delegate" && picker.handedOverOnLocal !== undefined
+      ? `<p class="team-note">${escapeHtml(`Handed over on ${picker.handedOverOnLocal}.`)}</p>`
+      : "";
+
+  const empty =
+    picker.candidates.length === 0
+      ? `<p class="team-note">There is nobody else in the squad to hand this to yet.</p>`
+      : "";
+
+  return `<h2>Who picks the teams?</h2>
+          ${held}
+          ${empty}
+          <form method="post" action="${escapeHtml(pickerModePath(gameId, fixtureId))}" class="picker-control">
+            ${radios}
+            <div class="field">
+              <label for="picker-delegate">Hand it to</label>
+              <select id="picker-delegate" name="delegate">${options}</select>
+            </div>
+            <button class="button" type="submit">Save who picks</button>
+          </form>`;
+}
+
+/**
  * The teams section (BR-35): the picker while the fixture is still taking
  * changes, the pick read-only once it is not, and nothing at all when no pick
  * was ever made on a fixture that has closed.
@@ -300,6 +401,9 @@ function renderTeams(params: OwnerFixtureParams): string {
     needsAnotherLook: params.teamsNeedAnotherLook,
     announcementOutstanding: params.announcementOutstanding,
     teamsEmailEnabled: params.teamsEmailEnabled,
+    // Always, whatever the fixture's picking mode: `mayPublish` restricts a
+    // member picking in `open` mode, never the person whose game it is (M29).
+    canPublish: true,
   });
 }
 
@@ -401,6 +505,8 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${renderSquadList(gameId, fixtureId, squad, takingChanges(view))}
 
     ${renderTeams(params)}
+
+    ${renderPickerControl(gameId, fixtureId, params)}
 
     ${renderGuestForm(gameId, fixtureId, params)}
 

@@ -11,6 +11,7 @@ import {
   gamePath,
   gameUnmutePath,
   fixturePath,
+  pickerPagePath,
   resultClearPath,
   resultPath,
 } from "../auth/paths.js";
@@ -47,6 +48,7 @@ import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
 import { isMuted, parseMuteDuration } from "../domain/mute.js";
+import { effectiveMode, isPickerMode, mayPick, mayPublish } from "../domain/picker.js";
 import { clearMute, setMute } from "../domain/set-mute.js";
 import { deriveResult, tally } from "../domain/result.js";
 import { isResultLocked, resultDeadline, resultWritable } from "../domain/result-lock.js";
@@ -54,6 +56,7 @@ import {
   announcementOutstanding,
   isTeamId,
   publishedTeamsFor,
+  sideCounts,
   teamNames,
   teamsNeedAnotherLook,
   unassignedIn,
@@ -66,11 +69,13 @@ import { countFixturesByPropagation, updateGame } from "../domain/update-game.js
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
+import { sendPickerHandover } from "../notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { sendTeamsEmails } from "../notify/send-teams.js";
 import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
+import { renderPickerPage } from "../views/picker-page.js";
 import { renderPlayerFixturePage } from "../views/player-fixture.js";
 import type { MuteControlsOptions } from "../views/mute-controls.js";
 import { renderPastFixturesPage, type PastFixtureRow } from "../views/past-fixtures.js";
@@ -614,6 +619,7 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
         groupNudgeEnabled: game.groupNudgeEnabled ? "on" : "",
         resultPromptEnabled: game.resultPromptEnabled ? "on" : "",
         teamsPublishedEmailEnabled: game.teamsPublishedEmailEnabled ? "on" : "",
+        teamPickerEmailEnabled: game.teamPickerEmailEnabled ? "on" : "",
         resultPromptOffsetHours: String(game.resultPromptOffsetHours),
       },
       errors: [],
@@ -975,6 +981,39 @@ async function ownerFixtureParams(
     // that switch off it does not — an organiser reading the unqualified
     // sentence would believe the squad had been told.
     teamsEmailEnabled: game.teamsPublishedEmailEnabled,
+    // M29. Absent once the fixture has stopped taking changes: there is
+    // nothing to hand over on a game that has been played or called off, so
+    // the control would be an act with no effect.
+    picker: takingChanges(
+      fixtureView(
+        {
+          lifecycle: fixture.lifecycle,
+          kicksOffAt: fixture.kicksOffAt,
+          inCount: fixture.inCount,
+          minPlayers: fixture.minPlayers,
+          maxPlayers: fixture.maxPlayers,
+          prefersEvenNumbers: fixture.prefersEvenNumbers,
+          shortWarningOffsetHours: fixture.shortWarningOffsetHours,
+        },
+        now,
+      ),
+    )
+      ? {
+          mode: effectiveMode(fixture),
+          delegatePlayerId: fixture.teamPickerPlayerId,
+          handedOverOnLocal:
+            fixture.teamPickerSetAt === null
+              ? undefined
+              : formatLocalDate(fixture.teamPickerSetAt, game.timezone),
+          // The squad minus guests (who cannot sign in) and minus the
+          // organiser themselves, whose "Just me" is already the first
+          // radio — offering their own name under "hand it to" would be two
+          // controls for one state.
+          candidates: (await listSquad(db, game.id))
+            .filter((member) => !member.isGuest && member.playerId !== viewerPlayerId)
+            .map((member) => ({ playerId: member.playerId, name: member.name })),
+        }
+      : undefined,
     cancellationReason: fixture.cancellationReason,
     result,
     ...extras,
@@ -1120,6 +1159,20 @@ export async function renderPlayerFixture(
       problem: extras.problem,
       result,
       fixturePath: fixturePath(game.id, fixtureId),
+      // M29. Only while the fixture is still taking changes: a link to a
+      // picker that can no longer save anything is a dead end. `mayPick` is
+      // asked here rather than the mode being read directly, so this link and
+      // `loadPickerTarget` cannot disagree about who may follow it.
+      picker:
+        takingChanges(fixtureView(fixture, now)) && mayPick(fixture, viewerPlayerId)
+          ? {
+              // Narrowed from `PickerMode`: `organiser` cannot reach here,
+              // because `mayPick` is false for everyone in that mode and this
+              // render is only ever for a non-owner.
+              mode: effectiveMode(fixture) === "delegate" ? "delegate" : "open",
+              path: pickerPagePath(game.id, fixtureId),
+            }
+          : undefined,
       mute: mute === null ? undefined : muteControlsFor(game, mute),
     }),
     status,
@@ -1327,6 +1380,286 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
 });
 
 /**
+ * The game and fixture behind a `/g/:id/f/:fixtureId` path for somebody who
+ * may **pick the teams** on it (M29) — the owner, or a member the fixture's
+ * mode allows.
+ *
+ * The deliberately wider sibling of `loadFixtureTarget`, and the only wider
+ * one in the application. Exactly three routes use it: the picker page, the
+ * save and the publish. Every other route under `/g/:id` keeps
+ * `loadFixtureTarget` and its owner-only check, and
+ * `test/routes/picker-entitlement.test.ts` walks Hono's own route table to
+ * hold that line — a fourth route reaching for this loader fails that test
+ * until somebody says in writing that it should.
+ *
+ * The two halves are asked separately and in this order: *are you an active
+ * member of this game* (`findGameForOwner`, else `findGameForMember`), then
+ * *does this fixture's mode let you pick*. Keeping membership as the outer
+ * question is what makes a delegate who leaves the squad stop passing the
+ * instant they are removed, with no sweep over their future fixtures to clear
+ * the pointer they left behind.
+ *
+ * `null` for every refusal — no such game, not a member, no such fixture, a
+ * fixture of another game, a mode that does not name you — and the caller
+ * answers 404 to all of them (TR-18).
+ */
+async function loadPickerTarget(c: Context<AppEnv>, gameId: string, fixtureId: string) {
+  const db = getDb(c.env.DB);
+  const playerId = c.get("player")!.id;
+
+  const asOwner = await findGameForOwner(db, gameId, playerId);
+  const game = asOwner ?? (await findGameForMember(db, gameId, playerId));
+  if (game === null) return null;
+
+  const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+  if (!fixture || fixture.gameId !== game.id) return null;
+
+  if (asOwner === null && !mayPick(fixture, playerId)) return null;
+  return { db, game, fixture, isOwner: asOwner !== null };
+}
+
+type PickerTarget = NonNullable<Awaited<ReturnType<typeof loadPickerTarget>>>;
+
+/**
+ * Render the standalone picker page for a loaded target.
+ *
+ * Every derived value comes from the same helpers the organiser's fixture
+ * page uses — `fixtureView`, `sideCounts`, `teamsNeedAnotherLook`,
+ * `announcementOutstanding` — so the two surfaces cannot disagree about
+ * whether a pick has gone stale. `listTeamAssignments` rather than the
+ * squad's rows for the two staleness predicates, because `getFixtureWithSquad`
+ * filters `withdrawn` out and half the staleness question is about exactly
+ * those rows (`src/domain/teams.ts`).
+ */
+async function renderPicker(
+  c: Context<AppEnv>,
+  target: PickerTarget,
+  now: Date,
+  extras: { problem?: string; unassignedProblem?: readonly string[] } = {},
+  status: 200 | 422 = 200,
+) {
+  const [withSquad, assignments] = await Promise.all([
+    getFixtureWithSquad(target.db, target.fixture.id),
+    listTeamAssignments(target.db, target.fixture.id),
+  ]);
+  if (withSquad === null) return c.text("Not found", 404);
+
+  const { fixture, game, squad } = withSquad;
+  const playing = squad.filter((member) => member.status === "in");
+  const counts = sideCounts(squad);
+
+  return c.html(
+    renderPickerPage({
+      nav: pageNav(c, "games"),
+      gameId: game.id,
+      fixtureId: fixture.id,
+      gameName: game.name,
+      venueName: game.venueName,
+      kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
+      view: fixtureView(fixture, now),
+      waitlistCount: fixture.waitlistCount,
+      teamNames: teamNames(game),
+      members: playing,
+      counts,
+      uneven: fixture.prefersEvenNumbers && counts.a !== counts.b,
+      published: fixture.teamsPublishedAt !== null,
+      needsAnotherLook: teamsNeedAnotherLook(assignments),
+      announcementOutstanding: announcementOutstanding(fixture, assignments),
+      teamsEmailEnabled: game.teamsPublishedEmailEnabled,
+      // The owner is never barred from publishing, whatever the mode; the
+      // restriction `mayPublish` carries is about members in `open` mode.
+      canPublish:
+        target.isOwner ||
+        mayPublish(fixture, c.get("player")!.id, fixture.teamsPublishedAt),
+      mode: effectiveMode(fixture),
+      ...extras,
+    }),
+    status,
+  );
+}
+
+/**
+ * A refusal from one of the two picking POSTs, rendered on whichever page the
+ * person who submitted it came from.
+ *
+ * The owner submitted from their fixture page, where the picker is a fragment
+ * among the squad list and the guest form; everybody else submitted from the
+ * standalone picker page. Sending either of them to the other's page would
+ * answer a refusal with a screen they have not seen before, and in the
+ * owner's case would drop the rest of the fixture out from under them.
+ */
+function renderPickingRefusal(
+  c: Context<AppEnv>,
+  target: PickerTarget,
+  now: Date,
+  extras: { problem?: string; unassignedProblem?: readonly string[] } = {},
+) {
+  if (target.isOwner) return renderOwnerFixture(c, target, now, extras, 422);
+  return renderPicker(c, target, now, extras, 422);
+}
+
+/**
+ * `GET /g/:id/f/:fixtureId/teams` (M29): the picker on a page of its own.
+ *
+ * The same path as the save `POST` below, one method up — see `pickerPagePath`
+ * (`src/auth/paths.ts`) for why the page and the pick share a URL.
+ *
+ * Open to the owner as well as to a delegate, though the owner has no link to
+ * it: one page fewer to keep in step than a version that 404s the person who
+ * granted the capability, and an organiser who follows a delegate's link
+ * should see what the delegate sees.
+ */
+gamesRoutes.get("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
+  const target = await loadPickerTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+  return renderPicker(c, target, new Date(Date.now()));
+});
+
+/**
+ * `POST /g/:id/f/:fixtureId/picker` (M29): the organiser choosing who picks
+ * the teams on this fixture.
+ *
+ * Owner-only, through `loadFixtureTarget` like every other control on their
+ * fixture page — a delegate may pick the teams, never hand the job on. That
+ * boundary is enumerated in `test/routes/picker-entitlement.test.ts` rather
+ * than asserted only here.
+ *
+ * The mode and the delegate are written in one statement so the pair cannot
+ * be left disagreeing, and `team_picker_set_at` moves **only when the holder
+ * actually changes**. Re-submitting the form unchanged therefore reuses the
+ * same N-13 dedupe key and sends nothing, while a genuine re-delegation to
+ * the same person after a spell in another mode gets a fresh key and does
+ * send (see `pickerHandoverKey`).
+ */
+gamesRoutes.post("/g/:id/f/:fixtureId/picker", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
+  // The same gate the control renders behind: there is nothing to hand over
+  // on a fixture that has been played or called off.
+  if (!takingChanges(fixtureView(target.fixture, now))) {
+    return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
+  }
+
+  const form = await c.req.parseBody();
+  const mode = form["mode"];
+  // The value comes from a radio this application rendered, so anything else
+  // is a hand-built request and gets a 400 rather than a guess — the same
+  // treatment `POST /g/:id/squad/:playerId/role` gives an unknown role.
+  if (!isPickerMode(mode)) {
+    return c.text('Bad Request: "mode" must be one of organiser, delegate, open', 400);
+  }
+
+  let delegatePlayerId: string | null = null;
+  if (mode === "delegate") {
+    const chosen = typeof form["delegate"] === "string" ? form["delegate"] : "";
+    // Re-asked against the database rather than trusted from the form (TR-18):
+    // the select was rendered from the squad as it stood when the page loaded,
+    // and a member can leave between then and now. A guest is refused for a
+    // reason a stale form cannot produce but a hand-built request can — they
+    // have no way to sign in, so the delegation would name somebody who could
+    // never reach the picker.
+    const member = await findMembershipInGame(target.db, target.game.id, chosen);
+    if (member === null || !member.active || member.isGuest) {
+      return renderOwnerFixture(
+        c,
+        target,
+        now,
+        { problem: "Pick somebody who is currently in the squad and can sign in." },
+        422,
+      );
+    }
+    delegatePlayerId = member.playerId;
+  }
+
+  const before = {
+    mode: effectiveMode(target.fixture),
+    delegate: target.fixture.teamPickerPlayerId,
+  };
+  const handedToSomebodyNew = delegatePlayerId !== null && delegatePlayerId !== before.delegate;
+  // Kept at its old value when the holder has not changed, so a re-submitted
+  // form does not mint a new dedupe key and re-send N-13. Cleared outright in
+  // the two modes that have no holder, so a later delegation cannot inherit a
+  // stale instant.
+  const setAt = mode === "delegate" ? (handedToSomebodyNew ? now : target.fixture.teamPickerSetAt) : null;
+
+  await target.db.batch([
+    target.db
+      .update(fixtures)
+      .set({ pickerMode: mode, teamPickerPlayerId: delegatePlayerId, teamPickerSetAt: setAt })
+      .where(eq(fixtures.id, target.fixture.id)),
+    buildAuditInsert(target.db, {
+      actorPlayerId: c.get("player")!.id,
+      entityType: "fixture",
+      entityId: target.fixture.id,
+      action: "fixture.picker_changed",
+      // BR-27's previous value. Both halves, because a mode without its
+      // holder does not say who could pick.
+      before,
+      after: { mode, delegate: delegatePlayerId },
+      now,
+    }),
+  ]);
+
+  // Only a genuinely new holder is told, and only if this game has the switch
+  // on (M26's shape). `setAt` is non-null on this branch by construction —
+  // `handedToSomebodyNew` implies `mode === "delegate"` — and is passed rather
+  // than re-read so the key matches the row that was just written.
+  if (handedToSomebodyNew && setAt !== null && target.game.teamPickerEmailEnabled) {
+    c.executionCtx.waitUntil(notifyPicker(c.env, target.fixture.id, delegatePlayerId!, setAt, now));
+  }
+
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+});
+
+/**
+ * Send N-13 in the background, logging every non-success on one greppable
+ * line.
+ *
+ * The `catch` is the one `notifyRemovedPlayer` carries and for the same
+ * reason: a rejected promise inside a `waitUntil` resolves into nothing, and
+ * a thrown D1 error here would otherwise vanish entirely.
+ */
+async function notifyPicker(
+  env: AppEnv["Bindings"],
+  fixtureId: string,
+  playerId: string,
+  setAt: Date,
+  now: Date,
+): Promise<void> {
+  const who = `fixture ${fixtureId}, player ${playerId}`;
+  try {
+    const db = getDb(env.DB);
+    const result = await sendPickerHandover({
+      db,
+      notifier: createNotifier(env, db, now),
+      fixtureId,
+      playerId,
+      setAt,
+      now,
+      responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
+    });
+    if (result.kind === "failed") console.error(`n13 picker hand-over failed for ${who}: ${result.reason}`);
+    if (result.kind === "deferred") {
+      console.error(`n13 picker hand-over deferred by the daily ceiling for ${who}`);
+    }
+    // `console.log` rather than `error`: expected and permanent (BR-32)
+    // rather than a fault. The route refuses a guest, so this is reachable
+    // only through a member with no address on file.
+    if (result.kind === "skipped-no-recipient") {
+      console.log(`n13 picker hand-over skipped, no address, for ${who}`);
+    }
+  } catch (error) {
+    console.error(
+      `n13 picker hand-over threw for ${who}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+    );
+  }
+}
+
+/**
  * An organiser saving a team pick (BR-35 §4).
  *
  * Saving, not publishing: nothing here emails anybody, and a saved pick stays
@@ -1362,7 +1695,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
 gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
-  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  const target = await loadPickerTarget(c, c.req.param("id"), c.req.param("fixtureId"));
   if (target === null) return c.text("Not found", 404);
 
   const now = new Date(Date.now());
@@ -1372,7 +1705,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
   // The same predicate the picker renders behind, so a form that was on
   // screen when the fixture closed cannot save through the back of it.
   if (!takingChanges(fixtureView(target.fixture, now))) {
-    return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
+    return renderPickingRefusal(c, target, now, { problem: "That fixture isn't taking changes any more." });
   }
 
   const submitted = await c.req.parseBody();
@@ -1427,7 +1760,15 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
     ),
   ]);
 
-  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+  // Back to whichever page the form was on: the owner's fixture page carries
+  // the picker as a fragment, so a redirect to the standalone page would move
+  // them somewhere they never were.
+  return c.redirect(
+    target.isOwner
+      ? fixturePath(target.game.id, target.fixture.id)
+      : pickerPagePath(target.game.id, target.fixture.id),
+    303,
+  );
 });
 
 /**
@@ -1469,14 +1810,27 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
   // Check 1: entitlement, before anything reads or reveals a fixture.
-  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  const target = await loadPickerTarget(c, c.req.param("id"), c.req.param("fixtureId"));
   if (target === null) return c.text("Not found", 404);
 
   const now = new Date(Date.now());
 
   // Check 2: still open. The same predicate the picker and the save route use.
   if (!takingChanges(fixtureView(target.fixture, now))) {
-    return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
+    return renderPickingRefusal(c, target, now, { problem: "That fixture isn't taking changes any more." });
+  }
+
+  // Check 2a (M29): may *this* picker announce, as opposed to merely save?
+  // Only ever false for a member picking in `open` mode on a fixture whose
+  // teams have already gone out — `mayPublish` (src/domain/picker.ts) holds
+  // the reasoning. Their page renders no Publish button in that state, so
+  // reaching here means a form that was on screen before somebody else
+  // published; a 422 on the page they are looking at explains that, where a
+  // 404 would read as the fixture having vanished.
+  if (!target.isOwner && !mayPublish(target.fixture, c.get("player")!.id, target.fixture.teamsPublishedAt)) {
+    return renderPickingRefusal(c, target, now, {
+      problem: "These teams have already been sent out. The organiser sends the squad any changes from here on.",
+    });
   }
 
   // Check 3: everyone who is in has a side, and there is somebody to tell.
@@ -1490,7 +1844,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
     // Guest." above a row labelled "Gus Guest (guest)" is one more thing for
     // an organiser to reconcile at exactly the wrong moment.
     const nameOf = new Map(withSquad?.squad.map((m) => [m.playerId, rowName(m)]) ?? []);
-    return renderOwnerFixture(
+    return renderPickingRefusal(
       c,
       target,
       now,
@@ -1499,7 +1853,6 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
       // has no names to give, and gets the sentence the picker already renders
       // in that case instead.
       { unassignedProblem: unassigned.map((row) => nameOf.get(row.playerId) ?? "someone who has since left") },
-      422,
     );
   }
 
@@ -1534,7 +1887,14 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
     c.executionCtx.waitUntil(publishTeams(c.env, target.fixture.id, now));
   }
 
-  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+  // Back to the page the form was on, as the save route does and for the same
+  // reason.
+  return c.redirect(
+    target.isOwner
+      ? fixturePath(target.game.id, target.fixture.id)
+      : pickerPagePath(target.game.id, target.fixture.id),
+    303,
+  );
 });
 
 /**

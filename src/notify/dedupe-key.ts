@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11", "n12"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11", "n12", "n13"] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -176,6 +176,24 @@ export function resultNudgeKey(fixtureId: string, playerId: string): string {
  * takes a namespace of its own. Nothing already in the table can collide
  * with anything new.
  */
+/**
+ * N-13 picker hand-over (M29): once per hand-over.
+ *
+ * `setAt` is in the key for the reason `promotionKey`'s `promotedAt` is: an
+ * organiser who hands Thursday to Ali, changes their mind, and hands it back
+ * to Ali has told Ali something new both times, and a key of
+ * `n13:<fixture>:<player>` alone would silently drop the second message —
+ * leaving the delegate never knowing the job was theirs again.
+ *
+ * The route only re-stamps `team_picker_set_at` when the holder actually
+ * changes, so re-submitting the hand-over form unchanged reuses this exact
+ * key and the UNIQUE constraint drops the duplicate, which is the wanted
+ * behaviour rather than an accident of it.
+ */
+export function pickerHandoverKey(fixtureId: string, playerId: string, setAt: string): string {
+  return `n13:${fixtureId}:${playerId}:${setAt}`;
+}
+
 export function pushKey(emailKey: string): string {
   return `push:${emailKey}`;
 }

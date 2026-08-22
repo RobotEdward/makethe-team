@@ -271,6 +271,29 @@ export function ownerTeamsPublishPath(gameId: string, fixtureId: string): string
   return `/g/${gameId}/f/${fixtureId}/teams/publish`;
 }
 
+/**
+ * The standalone team-picker page (M29).
+ *
+ * Deliberately the same path as `ownerTeamsPath`, one method up: a `GET` of
+ * "the teams" is the page you pick them on, and a `POST` is the pick. A
+ * second path such as `/teams/pick` would give the feature two URLs meaning
+ * one thing, and the picker page's own form would post to a sibling of the
+ * page rather than to the page — which is the shape every refusal re-render
+ * in this file has to reason about.
+ *
+ * The organiser reaches the picker inline on their fixture page and has no
+ * need of this, but is not barred from it: one page fewer to keep in step
+ * than a version only non-owners could load.
+ */
+export function pickerPagePath(gameId: string, fixtureId: string): string {
+  return ownerTeamsPath(gameId, fixtureId);
+}
+
+/** Where the organiser's "who picks the teams?" control posts (M29). */
+export function pickerModePath(gameId: string, fixtureId: string): string {
+  return `${fixturePath(gameId, fixtureId)}/picker`;
+}
+
 /** Where an owner's mark-in/mark-out for one player posts (J6b §4). */
 export function ownerResponsePath(gameId: string, fixtureId: string, playerId: string): string {
   return `/g/${gameId}/f/${fixtureId}/response/${playerId}`;

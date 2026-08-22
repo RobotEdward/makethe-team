@@ -303,6 +303,17 @@ The complete set for v1. Do not add others without a decision.
 | N-10 | Organiser broadcast | Chosen audience of a game or fixture, never guests (BR-32) | 1 per send per player | Email + Push |
 | N-11 | Organiser group nudge — "post it to the group?" at the fixture's reminder instant | Active owners with a registered device | 1 per fixture per owner, ever | Push only |
 | N-12 | "How did it go?" — full time within the last twelve hours | BR-37's electorate (players who were `in`, plus active organisers), never guests (BR-32) | 1 per fixture per player, ever | Push, falling back to email |
+| N-13 | Team pick handed over (M29) | The named delegate alone, never guests (BR-32) | 1 per hand-over, keyed on `team_picker_set_at` | Email + Push |
+
+**Amended, M29.** N-13 is added by M29's delegated picking. It is the only
+notification in this catalogue whose recipient is handed a control that emails
+other people, so its copy says in words that publishing is what tells the
+squad — a delegate who pressed Publish expecting a private save would be
+messaging a whole squad by accident. Opening a fixture's pick to the whole
+squad deliberately sends **nothing**: a message addressed to everybody asking
+somebody, anybody, to pick the teams is one no individual owns, and it would
+double the mail a squad receives per fixture. That state surfaces on the
+player's fixture page instead.
 
 **Amended, M9.** N-9 is added by BR-35 — the decision this table asks for
 before anything joins it. Nothing but the publish button sends it: no sweep

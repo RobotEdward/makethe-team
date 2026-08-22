@@ -20,6 +20,33 @@ import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, MUTE_CSS, RESULT_CSS, SQUA
  * `played`. "I lost the email, which side am I on?" had an answer for about
  * two hours a week.
  */
+/**
+ * The way in to the picker, for a member who may use it (M29).
+ *
+ * Worded by mode, because the two carry different obligations: a delegate who
+ * ignores the link leaves the fixture unpicked, while a member in an open
+ * game can reasonably expect a teammate to get to it. One sentence and one
+ * link either way — this is not the page the job gets done on.
+ *
+ * A plain `<p>` and not `.team-note`: that class is declared in
+ * `TEAM_PICKER_CSS`, which this page does not load, and pulling the whole
+ * block in for one rule would also bring its `.teams` selectors onto a page
+ * that already renders a published-teams list — exactly the kind of
+ * equal-specificity collision `test/views/style-cascade.test.ts` exists to
+ * catch. An unstyled class is invisible in every string assertion, so the
+ * safe shape is to not use one.
+ */
+function renderPickerLink(params: PlayerFixtureParams): string {
+  const picker = params.picker;
+  if (picker === undefined) return "";
+  const words =
+    picker.mode === "delegate"
+      ? "The organiser has asked you to pick the teams for this one."
+      : "The teams are open for anyone in the squad to pick.";
+  return `<p>${escapeHtml(words)}</p>
+          <p><a class="button" href="${escapeHtml(picker.path)}">Pick the teams</a></p>`;
+}
+
 export interface PlayerFixtureParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
@@ -48,6 +75,17 @@ export interface PlayerFixtureParams {
   viewerPlayerId: string;
   /** Set only by a refusal re-render (Task 9's write routes); a plain `GET` never sets it. */
   problem?: string;
+  /**
+   * Set when this viewer may pick this fixture's teams (M29), carrying the
+   * mode that lets them — `undefined` for everyone else, which is almost
+   * everyone almost always.
+   *
+   * A link rather than the picker itself. The picker is a long form of radio
+   * groups and belongs on a page whose whole subject is the pick; putting it
+   * inline here would bury a player's own "am I playing?" question under
+   * somebody else's job.
+   */
+  picker?: { mode: "delegate" | "open"; path: string };
   /**
    * The player's auto-decline switch for this squad (M28), or `undefined` on
    * a render where it does not belong. It is a squad-level control shown on a
@@ -109,6 +147,8 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
     <p class="status-badge status-${escapeHtml(lifecycle)}">${escapeHtml(fixtureStatusWords(lifecycle))}</p>
 
     ${resultPanel}
+
+    ${renderPickerLink(params)}
 
     ${renderPublishedTeamsSection(teams, squad, lifecycle === "played" ? "past" : "future")}
 

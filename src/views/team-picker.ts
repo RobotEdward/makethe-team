@@ -53,6 +53,16 @@ export interface TeamPickerParams {
   announcementOutstanding: boolean;
   /** Whether publishing emails the squad for this game (N-9's switch, M26). */
   teamsEmailEnabled: boolean;
+  /**
+   * Whether this viewer may announce the pick (M29), as opposed to merely
+   * save it. False only for a member picking in `open` mode on a fixture
+   * whose teams have already gone out — `mayPublish` in
+   * `src/domain/picker.ts` holds the rule and the reason.
+   *
+   * The organiser and a named delegate always pass, so on every page that
+   * existed before M29 this is true and the section below is unchanged.
+   */
+  canPublish: boolean;
 }
 
 /**
@@ -180,6 +190,15 @@ function renderPublish(params: TeamPickerParams): string {
 
   const anyPick = published || needsAnotherLook || members.some((member) => member.team !== null);
   if (!anyPick) return "";
+
+  // A member picking in `open` mode after the teams have gone out keeps the
+  // form above — a wrong side is worth fixing by whoever spots it — and loses
+  // only the button that mails the squad. Said in words rather than by
+  // rendering nothing: a Save button with no Publish beside it, on a page
+  // that had both a moment ago, reads as something broken.
+  if (!params.canPublish) {
+    return `<p class="team-note">These teams have been sent out. A change you save here shows on everyone's page straight away, but only the organiser can send the squad a fresh message about it.</p>`;
+  }
 
   // Two different worlds, and only one of them has ever sent anything — so the
   // prompt says which one it is rather than telling an organiser their teams

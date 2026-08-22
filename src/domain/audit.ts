@@ -170,6 +170,12 @@ export const AUDIT_ACTIONS = [
   // them emails anybody.
   "fixture.teams_saved",
   "fixture.teams_published",
+  // M29. Handing the team pick to a squad member, or opening it to everyone,
+  // is a grant of a capability that can email the whole squad — so who
+  // granted it, to whom, and when is exactly what BR-27 wants recorded.
+  // `before`/`after` carry `{ mode, delegate }` together: a mode without its
+  // holder does not say who could pick.
+  "fixture.picker_changed",
   // M15 (BR-36). One row per broadcast an organiser sends, and the counter the
   // per-game daily cap is enforced from (`src/domain/broadcast-limit.ts`) —
   // there is no message table, so these rows are the only record that a send

@@ -14,6 +14,7 @@ import {
 import { renderDashboardPage } from "../src/views/dashboard.js";
 import { renderOwnerFixturePage } from "../src/views/owner-fixture.js";
 import { renderPastFixturesPage } from "../src/views/past-fixtures.js";
+import { renderPickerPage } from "../src/views/picker-page.js";
 import { squadStatusLabel } from "../src/views/squad-row.js";
 import { audienceSelectsStatus } from "../src/domain/broadcast-audience.js";
 import { deriveResult, tally } from "../src/domain/result.js";
@@ -226,6 +227,31 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
         squads: [],
         resultsNeeded: [],
         recentlyPlayed: null,
+      }),
+  },
+  {
+    name: "renderPickerPage's opening line (src/views/picker-page.ts)",
+    column: "fixtures.picker_mode",
+    reach: () =>
+      renderPickerPage({
+        nav: { isAdmin: false, current: "games" } as const,
+        gameId: "g-1",
+        fixtureId: "f-1",
+        gameName: "Thursday 7-a-side",
+        venueName: "Oxford Sports Park",
+        kicksOffAtLocal: "Thursday 13 August, 19:00",
+        view: fixtureView(facts(), NOW),
+        waitlistCount: 0,
+        teamNames: teamNames({ teamAName: "Bibs", teamBName: "Skins" }),
+        members: [{ playerId: "p-1", name: "Ada Okafor", erasedAt: null, isGuest: false, team: "a" }],
+        counts: { a: 1, b: 0 },
+        uneven: true,
+        published: false,
+        needsAnotherLook: false,
+        announcementOutstanding: false,
+        teamsEmailEnabled: true,
+        canPublish: true,
+        mode: OUT_OF_UNION,
       }),
   },
   {

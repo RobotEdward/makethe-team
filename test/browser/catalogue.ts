@@ -149,6 +149,19 @@ export const CATALOGUE: CataloguePage[] = [
       "and the team picker — the only owner page carrying script (TEAM_PICKER_JS).",
   },
   {
+    id: "team-picker",
+    title: "Pick the teams",
+    path: (w) => `/g/${w.gameId}/f/${w.fixtureId}/teams`,
+    // The organiser can reach it too, and this is the persona the seeded
+    // world already has entitled for this fixture. What a delegate sees
+    // differs only by the opening sentence, which
+    // test/routes/picker-delegation.test.ts pins.
+    persona: "owner",
+    note:
+      "M29's standalone picker: the same team picker the organiser's fixture page carries, " +
+      "on a page of its own for whoever they handed the pick to.",
+  },
+  {
     id: "edit-game",
     title: "Edit game",
     path: (w) => `/g/${w.gameId}/edit`,

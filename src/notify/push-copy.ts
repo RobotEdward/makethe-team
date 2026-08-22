@@ -4,6 +4,7 @@ import type { BroadcastEmailPayload } from "./templates/broadcast.js";
 import type { CancellationEmailPayload } from "./templates/cancellation.js";
 import type { ErasureScheduledEmailPayload } from "./templates/erasure-scheduled.js";
 import type { MagicLinkEmailPayload } from "./templates/magic-link.js";
+import type { PickerHandoverEmailPayload } from "./templates/picker-handover.js";
 import type { PromotionEmailPayload } from "./templates/promotion.js";
 import type { RemovedEmailPayload } from "./templates/removed.js";
 import type { ReminderEmailPayload } from "./templates/reminder.js";
@@ -310,6 +311,30 @@ function resultNudge({ gameName }: Pick<ResultNudgeEmailPayload, "gameName">): P
 }
 
 /**
+ * N-13: the teams are yours to pick.
+ *
+ * What happened: somebody has handed this reader a job — the title says whose
+ * job and nothing else, because a delegate glancing at a lock screen needs to
+ * know it is theirs before they need to know which fixture. When/where: the
+ * game and the kickoff, which is what tells them how long they have.
+ *
+ * The tag carries the kickoff as well as the game name, unlike N-12's: a
+ * delegate can hold two fixtures of the same game at once (this week's and
+ * next week's), and collapsing those two into one tray entry would lose the
+ * first hand-over the moment the second arrived.
+ */
+function pickerHandover({
+  gameName,
+  whenLocal,
+}: Pick<PickerHandoverEmailPayload, "gameName" | "whenLocal">): PushCopy {
+  return {
+    title: "You're picking the teams",
+    body: `${gameName}, ${whenLocal}.`,
+    tag: `n13:${gameName}:${whenLocal}`,
+  };
+}
+
+/**
  * The push-copy catalogue, one builder per `NotificationType`
  * (`NOTIFICATION_TYPES` in `./dedupe-key.ts`). Indexed by type rather than
  * exported as nine loose functions so that a type added to the catalogue
@@ -330,6 +355,7 @@ export const PUSH_COPY: {
   n10: typeof broadcast;
   n11: typeof groupNudge;
   n12: typeof resultNudge;
+  n13: typeof pickerHandover;
 } = {
   n1: reminder,
   n2: promotion,
@@ -343,6 +369,7 @@ export const PUSH_COPY: {
   n10: broadcast,
   n11: groupNudge,
   n12: resultNudge,
+  n13: pickerHandover,
 };
 
 // Referenced only for the mapped type above; re-exported so callers can

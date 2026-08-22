@@ -270,6 +270,11 @@ export function renderGameFormPage(params: GameFormPageParams): string {
           label: "Email players when I publish teams",
           hint: "Sent when you publish, so it needs no time of its own. Teams still appear on the fixture page.",
         })}
+        ${notification({
+          field: "teamPickerEmailEnabled",
+          label: "Tell a player when I hand them the team pick",
+          hint: "Sent when you hand one fixture's teams to somebody, so it needs no time of its own. Nothing is sent when you open the pick to the whole squad.",
+        })}
       </fieldset>`
     : "";
 

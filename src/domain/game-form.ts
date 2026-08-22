@@ -63,6 +63,7 @@ export const NOTIFICATION_SWITCHES = [
   { field: "groupNudgeEnabled", submitted: "groupNudgeEnabledSubmitted" },
   { field: "resultPromptEnabled", submitted: "resultPromptEnabledSubmitted" },
   { field: "teamsPublishedEmailEnabled", submitted: "teamsPublishedEmailEnabledSubmitted" },
+  { field: "teamPickerEmailEnabled", submitted: "teamPickerEmailEnabledSubmitted" },
 ] as const;
 
 export interface GameFormValues {
@@ -88,6 +89,7 @@ export interface GameFormValues {
   groupNudgeEnabled: boolean;
   resultPromptEnabled: boolean;
   teamsPublishedEmailEnabled: boolean;
+  teamPickerEmailEnabled: boolean;
   resultPromptOffsetHours: number;
 }
 
@@ -306,6 +308,7 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
     "teamsPublishedEmailEnabled",
     "teamsPublishedEmailEnabledSubmitted",
   );
+  const teamPickerEmailEnabled = switchValue("teamPickerEmailEnabled", "teamPickerEmailEnabledSubmitted");
 
   const resultPromptOffsetHours = body["resultPromptOffsetHours"] === undefined
     ? DEFAULT_RESULT_PROMPT_OFFSET_HOURS
@@ -353,6 +356,7 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
       groupNudgeEnabled,
       resultPromptEnabled,
       teamsPublishedEmailEnabled,
+      teamPickerEmailEnabled,
       resultPromptOffsetHours: resultPromptOffsetHours!,
     },
   };

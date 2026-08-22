@@ -292,6 +292,11 @@ fixture's published teams vanished from a player's view the moment the sweep ret
   present tense — a played fixture is what this page is for, and "you're on" is never true of
   one. Follows the same visibility rule as everywhere else (BR-33, BR-35): a player always sees
   their own side.
+- **Picking the teams (M29):** when this member may pick this fixture's teams, a sentence and a
+  `Pick the teams` button linking to §3.6b — "The organiser has asked you to pick the teams for
+  this one." (named delegate) or "The teams are open for anyone in the squad to pick." A link,
+  not the picker itself: the picker is a long form of radio groups and would bury a player's own
+  "am I playing?" question under somebody else's job.
 - **`Squad` (h2):** who was in, same as the player's game page.
 - **`Result` (h2) — the result panel**, shared with the organiser's fixture page (§3.5), and
   rendered **above the teams and the squad** (M27): on a played fixture both of those are
@@ -364,10 +369,11 @@ One form serves both.
   `Warn me when a fixture is short or uneven` [`Hours before kickoff` (number)];
   `Nudge me to post it to the group chat` (no timing — it rides with the reminder);
   `Ask players how it went` [`Hours after full time` (number, 0–48)];
-  `Email players when I publish teams` (no timing — it is sent on publish).
+  `Email players when I publish teams` (no timing — it is sent on publish);
+  `Tell a player when I hand them the team pick` (M29, no timing — it is sent on the hand-over).
   Every switch defaults on. Each carries a hidden `<field>Submitted` marker, which the parser
   reads: without it the create form's submission, which has no section at all, is
-  indistinguishable from an owner who turned all five off.
+  indistinguishable from an owner who turned every one of them off.
 - **`Advanced` (`<details>`, collapsed):** `Time zone` (select); `Venue link` (url).
 - **Actions:** `Create the game` / `Save changes`.
 - **Notices:** "Some details need another look." on validation failure; per-field inline errors;
@@ -471,6 +477,45 @@ The busiest organiser screen.
 - **Logic:** Saving updates every player's page immediately; publishing is what sends email.
   Nobody is reshuffled automatically when someone drops out. After the fixture is played or
   cancelled the pick stays as a record and the controls disappear.
+
+### 3.6a Who picks the teams? (a section of 3.5, M29)
+The organiser can hand one fixture's team pick to somebody else. Per fixture, never per game:
+"Ali is picking on Thursday because I'm away" is the request, and a game-level setting would
+keep handing Thursday's job to Ali for the rest of the season.
+- **Three choices**, as radios: `Just me` (the default, and how every fixture behaved before
+  M29) | `One of the squad` with a `Hand it to` select | `Anyone in the squad`.
+- The select offers active members only, minus guests (who have no way to sign in) and minus the
+  organiser themselves (whose `Just me` is already the first radio).
+- **Copy:** "Handed over on Saturday 22 August." when somebody holds it; "There is nobody else in
+  the squad to hand this to yet." on a squad of one.
+- **Refusals:** "Pick somebody who is currently in the squad and can sign in." — the squad is
+  re-read on submit, so a name that left while the page was open is refused rather than saved.
+- **Notification:** handing the pick to a named player sends N-13 to that player alone, gated by
+  the game's `Tell a player when I hand them the team pick` switch (§3.1). **Opening the pick to
+  everyone sends nothing** — a message to a whole squad asking somebody, anybody, to pick the
+  teams is one no individual owns, and it doubles the mail a squad gets per fixture.
+- The section disappears once the fixture stops taking changes: there is nothing to hand over on
+  a game that has been played or called off.
+
+### 3.6b Team picker as a page — `GET /g/:id/f/:fixtureId/teams` (M29)
+The same picker as §3.6, on a page of its own, for whoever the organiser handed it to. The
+organiser reaches it too, though their own copy stays inline on §3.5.
+- Game name (h1); one line saying why this page is in front of this person; kickoff; venue;
+  status line; the picker; `Back to the fixture`.
+- **Copy:** "The organiser has asked you to pick the teams for this fixture." (named delegate) or
+  "The organiser has left the teams for anyone in the squad to pick, so this one is going spare."
+- **Nothing else is on it.** Not the squad controls, not the guest form, not the WhatsApp cards,
+  not the broadcast link, not the result panel — every one of those is an owner's act. The page
+  renders what a picker may do rather than hiding what they may not, so no forgotten control can
+  become a capability.
+- **Publishing:** a named delegate publishes exactly as the organiser does, as often as they
+  like. In `Anyone in the squad` mode the **first** announcement is anybody's and every later one
+  is the organiser's; saving stays open either way, so a member who spots a wrong side can still
+  fix it. Copy after that point: "These teams have been sent out. A change you save here shows on
+  everyone's page straight away, but only the organiser can send the squad a fresh message about
+  it."
+- **Entitlement** is re-read on every request from the picker's live membership, so a delegate
+  who leaves or is removed simply stops passing — 404, never 403.
 
 ### 3.7 Message the squad (broadcast) — `GET/POST /g/:id/message` and `/g/:id/f/:fixtureId/message`
 One renderer, two scopes.

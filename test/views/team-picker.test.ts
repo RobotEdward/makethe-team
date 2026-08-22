@@ -23,6 +23,7 @@ const BASE: TeamPickerParams = {
   needsAnotherLook: false,
   announcementOutstanding: false,
   teamsEmailEnabled: true,
+  canPublish: true,
 };
 
 /**

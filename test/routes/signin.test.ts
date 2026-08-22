@@ -880,6 +880,16 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } }),
       );
 
+      // The standalone team picker (M29), same owner and fixture as the
+      // capture above, and taken here for the same reason it is: after the
+      // `cancel done` POST the fixture stops taking changes and this page
+      // renders the read-only teams with no picker and no script at all.
+      await capture(
+        "team picker",
+        /Back to the fixture/,
+        new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}/teams`, { headers: { cookie } }),
+      );
+
       // The two quick-message compose pages (M15 Task 8), same owner and
       // fixture as the capture above.
       await capture(
@@ -1103,6 +1113,7 @@ describe("no password field anywhere (TR-16)", () => {
         "game edit",
         "past fixtures",
         "owner fixture",
+        "team picker",
         "message everyone",
         "message squad",
         "squad remove confirm",
@@ -1201,6 +1212,10 @@ describe("no password field anywhere (TR-16)", () => {
       "passkeys",
       "game overview",
       "owner fixture",
+      // "team picker" carries TEAM_PICKER_JS and nothing else — the same
+      // drag-and-drop enhancement the owner fixture page above is listed
+      // for, over the same radios, which stay the source of truth (M29).
+      "team picker",
       "account",
       "response offer",
       "message everyone",
@@ -1296,6 +1311,7 @@ describe("no password field anywhere (TR-16)", () => {
       "game edit",
       "past fixtures",
       "owner fixture",
+      "team picker",
       "message everyone",
       "message squad",
       "squad remove confirm",
@@ -1356,6 +1372,12 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "POST /r/:token/unmute":
       "never returns HTML of its own — a 303 redirect or renderLinkProblemPage, " +
       "exactly as POST /r/:token/mute above (src/routes/respond.ts).",
+    "POST /g/:id/f/:fixtureId/picker":
+      "has no template of its own — a 303 redirect, a plain-text 403 (wrong " +
+      "origin) or 400 (a mode this app never rendered), or renderOwnerFixture, " +
+      "which GET /g/:id/f/:fixtureId already covers through the \"owner fixture\" " +
+      "capture (src/routes/games.ts); its own coverage lives in " +
+      "test/routes/picker-delegation.test.ts.",
     "POST /g/:id/mute":
       "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
       "plain-text 400 (a duration outside the catalogue), a plain-text 404 " +
@@ -1608,6 +1630,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
     "GET /g/:id/squad/:playerId": "squad member",
     "GET /g/:id/f/:fixtureId": "owner fixture",
+    "GET /g/:id/f/:fixtureId/teams": "team picker",
     "GET /g/:id/message": "message everyone",
     "GET /g/:id/f/:fixtureId/message": "message squad",
     "GET /j/:token": "invite",

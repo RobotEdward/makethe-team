@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "../domain/audit.js";
 import { INITIAL_LIFECYCLE, LIFECYCLES } from "../domain/lifecycle.js";
+import { INITIAL_PICKER_MODE, PICKER_MODES } from "../domain/picker.js";
 import { RESULT_OUTCOMES } from "../domain/result.js";
 import { NOTIFICATION_STATUSES, NOTIFICATION_TYPES } from "../notify/dedupe-key.js";
 import {
@@ -164,6 +165,19 @@ export const games = sqliteTable("games", {
     .notNull()
     .default(true),
   /**
+   * M29. Whether delegating a fixture's team pick tells the delegate (N-13).
+   *
+   * Off means the job is handed over silently and the delegate finds it on
+   * their own fixture page. Defaults on with the rest of the M26 switches:
+   * a hand-over nobody is told about is one nobody does.
+   *
+   * There is no switch for `open` mode because opening the pick to the squad
+   * sends nothing at all — see `src/routes/games.ts`'s picker route for why.
+   */
+  teamPickerEmailEnabled: integer("team_picker_email_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  /**
    * How long after full time the "how did it go?" prompt (N-12) may first go
    * out. Zero — the default — is the pre-M26 behaviour: the first sweep run
    * after the whistle. `RESULT_NUDGE_WINDOW_MS` still bounds how late it may
@@ -246,6 +260,36 @@ export const fixtures = sqliteTable(
      * of "the organiser has changed the teams and not told anyone".
      */
     teamsSavedAt: integer("teams_saved_at", { mode: "timestamp_ms" }),
+    /**
+     * Who besides the organiser may pick this fixture's teams (M29).
+     *
+     * `src/domain/picker.ts` holds the three modes and every predicate that
+     * reads them, including why a `delegate` row with no `teamPickerPlayerId`
+     * is read as `organiser` rather than trusted.
+     */
+    pickerMode: text("picker_mode", { enum: PICKER_MODES }).notNull().default(INITIAL_PICKER_MODE),
+    /**
+     * The delegate, when `pickerMode` is `delegate`; null in the other two
+     * modes.
+     *
+     * **Not cleared when the delegate leaves the squad.** Entitlement re-reads
+     * their membership on every request, so a departed delegate stops passing
+     * the moment they are removed, without a sweep over every future fixture
+     * to chase the pointer. The organiser's page renders the name through the
+     * same active-membership join, so the control shows nobody rather than a
+     * ghost.
+     */
+    teamPickerPlayerId: text("team_picker_player_id").references(() => players.id),
+    /**
+     * When the current delegation was made, or null in the other two modes.
+     *
+     * Exists for the N-13 dedupe key. Keyed on the fixture and the delegate
+     * alone, an organiser who delegated to Ali, changed their mind, and
+     * delegated back to Ali would send nothing the second time and Ali would
+     * never learn the job was theirs again. Also what the organiser's page
+     * shows as "handed over on ...".
+     */
+    teamPickerSetAt: integer("team_picker_set_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [
