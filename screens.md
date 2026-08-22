@@ -43,6 +43,10 @@ games", "Back to the game").
   JS-only, under the line "Already added a passkey to this account?"), `What we do with your
   email address`.
 - **States:** fresh; "That sign-in link didn't work…" (expired/used); "You're signed out."
+  While a request is in flight the primary button is disabled and reads `Sending your link…`
+  (JS-only; a second press while the first POST is running is what sent one player two magic
+  links in August 2026). A back-navigation restores it, and with scripting off the button
+  behaves exactly as it always did.
 - **Success screen:** `Check your inbox` — "If that address can sign in, a link is on its
   way. It works once, and it expires after a few minutes." Plus a spam-folder / try-again line.
   Deliberately does not disclose whether the address exists.

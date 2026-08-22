@@ -1069,6 +1069,55 @@ export const FRESHNESS_JS = `
 `;
 
 /**
+ * Stop the sign-in form asking for a second link while the first is in flight.
+ *
+ * August 2026: a player was sent two magic links 45 seconds apart, both from
+ * genuine presses of this button — the first email had not arrived yet, so he
+ * pressed again. Two live links is not a security problem (each is
+ * single-use, five-minute, and the second simply invalidates nothing), but two
+ * emails for one intention reads as a fault in the product and costs a send
+ * against the daily ceiling.
+ *
+ * Disabling happens *in* the `submit` handler, not on click: by then the
+ * browser has already begun the submission, so this cannot cancel it. It also
+ * means an empty or malformed field never gets here at all — `required` and
+ * `type="email"` block submission before the event fires, and a button
+ * disabled at that moment would be a dead form.
+ *
+ * `pageshow` restores it because the back-forward cache returns this document
+ * exactly as it was left — disabled button, "Sending" label and all — without
+ * re-running a line of script. Restoring on every `pageshow` rather than only
+ * on `event.persisted` costs one assignment on first load and cannot leave a
+ * dead button behind.
+ *
+ * The label changes because a disabled button that looks identical to an
+ * enabled one explains nothing; there is no `[disabled]` styling in this
+ * codebase, and the visible word is what says the press was heard.
+ *
+ * The baseline is untouched: with the script blocked, this is the same form
+ * that shipped before, and pressing twice sends two links exactly as it did.
+ */
+export const SIGN_IN_SUBMIT_JS = `
+(function () {
+  var form = document.querySelector("form.signin");
+  var button = form && form.querySelector("button[type=submit]");
+  if (!form || !button) return;
+
+  var idle = button.textContent;
+
+  form.addEventListener("submit", function () {
+    button.disabled = true;
+    button.textContent = "Sending your link…";
+  });
+
+  window.addEventListener("pageshow", function () {
+    button.disabled = false;
+    button.textContent = idle;
+  });
+})();
+`;
+
+/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
  *
@@ -1076,6 +1125,7 @@ export const FRESHNESS_JS = `
  */
 export const PAGE_SCRIPT_BLOCKS = [
   PASSKEY_SIGN_IN_JS,
+  SIGN_IN_SUBMIT_JS,
   PASSKEY_REGISTER_JS,
   COPY_BUTTON_JS,
   BROADCAST_WHATSAPP_JS,

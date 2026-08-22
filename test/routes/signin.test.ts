@@ -42,7 +42,7 @@ import {
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import type { AppEnv } from "../../src/env.js";
-import { SCRIPT_BLOCKS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { SCRIPT_BLOCKS, SERVICE_WORKER_JS, SIGN_IN_SUBMIT_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW as CLOCK_NOW } from "../support/clock.js";
 import { EMAIL_LOOKUP, interferingBinding } from "../support/interference.js";
@@ -168,6 +168,38 @@ describe("GET /sign-in", () => {
       bindings(),
     );
     expect(landed.headers.get("location")).toBe(DASHBOARD_PATH);
+  });
+
+  /**
+   * The double-request guard (August 2026). Two sign-in emails reached one
+   * player within a minute of each other — both genuinely requested, because
+   * nothing stopped a second press while the first POST was in flight.
+   *
+   * What is asserted here is the half a fetch-level test can see: the block
+   * ships, and the two DOM anchors it reaches for exist in the served markup
+   * under exactly the names it uses. Those anchors are the silent failure —
+   * a class rename leaves the script running, returning early, and sending
+   * two emails again with every test still green. The behaviour itself
+   * (disabled on submit, restored on a back-navigation) is a browser
+   * question and is covered in test/browser/journeys.spec.ts.
+   */
+  it("ships the guard against a second sign-in request, anchored to the markup it reaches for", async () => {
+    const body = await (await SELF.fetch(`${ORIGIN}${SIGN_IN_PATH}`)).text();
+
+    expect(body, "the guard must actually ship").toContain(SIGN_IN_SUBMIT_JS);
+
+    // The selectors, read out of the script rather than restated, so this
+    // cannot go stale against it.
+    expect(SIGN_IN_SUBMIT_JS).toContain('querySelector("form.signin")');
+    expect(SIGN_IN_SUBMIT_JS).toContain('querySelector("button[type=submit]")');
+    expect(body, "the form the script looks for").toMatch(/<form class="signin"/);
+    expect(body, "the button the script looks for").toMatch(/<button[^>]*type="submit"/);
+
+    // Served enabled, always: the baseline is a form that works with the
+    // script blocked, and a `disabled` attribute in the HTML would be a
+    // button nothing could ever re-enable.
+    const button = /<button[^>]*type="submit"[^>]*>/.exec(body)![0];
+    expect(button, "nothing may ship disabled").not.toMatch(/\bdisabled\b/);
   });
 
   it("explains a link that did not work without echoing the error back", async () => {

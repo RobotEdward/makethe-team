@@ -94,8 +94,12 @@ describe("the script enumeration", () => {
       // is no capability whose absence should silence it — only its own bar,
       // `if (!bar) return;`, which a page that never called `renderFreshness`
       // has not rendered.
+      // `SIGN_IN_SUBMIT_JS` (August 2026) is that same shape once more:
+      // `addEventListener` and `disabled` need no detecting, so what it
+      // guards is its two anchors together — `if (!form || !button) return;`
+      // — and a page without the sign-in form gets the usual silent no-op.
       expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
-        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!bar\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;/,
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!bar\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;|if\s*\(!form \|\| !button\)\s*return;/,
       );
     }
   });

@@ -1,7 +1,7 @@
 import { PRIVACY_PATH, SIGN_IN_COMPLETE_PATH, SIGN_IN_PATH } from "../auth/paths.js";
 import { escapeHtml, layout } from "./layout.js";
 import { signOutForm } from "./sign-out-form.js";
-import { PASSKEY_SIGN_IN_JS } from "./scripts.js";
+import { PASSKEY_SIGN_IN_JS, SIGN_IN_SUBMIT_JS } from "./scripts.js";
 import { PASSKEY_STYLES_CSS, SIGNIN_STYLES_CSS } from "./styles.js";
 
 /**
@@ -54,7 +54,7 @@ export function renderSignInPage({ linkFailed, signedOut }: SignInPageOptions): 
   return layout({
     title: "Sign in — Make The Team",
     pageStyles: [SIGNIN_STYLES_CSS, PASSKEY_STYLES_CSS],
-    pageScripts: [PASSKEY_SIGN_IN_JS],
+    pageScripts: [PASSKEY_SIGN_IN_JS, SIGN_IN_SUBMIT_JS],
     body: `
       <h1>Sign in</h1>
       <p>We'll email you a link that signs you in. Nothing to remember, nothing to set up.</p>

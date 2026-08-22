@@ -820,3 +820,90 @@ test("randomise puts everyone on a side, evenly, through the radios the save pos
   expect(await seen.violations()).toEqual([]);
   expect(seen.errors()).toEqual([]);
 });
+
+/**
+ * The double-request guard (August 2026, `SIGN_IN_SUBMIT_JS`).
+ *
+ * A player was sent two magic links 45 seconds apart, both genuinely
+ * requested: the first email had not arrived, so he pressed again. Nothing
+ * server-side can tell that apart from two deliberate requests, and no vitest
+ * assertion can see a button's `disabled` state — the guard only exists in a
+ * browser, so this is the only place it can be proved.
+ *
+ * The two presses happen inside one `page.evaluate` on purpose. A real press
+ * begins a navigation, so anything asserted from the test process afterwards
+ * is racing the document's own teardown; running both presses and reading the
+ * result in a single task on the page removes the race entirely and measures
+ * exactly the property that matters — the second press raises no `submit`
+ * event, so no second request can leave the browser. The request counter
+ * below then confirms that end to end against the server.
+ *
+ * Single-run rather than inside the JS-on/JS-off describe above: with
+ * scripting off there is deliberately no guard, and the baseline form is
+ * already covered by the server suite.
+ */
+test("the sign-in button refuses a second press while the first request is in flight", async ({
+  page,
+}) => {
+  const seen = observe(page);
+
+  let posts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === "/sign-in") posts += 1;
+  });
+
+  await page.goto("/sign-in");
+  await page.fill("#email", "double-press@example.test");
+
+  // This project is typed against the Workers runtime and has no DOM lib, so
+  // the page's own objects are reached through a narrow local shape — the
+  // same technique `observe.ts` uses for its CSP listener, and `globalThis`
+  // for the same reason: `document` is not a name this compiler knows.
+  const pressedTwice = await page.evaluate(() => {
+    interface Button {
+      click: () => void;
+      disabled: boolean;
+      textContent: string;
+    }
+    interface Form {
+      querySelector: (selector: string) => Button;
+      addEventListener: (type: string, listener: () => void) => void;
+    }
+    const dom = globalThis as unknown as {
+      document: { querySelector: (selector: string) => Form };
+    };
+    const form = dom.document.querySelector("form.signin");
+    const button = form.querySelector("button[type=submit]");
+
+    let submits = 0;
+    form.addEventListener("submit", () => {
+      submits += 1;
+    });
+
+    button.click();
+    // The impatient second press, in the same task the first one is still
+    // being handled in — which is the situation that sent two emails.
+    button.click();
+
+    return { submits, disabled: button.disabled, label: button.textContent };
+  });
+
+  expect(pressedTwice.submits, "a second press must raise no second submit").toBe(1);
+  expect(pressedTwice.disabled, "the button must refuse further presses").toBe(true);
+  // A disabled button that still reads "Email me a sign-in link" says nothing
+  // about why it stopped working; the label is half the fix.
+  expect(pressedTwice.label).toBe("Sending your link…");
+
+  await expect(page.locator("h1")).toHaveText("Check your inbox");
+  expect(posts, "one press, one request").toBe(1);
+
+  // Back-forward: the cache can return this document with the button still
+  // disabled, never re-running a line of script, so `pageshow` has to undo it.
+  await page.goBack();
+  const button = page.locator("form.signin button[type=submit]");
+  await expect(button).toBeEnabled();
+  await expect(button).toHaveText("Email me a sign-in link");
+
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+});
