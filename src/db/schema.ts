@@ -185,6 +185,19 @@ export const memberships = sqliteTable(
     active: integer("active", { mode: "boolean" }).notNull().default(true),
     joinedAt: integer("joined_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
     leftAt: integer("left_at", { mode: "timestamp_ms" }),
+    /**
+     * The player's own auto-decline switch (M28) and its expiry. Non-null
+     * `mutedAt` means the switch is on; `mutedUntil` null beside it means
+     * indefinitely. `src/domain/mute.ts` holds the predicate that reads them
+     * and the reasoning for why the pair is shaped this way.
+     *
+     * On `memberships` rather than `players` because a mute is about one
+     * squad, and because "apply to all my games" is a snapshot of the
+     * memberships held at that moment, not a standing preference that would
+     * also silence a Game joined later.
+     */
+    mutedAt: integer("muted_at", { mode: "timestamp_ms" }),
+    mutedUntil: integer("muted_until", { mode: "timestamp_ms" }),
   },
   (t) => [uniqueIndex("memberships_game_player_unique").on(t.gameId, t.playerId)],
 );

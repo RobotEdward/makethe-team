@@ -1,5 +1,6 @@
 import { and, eq, gte } from "drizzle-orm";
 import type { Db } from "./client.js";
+import { isMuted } from "../domain/mute.js";
 import { auditLog, memberships, players, pushSubscriptions, responses } from "./schema.js";
 
 /** One person a broadcast could reach, and what is known about how to reach them. */
@@ -42,8 +43,15 @@ function deviceOwnersSubquery(db: Db) {
  * 100 parameters per statement (`src/db/chunk.ts`), and `sendTeamsEmails`
  * documents a first version of that exact trap. Joining keeps this query's
  * parameter count fixed at two, regardless of squad size.
+ *
+ * Auto-declining members (M28) are excluded here rather than by the caller,
+ * and that placement is the point: the compose page counts this same list to
+ * tell an organiser how many people a message will reach, so a filter applied
+ * only on the send path would print a number that the send then quietly
+ * misses. It is the reasoning `cancellationInfo` gives for deriving its count
+ * from the recipient read instead of a second query.
  */
-export async function listGameRecipients(db: Db, gameId: string): Promise<BroadcastRecipient[]> {
+export async function listGameRecipients(db: Db, gameId: string, now: Date): Promise<BroadcastRecipient[]> {
   const deviceOwners = deviceOwnersSubquery(db);
   const rows = await db
     .select({
@@ -52,13 +60,17 @@ export async function listGameRecipients(db: Db, gameId: string): Promise<Broadc
       email: players.email,
       isGuest: players.isGuest,
       devicePlayerId: deviceOwners.playerId,
+      mutedAt: memberships.mutedAt,
+      mutedUntil: memberships.mutedUntil,
     })
     .from(memberships)
     .innerJoin(players, eq(memberships.playerId, players.id))
     .leftJoin(deviceOwners, eq(deviceOwners.playerId, players.id))
     .where(and(eq(memberships.gameId, gameId), eq(memberships.active, true)));
 
-  return rows.map((row) => ({
+  return rows
+    .filter((row) => !isMuted(row, now))
+    .map((row) => ({
     playerId: row.playerId,
     name: row.name,
     email: row.email,
@@ -76,8 +88,19 @@ export async function listGameRecipients(db: Db, gameId: string): Promise<Broadc
  * joins `memberships` to `players`: the parameter count must not grow with
  * squad size. `status` is passed through unfiltered — `audienceSelectsStatus`
  * is where a caller narrows this list to one audience, not here.
+ *
+ * Auto-declining members (M28) are excluded, for the reason given on
+ * `listGameRecipients`. The membership join is a `leftJoin` because a guest
+ * has a response row and no membership; an inner join would silently drop
+ * every guest from every fixture audience, which is a different milestone's
+ * rule (BR-32) and not this one's to enforce.
  */
-export async function listFixtureRecipients(db: Db, fixtureId: string): Promise<BroadcastRecipient[]> {
+export async function listFixtureRecipients(
+  db: Db,
+  gameId: string,
+  fixtureId: string,
+  now: Date,
+): Promise<BroadcastRecipient[]> {
   const deviceOwners = deviceOwnersSubquery(db);
   const rows = await db
     .select({
@@ -87,13 +110,21 @@ export async function listFixtureRecipients(db: Db, fixtureId: string): Promise<
       isGuest: players.isGuest,
       status: responses.status,
       devicePlayerId: deviceOwners.playerId,
+      mutedAt: memberships.mutedAt,
+      mutedUntil: memberships.mutedUntil,
     })
     .from(responses)
     .innerJoin(players, eq(responses.playerId, players.id))
     .leftJoin(deviceOwners, eq(deviceOwners.playerId, players.id))
+    .leftJoin(
+      memberships,
+      and(eq(memberships.gameId, gameId), eq(memberships.playerId, responses.playerId)),
+    )
     .where(eq(responses.fixtureId, fixtureId));
 
-  return rows.map((row) => ({
+  return rows
+    .filter((row) => !isMuted(row, now))
+    .map((row) => ({
     playerId: row.playerId,
     name: row.name,
     email: row.email,

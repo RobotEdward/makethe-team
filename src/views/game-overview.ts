@@ -32,7 +32,20 @@ export interface GameOverviewParams {
   maxPlayers: number;
   prefersEvenNumbers: boolean;
   inviteToken: string;
-  squad: ReadonlyArray<{ playerId: string; name: string; role: "player" | "owner"; isGuest: boolean }>;
+  squad: ReadonlyArray<{
+    playerId: string;
+    name: string;
+    role: "player" | "owner";
+    isGuest: boolean;
+    /**
+     * Whether this member is auto-declining right now (M28), already resolved
+     * against the clock by the route. Shown only here, on the one page nobody
+     * but an organiser can reach: without it a member who is `out` on every
+     * fixture for two months reads as somebody ignoring their organiser, and
+     * chasing them is the wrong response.
+     */
+    muted: boolean;
+  }>;
   /**
    * `lifecycle` is the stored enum, not a display string — the page maps it
    * through `fixtureStatusWords`. Typed as `Lifecycle` rather than `string`
@@ -96,11 +109,12 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       const you = member.playerId === viewerPlayerId ? " (you)" : "";
       const guest = member.isGuest ? " (guest)" : "";
       const organiser = member.role === "owner" ? " — organiser" : "";
+      const muted = member.muted ? ' <span class="member-muted">Auto-declining</span>' : "";
       const isOwner = member.role === "owner";
       const nextRole = isOwner ? "player" : "owner";
       const roleLabel = isOwner ? "Make an ordinary member" : "Make an organiser";
       return `<li>
-        <span class="member">${name}${organiser}${guest}${you}</span>
+        <span class="member">${name}${organiser}${guest}${you}</span>${muted}
         <details class="member-actions">
           <summary>Manage</summary>
           <p><a href="${escapeHtml(memberDetailPath(gameId, member.playerId))}">View details</a></p>

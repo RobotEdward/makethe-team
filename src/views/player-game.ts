@@ -6,6 +6,7 @@ import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
 import { renderFreshness } from "./freshness.js";
+import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
 import {
@@ -13,6 +14,7 @@ import {
   FORM_CSS,
   FRESHNESS_CSS,
   INVITE_CSS,
+  MUTE_CSS,
   RESULT_CSS,
   SQUAD_STYLES_CSS,
   TEAM_PICKER_CSS,
@@ -21,6 +23,12 @@ import {
 export interface PlayerGameParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
+  /**
+   * The player's auto-decline switch for this squad (M28). Rendered under the
+   * fixture rather than beside the header: it is a thing to reach for after
+   * reading "can I make this one?", not a page-level setting.
+   */
+  mute: MuteControlsOptions;
   /** Only so the freshness bar can link back at this page (M24). */
   gameId: string;
   gameName: string;
@@ -135,6 +143,8 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
 
     ${fixtureSection}
 
+    ${renderMuteControls(params.mute)}
+
     <h2>Coming up</h2>
     <ul class="fixtures">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>
 
@@ -178,6 +188,9 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
       TEAM_PICKER_CSS,
       RESULT_CSS,
       FRESHNESS_CSS,
+      // All-new selectors (see the block's own comment), so its position at
+      // the end of this list changes nothing already on the page.
+      MUTE_CSS,
     ],
     pageScripts: [FRESHNESS_JS],
   });

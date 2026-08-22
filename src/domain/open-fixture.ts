@@ -3,10 +3,20 @@ import type { Db } from "../db/client.js";
 import { fixtures, memberships, responses } from "../db/schema.js";
 import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import { isTerminalLifecycle } from "./lifecycle.js";
+import { isMuted } from "./mute.js";
 
 export interface OpenFixtureResult {
   opened: boolean;
+  /**
+   * Response rows written, **muted members included** — the size of the
+   * eligible set, not the number of people now waiting to answer. Renaming it
+   * would touch every caller and every sweep log line to say something they
+   * already mean; what changed in M28 is only that some of these rows start
+   * life as `out`. {@link OpenFixtureResult.autoDeclined} says how many.
+   */
   pendingCreated: number;
+  /** How many of those rows were auto-declined for a muted member (M28). */
+  autoDeclined: number;
   reason?: "already-open" | "terminal" | "not-found";
 }
 
@@ -25,35 +35,54 @@ export interface OpenFixtureResult {
  * (fixture_id, player_id) unique index makes the insert safe even if two runs
  * pass the guard simultaneously. That second mechanism matters because the
  * insert is chunked (TR-38) and a partial write must be completable.
+ *
+ * A member who is auto-declining (M28) still gets a row, and gets it here
+ * rather than by some later pass: writing their `out` at the same instant as
+ * everybody else's `pending` is what makes the organiser's numbers honest from
+ * the moment the fixture opens, and what keeps every downstream reader — the
+ * squad list, the reminder sweep, the broadcast audiences — needing no idea
+ * that muting exists. `out` is a status they all already handle.
  */
 export async function openFixture(db: Db, fixtureId: string, now: Date): Promise<OpenFixtureResult> {
   const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
-  if (!fixture) return { opened: false, pendingCreated: 0, reason: "not-found" };
+  if (!fixture) return { opened: false, pendingCreated: 0, autoDeclined: 0, reason: "not-found" };
   if (isTerminalLifecycle(fixture.lifecycle)) {
-    return { opened: false, pendingCreated: 0, reason: "terminal" };
+    return { opened: false, pendingCreated: 0, autoDeclined: 0, reason: "terminal" };
   }
   if (fixture.lifecycle === "open") {
-    return { opened: false, pendingCreated: 0, reason: "already-open" };
+    return { opened: false, pendingCreated: 0, autoDeclined: 0, reason: "already-open" };
   }
 
   const eligible = await db
-    .select({ playerId: memberships.playerId })
+    .select({
+      playerId: memberships.playerId,
+      mutedAt: memberships.mutedAt,
+      mutedUntil: memberships.mutedUntil,
+    })
     .from(memberships)
     .where(and(eq(memberships.gameId, fixture.gameId), eq(memberships.active, true)));
 
   let pendingCreated = 0;
+  let autoDeclined = 0;
   for (const batch of chunk(eligible, INSERT_CHUNK_SIZE)) {
+    const rows = batch.map((member) => {
+      const muted = isMuted(member, now);
+      if (muted) autoDeclined += 1;
+      return {
+        id: crypto.randomUUID(),
+        fixtureId,
+        playerId: member.playerId,
+        status: muted ? ("out" as const) : ("pending" as const),
+        // Stamped for an auto-decline and left null otherwise. `pending` means
+        // "has not answered" and silence is not consent (§1.4); a mute is an
+        // answer the player gave in advance, so it carries a time.
+        respondedAt: muted ? now : null,
+        source: "system" as const,
+      };
+    });
     const inserted = await db
       .insert(responses)
-      .values(
-        batch.map(({ playerId }) => ({
-          id: crypto.randomUUID(),
-          fixtureId,
-          playerId,
-          status: "pending" as const,
-          source: "system" as const,
-        })),
-      )
+      .values(rows)
       .onConflictDoNothing()
       .returning({ id: responses.id });
     pendingCreated += inserted.length;
@@ -64,5 +93,5 @@ export async function openFixture(db: Db, fixtureId: string, now: Date): Promise
     .set({ lifecycle: "open", openedAt: now })
     .where(eq(fixtures.id, fixtureId));
 
-  return { opened: true, pendingCreated };
+  return { opened: true, pendingCreated, autoDeclined };
 }

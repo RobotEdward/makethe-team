@@ -151,7 +151,7 @@ broadcast.get("/g/:id/message", requirePlayer, async (c) => {
   const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
   if (game === null) return c.text("Not found", 404);
 
-  const recipients = await listGameRecipients(db, game.id);
+  const recipients = await listGameRecipients(db, game.id, new Date(Date.now()));
   const values = emptyValues("everyone");
 
   return c.html(
@@ -191,7 +191,7 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
   if (withSquad === null || withSquad.fixture.gameId !== game.id) return c.text("Not found", 404);
   const { fixture } = withSquad;
 
-  const recipients = await listFixtureRecipients(db, fixtureId);
+  const recipients = await listFixtureRecipients(db, game.id, fixtureId, new Date(Date.now()));
   const values = emptyValues(DEFAULT_FIXTURE_AUDIENCE);
 
   return c.html(
@@ -403,7 +403,7 @@ broadcast.post("/g/:id/message", requirePlayer, async (c) => {
   if (game === null) return c.text("Not found", 404);
 
   const now = new Date(Date.now());
-  const recipients = await listGameRecipients(db, game.id);
+  const recipients = await listGameRecipients(db, game.id, now);
 
   return handleSend(
     c,
@@ -444,7 +444,7 @@ broadcast.post("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
   const { fixture } = withSquad;
 
   const now = new Date(Date.now());
-  const recipients = await listFixtureRecipients(db, fixtureId);
+  const recipients = await listFixtureRecipients(db, game.id, fixtureId, now);
 
   return handleSend(
     c,

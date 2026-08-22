@@ -112,6 +112,15 @@ export const AUDIT_ACTIONS = [
   // `membership.role_changed` carries `role`.
   "membership.removed",
   "membership.role_changed",
+  // M28. The player's own auto-decline switch, so the actor is always the
+  // subject. `after` carries the expiry (`null` for indefinite) and whether
+  // the same change was applied to every squad they are in, because one
+  // submission writes a row per game and nothing else on the row would say
+  // that the rows belong together. `membership.unmuted` is written only when a
+  // membership really was muted, so the trail records transitions rather than
+  // one row per visit to a page with an "off" button on it.
+  "membership.muted",
+  "membership.unmuted",
   // J6b. An owner answering on a player's behalf (BR-27). `before` carries the
   // status the row held, which is what BR-27's "previous value" means here;
   // `after.overCapacity` records whether this was BR-8's deliberate override

@@ -1,6 +1,7 @@
 import { and, eq, ne } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { fixtures, games, notificationLog, players, responses } from "../db/schema.js";
+import { fixtures, games, memberships, notificationLog, players, responses } from "../db/schema.js";
+import { isMuted } from "../domain/mute.js";
 import { openFixture } from "../domain/open-fixture.js";
 import { reminderInstant } from "../domain/reminder-time.js";
 import { buildReminderMessages, type ReminderCandidate } from "../notify/reminder-messages.js";
@@ -279,7 +280,7 @@ async function sendDueReminders(
       if (!row) continue;
       const { fixture: fixtureRow, game: gameRow } = row;
 
-      const candidates = await eligiblePlayers(db, fixture.id);
+      const candidates = await eligiblePlayers(db, fixture.id, fixtureRow.gameId, now);
       const alreadyLogged = await existingReminderLog(db, fixture.id);
 
       const toBuild: ReminderCandidate[] = [];
@@ -487,18 +488,45 @@ async function sendDueReminders(
  * player is not a squad member any more and is not reminded (mirrors that
  * query's own filter, kept separate here only because this needs `email`
  * and `is_guest`, which that read model does not carry).
+ *
+ * Auto-declining members (M28) are dropped, and dropped on the strength of
+ * their **membership**, never their response status. This filter is the one
+ * notification path that needed writing by hand: N-1 goes to every status
+ * except `withdrawn`, so without it the reminder would still reach the one
+ * person who has explicitly asked not to be asked. Reading the status instead
+ * would silence a player who simply declined this week's fixture by hand,
+ * who has always been reminded and still should be.
+ *
+ * The join is a `leftJoin`: a guest has a response row and no membership, and
+ * an inner join would drop them here rather than at the BR-32 check the
+ * caller already makes — which is where a skipped guest is counted.
  */
-async function eligiblePlayers(db: Db, fixtureId: string): Promise<ReminderCandidate[]> {
-  return db
+async function eligiblePlayers(
+  db: Db,
+  fixtureId: string,
+  gameId: string,
+  now: Date,
+): Promise<ReminderCandidate[]> {
+  const rows = await db
     .select({
       playerId: responses.playerId,
       name: players.name,
       email: players.email,
       isGuest: players.isGuest,
+      mutedAt: memberships.mutedAt,
+      mutedUntil: memberships.mutedUntil,
     })
     .from(responses)
     .innerJoin(players, eq(responses.playerId, players.id))
+    .leftJoin(
+      memberships,
+      and(eq(memberships.gameId, gameId), eq(memberships.playerId, responses.playerId)),
+    )
     .where(and(eq(responses.fixtureId, fixtureId), ne(responses.status, "withdrawn")));
+
+  return rows
+    .filter((row) => !isMuted({ mutedAt: row.mutedAt, mutedUntil: row.mutedUntil }, now))
+    .map(({ playerId, name, email, isGuest }) => ({ playerId, name, email, isGuest }));
 }
 
 /**

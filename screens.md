@@ -122,6 +122,10 @@ reminder email; the tap *on this page* is what saves the answer.
   - **off:** a bare count — "3 in so far." — plus the viewer's own answer.
 - **Push offer (one-time):** `Get these on your phone` (h2) + a permission button. No device
   list here, deliberately (token auth must not disclose endpoints).
+- **Auto-decline panel (M28):** below the squad, and **only when the page is not read-only** —
+  a finished, cancelled or not-yet-open fixture offers nothing to submit, and a reader who is
+  no longer on the squad is offered nothing at all. See §2.5 for the panel itself; the actions
+  post to `/r/:token/mute` and `/r/:token/unmute`, so no session is needed.
 
 ### 1.6 Leave a game — `GET/POST /leave/:token`
 Linked from the footer of every reminder / promotion / cancellation / welcome email.
@@ -259,6 +263,19 @@ One page in four states, all under `Delete my data` (h1) + "You're signed in as 
 - The open fixture (kickoff, status badge, capacity bar, published teams, `Squad`) or "Nothing
   open yet — you'll get an email the day before the next game."; `Coming up` (h2) — a list of
   dates each with its status in words.
+- **Auto-decline panel (M28):** between the open fixture and `Coming up`. Switched off it is a
+  single quiet `<details>` line — `Can't play for a while?` — opening to a short explanation, a
+  four-way radio (`2 weeks` / `4 weeks` / `8 weeks` / `Indefinitely`, four selected by default),
+  an optional `Do this for my other squads too` checkbox (hidden when the player is in only one
+  squad, and captioned with how many there are), and `Turn on auto-decline`. Switched on it is
+  always open — never behind a disclosure — as a card with an amber left edge:
+  "You're auto-declining this squad until Saturday 19 September. You can still say yes to any
+  game." plus `Turn auto-decline off`. The expiry is shown as a **date with no clock time**: it
+  is four weeks from whenever the button was tapped, and a time of day would read as chosen.
+  While it is on, every fixture that opens records the player as `out` at the moment it opens,
+  and this squad sends them nothing at all — reminder, teams, cancellation, organiser broadcast
+  and result prompt alike. **Accepting one fixture never switches it off**, which is why the
+  copy promises that in both states.
 - **`Games you've played` link (M27):** under `Coming up`, to this game's past-fixtures list
   (§2.7).
 - **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
@@ -300,6 +317,10 @@ fixture's published teams vanished from a player's view the moment the sweep ret
   form renders); anyone not an active member of the game gets a 404; a fixture that has not
   been played gets a 404 on the write routes, distinct from the 422 a locked fixture's write
   gets.
+
+**Auto-decline panel (M28):** below `Squad`, on an open or scheduled fixture only — a played or
+cancelled one is a record of an evening, and the switch belongs where a reader is still deciding
+something. Identical to §2.5's, and posting to the same two paths.
 
 ### 2.7 Past fixtures — `GET /g/:id/fixtures` (M27)
 A game's fixtures that have been and gone. One route, dispatching by role exactly as `/g/:id`
@@ -373,9 +394,12 @@ The organiser's home for one game.
   a `Show the QR code` `<details>` disclosure, and `Replace this link` (a form POST that
   rotates the token and kills the old link immediately).
 - **`Message everyone` action** → the game-scoped broadcast compose page.
-- **`Squad (N)` (h2):** one row per member — name, `organiser` / `organiser (you)` marker, and
-  a `Manage` `<details>` disclosure containing `View details`, a role button
-  (`Make an organiser` / `Make an ordinary member`), and `Remove`.
+- **`Squad (N)` (h2):** one row per member — name, `organiser` / `organiser (you)` marker, an
+  `Auto-declining` pill for a member currently muted (M28), and a `Manage` `<details>`
+  disclosure containing `View details`, a role button (`Make an organiser` /
+  `Make an ordinary member`), and `Remove`. The pill is on this page and nowhere else: it is
+  the answer to "why is this person out every single week?", and chasing them is the wrong
+  response. It disappears the moment the mute expires.
 - **`Coming up` (h2):** upcoming fixtures, each date a link to its own fixture page.
 - **`Past fixtures` link (M27):** between `Coming up` and `Squad`, to this game's
   past-fixtures list (§2.7).
@@ -568,6 +592,15 @@ but opinions, and a design review is welcome to challenge any of them.
   reads while deciding, not something to scroll past.
 - **Waitlist promotion is silent and automatic.** The promoted player is emailed; nobody else
   is told; the organiser does nothing.
+- **Auto-decline means total silence for that squad, and `Accept` is never taken away** (M28).
+  The two halves are deliberate and pull in opposite directions: a muted player gets nothing at
+  all — not even a cancellation, which they no longer need, having been recorded `out` before
+  it — yet every page still offers them a way in, and taking one game does not end the mute.
+  Its cost is that an organiser writing to the whole squad by hand quietly misses them, which
+  is exactly what the `Auto-declining` pill on the organiser's squad list (§3.2) exists to make
+  visible. "All my games" is a snapshot of the squads held at that moment, never a standing
+  preference: a squad joined next month starts unmuted, because joining is itself the act of
+  saying "ask me about this one".
 - **Guests exist for one fixture only.** No invite link, no email, no membership — the
   organiser has to tell them the details personally.
 - **Capacity can be exceeded deliberately,** and the app then labels the fixture as over

@@ -154,7 +154,7 @@ export async function sendBroadcast(params: SendBroadcastParams): Promise<Broadc
     }
   }
 
-  const selected = await selectRecipients(db, { gameId, fixtureId: scopedFixtureId, audience });
+  const selected = await selectRecipients(db, { gameId, fixtureId: scopedFixtureId, audience, now });
   const addressable = selected.filter((recipient) => isAddressable(recipient));
   const skipped = selected.length - addressable.length;
   if (addressable.length === 0) return nothingSent(skipped);
@@ -342,12 +342,15 @@ export async function sendBroadcast(params: SendBroadcastParams): Promise<Broadc
  * read `responses.status` through `audienceSelectsStatus`, which is where a
  * status this build cannot name is excluded rather than defaulted into an
  * audience.
+ *
+ * Both underlying queries drop auto-declining members (M28), so this send and
+ * the count the compose page showed the organiser cannot disagree.
  */
 async function selectRecipients(
   db: Db,
-  params: { gameId: string; fixtureId: string | null; audience: BroadcastAudience },
+  params: { gameId: string; fixtureId: string | null; audience: BroadcastAudience; now: Date },
 ): Promise<BroadcastRecipient[]> {
-  if (params.audience === "everyone") return listGameRecipients(db, params.gameId);
+  if (params.audience === "everyone") return listGameRecipients(db, params.gameId, params.now);
   if (params.fixtureId === null) {
     // A fixture-scoped audience with no fixture selects nobody. Unreachable
     // through the routes — the game-scoped form forces `everyone` — but a
@@ -355,6 +358,6 @@ async function selectRecipients(
     console.error(`sendBroadcast: audience "${params.audience}" needs a fixture, but none was given`);
     return [];
   }
-  const rows = await listFixtureRecipients(db, params.fixtureId);
+  const rows = await listFixtureRecipients(db, params.gameId, params.fixtureId, params.now);
   return rows.filter((row) => audienceSelectsStatus(params.audience, row.status ?? ""));
 }

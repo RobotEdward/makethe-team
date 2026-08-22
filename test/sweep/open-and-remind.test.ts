@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb, type Db } from "../../src/db/client.js";
-import { auditLog, fixtures, memberships, notificationLog, players } from "../../src/db/schema.js";
+import { auditLog, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { verifyLeaveToken } from "../../src/domain/token.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
@@ -769,4 +769,58 @@ describe("openAndRemind", () => {
     expect(logRows).toHaveLength(0);
   });
 
+});
+
+describe("openAndRemind and the auto-decline switch (M28)", () => {
+  it("does not remind a muted member, and still reminds everyone else", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const members = squad(3, "muted-case");
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: members, lifecycle: "scheduled" });
+    await db
+      .update(memberships)
+      .set({ mutedAt: new Date("2026-08-01T00:00:00Z"), mutedUntil: null })
+      .where(eq(memberships.playerId, members[1]!.id));
+    const notifier = new RecordingNotifier();
+
+    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+
+    const logRows = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
+    expect(logRows.map((r) => r.playerId).sort()).toEqual([members[0]!.id, members[2]!.id].sort());
+    expect(notifier.sent.flat()).toHaveLength(2);
+  });
+
+  it("reminds a member whose mute has expired", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const members = squad(2, "expired-case");
+    await seedFixture({ kicksOffAt, squad: members, lifecycle: "scheduled" });
+    await db
+      .update(memberships)
+      .set({ mutedAt: new Date("2026-07-01T00:00:00Z"), mutedUntil: new Date("2026-08-01T00:00:00Z") })
+      .where(eq(memberships.playerId, members[0]!.id));
+    const notifier = new RecordingNotifier();
+
+    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+
+    expect(notifier.sent.flat()).toHaveLength(2);
+  });
+
+  it("still reminds an unmuted member who happens to be out", async () => {
+    // The filter must read the membership, never the response status: a player
+    // who declined by hand is still owed the reminder they have always had.
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const members = squad(2, "hand-declined");
+    const { fixtureId } = await seedFixture({ kicksOffAt, squad: members });
+    await db
+      .update(responses)
+      .set({ status: "out", respondedAt: new Date("2026-08-11T00:00:00Z"), source: "web" })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, members[0]!.id)));
+    const notifier = new RecordingNotifier();
+
+    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+
+    expect(notifier.sent.flat()).toHaveLength(2);
+  });
 });

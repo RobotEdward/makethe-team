@@ -1161,6 +1161,12 @@ describe("the capacity bar", () => {
 
     const playerHtml = renderPlayerGamePage({
       nav: { isAdmin: false, current: "games" } as const,
+      mute: {
+        muteAction: "/g/g-1/mute",
+        unmuteAction: "/g/g-1/unmute",
+        state: { muted: false },
+        otherGamesCount: 0,
+      },
       gameId: "g-1",
       gameName: "Thursday 7-a-side",
       venueName: "Oxford Sports Park",

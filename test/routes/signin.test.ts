@@ -1347,6 +1347,23 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "— so it has no template of its own that could carry an un-enumerated " +
       "script; its own script/password assertion lives in " +
       "test/routes/respond-get.test.ts.",
+    "POST /r/:token/mute":
+      "never returns HTML of its own — a 303 redirect back to GET /r/:token, a " +
+      "plain-text 400 (a duration outside the catalogue), or renderLinkProblemPage, " +
+      "which GET /r/:token already renders and this enumeration already covers " +
+      "through it (src/routes/respond.ts); its own status-code coverage lives in " +
+      "test/routes/mute.test.ts.",
+    "POST /r/:token/unmute":
+      "never returns HTML of its own — a 303 redirect or renderLinkProblemPage, " +
+      "exactly as POST /r/:token/mute above (src/routes/respond.ts).",
+    "POST /g/:id/mute":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
+      "plain-text 400 (a duration outside the catalogue), a plain-text 404 " +
+      "(not a member of this game) or a 303 redirect only (src/routes/games.ts); " +
+      "its own status-code coverage lives in test/routes/mute.test.ts.",
+    "POST /g/:id/unmute":
+      "never returns HTML on any branch — a plain-text 403, a plain-text 404 or a " +
+      "303 redirect only, exactly as POST /g/:id/mute above (src/routes/games.ts).",
     "POST /sign-out":
       "never returns HTML on any branch — a plain-text 403 or a 302 redirect " +
       "only (src/routes/signin.ts).",

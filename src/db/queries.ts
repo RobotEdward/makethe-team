@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import { isMuted } from "../domain/mute.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseSource, ResponseStatus } from "../domain/response-status.js";
 import type { TeamAssignment, TeamId } from "../domain/teams.js";
@@ -313,13 +314,25 @@ export async function listActiveMemberships(
 export async function listSquad(
   db: Db,
   gameId: string,
-): Promise<Array<{ playerId: string; name: string; role: "player" | "owner"; isGuest: boolean }>> {
+): Promise<
+  Array<{
+    playerId: string;
+    name: string;
+    role: "player" | "owner";
+    isGuest: boolean;
+    /** The raw columns; the page decides what to say through `isMuted` (M28). */
+    mutedAt: Date | null;
+    mutedUntil: Date | null;
+  }>
+> {
   return db
     .select({
       playerId: players.id,
       name: players.name,
       role: memberships.role,
       isGuest: players.isGuest,
+      mutedAt: memberships.mutedAt,
+      mutedUntil: memberships.mutedUntil,
     })
     .from(memberships)
     .innerJoin(players, eq(players.id, memberships.playerId))
@@ -555,6 +568,47 @@ export async function countActiveOwners(db: Db, gameId: string): Promise<number>
       and(eq(memberships.gameId, gameId), eq(memberships.active, true), eq(memberships.role, "owner")),
     );
   return rows.length;
+}
+
+/** What the auto-decline panel needs to render for one viewer (M28). */
+export interface ViewerMuteState {
+  muted: boolean;
+  /** The expiry, or `null` — either because it is indefinite or because it is off. */
+  mutedUntil: Date | null;
+  /** Active squads this player is in *besides* this one. */
+  otherGamesCount: number;
+}
+
+/**
+ * The viewer's auto-decline state for one game, or `null` when they are not an
+ * active member of it — which every caller answers with a 404 (TR-18).
+ *
+ * One read of every active membership rather than two queries, because the
+ * panel needs both the state here and a count of the squads elsewhere, and two
+ * reads could disagree about a membership that changed between them.
+ */
+export async function muteStateFor(
+  db: Db,
+  gameId: string,
+  playerId: string,
+  now: Date,
+): Promise<ViewerMuteState | null> {
+  const rows = await db
+    .select({ gameId: memberships.gameId, mutedAt: memberships.mutedAt, mutedUntil: memberships.mutedUntil })
+    .from(memberships)
+    .where(and(eq(memberships.playerId, playerId), eq(memberships.active, true)));
+
+  const here = rows.find((row) => row.gameId === gameId);
+  if (here === undefined) return null;
+
+  return {
+    muted: isMuted(here, now),
+    // Reported only while the mute is live. An expired row keeps its columns
+    // (see `src/domain/mute.ts`), and a date from one would render as an
+    // auto-decline that ended weeks ago still being in force.
+    mutedUntil: isMuted(here, now) ? here.mutedUntil : null,
+    otherGamesCount: rows.length - 1,
+  };
 }
 
 /**

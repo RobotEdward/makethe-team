@@ -3,10 +3,11 @@ import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection } from "./fixture.js";
 import { renderFreshness } from "./freshness.js";
+import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
 import { renderResultPanel, type ResultPanelParams } from "./result.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, RESULT_CSS, SQUAD_STYLES_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, MUTE_CSS, RESULT_CSS, SQUAD_STYLES_CSS } from "./styles.js";
 
 /**
  * A player's own view of one fixture, past or present (M25).
@@ -47,6 +48,14 @@ export interface PlayerFixtureParams {
   viewerPlayerId: string;
   /** Set only by a refusal re-render (Task 9's write routes); a plain `GET` never sets it. */
   problem?: string;
+  /**
+   * The player's auto-decline switch for this squad (M28), or `undefined` on
+   * a render where it does not belong. It is a squad-level control shown on a
+   * fixture page, so it sits at the foot, below the squad — a reader here came
+   * for one fixture, and a settings panel above the line-ups would answer a
+   * question they did not ask.
+   */
+  mute?: MuteControlsOptions;
   /**
    * `undefined` for anything but a `played` fixture (M25 review fix, I1) —
    * matching `OwnerFixtureParams.result`, whose own comment gives the reason:
@@ -106,6 +115,8 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
     <h2>Squad</h2>
     ${renderSquadSection(squad, inCount, viewerPlayerId)}
 
+    ${params.mute === undefined ? "" : renderMuteControls(params.mute)}
+
     ${renderFreshness(fixturePath)}
   `;
 
@@ -113,7 +124,11 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
     nav: params.nav,
     title: `${gameName} — Make The Team`,
     body,
-    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, FORM_CSS, RESULT_CSS, FRESHNESS_CSS],
+    // `MUTE_CSS` unconditionally, though the panel is not: a stylesheet that
+    // appeared and disappeared with a page's state is harder to reason about
+    // than a few unused rules, the same call `/r/:token` makes for its push
+    // block. Its selectors are all new, so its position here changes nothing.
+    pageStyles: [FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS, FORM_CSS, RESULT_CSS, FRESHNESS_CSS, MUTE_CSS],
     pageScripts: [FRESHNESS_JS],
   });
 }

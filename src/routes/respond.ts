@@ -1,11 +1,21 @@
 import { Hono } from "hono";
 import { and, eq, isNull } from "drizzle-orm";
-import { countActiveOwners, findMembershipInGame, getFixtureWithSquad, listOtherActiveGames } from "../db/queries.js";
-import { games, players } from "../db/schema.js";
+import {
+  countActiveOwners,
+  findMembershipInGame,
+  getFixtureWithSquad,
+  listOtherActiveGames,
+  muteStateFor,
+} from "../db/queries.js";
+import { tokenMutePath, tokenUnmutePath } from "../auth/paths.js";
+import { parseMuteDuration } from "../domain/mute.js";
+import { clearMute, setMute } from "../domain/set-mute.js";
+import type { MuteControlsOptions } from "../views/mute-controls.js";
+import { fixtures, games, players } from "../db/schema.js";
 import { getDb, type Db } from "../db/client.js";
 import { resolveSessionPlayer } from "../auth/session.js";
 import { fixtureView } from "../domain/fixture-view.js";
-import { formatLocalDateTime } from "../domain/time/zone.js";
+import { formatLocalDate, formatLocalDateTime } from "../domain/time/zone.js";
 import {
   leaveTokenMintedAt,
   verifyLeaveToken,
@@ -155,7 +165,60 @@ async function renderFixtureForViewer(params: {
     // squad private — the ones already holding an email that names their side.
     teams: publishedTeamsFor(fixture, game, viewerMember),
     pushOffer,
+    // Offered only on a page that is not read-only. Two separate reasons,
+    // and either alone would be enough:
+    //
+    //  - `not-eligible` means the reader is no longer on this squad, so a
+    //    control for silencing it is a promise nothing behind it could keep.
+    //  - The other three reasons mean the fixture is over, off, or not yet
+    //    open, and a page in that state offers **nothing to submit** — an
+    //    invariant `test/routes/respond-get.test.ts` and
+    //    `test/routes/respond-post.test.ts` both pin by asserting the page
+    //    carries no `method="post"` at all. The squad-level switch is reachable
+    //    from the next fixture's link and from `/g/:id`, so withholding it here
+    //    costs a reader nothing.
+    mute:
+      readOnlyReason === undefined
+        ? await muteControlsForToken(db, game, playerId, token, now)
+        : undefined,
   });
+}
+
+/**
+ * The auto-decline panel's props for a reader holding an emailed link (M28).
+ *
+ * Its own function rather than a shared import from `src/routes/games.ts`,
+ * because the two differ in the only place that matters: the actions here are
+ * token paths, and a signed-in path posted from an email would 302 the reader
+ * to a sign-in page they may have no account for. What must not drift — the
+ * durations, the wording, the on/off shape — lives in `renderMuteControls`,
+ * which both call.
+ *
+ * A `null` state means the reader is not an active member. Unreachable here,
+ * since `not-eligible` is already filtered out above by the time this is
+ * called, and rendered as the off state for the reason its sibling gives.
+ */
+async function muteControlsForToken(
+  db: Db,
+  game: { id: string; timezone: string },
+  playerId: string,
+  token: string,
+  now: Date,
+): Promise<MuteControlsOptions> {
+  const state = await muteStateFor(db, game.id, playerId, now);
+  return {
+    muteAction: tokenMutePath(token),
+    unmuteAction: tokenUnmutePath(token),
+    state:
+      state?.muted === true
+        ? {
+            muted: true,
+            // The date alone — see the same line in `src/routes/games.ts`.
+            untilLocal: state.mutedUntil === null ? null : formatLocalDate(state.mutedUntil, game.timezone),
+          }
+        : { muted: false },
+    otherGamesCount: state?.otherGamesCount ?? 0,
+  };
 }
 
 respond.get("/r/:token", async (c) => {
@@ -495,6 +558,109 @@ async function resolveOtherGames(
  */
 function isFromAPreviousSpell(payload: LeaveTokenPayload, joinedAt: Date): boolean {
   return leaveTokenMintedAt(payload).getTime() < joinedAt.getTime();
+}
+
+/**
+ * The player's own auto-decline switch (M28), reached from an emailed fixture
+ * link with no session at all.
+ *
+ * **Deliberately no `wrongOrigin` check**, for the reason `POST /leave/:token`
+ * below sets out at length: this form is submitted from whatever rendered the
+ * email, where `Origin` is often absent or the webmail provider's own. The
+ * signed, expiring response token is the entire authorisation, exactly as it
+ * is for `POST /r/:token` above.
+ *
+ * The token names a *player* and a *fixture*; the mute is written against the
+ * fixture's **game**, which is read here rather than trusted from any field —
+ * a game id in the body would let a holder of one squad's link mute a
+ * different squad. "All my games" is still offered, and is the one thing here
+ * a leaked link could reach beyond this squad: the same exposure
+ * `POST /leave/:token` already carries, and reversible in one tap from any of
+ * the pages the panel appears on.
+ */
+respond.post("/r/:token/mute", async (c) => {
+  const token = c.req.param("token");
+  const now = new Date(Date.now());
+  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+  if (!verification.ok) {
+    console.error(`response token rejected on mute: ${verification.reason}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const form = await c.req.parseBody();
+  const duration = parseMuteDuration(form["duration"]);
+  if (duration === null) {
+    return c.text('Bad Request: "duration" must be one of 2w, 4w, 8w, forever', 400);
+  }
+
+  const { playerId, fixtureId } = verification.payload;
+  const db = getDb(c.env.DB);
+  const gameId = await gameIdForFixture(db, fixtureId);
+  if (gameId === null) {
+    console.error(`response token verified for a fixture that no longer exists: ${fixtureId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const result = await setMute({
+    db,
+    playerId,
+    gameId,
+    duration,
+    applyToAll: form["all-games"] !== undefined,
+    now,
+    decline: (declineFixtureId, declinePlayerId) =>
+      c.env.FIXTURE_CAPACITY.getByName(declineFixtureId).setResponse({
+        playerId: declinePlayerId,
+        intent: "out",
+        actorPlayerId: null,
+        source: "token",
+        now: now.getTime(),
+        whenFull: "waitlist",
+      }),
+  });
+  // Not on this squad any more: the same link-problem page a bad token gets,
+  // for the reason `POST /leave/:token` gives — saying more would confirm the
+  // game exists.
+  if (result.kind === "not-a-member") return c.html(renderLinkProblemPage(), 200);
+
+  return c.redirect(`/r/${encodeURIComponent(token)}`, 303);
+});
+
+/** Turning it back off from the same link. See `POST /r/:token/mute`. */
+respond.post("/r/:token/unmute", async (c) => {
+  const token = c.req.param("token");
+  const now = new Date(Date.now());
+  const verification = await verifyResponseToken(token, c.env.RESPONSE_TOKEN_SECRET, now);
+  if (!verification.ok) {
+    console.error(`response token rejected on unmute: ${verification.reason}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const { playerId, fixtureId } = verification.payload;
+  const db = getDb(c.env.DB);
+  const gameId = await gameIdForFixture(db, fixtureId);
+  if (gameId === null) {
+    console.error(`response token verified for a fixture that no longer exists: ${fixtureId}`);
+    return c.html(renderLinkProblemPage(), 200);
+  }
+
+  const form = await c.req.parseBody();
+  const result = await clearMute({
+    db,
+    playerId,
+    gameId,
+    applyToAll: form["all-games"] !== undefined,
+    now,
+  });
+  if (result.kind === "not-a-member") return c.html(renderLinkProblemPage(), 200);
+
+  return c.redirect(`/r/${encodeURIComponent(token)}`, 303);
+});
+
+/** The game a fixture belongs to, or `null` if the fixture is gone. */
+async function gameIdForFixture(db: Db, fixtureId: string): Promise<string | null> {
+  const [row] = await db.select({ gameId: fixtures.gameId }).from(fixtures).where(eq(fixtures.id, fixtureId));
+  return row?.gameId ?? null;
 }
 
 respond.get("/leave/:token", async (c) => {

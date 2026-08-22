@@ -29,7 +29,7 @@ describe("listGameRecipients", () => {
     await insertMembership(db, gameId, playerId);
     await insertMembership(db, otherGameId, otherPlayerId);
 
-    const recipients = await listGameRecipients(db, gameId);
+    const recipients = await listGameRecipients(db, gameId, now);
 
     expect(recipients).toHaveLength(1);
     expect(recipients[0]).toEqual({
@@ -49,9 +49,26 @@ describe("listGameRecipients", () => {
     await insertMembership(db, gameId, activeId);
     await insertMembership(db, gameId, inactiveId, { active: false, leftAt: now });
 
-    const recipients = await listGameRecipients(db, gameId);
+    const recipients = await listGameRecipients(db, gameId, now);
 
     expect(recipients.map((r) => r.playerId)).toEqual([activeId]);
+  });
+
+  it("omits a member who is auto-declining, and keeps one whose mute has run out (M28)", async () => {
+    const gameId = await insertGame(db);
+    const askedId = await insertPlayer(db, { name: "Asked" });
+    const mutedId = await insertPlayer(db, { name: "Muted" });
+    const expiredId = await insertPlayer(db, { name: "Expired" });
+    await insertMembership(db, gameId, askedId);
+    await insertMembership(db, gameId, mutedId, { mutedAt: new Date("2026-08-01T00:00:00Z"), mutedUntil: null });
+    await insertMembership(db, gameId, expiredId, {
+      mutedAt: new Date("2026-07-01T00:00:00Z"),
+      mutedUntil: new Date("2026-08-01T00:00:00Z"),
+    });
+
+    const recipients = await listGameRecipients(db, gameId, now);
+
+    expect(recipients.map((r) => r.playerId).sort()).toEqual([askedId, expiredId].sort());
   });
 
   it("sets hasDevice true for a player with a push_subscriptions row, without duplicating a two-device player", async () => {
@@ -63,7 +80,7 @@ describe("listGameRecipients", () => {
     await insertSubscription(db, twoDeviceId, "https://push.example.com/device-a");
     await insertSubscription(db, twoDeviceId, "https://push.example.com/device-b");
 
-    const recipients = await listGameRecipients(db, gameId);
+    const recipients = await listGameRecipients(db, gameId, now);
 
     expect(recipients.filter((r) => r.playerId === twoDeviceId)).toHaveLength(1);
     expect(recipients.find((r) => r.playerId === twoDeviceId)?.hasDevice).toBe(true);
@@ -78,10 +95,36 @@ describe("listFixtureRecipients", () => {
     const playerId = await insertPlayer(db, { name: "Carol" });
     await insertResponse(db, fixtureId, playerId, { status: "waitlisted" });
 
-    const recipients = await listFixtureRecipients(db, fixtureId);
+    const recipients = await listFixtureRecipients(db, gameId, fixtureId, now);
 
     expect(recipients).toHaveLength(1);
     expect(recipients[0]).toMatchObject({ playerId, status: "waitlisted" });
+  });
+
+  it("omits a muted member from a fixture-scoped audience too (M28)", async () => {
+    const gameId = await insertGame(db);
+    const fixtureId = await insertFixture(db, gameId);
+    const askedId = await insertPlayer(db, { name: "Asked" });
+    const mutedId = await insertPlayer(db, { name: "Muted" });
+    await insertMembership(db, gameId, askedId);
+    await insertMembership(db, gameId, mutedId, { mutedAt: new Date("2026-08-01T00:00:00Z"), mutedUntil: null });
+    await insertResponse(db, fixtureId, askedId, { status: "out" });
+    await insertResponse(db, fixtureId, mutedId, { status: "out" });
+
+    const recipients = await listFixtureRecipients(db, gameId, fixtureId, now);
+
+    expect(recipients.map((r) => r.playerId)).toEqual([askedId]);
+  });
+
+  it("keeps a guest, who has a response row and no membership at all", async () => {
+    const gameId = await insertGame(db);
+    const fixtureId = await insertFixture(db, gameId);
+    const guestId = await insertPlayer(db, { name: "Guest", email: null, isGuest: true });
+    await insertResponse(db, fixtureId, guestId, { status: "in" });
+
+    const recipients = await listFixtureRecipients(db, gameId, fixtureId, now);
+
+    expect(recipients.map((r) => r.playerId)).toEqual([guestId]);
   });
 
   it("sets hasDevice true for a player with a push_subscriptions row, false otherwise, and once for two devices", async () => {
@@ -94,7 +137,7 @@ describe("listFixtureRecipients", () => {
     await insertSubscription(db, withDeviceId, "https://push.example.com/device-a");
     await insertSubscription(db, withDeviceId, "https://push.example.com/device-b");
 
-    const recipients = await listFixtureRecipients(db, fixtureId);
+    const recipients = await listFixtureRecipients(db, gameId, fixtureId, now);
 
     expect(recipients.filter((r) => r.playerId === withDeviceId)).toHaveLength(1);
     expect(recipients.find((r) => r.playerId === withDeviceId)?.hasDevice).toBe(true);

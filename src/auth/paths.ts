@@ -290,6 +290,32 @@ export function leaveOtherGamePath(gameId: string): string {
   return `${DASHBOARD_PATH}/games/${gameId}/leave`;
 }
 
+/**
+ * Where the player's own auto-decline switch posts (M28). Under `/g/:id`
+ * rather than the dashboard: the panel is rendered on this game's pages, and
+ * `gamesRoutes` is where the membership entitlement check for them already
+ * lives.
+ */
+export function gameMutePath(gameId: string): string {
+  return `/g/${gameId}/mute`;
+}
+
+export function gameUnmutePath(gameId: string): string {
+  return `/g/${gameId}/unmute`;
+}
+
+/**
+ * The same two switches for a reader holding an emailed fixture link and no
+ * session, hung off the response token that already authorises `/r/:token`.
+ */
+export function tokenMutePath(token: string): string {
+  return `/r/${encodeURIComponent(token)}/mute`;
+}
+
+export function tokenUnmutePath(token: string): string {
+  return `/r/${encodeURIComponent(token)}/unmute`;
+}
+
 /** Where removing a guest posts (J6b §5). */
 export function ownerGuestRemovePath(gameId: string, fixtureId: string, playerId: string): string {
   return `/g/${gameId}/f/${fixtureId}/guest/${playerId}/remove`;

@@ -1055,6 +1055,57 @@ export const FRESHNESS_CSS = `
   .freshness-refresh { margin-left: auto; }
 `;
 
+/**
+ * The player's auto-decline panel (M28), on the fixture pages and the game
+ * page.
+ *
+ * A `<details>` when the switch is off, so a control most players will never
+ * touch stays one quiet line under the answer buttons rather than a block of
+ * radios competing with them; an always-open panel when it is on, because a
+ * setting that is currently silencing a squad must never be something a
+ * reader has to open a disclosure to find out about.
+ *
+ * All-new selectors, so adding this block changes nothing already on a page.
+ * The radios and the checkbox are left to `FORM_CSS`, which every page that
+ * renders this panel already loads.
+ */
+export const MUTE_CSS = `
+  .mute { margin-top: 1.5rem; font-size: var(--t-support); }
+  .mute > summary {
+    cursor: pointer; color: var(--mut); font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mute > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .mute-panel {
+    margin-top: 0.9rem; padding: 0.9rem 1rem;
+    background: var(--card-raised); border-radius: 0.75rem;
+  }
+  /* The "it is on right now" state, which is never inside a disclosure. The
+     left rule is the whole visual difference from the panel above: an amber
+     edge reads as "something is deliberately switched on here" without
+     borrowing .warn, whose colour belongs to the waitlist. */
+  .mute-on {
+    margin-top: 1.5rem; padding: 0.9rem 1rem;
+    background: var(--card-raised); border-radius: 0.75rem;
+    border-left: 4px solid var(--accent);
+    font-size: var(--t-support);
+  }
+  .mute-on p, .mute-panel p { margin: 0 0 0.6rem; }
+  .mute-on form, .mute-panel form { margin: 0; }
+  .mute-legend { font-weight: 600; margin-bottom: 0.4rem; }
+  .mute-durations { display: grid; gap: 0.4rem; margin: 0 0 0.9rem; border: none; padding: 0; }
+  .mute-durations label { display: flex; align-items: center; gap: 0.5rem; }
+  /* The organiser's marker on a squad row. A quiet pill rather than a colour
+     on the name: the fact is about the member's answers, not about the member,
+     and nothing here is a warning. --mut on --card-raised clears 4.5:1
+     (test/views/contrast.test.ts). */
+  .member-muted {
+    display: inline-block; padding: 0.1rem 0.5rem;
+    background: var(--card-raised); border-radius: 0.6rem;
+    font-size: var(--t-support); color: var(--mut); white-space: nowrap;
+  }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -1074,6 +1125,7 @@ export const PAGE_STYLE_BLOCKS = [
   WHATSAPP_CSS,
   RESULT_CSS,
   FRESHNESS_CSS,
+  MUTE_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

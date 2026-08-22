@@ -16,7 +16,13 @@ const BASE = {
   maxPlayers: 14,
   prefersEvenNumbers: true,
   inviteToken: "invite-token",
-  squad: [] as Array<{ playerId: string; name: string; role: "player" | "owner"; isGuest: boolean }>,
+  squad: [] as Array<{
+    playerId: string;
+    name: string;
+    role: "player" | "owner";
+    isGuest: boolean;
+    muted: boolean;
+  }>,
   upcoming: [] as Array<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>,
   lastResult: null as { fixtureId: string; words: string } | null,
 };
@@ -28,8 +34,8 @@ const render = (overrides: Partial<typeof BASE> = {}) =>
 
 describe("squad controls", () => {
   const squad = [
-    { playerId: "p-owner", name: "Edward Charles", role: "owner" as const, isGuest: false },
-    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false },
+    { playerId: "p-owner", name: "Edward Charles", role: "owner" as const, isGuest: false, muted: false },
+    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false },
   ];
 
   it("offers a remove link for each member", () => {
@@ -77,7 +83,7 @@ describe("squad controls", () => {
 });
 
 describe("per-member disclosure (M10 §3.8)", () => {
-  const m = (name: string) => ({ playerId: `p-${name}`, name, role: "player" as const, isGuest: false });
+  const m = (name: string) => ({ playerId: `p-${name}`, name, role: "player" as const, isGuest: false, muted: false });
   const params = (overrides: Partial<typeof BASE> & { squad: typeof BASE.squad }) => ({
     ...BASE,
     viewerPlayerId: "p-owner",
@@ -174,7 +180,7 @@ describe("the invite card (M12 §4)", () => {
 });
 
 describe("destructive controls", () => {
-  const squad = [{ playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false }];
+  const squad = [{ playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false }];
 
   it("marks removing someone as destructive rather than as ordinary navigation", () => {
     const html = render({ squad });
@@ -360,7 +366,7 @@ describe("the squad list is styled too", () => {
     // identical markup laid out differently (M10 whole-branch review).
     // Ordering is invisible to every other assertion in this file — this is
     // the only thing standing between that bug and a silent return.
-    const html = render({ squad: [{ playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false }] });
+    const html = render({ squad: [{ playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false, muted: false }] });
     const squadAt = html.indexOf(SQUAD_STYLES_CSS);
     const formAt = html.indexOf(FORM_CSS);
     // Both presence assertions are load-bearing, and they belong in this test

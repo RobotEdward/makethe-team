@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LocalTimeError } from "../../../src/domain/time/local.js";
 import {
+  formatLocalDate,
   formatLocalDateTime,
   formatterCacheSize,
   localWeekday,
@@ -113,6 +114,24 @@ describe("formatter cache canonicalisation", () => {
     // Every case permutation resolves to the same canonical zone, so the cache
     // should grow by exactly one entry no matter how many spellings were looked up.
     expect(after).toBe(before + 1);
+  });
+});
+
+describe("formatLocalDate", () => {
+  it("formats the day alone, for a deadline no clock time belongs on", () => {
+    const instant = new Date("2026-08-13T18:00:00Z");
+    expect(formatLocalDate(instant, LONDON)).toBe("Thursday 13 August");
+  });
+
+  it("reads the date in the target zone, not London's", () => {
+    // 00:30 on the 14th in London is still the evening of the 13th in New York.
+    const instant = new Date("2026-08-13T23:30:00Z");
+    expect(formatLocalDate(instant, LONDON)).toBe("Friday 14 August");
+    expect(formatLocalDate(instant, "America/New_York")).toBe("Thursday 13 August");
+  });
+
+  it("throws the typed LocalTimeError for an invalid zone, like its sibling", () => {
+    expect(() => formatLocalDate(new Date("2026-08-13T18:00:00Z"), "Not/A_Zone")).toThrow(LocalTimeError);
   });
 });
 

@@ -104,6 +104,65 @@ describe("openFixture", () => {
     expect(await openFixture(db, "no-such-fixture", NOW)).toMatchObject({ opened: false, reason: "not-found" });
   });
 
+  it("auto-declines a muted member instead of asking them (M28)", async () => {
+    const { fixtureId } = await seed(12);
+    await db
+      .update(memberships)
+      .set({ mutedAt: new Date("2026-08-01T09:00:00Z"), mutedUntil: new Date("2026-09-01T09:00:00Z") })
+      .where(eq(memberships.playerId, "p-3"));
+
+    const result = await openFixture(db, fixtureId, NOW);
+
+    expect(result).toMatchObject({ opened: true, pendingCreated: 12, autoDeclined: 1 });
+    const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
+    const muted = rows.find((r) => r.playerId === "p-3");
+    expect(muted?.status).toBe("out");
+    // Stamped, unlike a pending row: the player did answer, in advance.
+    expect(muted?.respondedAt?.toISOString()).toBe(NOW.toISOString());
+    expect(muted?.source).toBe("system");
+    expect(muted?.setByPlayerId).toBe(null);
+    expect(rows.filter((r) => r.status === "pending")).toHaveLength(11);
+  });
+
+  it("auto-declines a member muted indefinitely", async () => {
+    const { fixtureId } = await seed(4);
+    await db
+      .update(memberships)
+      .set({ mutedAt: new Date("2020-01-01T00:00:00Z"), mutedUntil: null })
+      .where(eq(memberships.playerId, "p-1"));
+
+    await openFixture(db, fixtureId, NOW);
+
+    const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
+    expect(rows.find((r) => r.playerId === "p-1")?.status).toBe("out");
+  });
+
+  it("asks a member whose mute has run out", async () => {
+    const { fixtureId } = await seed(4);
+    await db
+      .update(memberships)
+      .set({ mutedAt: new Date("2026-07-01T09:00:00Z"), mutedUntil: new Date("2026-08-01T09:00:00Z") })
+      .where(eq(memberships.playerId, "p-1"));
+
+    const result = await openFixture(db, fixtureId, NOW);
+
+    expect(result.autoDeclined).toBe(0);
+    const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
+    expect(rows.every((r) => r.status === "pending")).toBe(true);
+  });
+
+  it("chunks a squad of muted members too (TR-38)", async () => {
+    const { fixtureId } = await seed(25);
+    await db.update(memberships).set({ mutedAt: NOW, mutedUntil: null });
+
+    const result = await openFixture(db, fixtureId, NOW);
+
+    expect(result).toMatchObject({ pendingCreated: 25, autoDeclined: 25 });
+    const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
+    expect(rows).toHaveLength(25);
+    expect(rows.every((r) => r.status === "out")).toBe(true);
+  });
+
   it("does not retroactively invite someone who joins after opening (BR-2)", async () => {
     const { gameId, fixtureId } = await seed(10);
     await openFixture(db, fixtureId, NOW);

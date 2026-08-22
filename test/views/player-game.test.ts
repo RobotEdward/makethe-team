@@ -18,6 +18,12 @@ const BASE: PlayerGameParams = {
   upcoming: [],
   lastResult: null,
   viewerPlayerId: "p-me",
+  mute: {
+    muteAction: "/g/g-1/mute",
+    unmuteAction: "/g/g-1/unmute",
+    state: { muted: false },
+    otherGamesCount: 0,
+  },
 };
 
 function params(over: Partial<PlayerGameParams> = {}): PlayerGameParams {

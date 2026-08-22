@@ -10,6 +10,7 @@ const DAY_MS = 86_400_000;
 const SECOND_MS = 1_000;
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
+const dateOnlyFormatters = new Map<string, Intl.DateTimeFormat>();
 const displayFormatters = new Map<string, Intl.DateTimeFormat>();
 
 /** Read-only view of the formatter cache size, for tests only. */
@@ -68,6 +69,17 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   });
 }
 
+function dateOnlyFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  // Its own cache, for the reason `displayFormatters` is separate from
+  // `formatters`: one cache keyed by zone alone cannot hold two different
+  // option sets for the same zone without handing a caller the wrong one.
+  return cachedFormatter(timeZone, dateOnlyFormatters, "en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+}
+
 function displayFormatterFor(timeZone: string): Intl.DateTimeFormat {
   // en-GB, not en-US: this is what src/routes/respond.ts used before this
   // formatter moved here, and it's what produces "Thursday 13 August at
@@ -95,6 +107,22 @@ function displayFormatterFor(timeZone: string): Intl.DateTimeFormat {
  */
 export function formatLocalDateTime(instant: Date, timeZone: string): string {
   return displayFormatterFor(timeZone).format(instant);
+}
+
+/**
+ * The same, without the clock time: "Thursday 13 August".
+ *
+ * For an instant whose time of day is an artefact rather than information —
+ * an auto-decline expiry (M28) is four weeks from whenever the player happened
+ * to tap the button, and "until Saturday 19 September at 14:32" invites a
+ * reader to believe that 14:32 was chosen and matters.
+ *
+ * Here rather than in the view for the reason above: every timezone
+ * conversion in the app goes through this module (TR-5), and a view building
+ * its own `Intl.DateTimeFormat` is exactly what that rule forbids.
+ */
+export function formatLocalDate(instant: Date, timeZone: string): string {
+  return dateOnlyFormatterFor(timeZone).format(instant);
 }
 
 export function toLocalParts(instant: Date, timeZone: string): LocalParts {

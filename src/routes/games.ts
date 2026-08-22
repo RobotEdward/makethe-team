@@ -7,7 +7,9 @@ import {
   DASHBOARD_PATH,
   NEW_GAME_PATH,
   gameEditPath,
+  gameMutePath,
   gamePath,
+  gameUnmutePath,
   fixturePath,
   resultClearPath,
   resultPath,
@@ -27,7 +29,9 @@ import {
   listPastFixturesForGame,
   listTeamAssignments,
   listUpcomingFixtures,
+  muteStateFor,
   type FixtureWithSquad,
+  type ViewerMuteState,
   type SquadMember,
 } from "../db/queries.js";
 import { listPlayerPastFixturesInGame } from "../db/dashboard-queries.js";
@@ -42,6 +46,8 @@ import { parseGameForm } from "../domain/game-form.js";
 import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
+import { isMuted, parseMuteDuration } from "../domain/mute.js";
+import { clearMute, setMute } from "../domain/set-mute.js";
 import { deriveResult, tally } from "../domain/result.js";
 import { isResultLocked, resultDeadline, resultWritable } from "../domain/result-lock.js";
 import {
@@ -54,7 +60,7 @@ import {
   type TeamAssignment,
   type TeamId,
 } from "../domain/teams.js";
-import { formatLocalDateTime } from "../domain/time/zone.js";
+import { formatLocalDate, formatLocalDateTime } from "../domain/time/zone.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv } from "../env.js";
@@ -66,6 +72,7 @@ import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderPlayerFixturePage } from "../views/player-fixture.js";
+import type { MuteControlsOptions } from "../views/mute-controls.js";
 import { renderPastFixturesPage, type PastFixtureRow } from "../views/past-fixtures.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
@@ -231,7 +238,9 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       maxPlayers: game.maxPlayers,
       prefersEvenNumbers: game.prefersEvenNumbers,
       inviteToken: game.inviteToken,
-      squad,
+      // `isMuted` here rather than in the view: the page must not hold a
+      // clock, and an expired mute is not a marker to show (M28).
+      squad: squad.map((member) => ({ ...member, muted: isMuted(member, now) })),
       upcoming,
       viewerPlayerId: player.id,
       lastResult,
@@ -366,10 +375,11 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
   // `listOpenFixtureIds` returns them kickoff-ordered; a game has at most one
   // open fixture at a time in practice, but the first is the right answer
   // either way.
-  const [openFixtureIds, upcoming, lastResult] = await Promise.all([
+  const [openFixtureIds, upcoming, lastResult, mute] = await Promise.all([
     listOpenFixtureIds(db, game.id),
     listUpcomingFixtures(db, game.id, now),
     lastResultFor(db, game, now),
+    muteStateFor(db, game.id, viewerPlayerId, now),
   ]);
 
   let openFixture: NonNullable<Parameters<typeof renderPlayerGamePage>[0]["openFixture"]> | null = null;
@@ -422,9 +432,118 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
       upcoming,
       lastResult,
       viewerPlayerId,
+      mute: muteControlsFor(game, mute),
     }),
   );
 }
+
+/**
+ * The auto-decline panel's props for one viewer (M28), shared by the game page
+ * and the fixture page so the two cannot offer different durations or post to
+ * different places.
+ *
+ * A `null` state — the viewer has no active membership — renders as switched
+ * off rather than not at all. It is unreachable from either caller, both of
+ * which have already established membership to get this far, and rendering the
+ * off state is the harmless branch: the routes behind the form re-ask the same
+ * question and answer 404.
+ */
+function muteControlsFor(
+  game: typeof games.$inferSelect,
+  state: ViewerMuteState | null,
+): MuteControlsOptions {
+  return {
+    muteAction: gameMutePath(game.id),
+    unmuteAction: gameUnmutePath(game.id),
+    state:
+      state?.muted === true
+        ? {
+            muted: true,
+            // The date alone: the expiry's time of day is four weeks after
+            // whichever minute the player tapped, and naming it invites a
+            // reader to think that minute was chosen.
+            untilLocal: state.mutedUntil === null ? null : formatLocalDate(state.mutedUntil, game.timezone),
+          }
+        : { muted: false },
+    otherGamesCount: state?.otherGamesCount ?? 0,
+  };
+}
+
+/**
+ * The player's own auto-decline switch (M28).
+ *
+ * Entitlement is any **active membership**, owner or not, re-asked here rather
+ * than inherited from the page that rendered the form (TR-18) — and a refusal
+ * is a 404, so a game id cannot be probed through it. `setMute` re-reads the
+ * membership itself and answers `not-a-member` for the same case; the check
+ * here exists so the refusal is decided in one place with the other routes'.
+ *
+ * A duration the catalogue does not contain is a 400, never a default: a
+ * hand-crafted body must not be able to mute somebody for a length nobody
+ * offered. `all-games` is an ordinary checkbox, so its absence is the "just
+ * this squad" answer and needs no hidden companion field — unlike the game
+ * form's `prefersEvenNumbers`, there is no stored value being edited whose
+ * unticking has to survive a validation round-trip.
+ */
+gamesRoutes.post("/g/:id/mute", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const player = c.get("player")!;
+  const gameId = c.req.param("id");
+
+  const form = await c.req.parseBody();
+  const duration = parseMuteDuration(form["duration"]);
+  if (duration === null) {
+    return c.text('Bad Request: "duration" must be one of 2w, 4w, 8w, forever', 400);
+  }
+
+  const result = await setMute({
+    db,
+    playerId: player.id,
+    gameId,
+    duration,
+    applyToAll: form["all-games"] !== undefined,
+    now,
+    decline: (fixtureId, playerId) =>
+      c.env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+        playerId,
+        intent: "out",
+        // The player is acting on themselves, so there is no override to
+        // record: `setByPlayerId` stays null, exactly as it does when they
+        // press "Can't play" (BR-27).
+        actorPlayerId: null,
+        source: "web",
+        now: now.getTime(),
+        whenFull: "waitlist",
+      }),
+  });
+  if (result.kind === "not-a-member") return c.text("Not found", 404);
+
+  return c.redirect(gamePath(gameId), 303);
+});
+
+/** Turning it back off. See `POST /g/:id/mute` for the entitlement reasoning. */
+gamesRoutes.post("/g/:id/unmute", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const db = getDb(c.env.DB);
+  const player = c.get("player")!;
+  const gameId = c.req.param("id");
+
+  const form = await c.req.parseBody();
+  const result = await clearMute({
+    db,
+    playerId: player.id,
+    gameId,
+    applyToAll: form["all-games"] !== undefined,
+    now: new Date(Date.now()),
+  });
+  if (result.kind === "not-a-member") return c.text("Not found", 404);
+
+  return c.redirect(gamePath(gameId), 303);
+});
 
 gamesRoutes.post("/g/:id/invite/rotate", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
@@ -974,6 +1093,14 @@ export async function renderPlayerFixture(
         })()
       : undefined;
 
+  // Not on a fixture that is over or off, matching `/r/:token`: those pages
+  // are a record of one evening, and the switch belongs where a reader is
+  // still deciding something.
+  const mute =
+    fixture.lifecycle === "played" || fixture.lifecycle === "cancelled"
+      ? null
+      : await muteStateFor(db, game.id, viewerPlayerId, now);
+
   return c.html(
     renderPlayerFixturePage({
       nav: pageNav(c, "games"),
@@ -993,6 +1120,7 @@ export async function renderPlayerFixture(
       problem: extras.problem,
       result,
       fixturePath: fixturePath(game.id, fixtureId),
+      mute: mute === null ? undefined : muteControlsFor(game, mute),
     }),
     status,
   );
@@ -1542,7 +1670,7 @@ async function renderSquadRefusal(
       maxPlayers: game.maxPlayers,
       prefersEvenNumbers: game.prefersEvenNumbers,
       inviteToken: game.inviteToken,
-      squad,
+      squad: squad.map((member) => ({ ...member, muted: isMuted(member, now) })),
       upcoming,
       lastResult,
       viewerPlayerId: c.get("player")!.id,
