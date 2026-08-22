@@ -21,6 +21,11 @@ The game's name at the top of the card is a link. Tap it to see that game on
 its own — where it's played, who else is playing if the organiser shows that,
 which side you're on once the teams have gone up, and the dates coming up.
 
+Under the fixtures you can still answer, **Recently played** shows the last
+game you were in, with the score once the squad has settled on it. Games
+waiting on your own answer about what happened come first, under **Results
+needed**; this is the one after that.
+
 **I'm in** and **Can't make it** sit on the card, and you can use them whether
 or not you've answered already. There's no email in the way here, so it's one
 tap rather than two: tapping a button on the card saves your answer there and
@@ -47,7 +52,8 @@ there for when you're ready.
 
 Once a game's been played, anyone who was in it — and your organiser, whether
 or not they played — can say what happened. Tap the fixture from your games
-list or your account page and the result is right there under the squad.
+list or your account page and the result is the first thing on the page,
+above the teams and the squad.
 
 If you know the score, put it in and tap **Record it** — Make The Team works
 out who won from the numbers, so you don't say both. If nobody remembers the
@@ -66,6 +72,19 @@ Nothing is final straight away. The result locks two days after kick-off, so
 there's time for the squad to agree on it — and if the fixture's teams were
 never picked in the app, the locked result says so rather than guessing who
 played on which side.
+
+## Games you've already played
+
+![A game's past fixtures: one row per game played, most recent first, each with its result and a link to the fixture in full](images/past-fixtures.png)
+
+Every game has its own list of the fixtures it has already had. On a game's
+page, **Games you've played** opens it: the ones you were in the squad for,
+most recent first, each with the score once it settled. Tap any of them to
+see that fixture in full — the teams, who played, and the result.
+
+Your organiser sees more on the same page. Theirs is called **Past fixtures**
+and holds every fixture the game has had, called-off ones included, so
+"what happened to that Thursday?" has an answer rather than a gap.
 
 ## Signing in faster
 

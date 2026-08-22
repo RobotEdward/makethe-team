@@ -209,6 +209,14 @@
       "shows": "A played fixture's result panel, as a player who was in it sees it: the organiser's claim of a 3–1 score with its one backer, an Agree button to back it, and the form to say something different happened instead."
     },
     {
+      "id": "past-fixtures",
+      "chapter": "07-your-own-fixtures",
+      "title": "Games you've already played",
+      "route": "/g/:id/fixtures",
+      "image": "images/past-fixtures.png",
+      "shows": "A game's past fixtures as a player who was in them sees it: one row per game played, most recent first, each linking to that fixture in full."
+    },
+    {
       "id": "passkeys",
       "chapter": "07-your-own-fixtures",
       "title": "Signing in faster",

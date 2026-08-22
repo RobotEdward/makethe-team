@@ -371,6 +371,11 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   // organiser has squad visibility off. Each surface counts what it shows.
   const waitlistCount = squad.filter((member) => member.status === "waitlisted").length;
 
+  // Above the squad and the teams (M27), matching the player's page — see
+  // `renderPlayerFixturePage` for the reasoning and for why this is a
+  // TypeScript comment rather than one in the template.
+  const resultPanel = params.result === undefined ? "" : renderResultPanel(params.result);
+
   const whatsapp = whatsappMessages(params);
 
   // The copy script only when there is a Copy button for it to reveal; the
@@ -390,12 +395,12 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${renderOverCapacity(view, inCount, maxPlayers)}
     ${renderConfirm(gameId, fixtureId, params)}
 
+    ${resultPanel}
+
     <h2>Squad</h2>
     ${renderSquadList(gameId, fixtureId, squad, takingChanges(view))}
 
     ${renderTeams(params)}
-
-    ${params.result === undefined ? "" : renderResultPanel(params.result)}
 
     ${renderGuestForm(gameId, fixtureId, params)}
 

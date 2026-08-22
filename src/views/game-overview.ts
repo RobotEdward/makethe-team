@@ -1,5 +1,6 @@
 import {
   gameEditPath,
+  gamePastFixturesPath,
   gameMessagePath,
   gamePath,
   joinPath,
@@ -147,6 +148,8 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
 
     <h2>Coming up</h2>
     <ul class="fixtures">${fixtureItems || "<li>No fixtures scheduled.</li>"}</ul>
+
+    <p><a href="${escapeHtml(gamePastFixturesPath(gameId))}">Past fixtures</a></p>
 
     <h2>Squad (${squad.length})</h2>
     <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>

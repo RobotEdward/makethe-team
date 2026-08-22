@@ -1,4 +1,4 @@
-import { fixturePath, gamePath } from "../auth/paths.js";
+import { fixturePath, gamePastFixturesPath, gamePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
@@ -137,6 +137,8 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
 
     <h2>Coming up</h2>
     <ul class="fixtures">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>
+
+    <p><a href="${escapeHtml(gamePastFixturesPath(gameId))}">Games you've played</a></p>
 
     ${renderFreshness(gamePath(gameId))}
 

@@ -268,3 +268,41 @@ export async function listPlayerFixtureHistory(
     .limit(limit);
   return rows.map(toDashboardFixture);
 }
+
+/**
+ * The played fixtures of **one** game that this viewer was in, most recent
+ * first — the member's half of the past-fixtures page (M27).
+ *
+ * Two differences from `listPlayerFixtureHistory`, which is the same idea
+ * across every game: a game-id filter, and `played` only. Cancelled fixtures
+ * are deliberately absent — this list answers "which of these have I played
+ * in", and a game called off is one nobody played. The organiser's half of
+ * the same page (`listPastFixturesForGame`) does show them, because an
+ * organiser asking what happened to a Thursday is better served seeing it.
+ *
+ * Same security posture as every other reader in this module: it goes
+ * through `selectEntitledFixtures`, so `entitledTo`'s three conditions — the
+ * viewer's own response row, an active membership, `withdrawn` excluded —
+ * are what decide which rows exist at all, and the game id narrows that set
+ * rather than widening it. A game the viewer is not an active member of has
+ * no rows here whatever id the caller passes.
+ *
+ * `limit` is mandatory for the reason `listResultsNeededCandidates` has one
+ * (TR-38): the page derives a result per row through a batched claims read,
+ * and D1 refuses an `inArray` past 100 bound parameters.
+ */
+export async function listPlayerPastFixturesInGame(
+  db: Db,
+  playerId: string,
+  gameId: string,
+  limit: number,
+): Promise<DashboardFixture[]> {
+  const rows = await selectEntitledFixtures(
+    db,
+    playerId,
+    and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "played")),
+  )
+    .orderBy(desc(fixtures.kicksOffAt), asc(fixtures.id))
+    .limit(limit);
+  return rows.map(toDashboardFixture);
+}

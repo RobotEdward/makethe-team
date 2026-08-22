@@ -900,6 +900,17 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}`, { headers: { cookie } }),
       );
 
+      // The past-fixtures list (M27). Same owner membership as the overview
+      // capture above; the list itself is empty at this point in the walk,
+      // which is the state this suite cares about — the page's markup,
+      // wherever it comes from, must carry no un-enumerated script and no
+      // password field either way.
+      await capture(
+        "past fixtures",
+        /Past fixtures/,
+        new Request(`${ORIGIN}/g/${gameId}/fixtures`, { headers: { cookie } }),
+      );
+
       // The game-edit form (Task 8). Same owner membership as the overview
       // capture above, so this reaches the 200 branch rather than the 404.
       await capture(
@@ -1058,6 +1069,7 @@ describe("no password field anywhere (TR-16)", () => {
         "game form",
         "game overview",
         "game edit",
+        "past fixtures",
         "owner fixture",
         "message everyone",
         "message squad",
@@ -1163,6 +1175,11 @@ describe("no password field anywhere (TR-16)", () => {
       "message squad",
       "cancel done",
       "dashboard",
+      // "past fixtures" joined this set in M27, for the freshness bar alone —
+      // the same grant "dashboard" holds above and for the same reason: the
+      // page is complete without it, and the bar's Refresh link is an
+      // ordinary GET of this page's own path.
+      "past fixtures",
     ]);
 
     // The only two captures whose route never calls layout() at all —
@@ -1245,6 +1262,7 @@ describe("no password field anywhere (TR-16)", () => {
       "game form",
       "game overview",
       "game edit",
+      "past fixtures",
       "owner fixture",
       "message everyone",
       "message squad",
@@ -1537,6 +1555,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",
+    "GET /g/:id/fixtures": "past fixtures",
     "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
     "GET /g/:id/squad/:playerId": "squad member",
     "GET /g/:id/f/:fixtureId": "owner fixture",

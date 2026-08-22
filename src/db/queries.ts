@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseSource, ResponseStatus } from "../domain/response-status.js";
@@ -413,6 +413,42 @@ export async function listUpcomingFixtures(
     .from(fixtures)
     .where(and(eq(fixtures.gameId, gameId), gte(fixtures.kicksOffAt, now)))
     .orderBy(fixtures.kicksOffAt);
+}
+
+/**
+ * Every fixture of a game from before `now`, most recent first — *all*
+ * lifecycles, the organiser's past-fixtures page (M27).
+ *
+ * The mirror image of `listUpcomingFixtures` above, and unfiltered by
+ * lifecycle for the same reason it is: the page renders each row's state, so
+ * a cancelled fixture reads as cancelled rather than vanishing. Its own
+ * function rather than a direction flag on that one — the name is what tells
+ * the next reader which way a row sorts, and a flag would leave both
+ * behaviours behind one name that describes only one of them.
+ *
+ * `limit` is the caller's, and mandatory (TR-38): a game running weekly for
+ * years has an unbounded history, and the page derives a result summary per
+ * row through a batched claims read that D1 caps at 100 bound parameters.
+ * `fixtures.id` breaks a kickoff tie so the cut is stable rather than
+ * whatever order SQLite happens to return.
+ */
+export async function listPastFixturesForGame(
+  db: Db,
+  gameId: string,
+  now: Date,
+  limit: number,
+): Promise<Array<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>> {
+  return db
+    .select({
+      id: fixtures.id,
+      kicksOffAt: fixtures.kicksOffAt,
+      lifecycle: fixtures.lifecycle,
+      inCount: fixtures.inCount,
+    })
+    .from(fixtures)
+    .where(and(eq(fixtures.gameId, gameId), lt(fixtures.kicksOffAt, now)))
+    .orderBy(desc(fixtures.kicksOffAt), asc(fixtures.id))
+    .limit(limit);
 }
 
 /**

@@ -13,6 +13,7 @@ import {
 } from "../src/views/fixture.js";
 import { renderDashboardPage } from "../src/views/dashboard.js";
 import { renderOwnerFixturePage } from "../src/views/owner-fixture.js";
+import { renderPastFixturesPage } from "../src/views/past-fixtures.js";
 import { squadStatusLabel } from "../src/views/squad-row.js";
 import { audienceSelectsStatus } from "../src/domain/broadcast-audience.js";
 import { deriveResult, tally } from "../src/domain/result.js";
@@ -179,6 +180,30 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
       }),
   },
   {
+    name: "renderPastFixturesPage's row state (src/views/past-fixtures.ts)",
+    column: "fixtures.lifecycle",
+    // The lifecycle reaches this page twice per row — once through
+    // `fixtureStatusWords` for the words, once as the status badge's own
+    // class suffix — and only the first has a fallback. The second is
+    // interpolated straight into an attribute, which is why it goes through
+    // `escapeHtml` there and why this row is enumerated here (M27).
+    reach: () =>
+      renderPastFixturesPage({
+        nav: { isAdmin: false, current: "games" } as const,
+        gameId: "g-1",
+        gameName: "Thursday 7-a-side",
+        rows: [
+          {
+            fixtureId: "f-1",
+            kicksOffAtLocal: "Thursday 13 August, 19:00",
+            lifecycle: OUT_OF_UNION,
+            inCount: 3,
+          },
+        ],
+        owner: true,
+      }),
+  },
+  {
     name: "renderDashboardPage's row headline (src/views/dashboard.ts)",
     column: "responses.status",
     reach: () =>
@@ -200,6 +225,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
         ],
         squads: [],
         resultsNeeded: [],
+        recentlyPlayed: null,
       }),
   },
   {

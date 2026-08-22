@@ -1336,3 +1336,144 @@ describe("GET /app — results needed", () => {
     expect(body).toContain("Results needed");
   });
 });
+
+/**
+ * "Recently played" (M27): the most recent played fixture the viewer was in,
+ * under the fixtures they can still act on.
+ *
+ * The dashboard was a to-do list and nothing else — a played fixture left it
+ * the moment the retire sweep ran, so "what did we finish at on Thursday?"
+ * had no answer anywhere a player visits weekly. This card is that answer,
+ * and it is deliberately the *most recent one not already listed above*: a
+ * fixture in "Results needed" is on the page already, and a second card for
+ * it would read as two different fixtures.
+ */
+describe("GET /app — recently played", () => {
+  it("shows the most recent played fixture once the viewer has filed on it", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { gameId, fixtureId } = await seedFixtureFor(playerId, {
+      gameName: "Thursday 7-a-side",
+      lifecycle: "played",
+    });
+    // Filing is what takes it out of "Results needed" — without this the card
+    // is suppressed as a duplicate, which the dedupe test below asserts.
+    await insertResultClaim(db, fixtureId, playerId, { outcome: "a" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Recently played");
+    expect(body).toContain(`href="${fixturePath(gameId, fixtureId)}"`);
+  });
+
+  it("names the result once the window has locked", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { fixtureId } = await seedFixtureFor(playerId, {
+      gameName: "Thursday 7-a-side",
+      lifecycle: "played",
+      kicksOffAt: kickoffIn(-72),
+    });
+    await insertResultClaim(db, fixtureId, playerId, { outcome: "a", scoreA: 3, scoreB: 2 });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Recently played");
+    expect(body).toContain("Team A won 3–2");
+  });
+
+  it("says nothing about the score while the window is still open", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { fixtureId } = await seedFixtureFor(playerId, {
+      gameName: "Thursday 7-a-side",
+      lifecycle: "played",
+    });
+    // The same claim as the locked test above; the only difference is that
+    // this fixture's 48 hours have not run out, so the tally is still
+    // arguable and must not read as settled.
+    await insertResultClaim(db, fixtureId, playerId, { outcome: "a", scoreA: 3, scoreB: 2 });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Recently played");
+    expect(body).not.toContain("Team A won 3–2");
+  });
+
+  it("does not repeat a fixture that is already in Results needed", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await seedFixtureFor(playerId, { gameName: "Thursday 7-a-side", lifecycle: "played" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Results needed");
+    expect(body).not.toContain("Recently played");
+  });
+
+  it("falls back to the next one down when the newest is in Results needed", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    // Older, and filed on, so it is not a "need" — this is the one the card
+    // should find once the newer fixture is taken.
+    const older = await seedFixtureFor(playerId, {
+      gameName: "Older Game",
+      lifecycle: "played",
+      kicksOffAt: kickoffIn(-96),
+    });
+    await insertResultClaim(db, older.fixtureId, playerId, { outcome: "a" });
+    await seedFixtureFor(playerId, {
+      gameName: "Newer Game",
+      lifecycle: "played",
+      kicksOffAt: kickoffIn(-24),
+    });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Recently played");
+    expect(body).toContain(`href="${fixturePath(older.gameId, older.fixtureId)}"`);
+  });
+
+  it("shows nothing at all when the viewer has played nothing", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await seedFixtureFor(playerId, { gameName: "Thursday 7-a-side" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("Recently played");
+  });
+
+  it("does not show a fixture from a game they have left", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { fixtureId } = await seedFixtureFor(playerId, {
+      gameName: "Left This One",
+      lifecycle: "played",
+      memberActive: false,
+    });
+    await insertResultClaim(db, fixtureId, playerId, { outcome: "a" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).not.toContain("Recently played");
+    expect(body).not.toContain("Left This One");
+  });
+
+  it("puts it below the fixtures the viewer can still act on", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await seedFixtureFor(playerId, { gameName: "Coming Up Soon" });
+    const { fixtureId } = await seedFixtureFor(playerId, {
+      gameName: "Already Finished",
+      lifecycle: "played",
+    });
+    await insertResultClaim(db, fixtureId, playerId, { outcome: "a" });
+
+    const body = await (await get(cookie)).text();
+
+    expect(body).toContain("Coming Up Soon");
+    expect(body).toContain("Recently played");
+    expect(body.indexOf("Coming Up Soon")).toBeLessThan(body.indexOf("Recently played"));
+  });
+});

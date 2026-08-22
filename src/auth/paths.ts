@@ -215,6 +215,23 @@ export function fixturePath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}`;
 }
 
+/**
+ * A game's past fixtures (M27) — everything before now, most recent first.
+ *
+ * One path for both roles, dispatching the way `/g/:id` itself does: an
+ * organiser sees every fixture including the cancelled ones, an active squad
+ * member sees the played fixtures they were in, and anyone else gets a 404.
+ * Two paths would mean two entitlement checks to keep in step, and the second
+ * one is the one that gets forgotten.
+ *
+ * `/fixtures` rather than `/past`: the organiser's list is not only "past" in
+ * the colloquial sense — it carries cancelled fixtures too — and the word
+ * that fits both is the one the rows already are.
+ */
+export function gamePastFixturesPath(gameId: string): string {
+  return `/g/${gameId}/fixtures`;
+}
+
 /** Where a result claim posts (BR-37). Values, never a candidate id. */
 export function resultPath(gameId: string, fixtureId: string): string {
   return `${fixturePath(gameId, fixtureId)}/result`;

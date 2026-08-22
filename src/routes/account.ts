@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
@@ -10,17 +10,15 @@ import {
 } from "../auth/paths.js";
 import { requirePlayer, pageNav } from "../auth/session.js";
 import { recordAudit } from "../db/audit.js";
-import { getDb, type Db } from "../db/client.js";
-import { listPlayerFixtureHistory, type DashboardFixture } from "../db/dashboard-queries.js";
-import { activeOwnersByGame, listClaimsForFixtures } from "../db/result-queries.js";
-import { games, players, pushSubscriptions } from "../db/schema.js";
+import { getDb } from "../db/client.js";
+import { listPlayerFixtureHistory } from "../db/dashboard-queries.js";
+import { resultWordsForLockedRows } from "../db/result-summary.js";
+import { players, pushSubscriptions } from "../db/schema.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { erasureDeadline } from "../domain/erasure-window.js";
 import { fixtureView, type FixtureStatus } from "../domain/fixture-view.js";
 import { isTerminalLifecycle } from "../domain/lifecycle.js";
 import { parsePlayerName } from "../domain/player-name.js";
-import { deriveResult } from "../domain/result.js";
-import { isResultLocked } from "../domain/result-lock.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv } from "../env.js";
@@ -28,7 +26,6 @@ import { createNotifier } from "../notify/factory.js";
 import { sendErasureScheduledEmail } from "../notify/send-erasure-scheduled.js";
 import { renderAccountPage } from "../views/account.js";
 import { renderDeleteAccountPage } from "../views/delete-account.js";
-import { derivedResultWords, outcomeNames } from "../views/result.js";
 
 export const account = new Hono<AppEnv>();
 
@@ -326,86 +323,6 @@ account.post(DELETE_ACCOUNT_CANCEL_PATH, requirePlayer, async (c) => {
 
 /** How many fixtures the account page shows. Twenty weeks of a weekly game. */
 const HISTORY_LIMIT = 20;
-
-/**
- * The result summary for every *locked* played fixture in this history,
- * keyed by fixture id (M25 Task 13, BR-37).
- *
- * **Derived from the claims, not read from `fixture_results`.** That table
- * is a cache the sweep (`src/sweep/result-cache.ts`) may not have written yet
- * — its own module comment says "a run that fails or never happens costs a
- * row the next run writes", not a fixture stuck showing no result until it
- * does. Every page derives its own answer from the claims, and this is no
- * exception.
- *
- * Two batched reads regardless of how many fixtures are locked: every claim
- * on every played fixture in the page (`listClaimsForFixtures`), and every
- * active owner of every game the page touches (`activeOwnersByGame`) — the
- * organiser set `deriveResult`'s tie-break needs. A per-row query for either
- * would multiply by up to `HISTORY_LIMIT`.
- */
-async function resultWordsForLockedRows(
-  db: Db,
-  history: readonly DashboardFixture[],
-  now: Date,
-): Promise<Map<string, string>> {
-  const played = history.filter((fixture) => fixture.lifecycle === "played");
-  if (played.length === 0) return new Map();
-
-  const claims = await listClaimsForFixtures(
-    db,
-    played.map((fixture) => fixture.fixtureId),
-  );
-  const claimsByFixture = new Map<string, typeof claims>();
-  for (const claim of claims) {
-    const bucket = claimsByFixture.get(claim.fixtureId) ?? [];
-    bucket.push(claim);
-    claimsByFixture.set(claim.fixtureId, bucket);
-  }
-
-  const locked = played.filter((fixture) =>
-    isResultLocked(fixture.kicksOffAt, claimsByFixture.get(fixture.fixtureId)?.length ?? 0, now),
-  );
-  if (locked.length === 0) return new Map();
-
-  const [ownersByGame, teamNameRows] = await Promise.all([
-    activeOwnersByGame(
-      db,
-      locked.map((fixture) => fixture.gameId),
-    ),
-    db
-      .select({ id: games.id, teamAName: games.teamAName, teamBName: games.teamBName })
-      .from(games)
-      .where(
-        inArray(
-          games.id,
-          locked.map((fixture) => fixture.gameId),
-        ),
-      ),
-  ]);
-  const teamNamesByGame = new Map(teamNameRows.map((row) => [row.id, row]));
-
-  const words = new Map<string, string>();
-  for (const fixture of locked) {
-    const teamNames = teamNamesByGame.get(fixture.gameId);
-    // The game disappeared between the history read and here, which cannot
-    // happen in production (games are never deleted) but would otherwise
-    // read `outcomeNames(undefined)` below.
-    if (teamNames === undefined) continue;
-    const fixtureClaims = claimsByFixture.get(fixture.fixtureId) ?? [];
-    const organiserIds = ownersByGame.get(fixture.gameId) ?? new Set<string>();
-    const derived = deriveResult(fixtureClaims, organiserIds);
-    // `locked` is filtered by `isResultLocked`, which requires `claimCount >
-    // 0`, so `fixtureClaims` is non-empty here and `deriveResult` cannot
-    // return null — this is just what makes that guarantee visible to the
-    // type checker, matching `src/sweep/result-cache.ts`'s own comment on
-    // the identical guarantee.
-    if (derived === null) continue;
-    const summary = derivedResultWords(outcomeNames(teamNames), derived);
-    if (summary !== null) words.set(fixture.fixtureId, summary);
-  }
-  return words;
-}
 
 /**
  * Render `/app/account` from scratch, in whichever state the database is in.

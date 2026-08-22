@@ -61,6 +61,7 @@ const ROUTE_TO_ID = new Map<string, string>([
   [OFFLINE_PATH, "offline"],
   ["/g/:id", "game-overview"],
   ["/g/:id/edit", "edit-game"],
+  ["/g/:id/fixtures", "past-fixtures"],
   ["/g/:id/message", "game-message"],
   ["/g/:id/f/:fixtureId", "owner-fixture"],
   ["/g/:id/f/:fixtureId/message", "fixture-message"],

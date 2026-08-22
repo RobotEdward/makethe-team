@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { gamePastFixturesPath } from "../../src/auth/paths.js";
 import { LIFECYCLES, type Lifecycle } from "../../src/domain/lifecycle.js";
 import { fixtureStatusWords } from "../../src/views/fixture.js";
 import { renderGameOverviewPage } from "../../src/views/game-overview.js";
@@ -370,5 +371,18 @@ describe("the squad list is styled too", () => {
     expect(squadAt).toBeGreaterThan(-1);
     expect(formAt).toBeGreaterThan(-1);
     expect(squadAt).toBeLessThan(formAt);
+  });
+});
+
+/**
+ * The way into the past-fixtures page (M27). A page nothing links to is
+ * unreachable except by typing its URL — the failure `renderYourSquadsSection`
+ * on the dashboard exists to prevent, which had already happened once for
+ * `/g/new`.
+ */
+describe("game overview — the link to past fixtures (M27)", () => {
+  it("links to the game's past fixtures", () => {
+    const html = render();
+    expect(html).toContain(`href="${gamePastFixturesPath(BASE.gameId)}"`);
   });
 });

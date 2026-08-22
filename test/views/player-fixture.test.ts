@@ -148,3 +148,63 @@ describe("player fixture page (M25)", () => {
     }
   });
 });
+
+/**
+ * Where the result panel sits on the page (M27).
+ *
+ * A played fixture's page is long — teams, then a full squad list — and the
+ * panel used to sit under all of it, so somebody who had just been nudged to
+ * say how it went had to scroll past both to find the form. It now renders
+ * directly under the header.
+ *
+ * Both assertions matter. `indexOf` returns `-1` for an absent needle and
+ * `-1 < anything`, so an order comparison alone passes vacuously on a page
+ * that renders neither block (see CLAUDE.md).
+ */
+describe("player fixture page — result panel position (M27)", () => {
+  it("renders the result panel above the teams and the squad", () => {
+    const html = renderPlayerFixturePage(params({ lifecycle: "played", teams: null }));
+    expect(html).toContain("<h2>Result</h2>");
+    expect(html).toContain("<h2>Squad</h2>");
+    expect(html.indexOf("<h2>Result</h2>")).toBeLessThan(html.indexOf("<h2>Squad</h2>"));
+  });
+
+  it("renders the result panel above a published teams section", () => {
+    const html = renderPlayerFixturePage(
+      params({
+        lifecycle: "played",
+        teams: { names: NAMES, yourSide: "a", awaitingSide: false },
+        squad: PICKED,
+      }),
+    );
+    expect(html).toContain("<h2>Result</h2>");
+    expect(html).toContain("<h2>Teams</h2>");
+    expect(html.indexOf("<h2>Result</h2>")).toBeLessThan(html.indexOf("<h2>Teams</h2>"));
+  });
+
+  it("puts a locked result above the teams too", () => {
+    const html = renderPlayerFixturePage(
+      params({
+        lifecycle: "played",
+        result: {
+          ...RESULT_PARAMS!,
+          locked: true,
+          writable: false,
+          derived: {
+            outcome: "a",
+            scoreA: 3,
+            scoreB: 2,
+            outcomeBackers: 4,
+            marginBackers: 3,
+            voterCount: 5,
+            distinctOutcomes: 1,
+            distinctScores: 1,
+          },
+        },
+      }),
+    );
+    expect(html).toContain("Team A won 3–2");
+    expect(html).toContain("<h2>Squad</h2>");
+    expect(html.indexOf("Team A won 3–2")).toBeLessThan(html.indexOf("<h2>Squad</h2>"));
+  });
+});

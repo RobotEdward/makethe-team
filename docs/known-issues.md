@@ -156,6 +156,17 @@ transaction to close it with, and the failure mode is the pre-M21 behaviour for 
 player (they are simply not in that fixture, and their dashboard says so). Not worth a
 reconciliation pass; revisit only if a real report ever lands.
 
+## Past fixtures show fifty rows and no way to older ones (22 August 2026)
+
+M27's `/g/:id/fixtures` lists the fifty most recent fixtures and stops, with no "older"
+link and nothing on the page saying it stopped. The bound is not cosmetic: each row's
+result is derived through a batched claims read, and D1 refuses an `inArray` past 100 bound
+parameters — the same ceiling that 500'd the dashboard before `listResultsNeededCandidates`
+grew its own limit (TR-38). Fifty is a year of a weekly game, so nobody reaches it yet, and
+the honest fix is paging rather than a bigger number. Deliberately not a silent truncation
+plus a lie: the page says nothing about the cut because there is nothing yet to say, and
+the first game to pass fifty fixtures is the trigger to add paging.
+
 ## Edge configuration — applied
 
 The two WAF custom rules in `docs/runbooks/cloudflare.md` (TR-37) were applied by hand

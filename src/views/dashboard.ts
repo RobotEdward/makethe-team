@@ -21,7 +21,7 @@ import {
 import { renderFreshness } from "./freshness.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
-import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FRESHNESS_CSS } from "./styles.js";
+import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FRESHNESS_CSS, RESULT_CSS } from "./styles.js";
 
 /**
  * One fixture as the dashboard shows it: the game, when and where, the derived
@@ -87,6 +87,31 @@ export interface ResultsNeededRow {
   kicksOffAtLocal: string;
 }
 
+/**
+ * The newest played fixture the viewer was in, as the "Recently played" card
+ * shows it (M27).
+ *
+ * A link and a result, never a form: the same reasoning `ResultsNeededRow`
+ * gives — `POST …/result` 404s anything that did not come through the fixture
+ * page — plus this card's fixture is usually one the viewer has already
+ * answered, or one whose window has closed.
+ */
+export interface RecentlyPlayedRow {
+  fixtureId: string;
+  gameId: string;
+  gameName: string;
+  venueName: string;
+  /** Already formatted in the game's timezone by the caller (TR-5). */
+  kicksOffAtLocal: string;
+  /**
+   * The result summary — "Reds won 3–2", "Draw" — set only once the fixture's
+   * 48-hour window has locked, exactly as `AccountFixtureRow.resultWords` is
+   * and for the same reason: a tally still inside its window is arguable, and
+   * a bare line here would read as settled.
+   */
+  resultWords?: string;
+}
+
 export interface DashboardPageOptions {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
@@ -96,6 +121,8 @@ export interface DashboardPageOptions {
   squads: readonly SquadListEntry[];
   /** Played fixtures still waiting on the viewer's own result claim (M25 Task 13). */
   resultsNeeded: readonly ResultsNeededRow[];
+  /** The newest played fixture not already in `resultsNeeded`, or null (M27). */
+  recentlyPlayed: RecentlyPlayedRow | null;
   /** The one refusal `POST /app/games/:gameId/leave` can produce (M7a Task 4). */
   problem?: string;
   /** Set when this player has an erasure pending — already formatted (M7b). */
@@ -373,12 +400,42 @@ function renderResultsNeededSection(rows: readonly ResultsNeededRow[]): string {
     <ul class="fixture-list">${items}</ul>`;
 }
 
+/**
+ * "Recently played" — the newest played fixture the viewer was in (M27),
+ * below the fixtures they can still act on and below anything still waiting
+ * on their own result claim.
+ *
+ * The dashboard was a to-do list and nothing else: the retire sweep moved a
+ * finished fixture out of `listDashboardFixtures`'s scope, so "what did we
+ * finish at on Thursday?" had no answer on the one page a player opens every
+ * week. The route suppresses this card for a fixture already in "Results
+ * needed", so nothing here has to dedupe.
+ *
+ * Nothing at all when there is none, matching `renderResultsNeededSection`
+ * and `renderYourSquadsSection`: a heading over nothing reads as a broken
+ * page.
+ */
+function renderRecentlyPlayedSection(row: RecentlyPlayedRow | null): string {
+  if (row === null) return "";
+  return `
+    <h2>Recently played</h2>
+    <ul class="fixture-list">
+      <li class="fixture-card">
+        <h2><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></h2>
+        <p class="kickoff"><a href="${escapeHtml(fixturePath(row.gameId, row.fixtureId))}">${escapeHtml(row.kicksOffAtLocal)}</a></p>
+        <p class="venue">${escapeHtml(row.venueName)}</p>
+        ${row.resultWords === undefined ? "" : `<p class="result-final">${escapeHtml(row.resultWords)}</p>`}
+      </li>
+    </ul>`;
+}
+
 export function renderDashboardPage({
   nav,
   playerName,
   rows,
   squads,
   resultsNeeded,
+  recentlyPlayed,
   problem,
   erasesAtLocal,
   erasureHeldUp,
@@ -407,6 +464,7 @@ export function renderDashboardPage({
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
     ${renderResultsNeededSection(resultsNeeded)}
+    ${renderRecentlyPlayedSection(recentlyPlayed)}
     ${renderYourSquadsSection(squads)}
     ${renderFreshness(DASHBOARD_PATH)}
   `;
@@ -415,7 +473,11 @@ export function renderDashboardPage({
     nav,
     title: "Your games — Make The Team",
     body,
-    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, FRESHNESS_CSS],
+    // RESULT_CSS for the one rule "Recently played" needs, `.result-final`
+    // (M27) — the account page pulls it in for the same class on the same
+    // kind of row. Namespaced `.result-*` and colliding with nothing, so its
+    // position in this array is not load-bearing.
+    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, RESULT_CSS, FRESHNESS_CSS],
     pageScripts: [FRESHNESS_JS],
   });
 }

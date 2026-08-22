@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { gamePastFixturesPath } from "../../src/auth/paths.js";
 import { LIFECYCLES, type Lifecycle } from "../../src/domain/lifecycle.js";
 import { fixtureStatusWords } from "../../src/views/fixture.js";
 import { renderPlayerGamePage, type PlayerGameParams } from "../../src/views/player-game.js";
@@ -158,5 +159,17 @@ describe("the organiser's quick-message links (M15 Task 10)", () => {
     expect(html).not.toContain("Message everyone");
     expect(html).not.toContain("Message players");
     expect(html).not.toMatch(/\/message"/);
+  });
+});
+
+/**
+ * The member's way into the past-fixtures page (M27) — the same reasoning as
+ * the organiser's link on `src/views/game-overview.ts`: a page nothing links
+ * to is unreachable except by typing its URL.
+ */
+describe("the link to past fixtures (M27)", () => {
+  it("links to the games this player has played here", () => {
+    const html = renderPlayerGamePage(params());
+    expect(html).toContain(`href="${gamePastFixturesPath(BASE.gameId)}"`);
   });
 });

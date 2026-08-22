@@ -16,6 +16,7 @@ import {
 import type { DashboardFixture } from "../db/dashboard-queries.js";
 import { listMemberGames } from "../db/queries.js";
 import { listClaimsForFixtures } from "../db/result-queries.js";
+import { resultWordsForLockedRows } from "../db/result-summary.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { isResultLocked } from "../domain/result-lock.js";
@@ -26,6 +27,7 @@ import {
   renderDashboardPage,
   type DashboardRow,
   type OnboardingHints,
+  type RecentlyPlayedRow,
   type ResultsNeededRow,
 } from "../views/dashboard.js";
 
@@ -61,11 +63,11 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
   const player = c.get("player")!;
   const db = getDb(c.env.DB);
 
-  const [rows, squads, onboarding, resultsNeeded] = await Promise.all([
+  const [rows, squads, onboarding, played] = await Promise.all([
     listDashboardFixtures(db, player.id),
     listMemberGames(db, player.id),
     onboardingHintsFor(db, player, c.get("session")!.user.id, now),
-    resultsNeededFor(db, player.id, now),
+    playedFixtureSections(db, player.id, now),
   ]);
 
   // §6's third clause: a blocked erasure "surfaces on the player's dashboard
@@ -89,7 +91,8 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
       playerName: player.name,
       rows: rows.map((row) => toRow(row, now)),
       squads,
-      resultsNeeded,
+      resultsNeeded: played.resultsNeeded,
+      recentlyPlayed: played.recentlyPlayed,
       problem,
       // `player` already carries `erasesAt` — `sessionMiddleware` selects the
       // whole row, so this is a field read, not a second query. Not scoped to
@@ -122,10 +125,19 @@ function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
 }
 
 /**
- * The dashboard's "results needed" list (M25 Task 13, BR-37): every played
- * fixture the viewer is entitled to see, minus the two that are not a "need"
- * — one they have already filed a claim on, and one whose 48-hour window has
- * already locked.
+ * The dashboard's two played-fixture sections, from one candidate list.
+ *
+ * "Results needed" (M25 Task 13, BR-37): every played fixture the viewer is
+ * entitled to see, minus the two that are not a "need" — one they have
+ * already filed a claim on, and one whose 48-hour window has already locked.
+ *
+ * "Recently played" (M27): the newest played fixture that is *not* in the
+ * list above, with its result once that result has settled.
+ *
+ * One function rather than two because the second is a filter over the first
+ * one's own candidate list and its claims: split apart they would read
+ * `listResultsNeededCandidates` and `listClaimsForFixtures` twice per load
+ * for the same rows.
  *
  * `isResultLocked` takes only a claim *count*, never whose claims they are,
  * so this needs no organiser set and no `deriveResult` — unlike the account
@@ -137,9 +149,13 @@ function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
  * per fixture — the same broad-select-then-JS-filter idiom
  * `src/sweep/result-cache.ts` documents at length for the same reason.
  */
-async function resultsNeededFor(db: Db, playerId: string, now: Date): Promise<ResultsNeededRow[]> {
+async function playedFixtureSections(
+  db: Db,
+  playerId: string,
+  now: Date,
+): Promise<{ resultsNeeded: ResultsNeededRow[]; recentlyPlayed: RecentlyPlayedRow | null }> {
   const candidates = await listResultsNeededCandidates(db, playerId);
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) return { resultsNeeded: [], recentlyPlayed: null };
 
   const claims = await listClaimsForFixtures(
     db,
@@ -152,20 +168,47 @@ async function resultsNeededFor(db: Db, playerId: string, now: Date): Promise<Re
     claimsByFixture.set(claim.fixtureId, bucket);
   }
 
-  return candidates
-    .filter((candidate) => {
-      const fixtureClaims = claimsByFixture.get(candidate.fixtureId) ?? [];
-      const alreadyFiled = fixtureClaims.some((claim) => claim.playerId === playerId);
-      if (alreadyFiled) return false;
-      return !isResultLocked(candidate.kicksOffAt, fixtureClaims.length, now);
-    })
-    .map((candidate) => ({
-      fixtureId: candidate.fixtureId,
-      gameId: candidate.gameId,
-      gameName: candidate.gameName,
-      venueName: candidate.venueName,
-      kicksOffAtLocal: formatLocalDateTime(candidate.kicksOffAt, candidate.timezone),
-    }));
+  const needed = candidates.filter((candidate) => {
+    const fixtureClaims = claimsByFixture.get(candidate.fixtureId) ?? [];
+    const alreadyFiled = fixtureClaims.some((claim) => claim.playerId === playerId);
+    if (alreadyFiled) return false;
+    return !isResultLocked(candidate.kicksOffAt, fixtureClaims.length, now);
+  });
+
+  const resultsNeeded = needed.map((candidate) => ({
+    fixtureId: candidate.fixtureId,
+    gameId: candidate.gameId,
+    gameName: candidate.gameName,
+    venueName: candidate.venueName,
+    kicksOffAtLocal: formatLocalDateTime(candidate.kicksOffAt, candidate.timezone),
+  }));
+
+  // The newest played fixture that is not already listed above. `candidates`
+  // is `desc` on kickoff, so the first survivor is the newest — and skipping
+  // the ones in "Results needed" is what stops one fixture appearing twice on
+  // one page, reading as two.
+  const neededIds = new Set(needed.map((candidate) => candidate.fixtureId));
+  const recent = candidates.find((candidate) => !neededIds.has(candidate.fixtureId));
+  if (recent === undefined) return { resultsNeeded, recentlyPlayed: null };
+
+  // Words only for a *locked* fixture, through the same derivation the account
+  // history and the past-fixtures page use (`resultWordsForLockedRows`) — a
+  // tally still inside its 48 hours is openly arguable, and a bare score line
+  // here would read as settled while the panel on the fixture page itself
+  // still shows it as a contested claim.
+  const words = await resultWordsForLockedRows(db, [recent], now);
+
+  return {
+    resultsNeeded,
+    recentlyPlayed: {
+      fixtureId: recent.fixtureId,
+      gameId: recent.gameId,
+      gameName: recent.gameName,
+      venueName: recent.venueName,
+      kicksOffAtLocal: formatLocalDateTime(recent.kicksOffAt, recent.timezone),
+      resultWords: words.get(recent.fixtureId),
+    },
+  };
 }
 
 function parseIntent(value: unknown): ResponseIntent | null {

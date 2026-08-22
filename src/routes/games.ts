@@ -24,12 +24,15 @@ import {
   getFixtureWithSquad,
   listOpenFixtureIds,
   listSquad,
+  listPastFixturesForGame,
   listTeamAssignments,
   listUpcomingFixtures,
   type FixtureWithSquad,
   type SquadMember,
 } from "../db/queries.js";
+import { listPlayerPastFixturesInGame } from "../db/dashboard-queries.js";
 import { listResultClaims, resultElectorate } from "../db/result-queries.js";
+import { resultWordsForLockedRows } from "../db/result-summary.js";
 import { fixtures, games, responses } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
@@ -63,6 +66,7 @@ import { renderGameFormPage } from "../views/game-form.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderPlayerFixturePage } from "../views/player-fixture.js";
+import { renderPastFixturesPage, type PastFixtureRow } from "../views/past-fixtures.js";
 import { renderPlayerGamePage } from "../views/player-game.js";
 import { renderRemoveMemberPage } from "../views/remove-member.js";
 import { derivedResultWords, outcomeNames, type ResultPanelParams } from "../views/result.js";
@@ -232,6 +236,88 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       viewerPlayerId: player.id,
       lastResult,
       broadcastNotice: broadcastNoticeFrom(c),
+    }),
+  );
+});
+
+/**
+ * How many past fixtures either role's list shows (M27, TR-38).
+ *
+ * A bound, not a page size: a game running weekly for years has an unbounded
+ * history, and each row's result is derived through a batched claims read
+ * that D1 refuses past 100 bound parameters. Fifty is a year of a weekly
+ * game. There is no "older" link yet, and the page does not pretend there is
+ * — see docs/known-issues.md.
+ */
+const PAST_FIXTURES_LIMIT = 50;
+
+/**
+ * `GET /g/:id/fixtures` (M27): the fixtures that have been and gone.
+ *
+ * Registered after `NEW_GAME_PATH` like every other `/g/:…` route (see this
+ * module's own comment on why the order is load-bearing).
+ *
+ * Dispatches by role exactly as `/g/:id` above does, and for the same reason
+ * one path serves both: two paths would be two entitlement checks to keep in
+ * step. What differs is only the *scope* of the list, never who may reach it
+ * — an organiser sees every fixture before now, cancelled ones included; a
+ * member sees the played ones they have a response row for. Both refusals are
+ * a 404 rather than a 403, so a game id cannot be probed (TR-18).
+ */
+gamesRoutes.get("/g/:id/fixtures", requirePlayer, async (c) => {
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const player = c.get("player")!;
+  const gameId = c.req.param("id");
+
+  const asOwner = await findGameForOwner(db, gameId, player.id);
+  const game = asOwner ?? (await findGameForMember(db, gameId, player.id));
+  if (game === null) return c.text("Not found", 404);
+
+  // Two shapes into one: the organiser's rows come from the game's own
+  // fixtures, the member's from the entitled join that starts at their own
+  // response row. Normalised here rather than in the view, which has no
+  // business knowing there are two queries behind it.
+  const listed =
+    asOwner === null
+      ? (await listPlayerPastFixturesInGame(db, player.id, game.id, PAST_FIXTURES_LIMIT)).map(
+          (row) => ({
+            fixtureId: row.fixtureId,
+            gameId: row.gameId,
+            kicksOffAt: row.kicksOffAt,
+            lifecycle: row.lifecycle,
+            inCount: row.inCount,
+          }),
+        )
+      : (await listPastFixturesForGame(db, game.id, now, PAST_FIXTURES_LIMIT)).map((row) => ({
+          fixtureId: row.id,
+          gameId: game.id,
+          kicksOffAt: row.kicksOffAt,
+          lifecycle: row.lifecycle,
+          inCount: row.inCount,
+        }));
+
+  // The same derivation the account history and the dashboard use, so no two
+  // surfaces can name one result differently — and gated on the same lock, so
+  // a tally still inside its 48 hours shows no line at all rather than a
+  // settled-looking one.
+  const words = await resultWordsForLockedRows(db, listed, now);
+
+  const rows: PastFixtureRow[] = listed.map((row) => ({
+    fixtureId: row.fixtureId,
+    kicksOffAtLocal: formatLocalDateTime(row.kicksOffAt, game.timezone),
+    lifecycle: row.lifecycle,
+    inCount: row.inCount,
+    resultWords: words.get(row.fixtureId),
+  }));
+
+  return c.html(
+    renderPastFixturesPage({
+      nav: pageNav(c, "games"),
+      gameId: game.id,
+      gameName: game.name,
+      rows,
+      owner: asOwner !== null,
     }),
   );
 });

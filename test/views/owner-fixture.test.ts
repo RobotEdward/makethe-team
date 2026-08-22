@@ -256,3 +256,50 @@ describe("the Post to WhatsApp card (M22)", () => {
     expect(html).not.toContain("In or out?");
   });
 });
+
+/**
+ * Where the result panel sits (M27), pinned on the organiser's page for the
+ * reason it is pinned on the player's: below the squad and the teams it was
+ * two full lists away on a phone.
+ *
+ * Presence is asserted alongside the order because `indexOf` returns `-1` for
+ * an absent needle and `-1 < anything` (CLAUDE.md).
+ */
+describe("owner fixture page — result panel position (M27)", () => {
+  const RESULT: OwnerFixtureParams["result"] = {
+    names: { a: "Reds", b: "Blues", draw: "Draw" },
+    candidates: [],
+    derived: null,
+    locked: false,
+    writable: true,
+    eligible: true,
+    rostered: true,
+    yourPlayerId: "p-1",
+    deadlineLocal: "Saturday 15 August, 19:00",
+    actionPath: "/g/g-1/f/f-1/result",
+    clearPath: "/g/g-1/f/f-1/result/clear",
+  };
+
+  it("renders the result panel above the squad", () => {
+    const html = renderOwnerFixturePage(
+      params({
+        view: fixtureView(
+          {
+            lifecycle: "played",
+            kicksOffAt: KICKOFF,
+            inCount: 2,
+            minPlayers: 8,
+            maxPlayers: 10,
+            prefersEvenNumbers: false,
+            shortWarningOffsetHours: 12,
+          },
+          NOW,
+        ),
+        result: RESULT,
+      }),
+    );
+    expect(html).toContain("<h2>Result</h2>");
+    expect(html).toContain("<h2>Squad</h2>");
+    expect(html.indexOf("<h2>Result</h2>")).toBeLessThan(html.indexOf("<h2>Squad</h2>"));
+  });
+});

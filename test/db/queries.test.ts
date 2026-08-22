@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
-import { getFixtureWithSquad, listTeamAssignments, findMembershipInGame, countActiveOwners, listOpenFixtureIds, countCommitments } from "../../src/db/queries.js";
+import { getFixtureWithSquad, listTeamAssignments, findMembershipInGame, countActiveOwners, listOpenFixtureIds, countCommitments, listPastFixturesForGame } from "../../src/db/queries.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, resetDatabase, testDb, insertPlayer as insertPlayerFactory, insertMembership, insertFixture, insertResponse } from "../support/factories.js";
 
@@ -371,5 +371,74 @@ describe("countCommitments", () => {
     await insertResponse(db, c, playerId, { status: "pending" });
 
     expect(await countCommitments(db, gameId, playerId)).toEqual({ in: 1, waitlisted: 1 });
+  });
+});
+
+/**
+ * `listPastFixturesForGame` (M27) — the organiser's half of the past-fixtures
+ * page. Its sibling `listUpcomingFixtures` is bounded the other way and
+ * filters no lifecycle either; this one is the mirror image, and both are
+ * separate functions rather than one with a direction flag because the name
+ * is what tells the next reader which way a row sorts.
+ */
+describe("listPastFixturesForGame", () => {
+  const PAST = new Date("2026-08-01T18:00:00Z");
+  const OLDER = new Date("2026-07-01T18:00:00Z");
+  const FUTURE = new Date("2026-09-01T18:00:00Z");
+
+  it("returns fixtures before now, most recent first", async () => {
+    const gameId = await insertGame(db);
+    const older = await insertFixture(db, gameId, { kicksOffAt: OLDER, lifecycle: "played" });
+    const newer = await insertFixture(db, gameId, { kicksOffAt: PAST, lifecycle: "played" });
+
+    const rows = await listPastFixturesForGame(db, gameId, NOW, 50);
+
+    expect(rows.map((row) => row.id)).toEqual([newer, older]);
+  });
+
+  it("excludes a fixture that has not kicked off yet", async () => {
+    const gameId = await insertGame(db);
+    await insertFixture(db, gameId, { kicksOffAt: FUTURE });
+    const past = await insertFixture(db, gameId, { kicksOffAt: PAST, lifecycle: "played" });
+
+    const rows = await listPastFixturesForGame(db, gameId, NOW, 50);
+
+    expect(rows.map((row) => row.id)).toEqual([past]);
+  });
+
+  it("includes a cancelled one — an organiser asking what happened is better served by seeing it", async () => {
+    const gameId = await insertGame(db);
+    const cancelled = await insertFixture(db, gameId, { kicksOffAt: PAST, lifecycle: "cancelled" });
+
+    const rows = await listPastFixturesForGame(db, gameId, NOW, 50);
+
+    expect(rows.map((row) => row.id)).toEqual([cancelled]);
+    expect(rows[0]!.lifecycle).toBe("cancelled");
+  });
+
+  it("excludes another game's fixtures", async () => {
+    const gameId = await insertGame(db);
+    const otherGameId = await insertGame(db, { name: "Someone Else's Game" });
+    await insertFixture(db, otherGameId, { kicksOffAt: PAST, lifecycle: "played" });
+    const mine = await insertFixture(db, gameId, { kicksOffAt: PAST, lifecycle: "played" });
+
+    const rows = await listPastFixturesForGame(db, gameId, NOW, 50);
+
+    expect(rows.map((row) => row.id)).toEqual([mine]);
+  });
+
+  it("stops at the limit, keeping the most recent (TR-38)", async () => {
+    const gameId = await insertGame(db);
+    for (let i = 1; i <= 4; i++) {
+      await insertFixture(db, gameId, {
+        kicksOffAt: new Date(PAST.getTime() - i * 86_400_000),
+        lifecycle: "played",
+      });
+    }
+
+    const rows = await listPastFixturesForGame(db, gameId, NOW, 2);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.kicksOffAt.getTime()).toBeGreaterThan(rows[1]!.kicksOffAt.getTime());
   });
 });

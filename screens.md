@@ -173,6 +173,14 @@ The signed-in home.
   dashboard is a to-do list. One card per fixture: game name (linking to the game), kickoff
   (linking to the fixture, §2.6). A plain link, never a form — filing happens on the fixture
   page. Omitted entirely, heading included, when the list is empty.
+- **`Recently played` (h2, M27):** the newest played fixture the viewer was in that is *not*
+  already in `Results needed` above — one card: game name (linking to the game), kickoff
+  (linking to the fixture, §2.6), venue, and the result once the fixture's window has locked.
+  A tally still inside its 48 hours shows no result line at all, so nothing here reads as
+  settled while the panel on the fixture page still shows it as a contested claim. Omitted
+  entirely, heading included, when there is none. Its place in the page is the requirement:
+  fixtures the viewer can still act on first, then anything waiting on their own claim, then
+  this.
 - **`Your squads` (h2, M20):** every membership, each game name a link to its game page,
   owned games marked `· you own this`; then a `Set up a game` link. The section is omitted
   entire — heading included — when the player has no squads (the link stays). This gives a
@@ -247,6 +255,8 @@ One page in four states, all under `Delete my data` (h1) + "You're signed in as 
 - The open fixture (kickoff, status badge, capacity bar, published teams, `Squad`) or "Nothing
   open yet — you'll get an email the day before the next game."; `Coming up` (h2) — a list of
   dates each with its status in words.
+- **`Games you've played` link (M27):** under `Coming up`, to this game's past-fixtures list
+  (§2.7).
 - **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **No invite link, no QR, no controls, no edit link** — a separate renderer from the
   organiser's page so that capability cannot leak in by accident.
@@ -256,13 +266,16 @@ The first per-fixture URL a player has ever had — until now their only stable 
 was `/r/:token` out of an email, and `/g/:id` shows only the *open* fixture, so a played
 fixture's published teams vanished from a player's view the moment the sweep retired it.
 - Game name (h1); optional problem notice (a 422 re-render only); venue; address; kickoff;
-  status badge.
+  status badge; then the result panel (below), then the teams and the squad.
 - **Published teams, past tense:** "You were on Bibs." rather than the open-fixture page's
   present tense — a played fixture is what this page is for, and "you're on" is never true of
   one. Follows the same visibility rule as everywhere else (BR-33, BR-35): a player always sees
   their own side.
 - **`Squad` (h2):** who was in, same as the player's game page.
-- **`Result` (h2) — the result panel**, shared with the organiser's fixture page (§3.5):
+- **`Result` (h2) — the result panel**, shared with the organiser's fixture page (§3.5), and
+  rendered **above the teams and the squad** (M27): on a played fixture both of those are
+  history, and the panel is either the thing the viewer was nudged here to fill in or the score
+  they came to read. Below them it sat under two full lists, a long scroll away on a phone.
   - **Writable** (fixture played, window still open): each candidate claim with its backer
     count, an `Agree` submit per candidate, "your pick" on the viewer's own, a "What happened?"
     form (a score, or just who won, radios only), a `Withdraw my answer` button once the viewer
@@ -283,6 +296,28 @@ fixture's published teams vanished from a player's view the moment the sweep ret
   form renders); anyone not an active member of the game gets a 404; a fixture that has not
   been played gets a 404 on the write routes, distinct from the 422 a locked fixture's write
   gets.
+
+### 2.7 Past fixtures — `GET /g/:id/fixtures` (M27)
+A game's fixtures that have been and gone. One route, dispatching by role exactly as `/g/:id`
+does — two paths would be two entitlement checks to keep in step, and the second is the one
+that gets forgotten. Reached from `Past fixtures` on the organiser's game page (§3.2) and
+`Games you've played` on the player's (§2.5).
+- `Past fixtures` (h1); the game name; a one-line caption saying what the list holds.
+- **What each role sees:** an organiser gets **every** fixture before now, all lifecycles,
+  cancelled ones included — an organiser asking what happened to a Thursday is better served
+  seeing it than finding a gap. A member gets the **played** fixtures they have a response row
+  for; a fixture called off is one nobody played, so it is absent, and so is one played before
+  they joined.
+- **Row:** kickoff as an `<h2>` link to the fixture page (§2.6 or §3.5, by role); status badge;
+  headcount ("11 in"); the result, on the same lock rule as everywhere else — nothing at all
+  while a tally is still inside its 48 hours.
+- **Empty state:** "This game has no fixtures in the past yet." for an organiser; "You haven't
+  played a game here yet. Once you have, it'll show up here." for a member.
+- **Bounded at 50 rows**, newest first. There is no "older" link yet — see
+  `docs/known-issues.md`.
+- **Refusals:** anyone who is neither an active organiser nor an active member gets a 404, the
+  same answer both refusals give, so a game id cannot be probed (TR-18).
+- **Freshness bar (M24):** the page's last line.
 
 ---
 
@@ -338,6 +373,8 @@ The organiser's home for one game.
   a `Manage` `<details>` disclosure containing `View details`, a role button
   (`Make an organiser` / `Make an ordinary member`), and `Remove`.
 - **`Coming up` (h2):** upcoming fixtures, each date a link to its own fixture page.
+- **`Past fixtures` link (M27):** between `Coming up` and `Squad`, to this game's
+  past-fixtures list (§2.7).
 - **Footer:** `Back to your games`.
 - **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **Logic:** A game always keeps at least one organiser; the last one cannot demote themselves.
@@ -382,7 +419,8 @@ The busiest organiser screen.
 - **`Message players` action** → the fixture-scoped broadcast compose page.
 - **`Result` (h2, M25) — the result panel, once the fixture is `played`:** identical to the
   player fixture page's own panel (§2.6), shared through one renderer so the organiser and every
-  player read the same tally — writable with each candidate and its backers, locked with the
+  player read the same tally. Rendered **above `Squad` and the team picker** (M27), matching
+  the player's page and for the same reason — writable with each candidate and its backers, locked with the
   outcome and its two confidence figures, or (nothing filed, deadline passed) still writable.
   Absent entirely for an `open`, `scheduled` or `cancelled` fixture — there is nothing yet to
   have a result about.

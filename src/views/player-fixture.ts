@@ -83,6 +83,14 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
   const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
   const problem = params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
 
+  // Before the teams and the squad (M27), not after them: on a played fixture
+  // both of those are history, and the panel is either the thing the viewer
+  // was just nudged here to fill in or the score they came to read. Below
+  // them it sat under two full lists, a long scroll away on a phone. A
+  // template comment would say this in the page itself, where it ships to the
+  // browser as content and turns unrelated "this string is absent" tests red.
+  const resultPanel = result === undefined ? "" : renderResultPanel(result);
+
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
     ${problem}
@@ -91,12 +99,12 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="status-badge status-${escapeHtml(lifecycle)}">${escapeHtml(fixtureStatusWords(lifecycle))}</p>
 
+    ${resultPanel}
+
     ${renderPublishedTeamsSection(teams, squad, lifecycle === "played" ? "past" : "future")}
 
     <h2>Squad</h2>
     ${renderSquadSection(squad, inCount, viewerPlayerId)}
-
-    ${result === undefined ? "" : renderResultPanel(result)}
 
     ${renderFreshness(fixturePath)}
   `;

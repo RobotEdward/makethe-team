@@ -370,6 +370,21 @@ export const SHOTS: Shot[] = [
     signInAs: (w) => w.resultDemoPlayerEmail,
   },
   {
+    id: "past-fixtures",
+    chapter: "07-your-own-fixtures",
+    title: "Games you've already played",
+    route: "/g/:id/fixtures",
+    shows:
+      "A game's past fixtures as a player who was in them sees it: one row per " +
+      "game played, most recent first, each linking to that fixture in full.",
+    path: (w) => `/g/${w.resultDemoGameId}/fixtures`,
+    // The same signed-in squad member as `result-panel` above, and for the
+    // same reason: this list is the played fixtures the *viewer* was in, so a
+    // session is what decides what it holds.
+    persona: "player",
+    signInAs: (w) => w.resultDemoPlayerEmail,
+  },
+  {
     id: "passkeys",
     chapter: "07-your-own-fixtures",
     title: "Signing in faster",

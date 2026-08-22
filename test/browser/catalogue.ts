@@ -6,6 +6,7 @@ import {
   ADMIN_SIGNIN_DOCTOR_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
+  gamePastFixturesPath,
   NEW_GAME_PATH,
   OFFLINE_PATH,
   PASSKEYS_PATH,
@@ -118,6 +119,13 @@ export const CATALOGUE: CataloguePage[] = [
     path: (w) => `/g/${w.gameId}`,
     persona: "owner",
     note: "Squad, fixtures, invite link, QR code, and the J6a squad controls.",
+  },
+  {
+    id: "past-fixtures",
+    title: "Past fixtures",
+    path: (world) => gamePastFixturesPath(world.gameId),
+    persona: "owner",
+    note: "The fixtures a game has already had — every one for an organiser, cancelled ones included; the played ones a member was in.",
   },
   {
     id: "player-game",
