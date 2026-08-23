@@ -19,9 +19,16 @@ const LIMIT_PERIOD_SECONDS = 60;
  * notifier (`MAX_EMAILS_PER_DAY`) and the token's unguessability. Two
  * independent reasons this can never be load-bearing:
  *
- * 1. Cloudflare counts **per location, not globally**, and documents the API
- *    as "permissive, eventually consistent" — an attacker spread across
- *    colos gets a multiple of the nominal limit.
+ * 1. Counting is **per machine**, not per colo and not global. Measured
+ *    against production on 23 August 2026: 23 sequential requests to one
+ *    token over fresh connections never tripped a 10-per-60s limit, because
+ *    each new TCP connection can land on a different machine in the colo and
+ *    each machine counted only two or three. Pinning one connection tripped
+ *    it at 11. A caller who does not reuse a connection — or an attacker
+ *    spread over several — gets a large multiple of the nominal limit.
+ *    Cloudflare's own wording is "cached on the same machine", with
+ *    asynchronous background updates, and "permissive, eventually
+ *    consistent".
  * 2. It fails open, deliberately (see `withinLimit`).
  *
  * Its real job is the one the Free-plan WAF rate limiting rule cannot do: that

@@ -27,9 +27,12 @@ export interface Bindings {
    * required binding here would make the whole suite depend on a Cloudflare
    * feature none of it is testing.
    *
-   * Counting is **per Cloudflare location, not global**, and Cloudflare
-   * documents the API as "permissive, eventually consistent". Treat a limit
-   * as a blunt ceiling on hammering, never as an accurate count.
+   * Counting is **per machine** — not per colo, not global. The configured
+   * limit is therefore a floor on what one caller can do, not a ceiling: see
+   * the measurement in `src/security/rate-limit.ts`, where 23 requests to one
+   * token passed a 10-per-60s limit untouched because they arrived on
+   * different machines. Treat it as a blunt brake on hammering, never as an
+   * accurate count.
    */
   TOKEN_LIMITER?: RateLimitBinding;
   /**

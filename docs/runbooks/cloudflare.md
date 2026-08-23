@@ -147,9 +147,9 @@ burden for the organiser.
 **It is a supplement and it fails open.** What actually bounds the cost of an
 unauthenticated endpoint that writes a row and sends an email is the quota
 wrapper (`MAX_EMAILS_PER_DAY`) and the token's unguessability. Two independent
-reasons this can never be load-bearing: Cloudflare counts **per location, not
-globally** and documents the API as "permissive, eventually consistent", so an
-attacker spread across colos gets a multiple of the nominal limit; and a
+reasons this can never be load-bearing: counting is **per machine** — not per
+colo, not global — so the configured limit is a floor on what one caller can
+do rather than a ceiling (see the measurement below); and a
 binding fault or an absent binding serves the request rather than refusing it,
 because a supplementary control that can 429 every player during a Cloudflare
 blip is a worse outage than the abuse it blunts.
@@ -157,6 +157,33 @@ blip is a worse outage than the abuse it blunts.
 `LIMIT_PERIOD_SECONDS` in `src/security/rate-limit.ts` must match the `period`
 on both bindings — it is what `Retry-After` promises, and nothing can read a
 binding's configured period back at runtime.
+
+### Verifying the limiter is live
+
+**A loop of separate `curl` calls will not show you this working, and that is
+not a bug.** Each new connection can land on a different machine, and each
+machine keeps its own count — 23 sequential requests to one token were all
+served against a 10-per-60s limit. You have to pin one connection, which curl
+does when you pass several URLs to a single invocation:
+
+```bash
+T="probe-$$"
+ARGS=$(for i in $(seq 1 18); do printf -- '-o /dev/null https://makethe.team/r/%s ' "$T"; done)
+curl -s -w '%{http_code} ct=%header{content-type} ra=%header{retry-after}\n' $ARGS
+```
+
+Expect roughly eleven `200`s, then `429 ct=text/html ra=60`. Read the
+content-type, because there are **two** different 429s on this path and only
+one of them is ours:
+
+| Response | Source |
+| --- | --- |
+| `429`, `text/html`, `Retry-After: 60` | This middleware |
+| `429`, `text/plain`, `Retry-After: 10`, body `error code: 1015` | Cloudflare's own edge abuse protection, before the Worker runs |
+
+The edge one appears if you fire the burst in parallel (20 at once reliably
+triggers it). It carries none of the Worker's headers — no `X-Robots-Tag`, no
+CSP — which is the quickest way to tell them apart.
 
 ### Why not the zone's own rate limiting rules
 
