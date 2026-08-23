@@ -1,0 +1,62 @@
+#!/bin/sh
+#
+# Warns when a commit is being made directly on `main` in the **primary
+# checkout**, and shows what is staged.
+#
+# CLAUDE.md: "Milestone work happens in a sibling worktree
+# (../maketheteam-<id>), merged fast-forward to main." That was prose only
+# until 23 August 2026, when two sessions worked in this checkout at once and
+# a `git add -A` swept half of one session's in-progress feature into the
+# other's commit. CI caught it at typecheck, so migrations and the deploy were
+# skipped — but a commit that happened to typecheck would have applied a
+# half-finished D1 migration to production.
+#
+# Deliberately **never blocks**: it exits 0 on every path. The value is not
+# refusal, it is the staged-file list below — the mistake it exists to catch
+# is invisible in `git commit` output and obvious in that list.
+#
+# Never exits non-zero, so it cannot wedge a commit if any of this is wrong.
+
+set -u
+
+# A linked worktree has its own git dir; the primary checkout's git dir *is*
+# the common dir. This is what distinguishes them without parsing paths.
+if [ "$(git rev-parse --git-dir 2>/dev/null)" != "$(git rev-parse --git-common-dir 2>/dev/null)" ]; then
+  exit 0   # in a worktree: this is the convention working, say nothing
+fi
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+[ "$branch" = "main" ] || exit 0
+
+staged=$(git diff --cached --name-only 2>/dev/null)
+[ -n "$staged" ] || exit 0
+count=$(printf '%s\n' "$staged" | wc -l | tr -d ' ')
+
+printf '\n\033[33m  Committing directly to main in the primary checkout.\033[0m\n'
+printf '  CLAUDE.md: milestone work belongs in a sibling worktree, and main\n'
+printf '  moves by fast-forward merge.\n\n'
+printf '      git worktree add ../maketheteam-<id> -b <id>\n\n'
+printf '  This checkout can be shared with another session, so read the %s staged\n' "$count"
+printf '  file(s) below and confirm every one is yours:\n\n'
+printf '%s\n' "$staged" | sed 's/^/      /'
+
+# Anything staged that is dirty in *other* worktrees is a concrete collision,
+# not a maybe — name it explicitly rather than leaving it to the eye.
+for wt in $(git worktree list --porcelain | sed -n 's/^worktree //p'); do
+  [ "$wt" = "$(git rev-parse --show-toplevel)" ] && continue
+  other=$(git -C "$wt" diff --name-only 2>/dev/null; git -C "$wt" diff --cached --name-only 2>/dev/null)
+  [ -n "$other" ] || continue
+  # A temp file rather than process substitution: this runs under #!/bin/sh,
+  # which is dash on many systems and has no <(...).
+  tmp=$(mktemp) || continue
+  printf '%s\n' "$other" > "$tmp"
+  clash=$(printf '%s\n' "$staged" | grep -Fx -f "$tmp" 2>/dev/null)
+  rm -f "$tmp"
+  if [ -n "$clash" ]; then
+    printf '\n\033[31m  Also modified right now in %s:\033[0m\n' "$wt"
+    printf '%s\n' "$clash" | sed 's/^/      /'
+  fi
+done
+
+printf '\n'
+exit 0

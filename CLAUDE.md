@@ -14,6 +14,26 @@ Milestone work happens in a sibling worktree (`../maketheteam-<id>`), merged fas
 `main`. **Pushing `main` deploys to production.** A worktree needs its own `npm install`; do not
 add an `allowScripts` block to `package.json` to make it work.
 
+**This is not a tidiness rule — the primary checkout can have two sessions writing into it at
+once.** On 23 August 2026 one of them ran `git add -A` and committed half of the other's
+in-progress feature: a migration, a schema change and a `src/domain/` module, while the imports
+they depended on were still unwritten. CI went red at typecheck, so `Apply D1 migrations` and
+`Deploy` were skipped — but that was luck. A commit that happened to typecheck would have applied
+a stranger's half-finished D1 migration to the production database.
+
+Two things follow, and neither is optional:
+
+- **Stage explicit paths.** `git add -A` and `git add .` cannot tell your files from someone
+  else's. Run `git status` immediately before committing and confirm every staged path is yours.
+- **`.githooks/pre-commit` prints the staged file list** when you commit to `main` in the primary
+  checkout, and names in red any staged file that is *also* dirty in another worktree. It never
+  blocks. It is enabled by `core.hooksPath`, which the `prepare` script sets on `npm install`; if
+  it is not firing, run `git config core.hooksPath .githooks`.
+
+To back files out of a commit without disturbing the other session's working tree, use index-only
+operations — `git restore --staged --source=<commit> -- <paths>` and `git rm --cached` — never
+`git stash` or `git checkout`, both of which overwrite their files.
+
 ## Failures this codebase makes silently
 
 Each of these has shipped at least once. None is caught by a fetch-level test.

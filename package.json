@@ -4,6 +4,7 @@
     "doc": "docs"
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
     "dev": "wrangler dev",
     "test": "vitest run",
     "test:watch": "vitest",
