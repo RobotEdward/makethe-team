@@ -19,6 +19,9 @@
     "db:migrate:local": "wrangler d1 migrations apply makethe-team --local",
     "db:migrate:remote": "wrangler d1 migrations apply makethe-team --remote",
     "cf-typegen": "wrangler types",
+    "cf:plan": "tsx infra/cloudflare/plan.ts",
+    "cf:apply": "tsx infra/cloudflare/apply.ts",
+    "cf:verify": "tsx infra/cloudflare/verify.ts",
     "seed:local": "wrangler d1 execute makethe-team --local --command \"CREATE TABLE IF NOT EXISTS seed_guard (ok INTEGER)\" && wrangler d1 execute makethe-team --local --file=scripts/seed.sql",
     "show:local": "wrangler d1 execute makethe-team --local --file=scripts/show-fixtures.sql"
   },
@@ -40,6 +43,7 @@
     "@types/node": "^26.2.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.8.1",
+    "tsx": "^4.23.12",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.0",

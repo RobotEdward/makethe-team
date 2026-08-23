@@ -16,3 +16,6 @@ test/browser/screenshots/
 
 # Cloudflare API token for wrangler --remote (never committed)
 .cf-token
+
+# Elevated Cloudflare zone token for infra/cloudflare (never committed)
+.cf-admin-token

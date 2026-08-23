@@ -201,80 +201,62 @@ second window and a key that is not an IP address.
 The single rule the plan does allow is still worth having, for the one thing
 the bindings structurally cannot do — it blocks **before the Worker is
 invoked**, so it protects the bill rather than the data. It is declared in
-`infra/cloudflare/` rather than applied by hand.
+`infra/cloudflare/rules/rate-limit.ts` and applied with `npm run cf:apply`.
 
-## WAF custom rules (TR-37)
+## WAF custom rules and rate limiting are declared in code
 
-Security → WAF → Custom rules. The free plan allows five. A blocklist is always
-behind the attackers; this exists to keep scanner noise out of the logs and the
-request count, not as a security control.
-
-1. **`block-scanner-paths`** — Block
-
-   ```
-   (http.request.uri.path contains "/wp-")
-   or (http.request.uri.path contains "/wordpress")
-   or (http.request.uri.path contains "/.env")
-   or (http.request.uri.path contains "/.git")
-   or (http.request.uri.path contains "/phpmyadmin")
-   or (http.request.uri.path contains "/vendor/")
-   or (http.request.uri.path contains "/.aws")
-   or (http.request.uri.path eq "/config.json")
-   ```
-
-2. **`block-non-standard-methods`** — Block
-
-   ```
-   not http.request.method in {"GET" "HEAD" "POST"}
-   ```
-
-Leave the remaining three slots free.
-
-There is deliberately no bot-scoring rule. The `cf.bot_management.*` fields
-require a paid Bot Management subscription, which this zone (Free Website plan)
-does not have, so any such rule would fail validation — do not re-add one. The
-application is written to be safe with the WAF switched off entirely.
-
-**Status:** both rules were applied in the dashboard on 10 August 2026 and
-verified live.
-
-### Verifying the rules are live
+**Do not add, edit or remove these in the dashboard.** They live in
+`infra/cloudflare/`, as data:
 
 ```bash
-# Blocked at the edge — expect 403
-for p in /wp-admin /wordpress/ /.env /.git/config /phpmyadmin \
-         /vendor/autoload.php /.aws/credentials /config.json; do
-  printf '%-24s %s\n' "$p" "$(curl -s -o /dev/null -w '%{http_code}' "https://makethe.team$p")"
-done
-curl -s -X PUT -o /dev/null -w 'PUT / -> %{http_code}\n' https://makethe.team/
-
-# Must keep working — expect 200, 200, 404
-curl -s -o /dev/null -w 'GET  /            -> %{http_code}\n' https://makethe.team/
-curl -s -o /dev/null -w 'GET  /robots.txt  -> %{http_code}\n' https://makethe.team/robots.txt
-curl -s -X POST -o /dev/null -w 'POST /            -> %{http_code}\n' https://makethe.team/
+source .cf-admin-token
+npm run cf:plan      # what would change; changes nothing
+npm run cf:apply     # make the zone match the repo
+npm run cf:verify    # check the live site (no token needed)
 ```
 
-`403` means the rule is live and the request never reached the Worker. `404`
-means it reached the Worker, so the rule is not applied. Either is safe — the
-application does not depend on the WAF — but only `403` avoids the request being
-billed as a Worker invocation.
+`infra/cloudflare/README.md` carries the full reasoning: why this is a script
+against the Rulesets API rather than Terraform (the phase entrypoint is a full
+replace, so the zone is the state and there is no state file), why it is
+deliberately kept out of CI (the deploy token lacks Firewall Services → Edit,
+and that is a property worth keeping), and how to mint the elevated token.
 
-### These rules do not collide with the application's own routes
+A dashboard edit is not forbidden by anything technical, and for a rule needed
+**in response to a live attack** it is the right move — this repo is public, and
+committing first publishes the countermeasure to the attacker. Add it by hand,
+then commit it. Otherwise `cf:plan` will report your edit as drift and
+`cf:apply` will remove it, which is the intended behaviour.
 
-Checked against the route shapes the next milestones introduce — response links
-(`/r/<token>`), invite links (`/j/<token>`), game pages and the dashboard. All
-reach the Worker rather than being blocked, **including** deliberately awkward
-tokens containing `wp-`, `.env`, `config.json` and `vendor-`.
+### The collision argument, corrected
 
-They are safe because every pattern in `block-scanner-paths` requires a literal
-`/` immediately before it, and HMAC tokens are base64url or hex, neither of which
-can contain a slash. `/config.json` uses `eq` rather than `contains`, so it only
-matches at the root.
+An earlier version of this runbook argued that these rules could not match a
+real player's link because "every pattern requires a literal `/` immediately
+before it, and HMAC tokens are base64url or hex, neither of which can contain a
+slash".
 
-If a future route is ever added whose path segment could begin with `.` or could
-contain one of those literals after a slash, re-run the check above with that
-shape before shipping it. A WAF false positive on `/r/` would silently break the
-one journey the whole product depends on.
+**That does not establish the conclusion.** The hazard is not a token
+containing a slash — it is a token *beginning* with a pattern, because the `/`
+before it is the route's own separator. `/r/wp-anything` contains `/wp-`, and
+`wp-` is three legal base64url characters.
+
+What actually makes it safe is the alphabets:
+
+- `/r/`, `/leave/` and `/cancel/` carry `base64url(JSON).base64url(hmac)`. The
+  payload is JSON, so the first byte is always `{` (0x7B), whose top six bits
+  are 30 — **every one of these tokens starts with `e`**.
+- `/j/` carries `crypto.randomUUID()`: hex and dashes, so it cannot contain
+  `w`, `p`, `.` or `/`.
+
+Both are incidental to how tokens are built. Neither was chosen for this
+reason, and either could be changed by someone with no idea this rule exists —
+so `test/infra/waf-collisions.test.ts` runs 200 freshly minted tokens of every
+kind through the real rule matcher on every `npm test`, and pins the `e` prefix
+explicitly with the reason. **This is why `infra/cloudflare/` lives in the
+application repo**: the guard needs the rules and `src/domain/token.ts` in one
+test run.
+
+A false positive here would break the one journey the product depends on, one
+player at a time, with nothing logged — the request never reaches the Worker.
 
 ## Bot Fight Mode must stay OFF
 
@@ -304,7 +286,8 @@ The real controls are the two WAF rules, the per-invocation CPU ceiling, and the
 application's own authorisation — none of which care about IP reputation.
 
 If CI ever goes red on the smoke check while the site is fine from a browser,
-check this toggle first.
+check this toggle first. `npm run cf:plan` reports it if it is on; it cannot be
+set through the Rulesets API, so turning it off is a dashboard action.
 
 ## Custom domain
 
