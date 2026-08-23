@@ -218,8 +218,10 @@ npm run cf:verify    # check the live site (no token needed)
 `infra/cloudflare/README.md` carries the full reasoning: why this is a script
 against the Rulesets API rather than Terraform (the phase entrypoint is a full
 replace, so the zone is the state and there is no state file), why it is
-deliberately kept out of CI (the deploy token lacks Firewall Services → Edit,
-and that is a property worth keeping), and how to mint the elevated token.
+deliberately kept out of CI (the deploy token cannot touch the Rulesets API,
+and that is a property worth keeping), and how to mint the elevated token —
+which needs **Zone WAF → Edit**, not Firewall Services; they are different
+permission groups and only the former grants the Ruleset Engine.
 
 A dashboard edit is not forbidden by anything technical, and for a rule needed
 **in response to a live attack** it is the right move — this repo is public, and

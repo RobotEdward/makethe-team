@@ -30,7 +30,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     // permission, which is by far the likeliest failure here and reads as a
     // generic auth error unless it is named.
     const hint = body.errors?.some((e) => e.code === 10000)
-      ? `\n\nThat usually means the token lacks a permission, not that it is invalid.\nThis needs Zone → Firewall Services → Edit.`
+      ? `\n\nThat usually means the token lacks a permission, not that it is invalid.\nThe Rulesets API needs Zone → Zone WAF → Edit. Note that Zone → Firewall\nServices → Edit is NOT the same permission: it grants the legacy\n/firewall/rules and /filters endpoints, which this repo does not use.`
       : "";
     throw new Error(`${init.method ?? "GET"} ${path} failed: ${detail}${hint}`);
   }
@@ -91,8 +91,21 @@ export async function writePhase(phase: string, rules: unknown[]): Promise<void>
   });
 }
 
-/** Whether Bot Fight Mode is on. It must not be — see the README. */
-export async function readBotFightMode(): Promise<boolean> {
-  const result = await call<{ fight_mode?: boolean }>(`/zones/${ZONE_ID}/bot_management`);
-  return result.fight_mode === true;
+/**
+ * Whether Bot Fight Mode is on. It must not be — see the README.
+ *
+ * `"unknown"` rather than a throw when the endpoint cannot be read. On this
+ * zone (Free Website) `/bot_management` answers `10000 Authentication error`
+ * even for a token that can read every other zone setting, and the toggle is
+ * not settable through the Rulesets API anyway — so this is a dashboard-only
+ * concern that `plan` reports on rather than manages. Failing the whole plan
+ * over an advisory check would be the tail wagging the dog.
+ */
+export async function readBotFightMode(): Promise<boolean | "unknown"> {
+  try {
+    const result = await call<{ fight_mode?: boolean }>(`/zones/${ZONE_ID}/bot_management`);
+    return result.fight_mode === true;
+  } catch {
+    return "unknown";
+  }
 }

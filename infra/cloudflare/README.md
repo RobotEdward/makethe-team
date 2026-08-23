@@ -51,9 +51,21 @@ Create a second token at <https://dash.cloudflare.com/profile/api-tokens>:
 
 | Permission | Level |
 | --- | --- |
-| Firewall Services | Edit |
+| **Zone WAF** | Edit |
 | Zone Settings | Edit |
 | Zone | Read |
+
+**It is `Zone WAF`, not `Firewall Services`.** They are different permission
+groups and the names are misleading: `Firewall Services` grants the *legacy*
+`/firewall/rules` and `/filters` endpoints, which this repo does not use, while
+every Ruleset Engine endpoint — which is all this repo touches — needs
+`Zone WAF`. A token with only `Firewall Services` reads `/firewall/rules`
+happily and answers `10000 Authentication error` on every rulesets call, which
+reads as "bad token" rather than "wrong permission".
+
+Do not diagnose these tokens with `/user/tokens/verify`: it answers
+`1000 Invalid API Token` for tokens that demonstrably work, including the
+deploy token. Probe the endpoint you actually need instead.
 
 Scoped to `makethe.team` only. Then:
 

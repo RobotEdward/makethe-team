@@ -48,7 +48,10 @@ async function main(): Promise<void> {
 
   console.log("\nBot Fight Mode");
   const botFightMode = await readBotFightMode();
-  if (botFightMode) {
+  if (botFightMode === "unknown") {
+    console.log("  could not read it (the API refuses this endpoint on a Free zone).");
+    console.log("  Check by hand: Security → Bots → Bot Fight Mode. It must be OFF.");
+  } else if (botFightMode) {
     total += 1;
     console.log("  ! ON — it must be OFF. It challenges datacentre IPs, which breaks");
     console.log("    the GitHub Actions smoke check. Turn it off in the dashboard:");

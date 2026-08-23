@@ -24,6 +24,10 @@ export const RATE_LIMIT_PHASE = "http_ratelimit";
  * design: GitHub Actions holds it, and nothing in CI should be able to change
  * the zone's security posture. Keeping the names distinct is what stops the
  * two being conflated by a stray `source .cf-token`.
+ *
+ * Neither token verifies against `/user/tokens/verify`, which answers
+ * `1000 Invalid API Token` for both despite both working. Do not use that
+ * endpoint to diagnose these — probe the endpoint you actually need.
  */
 export const TOKEN_ENV_VAR = "CLOUDFLARE_ADMIN_API_TOKEN";
 
@@ -34,7 +38,7 @@ export function requireToken(): string {
       `${TOKEN_ENV_VAR} is not set.\n\n` +
         `This is the elevated zone token, not the deploy token in .cf-token.\n` +
         `Create it at https://dash.cloudflare.com/profile/api-tokens with:\n` +
-        `  Zone → Firewall Services → Edit\n` +
+        `  Zone → Zone WAF        → Edit   (the Rulesets API; NOT Firewall Services)\n` +
         `  Zone → Zone Settings   → Edit\n` +
         `  Zone → Zone            → Read\n` +
         `scoped to ${ZONE_NAME} only, then:\n` +
