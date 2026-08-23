@@ -1118,57 +1118,6 @@ export const SIGN_IN_SUBMIT_JS = `
 `;
 
 /**
- * Tells the server the player is here, and whether they are here in the
- * installed app (M33).
- *
- * Emitted by `layout()` on every page that carries `nav` — the existing
- * "this page has a session on it" signal — and so, like `SERVICE_WORKER_JS`,
- * it is **not** a member of `PAGE_SCRIPT_BLOCKS`: no page opts into it and no
- * page can opt out. That gating is the whole reason it never reaches `/`,
- * `/join/:token` or `/r/:token`, where there is no session to report and the
- * request would be pure waste on a page strangers open from a mailed link.
- *
- * Once per browser tab, via `sessionStorage`, because a player who navigates
- * ten pages has told us the same thing ten times. Every storage access is
- * inside a `try` — Safari in private mode throws on the *getter* itself, not
- * on the call — and a failure falls through to pinging, which is the harmless
- * direction: the route throttles writes anyway
- * (`shouldStampPresence`, `src/domain/presence.ts`).
- *
- * `navigator.standalone` as well as the media query: iOS set that property
- * for home-screen apps years before it honoured `display-mode`, and an
- * iPhone is the single most likely device to have this app installed.
- *
- * This block does `fetch`, so it is governed by `connect-src` as well as
- * `script-src` — see the "a hash lets a script run" section at the top of
- * this file, and `src/security/csp.ts` on why a same-origin absolute path is
- * the only kind of URL a script here may call.
- */
-export const PRESENCE_JS = `
-(function () {
-  if (!window.fetch) return;
-  var told = false;
-  try {
-    told = !!(window.sessionStorage && window.sessionStorage.getItem("mtt-seen"));
-    if (window.sessionStorage) window.sessionStorage.setItem("mtt-seen", "1");
-  } catch (error) {
-    told = false;
-  }
-  if (told) return;
-  var installed = !!(
-    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
-    window.navigator.standalone === true
-  );
-  fetch("${PRESENCE_PATH}", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    credentials: "same-origin",
-    body: JSON.stringify({ standalone: installed }),
-  }).catch(function () {});
-})();
-`;
-
-/**
  * Every page-specific script, for `layout()`'s `pageScripts` parameter to be
  * typed against. See the module comment for what enforces membership.
  *
@@ -1200,4 +1149,4 @@ export type PageScriptBlock = (typeof PAGE_SCRIPT_BLOCKS)[number];
  * **This is the value a CSP's `script-src` hashing must map over** — see the
  * module comment for the exact change M4's `src/security/csp.ts` has to make.
  */
-export const SCRIPT_BLOCKS = [SERVICE_WORKER_JS, PRESENCE_JS, ...PAGE_SCRIPT_BLOCKS] as const;
+export const SCRIPT_BLOCKS = [SERVICE_WORKER_JS, ...PAGE_SCRIPT_BLOCKS] as const;

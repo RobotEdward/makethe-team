@@ -91,31 +91,6 @@ export const players = sqliteTable(
      * and a re-block is recorded again.
      */
     erasureBlockedAt: integer("erasure_blocked_at", { mode: "timestamp_ms" }),
-    /**
-     * The last time this player loaded a page carrying their session (M33).
-     *
-     * Stamped by `POST /app/presence`, which every session-bearing page pings
-     * once per tab, and only when the stored value is over an hour old — so a
-     * player who lives in the app costs one write an hour, not one per page.
-     *
-     * Null for the many players who never sign in at all: most of this product
-     * is reachable from a mailed link, and a squad full of nulls here is the
-     * normal state, not a fault. The organiser's squad list reads this
-     * *together with* the player's own newest answer in that game, because
-     * answering from a link is being seen and does not touch this column.
-     */
-    lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }),
-    /**
-     * The last such page load that was running as an installed app (M33).
-     *
-     * Non-null means "we have seen this person in the installed app"; null
-     * means we never have, which is not the same as "not installed" — a
-     * player who installed it and has not opened it since the column existed
-     * reads as null. **An uninstall is never observed at all**: nothing tells
-     * a server that an app was removed, so this stamp only ever goes forwards
-     * and the squad list says "not installed" about an absence of evidence.
-     */
-    lastStandaloneAt: integer("last_standalone_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [
