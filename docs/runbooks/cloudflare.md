@@ -300,9 +300,24 @@ proxies and some VPNs, for a site whose entire public surface is a holding page.
 The real controls are the two WAF rules, the per-invocation CPU ceiling, and the
 application's own authorisation — none of which care about IP reputation.
 
-If CI ever goes red on the smoke check while the site is fine from a browser,
-check this toggle first. `npm run cf:plan` reports it if it is on; it cannot be
-set through the Rulesets API, so turning it off is a dashboard action.
+**Status:** confirmed off, 23 August 2026.
+
+### This is the one setting with no automated check — but it has a canary
+
+`/zones/{id}/bot_management` answers `10000 Authentication error` on this Free
+zone even for a token that reads every other zone setting, and the toggle
+cannot be set through the Rulesets API either. So `cf:plan` can only tell you
+to look, and turning it off is a dashboard action.
+
+That matters less than it appears, because **the post-deploy smoke check in
+GitHub Actions is already a detector for exactly this failure**. Actions
+runners are on Azure ranges, which is precisely what Bot Fight Mode
+challenges — so switching it on turns the next deploy red within minutes. That
+is not a hypothetical: it is how the 10 August incident above was noticed.
+
+So the check is not really manual. It is automated by accident, on every
+deploy, and the alarm has already fired once. If CI goes red on the smoke
+check while the site is fine from a browser, look here first.
 
 ## Custom domain
 
