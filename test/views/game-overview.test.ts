@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { gamePastFixturesPath } from "../../src/auth/paths.js";
 import { LIFECYCLES, type Lifecycle } from "../../src/domain/lifecycle.js";
+import type { SquadSignals } from "../../src/domain/presence.js";
 import { fixtureStatusWords } from "../../src/views/fixture.js";
 import { renderGameOverviewPage } from "../../src/views/game-overview.js";
-import { SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { PRESENCE_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
+
+/** A member nothing is wrong with: no markers on the row (M33). */
+const REACHABLE: SquadSignals = {
+  notInstalled: false,
+  noPush: false,
+  deliveryTrouble: false,
+  quiet: false,
+};
 
 const BASE = {
   nav: { isAdmin: false, current: "games" } as const,
@@ -22,6 +31,7 @@ const BASE = {
     role: "player" | "owner";
     isGuest: boolean;
     muted: boolean;
+    signals: SquadSignals;
   }>,
   upcoming: [] as Array<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>,
   lastResult: null as { fixtureId: string; words: string } | null,
@@ -34,8 +44,8 @@ const render = (overrides: Partial<typeof BASE> = {}) =>
 
 describe("squad controls", () => {
   const squad = [
-    { playerId: "p-owner", name: "Edward Charles", role: "owner" as const, isGuest: false, muted: false },
-    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false },
+    { playerId: "p-owner", name: "Edward Charles", role: "owner" as const, isGuest: false, muted: false, signals: REACHABLE },
+    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false, signals: REACHABLE },
   ];
 
   it("offers a remove link for each member", () => {
@@ -83,7 +93,7 @@ describe("squad controls", () => {
 });
 
 describe("per-member disclosure (M10 §3.8)", () => {
-  const m = (name: string) => ({ playerId: `p-${name}`, name, role: "player" as const, isGuest: false, muted: false });
+  const m = (name: string) => ({ playerId: `p-${name}`, name, role: "player" as const, isGuest: false, muted: false, signals: REACHABLE });
   const params = (overrides: Partial<typeof BASE> & { squad: typeof BASE.squad }) => ({
     ...BASE,
     viewerPlayerId: "p-owner",
@@ -157,8 +167,11 @@ describe("the invite card (M12 §4)", () => {
     // says: exactly the scripts this page opts into beyond the site-wide one,
     // and the QR is not among them.
     expect(html).toMatch(/<details class="qr-toggle">\s*<summary>Show the QR code<\/summary>\s*<div class="qr">/);
+    // PRESENCE_JS is filtered alongside SERVICE_WORKER_JS for the same
+    // reason: M33 put it on every page that carries the signed-in header,
+    // so it is not something this page opts into either.
     const scripts = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
-    const ownScripts = scripts.filter(([, , js]) => js !== SERVICE_WORKER_JS);
+    const ownScripts = scripts.filter(([, , js]) => js !== SERVICE_WORKER_JS && js !== PRESENCE_JS);
     expect(ownScripts).toHaveLength(2);
   });
 
@@ -180,7 +193,9 @@ describe("the invite card (M12 §4)", () => {
 });
 
 describe("destructive controls", () => {
-  const squad = [{ playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false }];
+  const squad = [
+    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false, signals: REACHABLE },
+  ];
 
   it("marks removing someone as destructive rather than as ordinary navigation", () => {
     const html = render({ squad });
@@ -366,7 +381,11 @@ describe("the squad list is styled too", () => {
     // identical markup laid out differently (M10 whole-branch review).
     // Ordering is invisible to every other assertion in this file — this is
     // the only thing standing between that bug and a silent return.
-    const html = render({ squad: [{ playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false, muted: false }] });
+    const html = render({
+      squad: [
+        { playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false, muted: false, signals: REACHABLE },
+      ],
+    });
     const squadAt = html.indexOf(SQUAD_STYLES_CSS);
     const formAt = html.indexOf(FORM_CSS);
     // Both presence assertions are load-bearing, and they belong in this test

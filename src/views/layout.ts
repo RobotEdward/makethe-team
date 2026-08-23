@@ -5,7 +5,7 @@ import {
   DASHBOARD_PATH,
   MANIFEST_PATH,
 } from "../auth/paths.js";
-import { SERVICE_WORKER_JS, type PageScriptBlock } from "./scripts.js";
+import { PRESENCE_JS, SERVICE_WORKER_JS, type PageScriptBlock } from "./scripts.js";
 import type { PageStyleBlock } from "./styles.js";
 
 /** The three destinations the signed-in header offers. */
@@ -322,7 +322,13 @@ export function layout({ title, body, pageStyles, pageScripts, centred, nav }: L
   // pageScripts carries — mirroring STYLES leading pageStyles above — because
   // it is the one block every page emits regardless of what it opts into via
   // `pageScripts` (see that field's comment on `LayoutOptions`).
-  const scriptTags = [SERVICE_WORKER_JS, ...(pageScripts ?? [])]
+  // PRESENCE_JS on exactly the pages that carry `nav`, which is this file's
+  // existing test for "a session is on this page" (see `LayoutOptions.nav`).
+  // Gating on the header rather than on a per-page opt-in is what keeps the
+  // ping off `/`, `/join/:token` and `/r/:token` — pages a stranger opens
+  // from a link, with no session to report — without every signed-in page
+  // having to remember to ask for it.
+  const scriptTags = [SERVICE_WORKER_JS, ...(nav === undefined ? [] : [PRESENCE_JS]), ...(pageScripts ?? [])]
     .map((js) => `<script>${js}</script>`)
     .join("\n");
   return `<!doctype html>

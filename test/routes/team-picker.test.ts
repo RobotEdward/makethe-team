@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { auditLog, fixtures, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { COPY_BUTTON_JS, FRESHNESS_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, TEAM_PICKER_JS } from "../../src/views/scripts.js";
+import { COPY_BUTTON_JS, FRESHNESS_JS, PRESENCE_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, TEAM_PICKER_JS } from "../../src/views/scripts.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
@@ -246,7 +246,10 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     // unnoticed, and the assertion is narrowed to the scripts that are not
     // the site-wide block.
     const scripts = [...served.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
-    const ownScripts = scripts.filter(([, , js]) => js !== SERVICE_WORKER_JS);
+    // PRESENCE_JS (M33) is filtered with it, and for the same reason: it
+    // rides on every page carrying the signed-in header rather than being an
+    // opt-in of this one.
+    const ownScripts = scripts.filter(([, , js]) => js !== SERVICE_WORKER_JS && js !== PRESENCE_JS);
     expect(scripts.some(([, , js]) => js === SERVICE_WORKER_JS), "the page must register the service worker").toBe(
       true,
     );
@@ -254,12 +257,15 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
       ownScripts.map(([, , js]) => js),
       "the picker page carries exactly the picker, the copy button and the freshness bar",
     ).toEqual([TEAM_PICKER_JS, COPY_BUTTON_JS, FRESHNESS_JS]);
-    // Guards against layout() emitting the site-wide block twice: the two
+    // Guards against layout() emitting a site-wide block twice: the two
     // assertions above (some() finds it, ownScripts has length 2) would both
     // still pass if SERVICE_WORKER_JS appeared a second time, since a
     // duplicate is filtered into neither bucket's failure. Pinning the total
-    // count against ownScripts.length + 1 is what actually catches that.
-    expect(scripts.length, "exactly one site-wide script plus the page's own").toBe(ownScripts.length + 1);
+    // count against ownScripts.length plus the two site-wide blocks — the
+    // service worker and M33's presence ping — is what actually catches that.
+    expect(scripts.length, "exactly the two site-wide scripts plus the page's own").toBe(
+      ownScripts.length + 2,
+    );
     // No `src`, no `type`, no `nonce`: only a bare inline tag is covered by a
     // SHA-256 hash of its own text.
     for (const [, attributes] of scripts) {

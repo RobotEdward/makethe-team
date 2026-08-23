@@ -15,7 +15,7 @@ import {
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, passkey, players, pushSubscriptions, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { FRESHNESS_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { FRESHNESS_JS, PRESENCE_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
 import { insertGame, insertMembership, insertResultClaim, resetDatabase } from "../support/factories.js";
 import { kickoffIn } from "../support/clock.js";
@@ -252,15 +252,18 @@ describe("GET /app", () => {
 
     const body = await (await get(cookie)).text();
 
-    // Two blocks stripped first, so this keeps proving nothing *else* needs
-    // script: the site-wide service worker registration (M13 Task 5), and the
-    // freshness bar's re-fetch-on-resume (M24). Answering is unaffected by
-    // either — the buttons below are the same form posts they were, and the
-    // bar's own Refresh is a link, not a control.
+    // Three blocks stripped first, so this keeps proving nothing *else* needs
+    // script: the site-wide service worker registration (M13 Task 5), the
+    // presence ping every signed-in page carries (M33), and the freshness
+    // bar's re-fetch-on-resume (M24). Answering is unaffected by any of them
+    // — the buttons below are the same form posts they were, the ping only
+    // reports, and the bar's own Refresh is a link, not a control.
     expect(body).toContain(`<script>${SERVICE_WORKER_JS}</script>`);
+    expect(body).toContain(`<script>${PRESENCE_JS}</script>`);
     expect(body).toContain(`<script>${FRESHNESS_JS}</script>`);
     const rest = body
       .replace(`<script>${SERVICE_WORKER_JS}</script>`, "")
+      .replace(`<script>${PRESENCE_JS}</script>`, "")
       .replace(`<script>${FRESHNESS_JS}</script>`, "");
     expect(rest).not.toContain("<script");
     expect(body).not.toMatch(/type=.?password/i);

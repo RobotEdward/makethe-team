@@ -36,6 +36,7 @@ import {
   type SquadMember,
 } from "../db/queries.js";
 import { listPlayerPastFixturesInGame } from "../db/dashboard-queries.js";
+import { getSquadPresence } from "../db/presence-queries.js";
 import { listResultClaims, resultElectorate } from "../db/result-queries.js";
 import { resultWordsForLockedRows } from "../db/result-summary.js";
 import { fixtures, games, responses } from "../db/schema.js";
@@ -48,6 +49,7 @@ import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
 import { isMuted, parseMuteDuration } from "../domain/mute.js";
+import { squadSignals } from "../domain/presence.js";
 import { effectiveMode, isPickerMode, mayPick, mayPublish } from "../domain/picker.js";
 import { clearMute, setMute } from "../domain/set-mute.js";
 import { deriveResult, tally } from "../domain/result.js";
@@ -206,6 +208,48 @@ async function lastResultFor(
   return { fixtureId: last.id, words };
 }
 
+/**
+ * The squad as the organiser's overview shows it: the members, their mute
+ * state, and M33's reachability markers.
+ *
+ * Both callers go through here rather than each mapping their own, so the
+ * refusal render cannot end up showing a squad shaped differently from the
+ * ordinary one.
+ *
+ * `isMuted` and `squadSignals` are applied here rather than in the view for
+ * the same reason: both are relative to *now*, and the page must not hold a
+ * clock (M28).
+ */
+async function squadForOverview(db: Db, gameId: string, now: Date) {
+  const [squad, presence] = await Promise.all([
+    listSquad(db, gameId),
+    getSquadPresence(db, gameId, now),
+  ]);
+  const byPlayer = new Map(presence.map((row) => [row.playerId, row]));
+  return squad.map((member) => {
+    // A member with no presence row cannot happen — both reads take the same
+    // active memberships — but the two are separate statements, and a
+    // membership ending between them would otherwise throw on a page an
+    // organiser is only reading.
+    const presenceRow = byPlayer.get(member.playerId);
+    return {
+      ...member,
+      muted: isMuted(member, now),
+      signals: squadSignals(
+        {
+          isGuest: member.isGuest,
+          lastSeenAt: presenceRow?.lastSeenAt ?? null,
+          lastAnsweredAt: presenceRow?.lastAnsweredAt ?? null,
+          lastStandaloneAt: presenceRow?.lastStandaloneAt ?? null,
+          pushDevices: presenceRow?.pushDevices ?? 0,
+          deliveryFailing: presenceRow?.deliveryFailing ?? false,
+        },
+        now,
+      ),
+    };
+  });
+}
+
 // `/g/:id` and friends are registered here, after `NEW_GAME_PATH` above — see
 // this file's module comment for why the order is load-bearing.
 
@@ -226,8 +270,10 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
     return renderPlayerGame(c, asMember, player.id, now);
   }
 
+
+
   const [squad, upcoming, lastResult] = await Promise.all([
-    listSquad(db, game.id),
+    squadForOverview(db, game.id, now),
     listUpcomingFixtures(db, game.id, now),
     lastResultFor(db, game, now),
   ]);
@@ -243,9 +289,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       maxPlayers: game.maxPlayers,
       prefersEvenNumbers: game.prefersEvenNumbers,
       inviteToken: game.inviteToken,
-      // `isMuted` here rather than in the view: the page must not hold a
-      // clock, and an expired mute is not a marker to show (M28).
-      squad: squad.map((member) => ({ ...member, muted: isMuted(member, now) })),
+      squad,
       upcoming,
       viewerPlayerId: player.id,
       lastResult,
@@ -2015,7 +2059,7 @@ async function renderSquadRefusal(
   const game = await findGameForOwner(db, gameId, c.get("player")!.id);
   if (game === null) return c.text("Not found", 404);
   const [squad, upcoming, lastResult] = await Promise.all([
-    listSquad(db, game.id),
+    squadForOverview(db, game.id, now),
     listUpcomingFixtures(db, game.id, now),
     lastResultFor(db, game, now),
   ]);
@@ -2030,7 +2074,7 @@ async function renderSquadRefusal(
       maxPlayers: game.maxPlayers,
       prefersEvenNumbers: game.prefersEvenNumbers,
       inviteToken: game.inviteToken,
-      squad: squad.map((member) => ({ ...member, muted: isMuted(member, now) })),
+      squad,
       upcoming,
       lastResult,
       viewerPlayerId: c.get("player")!.id,

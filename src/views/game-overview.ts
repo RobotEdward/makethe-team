@@ -10,6 +10,7 @@ import {
   fixturePath,
 } from "../auth/paths.js";
 import { oddMaxWarning } from "../domain/game-form.js";
+import type { SquadSignals } from "../domain/presence.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
@@ -17,8 +18,17 @@ import { fixtureStatusWords } from "./fixture.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { qrSvg } from "./qr.js";
 import { renderFreshness } from "./freshness.js";
+import { renderSquadSignals } from "./squad-signals.js";
 import { COPY_BUTTON_JS, FRESHNESS_JS } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, FRESHNESS_CSS, INVITE_CSS, RESULT_CSS, SQUAD_STYLES_CSS } from "./styles.js";
+import {
+  FIXTURE_STYLES_CSS,
+  FORM_CSS,
+  FRESHNESS_CSS,
+  INVITE_CSS,
+  RESULT_CSS,
+  SQUAD_SIGNALS_CSS,
+  SQUAD_STYLES_CSS,
+} from "./styles.js";
 
 export interface GameOverviewParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
@@ -45,6 +55,12 @@ export interface GameOverviewParams {
      * chasing them is the wrong response.
      */
     muted: boolean;
+    /**
+     * Which reachability markers this member's row carries (M33), already
+     * resolved against the clock by the route for `muted`'s reason — this
+     * page holds no clock.
+     */
+    signals: SquadSignals;
   }>;
   /**
    * `lifecycle` is the stored enum, not a display string — the page maps it
@@ -110,11 +126,14 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       const guest = member.isGuest ? " (guest)" : "";
       const organiser = member.role === "owner" ? " — organiser" : "";
       const muted = member.muted ? ' <span class="member-muted">Auto-declining</span>' : "";
+      // Inside the member's own span, after the name: see SQUAD_SIGNALS_CSS
+      // on why these must not be a third child of the row's grid.
+      const signals = renderSquadSignals(member.signals);
       const isOwner = member.role === "owner";
       const nextRole = isOwner ? "player" : "owner";
       const roleLabel = isOwner ? "Make an ordinary member" : "Make an organiser";
       return `<li>
-        <span class="member">${name}${organiser}${guest}${you}</span>${muted}
+        <span class="member">${name}${organiser}${guest}${you}${signals}</span>${muted}
         <details class="member-actions">
           <summary>Manage</summary>
           <p><a href="${escapeHtml(memberDetailPath(gameId, member.playerId))}">View details</a></p>
@@ -215,7 +234,18 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     // `RESULT_CSS` for `.result-final` alone (M25 Task 13) — an all-new
     // selector (see that block's own comment in `src/views/styles.ts`), so
     // nothing already on this page changes appearance by adding it.
-    pageStyles: [SQUAD_STYLES_CSS, FORM_CSS, INVITE_CSS, FIXTURE_STYLES_CSS, RESULT_CSS, FRESHNESS_CSS],
+    // SQUAD_SIGNALS_CSS last, and safely so: every selector in it is rendered
+    // by `renderSquadSignals` and by nothing else on this page, so there is
+    // no block above it for the order to matter against.
+    pageStyles: [
+      SQUAD_STYLES_CSS,
+      FORM_CSS,
+      INVITE_CSS,
+      FIXTURE_STYLES_CSS,
+      RESULT_CSS,
+      FRESHNESS_CSS,
+      SQUAD_SIGNALS_CSS,
+    ],
     pageScripts: [COPY_BUTTON_JS, FRESHNESS_JS],
   });
 }

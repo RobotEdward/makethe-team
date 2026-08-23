@@ -43,7 +43,7 @@ import {
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
 import type { AppEnv } from "../../src/env.js";
-import { SCRIPT_BLOCKS, SERVICE_WORKER_JS, SIGN_IN_SUBMIT_JS } from "../../src/views/scripts.js";
+import { PRESENCE_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, SIGN_IN_SUBMIT_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW as CLOCK_NOW } from "../support/clock.js";
 import { EMAIL_LOOKUP, interferingBinding } from "../support/interference.js";
@@ -74,6 +74,15 @@ const NOT_ALLOWED = "stranger@example.com";
  * was not explicitly granted — survives unweakened.
  */
 const SITE_WIDE_SCRIPT_TAG = `<script>${SERVICE_WORKER_JS}</script>`;
+
+/**
+ * M33's presence ping, the second block `layout()` emits without a page
+ * opting into it — but only on pages carrying the signed-in header, which is
+ * pinned against `HEADER_PAGES` below. Stripped alongside the site-wide tag
+ * for the same reason, so "this page needs no JavaScript" keeps meaning what
+ * it says.
+ */
+const PRESENCE_SCRIPT_TAG = `<script>${PRESENCE_JS}</script>`;
 
 /**
  * `requirePlayer`'s 403 body, reached through the guard itself.
@@ -1282,7 +1291,9 @@ describe("no password field anywhere (TR-16)", () => {
       // makes a duplicate fail loudly instead.
       const siteWideCount = body.split(SITE_WIDE_SCRIPT_TAG).length - 1;
       expect(siteWideCount, `${name} must carry the site-wide tag exactly once`).toBe(1);
-      const withoutServiceWorker = body.replace(SITE_WIDE_SCRIPT_TAG, "");
+      const withoutServiceWorker = body
+        .replace(SITE_WIDE_SCRIPT_TAG, "")
+        .replace(PRESENCE_SCRIPT_TAG, "");
 
       if (!mayCarryScript.has(name)) {
         expect(withoutServiceWorker, `${name} must not need JavaScript`).not.toContain("<script");
@@ -1329,6 +1340,16 @@ describe("no password field anywhere (TR-16)", () => {
       expect(
         body.includes(`class="site-header"`),
         `${name} must ${HEADER_PAGES.has(name) ? "carry" : "not carry"} the signed-in header`,
+      ).toBe(HEADER_PAGES.has(name));
+    }
+
+    // M33: the presence ping rides on the header, not on an opt-in, so its
+    // membership is exactly HEADER_PAGES — a page that gains the header gains
+    // the ping, and a public or token-link page can never acquire either.
+    for (const { name, body } of pages) {
+      expect(
+        body.includes(PRESENCE_SCRIPT_TAG),
+        `${name} must ${HEADER_PAGES.has(name) ? "carry" : "not carry"} the presence ping`,
       ).toBe(HEADER_PAGES.has(name));
     }
 
@@ -1399,6 +1420,11 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "POST /g/:id/unmute":
       "never returns HTML on any branch — a plain-text 403, a plain-text 404 or a " +
       "303 redirect only, exactly as POST /g/:id/mute above (src/routes/games.ts).",
+    "POST /app/presence":
+      "returns no body at all on any branch — 204 for a signed-in player, 204 " +
+      "for an anonymous one, and a plain-text 403 on a wrong origin " +
+      "(src/routes/dashboard.ts, M33); its own coverage lives in " +
+      "test/routes/presence.test.ts.",
     "POST /sign-out":
       "never returns HTML on any branch — a plain-text 403 or a 302 redirect " +
       "only (src/routes/signin.ts).",

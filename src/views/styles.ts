@@ -1164,6 +1164,40 @@ export const MUTE_CSS = `
   }
 `;
 
+/**
+ * The reachability markers on an organiser's squad row (M33).
+ *
+ * Every selector here is new to this block — `.member-signals`, `.signal` and
+ * `.signal-label` are rendered by `src/views/squad-signals.ts` and by nothing
+ * else — so adding this block to a page changes nothing already on it. That
+ * is the property `test/views/squad-signals.test.ts` pins, because the
+ * cascade test can only see two blocks declaring the *same* selector and
+ * would not notice a collision reached through a different one.
+ */
+export const SQUAD_SIGNALS_CSS = `
+  /* Inline, inside the member's own span, rather than a grid item of its own:
+     the row is a two-column grid whose second column is the Manage
+     disclosure, and a third child would auto-place into whichever cell was
+     free — the defect FORM_CSS's placement rules exist to prevent. Flowing
+     with the name costs nothing and cannot move the controls. */
+  .member-signals { display: inline-flex; gap: 0.3rem; margin-left: 0.4rem; vertical-align: middle; }
+  .signal { display: inline-flex; align-items: center; }
+  .signal svg { display: block; width: 1rem; height: 1rem; }
+  /* Not a fault: a player reachable by email who has installed nothing is the
+     ordinary state of most squads. --mut on --bg clears 4.5:1
+     (test/views/contrast.test.ts). */
+  .signal-quiet { color: var(--mut); }
+  .signal-warn { color: var(--warn); }
+  /* The words behind every icon. Clipped rather than hidden, because the
+     hidden attribute and display: none take the text out of the accessibility
+     tree too, and the label is the only thing a screen reader has here: a
+     title attribute reaches a mouse and nothing else. */
+  .signal-label {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -1184,6 +1218,7 @@ export const PAGE_STYLE_BLOCKS = [
   RESULT_CSS,
   FRESHNESS_CSS,
   MUTE_CSS,
+  SQUAD_SIGNALS_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

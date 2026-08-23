@@ -406,6 +406,17 @@ The organiser's home for one game.
   `Make an ordinary member`), and `Remove`. The pill is on this page and nowhere else: it is
   the answer to "why is this person out every single week?", and chasing them is the wrong
   response. It disappears the moment the mute expires.
+- **Reachability markers (M33):** small icons after a member's name, each with a clipped text
+  label a screen reader reads: **app not installed**, **no push notifications** (both muted
+  grey — the ordinary state of a squad that answers by email, not a fault), **messages are
+  failing** and **not seen for 14 days** (both amber — the two an organiser can act on). Shown
+  only when true, never as four slots with three empty: a marker on every row is a marker
+  nobody reads. A **guest carries none of them** — a guest has no address, cannot sign in and
+  cannot install, so all four would be permanently true and mean nothing.
+  "Seen" is the later of opening the app and answering something *in this game*, so a player
+  who never signs in but replies to every fixture reads as active. "Installed" comes from a
+  ping every signed-in page sends (§5); an **uninstall is never observed**, so the marker
+  reports an absence of evidence rather than a removal.
 - **`Coming up` (h2):** upcoming fixtures, each date a link to its own fixture page.
 - **`Past fixtures` link (M27):** between `Coming up` and `Squad`, to this game's
   past-fixtures list (§2.7).
@@ -711,6 +722,14 @@ but opinions, and a design review is welcome to challenge any of them.
   good, so an unsaved team pick is never destroyed. **Not the same thing as the update overlay
   below**, which is about a new deploy rather than stale data; the two are deliberately
   separate, one answering "this page is old" and the other "this app is old".
+- **Every signed-in page reports the player as seen (M33).** A tiny script posts once per
+  browser tab to `/app/presence`, saying whether the page is running as an installed app; the
+  server writes at most once an hour per player. It is what the organiser's reachability
+  markers (§3.2) read for "installed" and for half of "seen". It never runs on a public or
+  token-link page — there is no session there to report — and an anonymous post is answered
+  204 and recorded nowhere. **Nothing observes an uninstall**, so "installed" only ever
+  becomes true, and the marker for its absence says "we have never seen them in the app"
+  rather than "they removed it".
 - **In the installed app only, a new deploy raises a bottom overlay** — "A new version is
   available." plus a `Refresh` button — because an installed PWA can sit open for days with no
   reload control of its own; a browser tab gets fresh pages on every navigation and never

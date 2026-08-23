@@ -444,3 +444,21 @@ export const PUSH_TEST_PATH = `${DASHBOARD_PATH}/push/test`;
  * nothing for a token holder to legitimately do here.
  */
 export const ONBOARDING_DISMISS_PATH = `${DASHBOARD_PATH}/onboarding/dismiss`;
+
+/**
+ * The presence ping (M33). Every session-bearing page posts here once per
+ * browser tab, saying whether it is running as an installed app.
+ *
+ * Session only, origin-checked, and no token form — unlike its neighbour
+ * `PUSH_SUBSCRIBE_PATH`, which accepts a response token because most players
+ * never sign in. What this route writes is `players.last_seen_at`, a column
+ * the organiser's squad list reads as "this person is still around", and a
+ * token in a forwarded email must not be able to say that about somebody
+ * else. A player with no session is not seen here; their answers speak for
+ * them instead (see `squadSignals` in `src/domain/presence.ts`).
+ *
+ * Answers 204 to everything, including an anonymous caller: the page pings
+ * without knowing whether its session is still good, and a 401 on a beacon
+ * would be a console error on a page that is working perfectly.
+ */
+export const PRESENCE_PATH = `${DASHBOARD_PATH}/presence`;

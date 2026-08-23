@@ -167,6 +167,26 @@ the honest fix is paging rather than a bigger number. Deliberately not a silent 
 plus a lie: the page says nothing about the cut because there is nothing yet to say, and
 the first game to pass fifty fixtures is the trigger to add paging.
 
+## The install marker can only ever say "not yet seen" (23 August 2026)
+
+M33's squad markers report a member as **App not installed** whenever
+`players.last_standalone_at` is null, and that column is only ever written forwards. Two
+consequences, both accepted:
+
+- A player who installed the app before the column existed, and has not opened it since,
+  reads as not installed until they next do. It corrects itself on their next visit.
+- **An uninstall is never observed at all.** Nothing tells a server that an app was removed,
+  and there is no expiry on the stamp, so a player who installs and then deletes the app
+  reads as installed forever.
+
+Both are deliberate rather than unnoticed. The alternatives are worse: expiring the stamp
+after some window would make an occasional user's row flicker between the two states with no
+event behind either, and there is no browser signal for a removal to listen to. What the
+marker honestly means is "we have never seen this person in the installed app", which is what
+the organiser needs it for — deciding whether to suggest installing it — and the label is
+worded as an absence for that reason. The trigger to revisit is a real complaint that a row
+is wrong, not a milestone.
+
 ## Edge configuration — applied
 
 The two WAF custom rules in `docs/runbooks/cloudflare.md` (TR-37) were applied by hand

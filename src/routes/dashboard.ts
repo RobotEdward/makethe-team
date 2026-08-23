@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { notifyPromotedPlayer } from "./respond.js";
 import { eq } from "drizzle-orm";
-import { DASHBOARD_PATH, ONBOARDING_DISMISS_PATH } from "../auth/paths.js";
+import { DASHBOARD_PATH, ONBOARDING_DISMISS_PATH, PRESENCE_PATH } from "../auth/paths.js";
 import { requirePlayer, pageNav, type Player } from "../auth/session.js";
 import type { ResponseIntent } from "../capacity/types.js";
 import { getDb } from "../db/client.js";
@@ -20,6 +20,7 @@ import { resultWordsForLockedRows } from "../db/result-summary.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { isResultLocked } from "../domain/result-lock.js";
+import { shouldStampPresence } from "../domain/presence.js";
 import { removeMember } from "../domain/remove-member.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
@@ -435,4 +436,48 @@ dashboard.post(ONBOARDING_DISMISS_PATH, requirePlayer, async (c) => {
     .set({ onboardingDismissedAt: new Date(Date.now()) })
     .where(eq(players.id, player.id));
   return c.redirect(DASHBOARD_PATH, 303);
+});
+
+/**
+ * The presence ping (M33): every session-bearing page, once per browser tab.
+ *
+ * **No `requirePlayer`.** That guard redirects an anonymous caller to the
+ * sign-in page, and this is not a caller who can follow a redirect — it is a
+ * `fetch` from a page whose session may have expired while it sat open. 204
+ * and no write is the honest answer to that, and it keeps a working page's
+ * console clean. The origin check is the same one every other state-changing
+ * POST here makes.
+ *
+ * Two columns, one conditional write. `standalone` is trusted for exactly
+ * what it is: a claim by the page about its own display mode. A player who
+ * forged it would mark their own row as installed and mislead nobody but
+ * their organiser about their own phone; there is no entitlement here to
+ * escalate, and the alternative is not being able to answer the question at
+ * all.
+ */
+dashboard.post(PRESENCE_PATH, async (c) => {
+  const origin = c.req.header("origin");
+  if (origin !== undefined && origin !== originOf(c.env)) {
+    return c.text("Forbidden", 403);
+  }
+
+  const player = c.get("player");
+  if (!player) return c.body(null, 204);
+
+  // A body this route cannot read is still a page load by a signed-in
+  // player, which is the fact worth recording; only an explicit `true`
+  // claims the installed app. `catch` rather than a content-type check: what
+  // matters is whether the bytes parsed, not what the header promised.
+  const body = await c.req.json().catch(() => null);
+  const standalone = typeof body === "object" && body !== null && (body as Record<string, unknown>)["standalone"] === true;
+
+  const now = new Date(Date.now());
+  const stamp: Partial<typeof players.$inferInsert> = {};
+  if (shouldStampPresence(player.lastSeenAt, now)) stamp.lastSeenAt = now;
+  if (standalone && shouldStampPresence(player.lastStandaloneAt, now)) stamp.lastStandaloneAt = now;
+
+  if (Object.keys(stamp).length > 0) {
+    await getDb(c.env.DB).update(players).set(stamp).where(eq(players.id, player.id));
+  }
+  return c.body(null, 204);
 });

@@ -6,7 +6,7 @@
 // on purpose, since nothing in `src/` may depend on a bundler feature.
 import { describe, expect, it } from "vitest";
 import * as scripts from "../../src/views/scripts.js";
-import { PAGE_SCRIPT_BLOCKS, SCRIPT_BLOCKS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
+import { PAGE_SCRIPT_BLOCKS, PRESENCE_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { STYLE_BLOCKS } from "../../src/views/styles.js";
 
 /**
@@ -33,7 +33,10 @@ describe("the script enumeration", () => {
     // never opted into — see its own comment in src/views/scripts.ts), so the
     // enumeration this test pins is SCRIPT_BLOCKS = [SERVICE_WORKER_JS,
     // ...PAGE_SCRIPT_BLOCKS], not the bare page-script array.
-    expect([...SCRIPT_BLOCKS]).toEqual([SERVICE_WORKER_JS, ...PAGE_SCRIPT_BLOCKS]);
+    // PRESENCE_JS (M33) is the second block of that kind: `layout()` emits it
+    // on every page carrying `nav`, so it is never opted into either and it
+    // has to be listed here by hand for the same reason.
+    expect([...SCRIPT_BLOCKS]).toEqual([SERVICE_WORKER_JS, PRESENCE_JS, ...PAGE_SCRIPT_BLOCKS]);
   });
 
   it("is inline, same-origin and free of anything a hash cannot cover", () => {
@@ -94,12 +97,15 @@ describe("the script enumeration", () => {
       // is no capability whose absence should silence it — only its own bar,
       // `if (!bar) return;`, which a page that never called `renderFreshness`
       // has not rendered.
+      // `PRESENCE_JS` (M33) is a capability guard again rather than a DOM
+      // one: everything it does is a `fetch`, so `if (!window.fetch) return;`
+      // is both the detection and the whole reason to carry on.
       // `SIGN_IN_SUBMIT_JS` (August 2026) is that same shape once more:
       // `addEventListener` and `disabled` need no detecting, so what it
       // guards is its two anchors together — `if (!form || !button) return;`
       // — and a page without the sign-in form gets the usual silent no-op.
       expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
-        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!bar\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;|if\s*\(!form \|\| !button\)\s*return;/,
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!bar\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;|if\s*\(!form \|\| !button\)\s*return;|if\s*\(!window\.fetch\)\s*return;/,
       );
     }
   });
