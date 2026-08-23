@@ -203,6 +203,19 @@ the bindings structurally cannot do — it blocks **before the Worker is
 invoked**, so it protects the bill rather than the data. It is declared in
 `infra/cloudflare/rules/rate-limit.ts` and applied with `npm run cf:apply`.
 
+**The runbook's history here was wrong.** It said rate limiting was "not
+configured yet, deliberately". In fact `respond-throttle` — matching `/r/` at
+20 requests per 10 seconds — had been created on the zone on **11 August
+2026** and was live the whole time. The first `cf:plan` against the real zone
+found it immediately, which is the argument for declaring this in code rather
+than describing it in prose: a runbook cannot be out of date about something a
+diff reads from the source of truth on every run.
+
+It has been replaced by `token-endpoint-throttle`, a strict superset: same
+action, rate, period and characteristics, with an expression covering `/j/` as
+well as `/r/`. `/j/:token` was never covered before, and under the Free plan's
+one-rule limit widening the existing rule was the only way it could be.
+
 ## WAF custom rules and rate limiting are declared in code
 
 **Do not add, edit or remove these in the dashboard.** They live in

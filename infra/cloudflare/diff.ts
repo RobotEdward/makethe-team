@@ -25,6 +25,16 @@ export type Change =
   | { kind: "change"; description: string; field: string; from: string; to: string };
 
 /**
+ * Cloudflare returns multi-predicate expressions pretty-printed across several
+ * lines. Comparing raw strings reported every such rule as drift on every run,
+ * which is how a diff stops being read. Whitespace is not significant between
+ * tokens in the expression language, so it is collapsed on both sides.
+ */
+function normalise(expression: string): string {
+  return expression.replace(/\s+/g, " ").trim();
+}
+
+/**
  * Compares by `description`, which Cloudflare shows as the rule name and this
  * repo treats as a rule's stable identity. Renaming a rule therefore reads as
  * a remove plus an add, which is honest: to Cloudflare that is what it is.
@@ -39,7 +49,7 @@ export function diffRules(desired: DesiredRule[], liveRules: LiveRule[]): Change
       changes.push({ kind: "add", description: want.description });
       continue;
     }
-    if (have.expression !== want.expression) {
+    if (normalise(have.expression) !== normalise(want.expression)) {
       changes.push({
         kind: "change",
         description: want.description,

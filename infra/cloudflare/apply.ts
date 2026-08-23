@@ -1,4 +1,4 @@
-import { desiredRateLimitRules, desiredWafRules } from "./plan.js";
+import { desiredRateLimitRules, desiredWafRules } from "./desired.js";
 import { readRateLimit, readWafCustom, writePhase } from "./client.js";
 import { diffRules, formatChange } from "./diff.js";
 import { RATE_LIMIT_RULES } from "./rules/rate-limit.js";
@@ -22,28 +22,40 @@ async function main(): Promise<void> {
 
   for (const change of [...wafChanges, ...rlChanges]) console.log(formatChange(change));
 
-  await writePhase(
-    WAF_CUSTOM_PHASE,
-    WAF_CUSTOM_RULES.map((rule) => ({
-      description: rule.description,
-      action: rule.action,
-      expression: renderExpression(rule),
-      enabled: true,
-    })),
-  );
-  console.log(`\napplied ${WAF_CUSTOM_RULES.length} WAF custom rule(s)`);
+  // Each phase is written only if that phase actually differs. A PUT replaces
+  // the whole ruleset and mints new rule ids, so rewriting an unchanged phase
+  // churns live configuration to no purpose — and briefly empties a ruleset
+  // that was correct.
+  if (wafChanges.length === 0) {
+    console.log("\nWAF custom rules unchanged — not rewritten.");
+  } else {
+    await writePhase(
+      WAF_CUSTOM_PHASE,
+      WAF_CUSTOM_RULES.map((rule) => ({
+        description: rule.description,
+        action: rule.action,
+        expression: renderExpression(rule),
+        enabled: true,
+      })),
+    );
+    console.log(`\napplied ${WAF_CUSTOM_RULES.length} WAF custom rule(s)`);
+  }
 
-  await writePhase(
-    RATE_LIMIT_PHASE,
-    RATE_LIMIT_RULES.map((rule) => ({
-      description: rule.description,
-      action: rule.action,
-      expression: rule.expression,
-      ratelimit: rule.ratelimit,
-      enabled: true,
-    })),
-  );
-  console.log(`applied ${RATE_LIMIT_RULES.length} rate limiting rule(s)`);
+  if (rlChanges.length === 0) {
+    console.log("Rate limiting rules unchanged — not rewritten.");
+  } else {
+    await writePhase(
+      RATE_LIMIT_PHASE,
+      RATE_LIMIT_RULES.map((rule) => ({
+        description: rule.description,
+        action: rule.action,
+        expression: rule.expression,
+        ratelimit: rule.ratelimit,
+        enabled: true,
+      })),
+    );
+    console.log(`applied ${RATE_LIMIT_RULES.length} rate limiting rule(s)`);
+  }
 
   console.log("\nNow run `npm run cf:verify` against the live site.");
 }

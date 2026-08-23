@@ -20,7 +20,10 @@ describe("renderExpression", () => {
       any: [{ field: "path", op: "contains", value: "/wp-" }],
     });
 
-    expect(expression).toBe('(http.request.uri.path contains "/wp-")');
+    // No wrapping parentheses around a lone predicate: Cloudflare stores the
+    // expression as given, and a rule created in the dashboard has none. Adding
+    // them would make every such rule report as drift on every `plan` forever.
+    expect(expression).toBe('http.request.uri.path contains "/wp-"');
   });
 
   it("ORs multiple predicates", () => {
@@ -45,7 +48,7 @@ describe("renderExpression", () => {
       any: [{ field: "method", op: "not_in", values: ["GET", "HEAD", "POST"] }],
     });
 
-    expect(expression).toBe('(not http.request.method in {"GET" "HEAD" "POST"})');
+    expect(expression).toBe('not http.request.method in {"GET" "HEAD" "POST"}');
   });
 });
 

@@ -1,7 +1,6 @@
 import { diffRules, formatChange, type DesiredRule } from "./diff.js";
+import { desiredRateLimitRules, desiredWafRules } from "./desired.js";
 import { readBotFightMode, readRateLimit, readWafCustom } from "./client.js";
-import { RATE_LIMIT_RULES } from "./rules/rate-limit.js";
-import { WAF_CUSTOM_RULES, renderExpression } from "./rules/waf-custom.js";
 import { ZONE_NAME } from "./zone.js";
 
 /**
@@ -11,22 +10,6 @@ import { ZONE_NAME } from "./zone.js";
  * replace, so an apply removes anything on the zone that is not declared
  * here — this is where you find that out.
  */
-
-export function desiredWafRules(): DesiredRule[] {
-  return WAF_CUSTOM_RULES.map((rule) => ({
-    description: rule.description,
-    action: rule.action,
-    expression: renderExpression(rule),
-  }));
-}
-
-export function desiredRateLimitRules(): DesiredRule[] {
-  return RATE_LIMIT_RULES.map((rule) => ({
-    description: rule.description,
-    action: rule.action,
-    expression: rule.expression,
-  }));
-}
 
 async function section(title: string, desired: DesiredRule[], read: () => Promise<import("./diff.js").LiveRule[]>): Promise<number> {
   const changes = diffRules(desired, await read());

@@ -69,17 +69,28 @@ export const WAF_CUSTOM_RULES: CustomRule[] = [
  * not have, so such a rule fails validation on apply. Do not re-add one.
  */
 
-/** Build the Cloudflare expression string this rule is applied as. */
+/**
+ * Build the Cloudflare expression string this rule is applied as.
+ *
+ * A lone predicate is rendered **without** wrapping parentheses. Cloudflare
+ * stores an expression as it is given, and a rule created in the dashboard has
+ * none — so adding them would make such a rule report as drift on every `plan`,
+ * forever, for no semantic difference. A diff that always shows changes is one
+ * you stop reading.
+ */
 export function renderExpression(rule: CustomRule): string {
-  return rule.any.map(renderPredicate).join(" or ");
+  const rendered = rule.any.map(renderPredicate);
+  return rendered.length === 1
+    ? rendered[0]!
+    : rendered.map((predicate) => `(${predicate})`).join(" or ");
 }
 
 function renderPredicate(predicate: Predicate): string {
   switch (predicate.field) {
     case "path":
-      return `(http.request.uri.path ${predicate.op} "${predicate.value}")`;
+      return `http.request.uri.path ${predicate.op} "${predicate.value}"`;
     case "method":
-      return `(not http.request.method in {${predicate.values.map((m) => `"${m}"`).join(" ")}})`;
+      return `not http.request.method in {${predicate.values.map((m) => `"${m}"`).join(" ")}}`;
   }
 }
 

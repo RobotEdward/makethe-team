@@ -32,6 +32,16 @@ describe("diffRules", () => {
     expect(changes).toEqual([{ kind: "remove", description: "stale-rule" }]);
   });
 
+  it("ignores whitespace differences in an expression", () => {
+    // Cloudflare returns multi-predicate expressions pretty-printed across
+    // lines. Comparing raw strings reported every such rule as drift, which
+    // trains you to run `apply` on a diff you have stopped reading.
+    const pretty = '(path contains "/wp-")\n  or  (path eq "/x")';
+    const flat = '(path contains "/wp-") or (path eq "/x")';
+
+    expect(diffRules([{ ...desired[0]!, expression: flat }], live([{ ...desired[0]!, expression: pretty }]))).toEqual([]);
+  });
+
   it("reports a changed expression, showing both sides", () => {
     const changes = diffRules(
       desired,
