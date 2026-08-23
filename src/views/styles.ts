@@ -976,6 +976,9 @@ export const ADMIN_TOOLS_CSS = `
      ("Thurs / day / 7-a- / side") as soon as the four numeric columns
      squeeze this one. Between words is fine; inside one is not. */
   table.admin-log td.usage-name { overflow-wrap: normal; }
+  /* The owners, on their own line under the game name. Block so it breaks the
+     line without a <br>, and muted so the game name still leads the row. */
+  span.usage-owner { display: block; color: var(--mut); margin-top: 0.15rem; }
   dl.usage-figures {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
     gap: 0.9rem; margin: 1.1rem 0;

@@ -78,9 +78,22 @@ function outcomeRow(label: string, value: number, of: number): string {
   </tr>`;
 }
 
+/**
+ * The owners' names, under the game name rather than in a column of their own.
+ *
+ * A sixth column would squeeze the four numeric ones until their headers
+ * hyphenated mid-word on a phone, which is the failure this table already had
+ * once. "Nobody" rather than an empty line: a game whose owner has left the
+ * squad is the interesting case on this page, and a blank reads as a bug.
+ */
+function ownerLine(owners: readonly string[]): string {
+  const text = owners.length === 0 ? "Nobody" : owners.join(", ");
+  return `<span class="usage-owner">${escapeHtml(text)}</span>`;
+}
+
 function gameRow(row: GameUsageRow): string {
   return `<tr>
-    <td class="usage-name">${escapeHtml(row.name)}</td>
+    <td class="usage-name">${escapeHtml(row.name)}${ownerLine(row.owners)}</td>
     <td class="usage-number">${escapeHtml(String(row.squadSize))}</td>
     <td class="usage-number">${escapeHtml(String(row.recentFixtures))}</td>
     <td class="usage-number">${escapeHtml(share(row.responded, row.invited))}</td>

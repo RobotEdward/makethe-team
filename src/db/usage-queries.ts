@@ -1,4 +1,5 @@
 import { and, count, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { displayName } from "../domain/display-name.js";
 import { dayKey } from "../notify/quota.js";
 import type { Db } from "./client.js";
 import {
@@ -255,6 +256,14 @@ export async function getLimitCounts(db: Db, now: Date): Promise<LimitCounts> {
 export interface GameUsageRow {
   gameId: string;
   name: string;
+  /**
+   * The game's active owners, by display name, alphabetically.
+   *
+   * Plural because ownership is a membership role and nothing stops a game
+   * having two; empty when every owner has left the squad, which the view
+   * has to render rather than assume away.
+   */
+  owners: readonly string[];
   /** Active memberships, by the same predicate as `getScaleCounts`. */
   squadSize: number;
   /** Fixtures that kicked off inside the window, cancellations included. */
@@ -294,13 +303,25 @@ export async function listGameUsage(
   to: Date,
   limit: number,
 ): Promise<GameUsageRow[]> {
-  const [gameRows, squadRows, windowRows, activityRows] = await Promise.all([
+  const [gameRows, squadRows, ownerRows, windowRows, activityRows] = await Promise.all([
     db.select({ id: games.id, name: games.name, createdAt: games.createdAt }).from(games),
     db
       .select({ gameId: memberships.gameId, n: count() })
       .from(memberships)
       .where(eq(memberships.active, true))
       .groupBy(memberships.gameId),
+    // Names, not counts, so this one joins `players`. `erasedAt` comes with
+    // them because an owner who erased their data must read as the placeholder
+    // here too — §4 admits no per-page exception, admin screens included.
+    db
+      .select({
+        gameId: memberships.gameId,
+        name: players.name,
+        erasedAt: players.erasedAt,
+      })
+      .from(memberships)
+      .innerJoin(players, eq(players.id, memberships.playerId))
+      .where(and(eq(memberships.active, true), eq(memberships.role, "owner"))),
     db
       .select({
         gameId: fixtures.gameId,
@@ -322,6 +343,12 @@ export async function listGameUsage(
   ]);
 
   const squads = new Map(squadRows.map((r) => [r.gameId, r.n]));
+  const owners = new Map<string, string[]>();
+  for (const row of ownerRows) {
+    const names = owners.get(row.gameId) ?? [];
+    names.push(displayName(row.name, row.erasedAt));
+    owners.set(row.gameId, names);
+  }
   const windows = new Map(windowRows.map((r) => [r.gameId, r]));
   const activity = new Map(activityRows.map((r) => [r.gameId, r.lastAt]));
 
@@ -332,6 +359,10 @@ export async function listGameUsage(
       return {
         gameId: game.id,
         name: game.name,
+        // Sorted here rather than in SQL: the placeholder an erased owner
+        // renders as is decided above, so ordering by the stored name would
+        // order by a string the page never shows.
+        owners: (owners.get(game.id) ?? []).sort((a, b) => a.localeCompare(b)),
         squadSize: squads.get(game.id) ?? 0,
         recentFixtures: inWindow?.fixtureCount ?? 0,
         invited: inWindow?.invited ?? 0,

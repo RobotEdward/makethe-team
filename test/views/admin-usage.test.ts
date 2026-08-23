@@ -53,6 +53,7 @@ const BASE: AdminUsagePageParams = {
     {
       gameId: "g-1",
       name: "Thursday 7-a-side",
+      owners: ["Ali Khan", "Sam Doe"],
       squadSize: 18,
       recentFixtures: 4,
       invited: 72,
@@ -130,6 +131,25 @@ describe("renderAdminUsagePage", () => {
     });
     expect(html).toContain("No fixtures kicked off in the last 28 days");
     expect(html).not.toContain("share is of the 0");
+  });
+
+  it("names the game's owners under the game name", () => {
+    const html = renderAdminUsagePage(BASE);
+    expect(html).toContain("Ali Khan, Sam Doe");
+  });
+
+  it("says so rather than showing a blank when a game has no active owner", () => {
+    const html = renderAdminUsagePage({ ...BASE, games: [{ ...BASE.games[0]!, owners: [] }] });
+    expect(html).toContain("Nobody");
+  });
+
+  it("escapes an owner name", () => {
+    const html = renderAdminUsagePage({
+      ...BASE,
+      games: [{ ...BASE.games[0]!, owners: ["<script>alert(1)</script>"] }],
+    });
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
   });
 
   it("escapes a game name", () => {

@@ -618,10 +618,14 @@ cached, nothing for a write path to keep up to date.
   converts one to the other, so there is no honest figure to show against D1's 5 GB ceiling.
   A warning banner appears **only** when at least one fixture reached kickoff having never
   been opened, which means the hourly sweep has stopped.
-- **Per game**: name, squad size, fixtures in the window, share answered, last activity —
+- **Per game**: name with its active owners underneath, squad size, fixtures in the window,
+  share answered, last activity —
   most recently active first, capped at 25. "Last activity" is the newest answer over the
   game's whole history (not the window), so a dormant game sorts below a live one; it is
   dated to the day, since a full timestamp made the five-column table unreadable on a phone.
+  The owners go under the name rather than in a sixth column, for the same width reason; a
+  game whose owners have all left the squad reads "Nobody", and an erased owner reads as the
+  §4 placeholder.
 
 No chart, deliberately: three numbers in a row answer "is this going up" as well as a
 sparkline, and a chart needs either a script this page does not have or an inline `style`

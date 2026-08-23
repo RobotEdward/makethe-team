@@ -14,6 +14,7 @@ import {
 import { NOW } from "../support/clock.js";
 import { emailQuota, fixtureResults, notificationLog, session, user } from "../../src/db/schema.js";
 import { dayKey } from "../../src/notify/quota.js";
+import { ERASED_DISPLAY_NAME } from "../../src/domain/display-name.js";
 
 const HOUR = 60 * 60 * 1000;
 const since = new Date(NOW.getTime() - 24 * HOUR);
@@ -362,6 +363,7 @@ describe("listGameUsage", () => {
       {
         gameId,
         name: "Sunday League",
+        owners: [],
         squadSize: 0,
         recentFixtures: 0,
         invited: 0,
@@ -377,6 +379,59 @@ describe("listGameUsage", () => {
     await insertMembership(db, gameId, await insertPlayer(db), { active: false, leftAt: NOW });
 
     expect((await listGameUsage(db, windowFrom, NOW, 25))[0]?.squadSize).toBe(1);
+  });
+
+  it("names the active owners alphabetically and leaves ordinary members out", async () => {
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, await insertPlayer(db, { name: "Sam Doe" }), {
+      role: "owner",
+    });
+    await insertMembership(db, gameId, await insertPlayer(db, { name: "Ali Khan" }), {
+      role: "owner",
+    });
+    await insertMembership(db, gameId, await insertPlayer(db, { name: "Just A Player" }));
+
+    expect((await listGameUsage(db, windowFrom, NOW, 25))[0]?.owners).toEqual([
+      "Ali Khan",
+      "Sam Doe",
+    ]);
+  });
+
+  it("leaves out an owner who has left the squad", async () => {
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, await insertPlayer(db, { name: "Gone" }), {
+      role: "owner",
+      active: false,
+      leftAt: NOW,
+    });
+
+    expect((await listGameUsage(db, windowFrom, NOW, 25))[0]?.owners).toEqual([]);
+  });
+
+  it("shows an erased owner as the placeholder, never the stored name", async () => {
+    const gameId = await insertGame(db);
+    await insertMembership(
+      db,
+      gameId,
+      await insertPlayer(db, { name: "[erased player]", erasedAt: NOW }),
+      { role: "owner" },
+    );
+
+    expect((await listGameUsage(db, windowFrom, NOW, 25))[0]?.owners).toEqual([
+      ERASED_DISPLAY_NAME,
+    ]);
+  });
+
+  it("keeps each game's owners to that game", async () => {
+    const mine = await insertGame(db, { name: "Mine", createdAt: outside });
+    const theirs = await insertGame(db, { name: "Theirs", createdAt: since });
+    await insertMembership(db, mine, await insertPlayer(db, { name: "Ali" }), { role: "owner" });
+    await insertMembership(db, theirs, await insertPlayer(db, { name: "Sam" }), { role: "owner" });
+
+    const rows = await listGameUsage(db, windowFrom, NOW, 25);
+
+    expect(rows.find((r) => r.name === "Mine")?.owners).toEqual(["Ali"]);
+    expect(rows.find((r) => r.name === "Theirs")?.owners).toEqual(["Sam"]);
   });
 
   it("counts fixtures and answers inside the window only", async () => {
