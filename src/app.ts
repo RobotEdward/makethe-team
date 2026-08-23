@@ -18,6 +18,7 @@ import { respond } from "./routes/respond.js";
 import { resultsRoutes } from "./routes/results.js";
 import { robots } from "./routes/robots.js";
 import { cspHeader } from "./security/csp.js";
+import { tokenRateLimit } from "./security/rate-limit.js";
 import { signIn } from "./routes/signin.js";
 import { renderLinkProblemPage } from "./views/link-problem.js";
 
@@ -83,6 +84,24 @@ export function createApp(): Hono<AppEnv> {
     await next();
     c.header("Cache-Control", "private, no-store");
   });
+
+  // The throttle on the four unauthenticated token families (TR-37). Scoped to
+  // exactly the prefixes whose callers have no session, for the same
+  // blast-radius reason `sessionMiddleware` is scoped: a `*` mount would spend
+  // limiter budget on `/robots.txt`, the icons and the service worker, and
+  // would throttle the signed-in dashboard on an IP key whose entire
+  // justification is that these callers cannot be identified any other way.
+  //
+  // Ahead of the `private, no-store` mounts below so that a refusal carries
+  // that header too — a 429 for one player behind a shared IP must never be
+  // cached and served to the next.
+  //
+  // Supplement, not control: `src/security/rate-limit.ts` fails open and the
+  // bindings are optional, so every route below must still hold with the whole
+  // thing switched off — exactly as it must with the WAF rules off.
+  for (const prefix of ["/r/*", "/leave/*", "/cancel/*", "/j/*"]) {
+    app.use(prefix, tokenRateLimit());
+  }
 
   // The public invite page. No session, so this is not the "a signed-in
   // player's own data" argument that scopes the two mounts above — it is

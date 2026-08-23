@@ -74,6 +74,11 @@ describe("layout", () => {
     "src/views/link-problem.ts",
     "src/views/offline.ts",
     "src/views/signin.ts",
+    // The rate-limit refusal page (TR-37). Terminal by the same argument as
+    // link-problem.ts directly above it: a heading and two sentences, no list,
+    // no form, and no action but to wait — its whole point is that there is
+    // nothing for the reader to do here.
+    "src/views/too-many-requests.ts",
   ];
 
   it("centres only pages that are a single statement with nothing to scan", () => {

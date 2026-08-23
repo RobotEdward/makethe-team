@@ -1,9 +1,52 @@
 import type { AppVariables } from "./auth/session.js";
 import type { FixtureCapacity } from "./capacity/fixture-capacity.js";
 
+/**
+ * A Workers rate limiting binding (`ratelimits` in `wrangler.jsonc`).
+ *
+ * Declared here rather than imported from `@cloudflare/workers-types` so the
+ * middleware can be exercised against an ordinary stub object: the tests build
+ * one by hand, and a structural type is what lets them.
+ */
+export interface RateLimitBinding {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}
+
 export interface Bindings {
   DB: D1Database;
   FIXTURE_CAPACITY: DurableObjectNamespace<FixtureCapacity>;
+  /**
+   * Per-token throttle for the unauthenticated link endpoints (TR-37).
+   *
+   * **Optional on purpose, and every caller must hold with it absent.** The
+   * control that actually bounds the cost of `/r/` and `/j/` is the quota
+   * wrapper around the notifier (`MAX_EMAILS_PER_DAY`) plus the token's
+   * unguessability — this is a supplement, exactly as the WAF rules are, and
+   * `src/security/rate-limit.ts` fails open for that reason. It is undefined
+   * in every `vitest` run and in `wrangler dev` unless configured, so a
+   * required binding here would make the whole suite depend on a Cloudflare
+   * feature none of it is testing.
+   *
+   * Counting is **per Cloudflare location, not global**, and Cloudflare
+   * documents the API as "permissive, eventually consistent". Treat a limit
+   * as a blunt ceiling on hammering, never as an accurate count.
+   */
+  TOKEN_LIMITER?: RateLimitBinding;
+  /**
+   * Per-IP throttle across the same endpoints, keyed on `CF-Connecting-IP`.
+   *
+   * A second dimension rather than a tighter `TOKEN_LIMITER`, because the two
+   * bound different attacks: the per-token key bounds someone hammering one
+   * valid link, and cannot see an attacker walking *different* tokens looking
+   * for a hit. Only an IP key sees that.
+   *
+   * Deliberately generous. Cloudflare's own guidance is not to key on IP,
+   * because a whole office or mobile network shares one — but these endpoints
+   * have no session and no other stable identifier, so the choice is a loose
+   * IP limit or nothing. Loose is right: a false positive here breaks the one
+   * journey the product depends on.
+   */
+  TOKEN_IP_LIMITER?: RateLimitBinding;
   NOTIFIER: string;
   MAX_EMAILS_PER_DAY: string;
   /** HMAC key for response tokens (TR-13). Set with `wrangler secret put`. */

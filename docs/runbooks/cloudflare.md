@@ -126,65 +126,55 @@ head -c 32 /dev/urandom | base64 | npx wrangler secret put CANCEL_TOKEN_SECRET
 npx wrangler secret list   # names only; never echoes a value
 ```
 
-## Rate limiting (TR-37) — deferred to M2
+## Rate limiting (TR-37)
 
-**Not configured yet, deliberately.** An earlier version of this runbook specified
-a rule matching `http.request.method eq "POST"` with a 60-second mitigation
-timeout. That rule cannot be created on this zone, and the reasons are worth
-recording so nobody tries again:
+The control is **`src/security/rate-limit.ts`**, backed by the two Workers rate
+limiting bindings declared in `wrangler.jsonc`. It is not a dashboard setting
+and nothing here has to be applied by hand.
 
-On the Free plan, rate limiting rules are restricted well beyond the one-rule
-count. They may match on **path and verified-bot only** — `http.request.method`
-is not an available field — the counting period is fixed at **10 seconds**, and
-the mitigation timeout is capped at **10 seconds**. Counting is per-IP only.
-Those limits apply to rate limiting rules specifically, not to the WAF custom
-rules below, which have the ordinary expression language available.
+| Binding | Key | Limit | Bounds |
+| --- | --- | --- | --- |
+| `TOKEN_LIMITER` | `r:<token>`, `j:<token>`, `leave:<token>`, `cancel:<token>` | 10 / 60s | Hammering one link |
+| `TOKEN_IP_LIMITER` | `ip:<CF-Connecting-IP>` | 60 / 60s | One address walking *different* tokens |
 
-There is also nothing to protect yet: the Worker currently serves only a holding
-page and has no `POST` endpoint at all.
+Mounted in `src/app.ts` on `/r/*`, `/leave/*`, `/cancel/*` and `/j/*` only —
+never `*`. A refusal is a 429 carrying `Retry-After: 60` and
+`src/views/too-many-requests.ts`, which is deliberately **not**
+`renderLinkProblemPage()`: a throttled player's link is fine, and telling them
+to ask their organiser for a fresh one is a dead end for them and support
+burden for the organiser.
 
-When M2 adds the response endpoints under `/r/`, create the single Free-plan rule
-then, matching on path rather than method:
+**It is a supplement and it fails open.** What actually bounds the cost of an
+unauthenticated endpoint that writes a row and sends an email is the quota
+wrapper (`MAX_EMAILS_PER_DAY`) and the token's unguessability. Two independent
+reasons this can never be load-bearing: Cloudflare counts **per location, not
+globally** and documents the API as "permissive, eventually consistent", so an
+attacker spread across colos gets a multiple of the nominal limit; and a
+binding fault or an absent binding serves the request rather than refusing it,
+because a supplementary control that can 429 every player during a Cloudflare
+blip is a worse outage than the abuse it blunts.
 
-- **Name:** `respond-throttle`
-- **Match:** `http.request.uri.path contains "/r/"`
-- **Rate:** 20 requests per 10 seconds, per IP
-- **Action:** Block, 10-second timeout (the Free maximum)
+`LIMIT_PERIOD_SECONDS` in `src/security/rate-limit.ts` must match the `period`
+on both bindings — it is what `Retry-After` promises, and nothing can read a
+binding's configured period back at runtime.
 
-A 10-second mitigation window is short, but it is enough to blunt a hammering
-loop, and the response endpoints are idempotent so a blocked retry costs the
-player nothing.
+### Why not the zone's own rate limiting rules
 
-### `join-throttle` (M6a, TR-37) — not yet applied
+**The earlier version of this runbook left an open question — whether the Free
+plan permits a second rate limiting rule so that `respond-throttle` and
+`join-throttle` could coexist. It does not.** Free allows **exactly one** rate
+limiting rule per zone, matching on **path only**, counting **per-IP** over a
+fixed **10-second** window with a **10-second** mitigation timeout. The two
+rules that section specified could never both have existed, and neither would
+have been much of a control alone.
 
-`POST /j/:token` (§4.5 of the M6a design) is the second unauthenticated
-endpoint that both writes a row and sends an email, the same class as `/r/`. A
-WAF rate-limit rule is a supplement here too, not the control — the quota
-wrapper around the notifier (`MAX_EMAILS_PER_DAY`) is what actually bounds the
-cost, and everything in `src/routes/join.ts` must hold with this rule switched
-off, exactly as `respond-throttle` must.
+That is the whole reason the Workers bindings above exist: they give a 60
+second window and a key that is not an IP address.
 
-Same shape as `respond-throttle`, matching on path:
-
-- **Name:** `join-throttle`
-- **Match:** `http.request.uri.path contains "/j/"`
-- **Rate:** 20 requests per 10 seconds, per IP
-- **Action:** Block, 10-second timeout (the Free maximum)
-
-**Not yet applied.** Must be created by hand in the dashboard, same as
-`respond-throttle` and the two WAF custom rules below — the deploy token
-deliberately lacks **Zone → Firewall Services → Edit**, so nothing in CI or
-`wrangler.jsonc` can create it.
-
-**Check the Free plan's rate-limiting rule count before creating this one.**
-The section above calls `respond-throttle` "the single Free-plan rule", which
-was written when it was the only one needed and may mean the plan permits
-exactly one rate-limiting rule rather than several — that has not been
-verified against current Cloudflare documentation for a *second* rule. If the
-Free plan will not allow both simultaneously, `join-throttle` is not a
-control this project can rely on and `docs/known-issues.md` should say so;
-`/j/:token`'s actual protection would then still be the quota wrapper, the
-origin check and the token's unguessability from §4.5, same as it is today.
+The single rule the plan does allow is still worth having, for the one thing
+the bindings structurally cannot do — it blocks **before the Worker is
+invoked**, so it protects the bill rather than the data. It is declared in
+`infra/cloudflare/` rather than applied by hand.
 
 ## WAF custom rules (TR-37)
 

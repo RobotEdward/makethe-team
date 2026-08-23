@@ -23,6 +23,40 @@
   // a penny, while the false-termination risk is real. Revisit if the cron ever
   // approaches this in production.
   "limits": { "cpu_ms": 1000 },
+  // Workers rate limiting for the four unauthenticated token families
+  // (TR-37), consumed by `src/security/rate-limit.ts`. GA since September
+  // 2025; needs wrangler >= 4.36.0.
+  //
+  // These exist because the Free zone plan's own rate limiting rule is close
+  // to useless as a control: it allows exactly **one** rule per zone, matching
+  // on path only, counting per-IP over a fixed 10-second window with a
+  // 10-second mitigation timeout. See `infra/cloudflare/` for the one rule the
+  // zone does carry and what it is actually for (blocking before the Worker is
+  // invoked, which protects the bill — the one thing these bindings cannot do).
+  //
+  // `period` may only be 10 or 60. `LIMIT_PERIOD_SECONDS` in
+  // src/security/rate-limit.ts must match the 60 below — it is what the
+  // `Retry-After` header on a refusal promises, and nothing can read the
+  // configured period back off a binding at runtime.
+  //
+  // Counting is per Cloudflare location, not global, and Cloudflare documents
+  // the API as "permissive, eventually consistent". Neither limit is a
+  // guarantee; both are ceilings on hammering. The controls that actually
+  // bound cost here are the notifier quota (`MAX_EMAILS_PER_DAY`) and token
+  // unguessability, and every route must hold with these bindings absent —
+  // they are optional in `Bindings` and the middleware fails open.
+  "ratelimits": [
+    // Per token: 10 requests a minute against one link. A player answering a
+    // reminder taps two or three times at most, so this is roughly 3x the
+    // busiest honest use of a single link.
+    { "name": "TOKEN_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    // Per IP: 60 a minute, deliberately loose. A whole office or mobile
+    // network shares one address, and a false positive here breaks the one
+    // journey the product depends on — see `TOKEN_IP_LIMITER` in src/env.ts.
+    // Its job is bounding an attacker walking *different* tokens, which the
+    // per-token key structurally cannot see.
+    { "name": "TOKEN_IP_LIMITER", "namespace_id": "1002", "simple": { "limit": 60, "period": 60 } }
+  ],
   "triggers": {
     // Hourly. The sweep opens fixtures that have reached their open-at time
     // and sends the day-before reminders; an hour is the intended production
