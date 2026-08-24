@@ -1461,14 +1461,17 @@ export async function renderPlayerFixture(
       ? null
       : await muteStateFor(db, game.id, viewerPlayerId, now);
 
-  // Read straight from the row rather than widened onto `SquadMember`: this
-  // is the only page that asks, and `SquadMember` is threaded through the
-  // owner page, the dashboard and the picker, none of which want it.
-  // Two questions in one read: is an invite order actually running on this
-  // fixture, and has this viewer been reached by it. Both are needed, because
-  // a fixture mailed before gating was switched on has no stamps at all — and
-  // testing only the viewer's own row would tell the entire squad they had not
-  // been asked, while every one of them held the invitation.
+  // Two questions in one read: is an invite order running on this fixture at
+  // all, and has this viewer been reached by it.
+  //
+  // Both are needed. A fixture mailed before gating was switched on carries no
+  // stamps at all (BR-46), so testing the viewer's own row alone would tell the
+  // whole squad they had not been asked while every one of them held the
+  // invitation. `invited_at` is written only by the reconciler and never
+  // cleared, so one stamp anywhere is proof the order has taken hold here.
+  //
+  // Read here rather than widened onto `SquadMember`, which is threaded through
+  // the owner page, the dashboard and the picker: none of those ask this.
   const inviteRows = game.gatedInvitesEnabled
     ? await db
         .select({ playerId: responses.playerId, invitedAt: responses.invitedAt })
