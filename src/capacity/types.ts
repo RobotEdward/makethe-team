@@ -140,3 +140,28 @@ export type AddGuestOutcome =
   | { kind: "added"; playerId: string; inCount: number; spotsLeft: number }
   /** No `promoted` variant: adding a guest only ever takes a slot, never frees one. */
   | { kind: "rejected"; reason: "would-exceed-capacity" | "fixture-not-open" | "fixture-not-found" };
+
+/** An owner's manual release sets `force`; every other caller leaves it off. */
+export interface ClaimInviteReleasesInput {
+  /** Passed in rather than read from the clock — domain code stays testable. */
+  now: number;
+  /** Release one tier regardless of BR-43's veto. The owner's button, only. */
+  force?: boolean;
+}
+
+/**
+ * Which players this call newly invited (BR-41).
+ *
+ * **The object stamps and returns; it never sends.** `claimInviteReleases` runs
+ * wholly inside `ctx.blockConcurrencyWhile`, so an HTTP call to a mail provider
+ * from in there would serialise every other tap on the fixture behind it — the
+ * same reasoning `WaitlistPromotion` gives at length for N-2. The caller sends
+ * the N-1 after the object has returned and the lock has been released.
+ *
+ * An empty `playerIds` is the steady state, not a failure: every sweep tick
+ * calls this for every open gated fixture, and almost every one finds nothing
+ * to release.
+ */
+export type ClaimInviteReleasesOutcome =
+  | { kind: "claimed"; playerIds: string[] }
+  | { kind: "skipped"; reason: "not-gated" | "fixture-not-open" | "fixture-not-found" };

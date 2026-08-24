@@ -1,12 +1,16 @@
 import { DurableObject } from "cloudflare:workers";
 import { eq } from "drizzle-orm";
 import { getDb, type Db } from "../db/client.js";
+import { loadInviteState, stampInvited } from "../db/invite-queries.js";
+import { planReleases } from "../domain/invite-tiers.js";
 import { fixtures, players, responses } from "../db/schema.js";
 import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
 import type {
   AddGuestInput,
   AddGuestOutcome,
+  ClaimInviteReleasesInput,
+  ClaimInviteReleasesOutcome,
   SetResponseInput,
   SetResponseOutcome,
   WaitlistPromotion,
@@ -24,6 +28,58 @@ import type {
 export class FixtureCapacity extends DurableObject<Bindings> {
   ping(): string {
     return "fixture-capacity";
+  }
+
+  /**
+   * Release as many tiers of the Game's invite order as the current state owes
+   * (BR-41 to BR-44), stamping `invited_at` on the players that newly invites.
+   *
+   * **Inside the critical section for the same reason `setResponse` is.** The
+   * rule reads the fixture's `in`, `pending` and `waitlisted` counts, which is
+   * exactly what a concurrent response changes. Two declines landing together
+   * would otherwise each read the pre-decline state, each conclude a tier was
+   * owed, and release two.
+   */
+  async claimInviteReleases(input: ClaimInviteReleasesInput): Promise<ClaimInviteReleasesOutcome> {
+    return this.ctx.blockConcurrencyWhile(async () => this.#claimInviteReleasesLocked(input));
+  }
+
+  async #claimInviteReleasesLocked(
+    input: ClaimInviteReleasesInput,
+  ): Promise<ClaimInviteReleasesOutcome> {
+    // The fixture id comes from the object's own identity, never from an
+    // argument — see `#setResponseLocked` for what a mismatch would break.
+    const fixtureId = this.ctx.id.name;
+    if (fixtureId === undefined) {
+      throw new Error(
+        "FixtureCapacity was addressed by unique id, not by fixture id — every caller must use getByName(fixtureId)",
+      );
+    }
+
+    const db = getDb(this.env.DB);
+    const now = new Date(input.now);
+
+    const state = await loadInviteState(db, fixtureId, now);
+    if (!state) return { kind: "skipped", reason: "fixture-not-found" };
+
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    // `loadInviteState` already proved the row exists, so this can only be a
+    // narrowing for the compiler.
+    if (!fixture) return { kind: "skipped", reason: "fixture-not-found" };
+    if (fixture.lifecycle !== "open") return { kind: "skipped", reason: "fixture-not-open" };
+    if (!state.gated) return { kind: "skipped", reason: "not-gated" };
+
+    const plan = planReleases({
+      tiers: state.tiers,
+      guestInCount: state.guestInCount,
+      maxPlayers: state.maxPlayers,
+      minPlayers: state.minPlayers,
+      fallbackDue: state.fallbackDue,
+      force: input.force ?? false,
+    });
+
+    const playerIds = await stampInvited(db, fixtureId, plan.toInvite, now);
+    return { kind: "claimed", playerIds };
   }
 
   /**
