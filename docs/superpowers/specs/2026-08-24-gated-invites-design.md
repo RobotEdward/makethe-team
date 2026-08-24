@@ -57,10 +57,14 @@ Optional, per Game, **off by default**. When on:
   `gated_fallback_hours_before`), Tiers are released until `potential >=
   min_players` or the Tiers run out, regardless of whether anyone declined. A
   null `gated_fallback_hours_before` means never.
-- **BR-45.** While a gated Fixture still holds an unreleased Tier and its
-  fallback instant has not passed, the N-4 attention warning is suppressed. A
-  gated Fixture is *supposed* to look short early; warning the owner about the
-  thing they asked for is how a useful alert becomes one people ignore.
+- **BR-45. ~~Struck 24 August 2026, before it reached production behaviour.~~**
+  This rule suppressed the N-4 attention warning while a gated Fixture still
+  held an unreleased Tier. It was implemented, shipped, and reverted the same
+  day by the maintainer's decision: an organiser wants to know their numbers
+  are short whether or not the invite order explains why, and the invite
+  progress panel already tells them which Tiers are held. **N-4 behaves for a
+  gated Fixture exactly as it does for any other.** See `docs/known-issues.md`.
+  The number is retained rather than reused so the sequence stays stable.
 
 ## Data model
 
@@ -247,7 +251,7 @@ the sweep is the guarantee — no compensating machinery, no cleanup pass.
 - `reminderKey(fixtureId, playerId)` needs no timestamp: a player is invited once
   per Fixture, and the existing UNIQUE on `dedupe_key` is what stops the
   request-path send and the sweep from both mailing them.
-- The N-4 attention sweep gains BR-45's suppression.
+- The N-4 attention sweep is **unchanged** — see BR-45, struck.
 - Broadcast audiences (`src/domain/broadcast-audience.ts`) are **unchanged**. A
   broadcast is the owner speaking to the squad, not an invitation.
 - N-3 cancellation is unchanged: its recipients are `in` or `waitlisted`, which
@@ -369,7 +373,8 @@ Then, per feature:
 - A claimed-but-unsent player is picked up by the next sweep tick (the failure
   mode above, asserted rather than assumed).
 - Two concurrent declines release one tier, not two.
-- BR-45's N-4 suppression, and that it lifts once the last tier is released.
+- That a gated Fixture short of `min_players` warns its organiser exactly as an
+  ungated one does (BR-45, struck).
 - `test/stored-lookups.test.ts` needs no new entry: `invite_tiers.name` is free
   text, not a lookup key.
 - Render the invite-order page and the progress panel and **read the PNGs** —

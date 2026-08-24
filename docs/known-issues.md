@@ -309,3 +309,26 @@ Recorded so nobody re-litigates it, and so the one deliberate omission is visibl
 | Pull requests required to merge | **Deliberately not used.** Working directly on `main` is the agreed workflow, and `deploy.yml` already runs lint, typecheck and tests before migrations and deploy, so a broken push fails before touching production. |
 
 **Outstanding, needs the Cloudflare dashboard:** the deploy API token carries **Workers KV Storage → Edit**, and this project has no KV binding. Drop that scope the next time the token is rotated.
+
+## N-4 is not suppressed for a gated fixture — decided 24 August 2026
+
+M34 shipped with **BR-45**: while a gated fixture still held an unreleased tier and
+its fallback instant had not passed, the N-4 attention warning was suppressed. The
+reasoning was that such a fixture is short *on purpose*, and warning an organiser
+about the thing they configured is how a useful alert becomes one people ignore.
+
+**Reverted the same day, by the maintainer's decision.** An organiser wants to know
+their numbers are short whether or not the invite order explains why. A warning they
+can reason about beats one the product withholds on their behalf — and the invite
+progress panel on the fixture page already tells them exactly which tiers are still
+held, so the two together are more informative than the warning's absence.
+
+The suppression, its helper `holdsUnreleasedTier`, and the two `games` columns it
+selected are gone; `src/sweep/attention.ts` is byte-identical to its pre-BR-45 state.
+`test/sweep/attention.test.ts` keeps three tests pinning the *current* behaviour —
+a gated fixture with tiers held back warns exactly as an ungated one does — so a
+future milestone cannot reintroduce the suppression without a test turning red and
+this entry being found.
+
+BR-45 is struck from the M34 spec rather than deleted, so a reader of that document
+is not left wondering why the numbering skips.

@@ -1,8 +1,8 @@
-import { and, asc, eq, isNull, ne } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { fixturePath } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { getFixtureWithSquad } from "../db/queries.js";
-import { fixtures, games, memberships, notificationLog, players, responses } from "../db/schema.js";
+import { fixtures, games, memberships, notificationLog, players } from "../db/schema.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { cancelTokenExpiry, signCancelToken } from "../domain/token.js";
@@ -91,7 +91,6 @@ export interface SendOwnerAttentionParams {
 }
 
 const MINUTE_MS = 60_000;
-const HOUR_MS = 3_600_000;
 
 interface AttentionCandidate {
   fixtureId: string;
@@ -193,8 +192,6 @@ async function fixturesNeedingAttention(db: Db, now: Date): Promise<AttentionCan
       prefersEvenNumbers: fixtures.prefersEvenNumbers,
       shortWarningOffsetHours: fixtures.shortWarningOffsetHours,
       shortWarningEnabled: games.shortWarningEnabled,
-      gatedInvitesEnabled: games.gatedInvitesEnabled,
-      gatedFallbackHoursBefore: games.gatedFallbackHoursBefore,
     })
     .from(fixtures)
     .innerJoin(games, eq(fixtures.gameId, games.id))
@@ -207,22 +204,6 @@ async function fixturesNeedingAttention(db: Db, now: Date): Promise<AttentionCan
     // warning off means the fixtures already scheduled, and re-materialisation
     // is not something that happens to them.
     if (!row.shortWarningEnabled) continue;
-
-    // BR-45. A gated fixture is *supposed* to look short while its later tiers
-    // are still held back, and warning the owner about the thing they asked
-    // for is how a useful alert becomes one people ignore. The suppression
-    // lifts on whichever comes first — the last tier released, or the fallback
-    // instant, after which short numbers are a real problem again.
-    //
-    // Measured in plain hours from kickoff, so no timezone conversion is
-    // involved: TR-5's rule is about what a human is shown, and nothing here
-    // is shown to anyone.
-    if (row.gatedInvitesEnabled && (await holdsUnreleasedTier(db, row.id, row.gameId))) {
-      const fallbackDue =
-        row.gatedFallbackHoursBefore !== null &&
-        now.getTime() >= row.kicksOffAt.getTime() - row.gatedFallbackHoursBefore * HOUR_MS;
-      if (!fallbackDue) continue;
-    }
 
     if (row.kicksOffAt.getTime() + row.durationMinutes * MINUTE_MS <= now.getTime()) continue;
 
@@ -243,40 +224,6 @@ async function fixturesNeedingAttention(db: Db, now: Date): Promise<AttentionCan
   }
 
   return candidates;
-}
-
-/**
- * Whether this fixture still has somebody its Game has not asked yet: an
- * active membership holding a live response row with a null `invited_at`.
- *
- * `withdrawn` rows are excluded because the owner has taken that player out of
- * this fixture (BR-3) and releasing a tier never invites them back, and an
- * inactive membership is somebody who has left the Game. Counting either would
- * suppress N-4 for the rest of the fixture's life, waiting on a tier that can
- * never be released.
- *
- * **Awaited inside the loop, deliberately.** The alternative is a second query
- * shape — one grouped pass over every open fixture — for a case that fires for
- * the handful of Games with gating switched on. If it ever shows up in a sweep
- * timing, batch it then.
- */
-async function holdsUnreleasedTier(db: Db, fixtureId: string, gameId: string): Promise<boolean> {
-  const held = await db
-    .select({ playerId: responses.playerId })
-    .from(responses)
-    .innerJoin(memberships, eq(memberships.playerId, responses.playerId))
-    .where(
-      and(
-        eq(responses.fixtureId, fixtureId),
-        isNull(responses.invitedAt),
-        ne(responses.status, "withdrawn"),
-        eq(memberships.gameId, gameId),
-        eq(memberships.active, true),
-      ),
-    )
-    .limit(1);
-
-  return held.length > 0;
 }
 
 /** One fixture's worth of work, in its own `try` at the call site. */
