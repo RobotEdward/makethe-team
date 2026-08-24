@@ -5,6 +5,7 @@ import { isMuted } from "../domain/mute.js";
 import { openFixture } from "../domain/open-fixture.js";
 import { reminderInstant } from "../domain/reminder-time.js";
 import { buildReminderMessages, type ReminderCandidate } from "../notify/reminder-messages.js";
+import type { FixtureCapacity } from "../capacity/fixture-capacity.js";
 import type { Notifier } from "../notify/notifier.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { applySendResult, insertQueuedLogRows, markOrphanedRowsFailed } from "../notify/delivery.js";
@@ -13,7 +14,7 @@ import { applySendResult, insertQueuedLogRows, markOrphanedRowsFailed } from "..
 export interface SweepFailure {
   fixtureId: string;
   gameId: string | null;
-  stage: "reminder-instant" | "open" | "prepare" | "send" | "apply";
+  stage: "reminder-instant" | "open" | "claim" | "prepare" | "send" | "apply";
   message: string;
 }
 
@@ -44,6 +45,13 @@ export interface SweepResult {
   /** The push leg's own `failed` count — informational only, never folded into `remindersFailed`. Also where a push `deferred` outcome lands, since the push leg can't legitimately produce one. */
   pushRemindersFailed: number;
   guestsSkipped: number;
+  /** Tiers released across every gated fixture on this run (M34) — informational. */
+  tiersClaimed: number;
+  /**
+   * Players newly invited by those releases (M34). They are mailed by step 2 of
+   * this same run, so this is not a count of anything still outstanding.
+   */
+  invitationsClaimed: number;
   /**
    * Every fixture (or game) whose processing failed outright — a bad
    * timezone, a rejected notifier call, a database error, or one or more
@@ -96,15 +104,71 @@ export async function openAndRemind(
   notifier: Notifier,
   now: Date,
   responseTokenSecret: string,
+  capacity: DurableObjectNamespace<FixtureCapacity>,
 ): Promise<SweepResult> {
   const { opened, failures: openFailures } = await openDueFixtures(db, now);
+  // Between opening and reminding, deliberately (M34). A tier released here is
+  // stamped before step 2 selects its candidates, so its invitations go out on
+  // this tick rather than the next one — which for a fixture that is tomorrow
+  // is the difference between a sub playing and a sub finding out too late.
+  const claimed = await claimDueInvites(db, capacity, now);
   const reminderResult = await sendDueReminders(db, notifier, now, responseTokenSecret);
 
   return {
     fixturesOpened: opened,
+    tiersClaimed: claimed.tiersClaimed,
+    invitationsClaimed: claimed.invitationsClaimed,
     ...reminderResult,
-    failures: [...openFailures, ...reminderResult.failures],
+    failures: [...openFailures, ...claimed.failures, ...reminderResult.failures],
   };
+}
+
+/**
+ * Step 1b (M34): reconcile every open gated fixture's invite order.
+ *
+ * Runs against every *open* fixture, not just those past their reminder
+ * instant, because neither trigger is tied to that instant: a decline can
+ * arrive at any hour, and BR-44's fallback is measured from kickoff. The claim
+ * is cheap and idempotent — `claimInviteReleases` returns `skipped` for an
+ * ungated Game, and the query below never selects one in the first place.
+ *
+ * A failure on one fixture is recorded and skipped rather than thrown, the
+ * same rule the two steps either side of it follow: one broken Game must not
+ * stop every other Game's invitations.
+ */
+async function claimDueInvites(
+  db: Db,
+  capacity: DurableObjectNamespace<FixtureCapacity>,
+  now: Date,
+): Promise<{ tiersClaimed: number; invitationsClaimed: number; failures: SweepFailure[] }> {
+  const rows = await db
+    .select({ id: fixtures.id, gameId: fixtures.gameId })
+    .from(fixtures)
+    .innerJoin(games, eq(fixtures.gameId, games.id))
+    .where(and(eq(fixtures.lifecycle, "open"), eq(games.gatedInvitesEnabled, true)));
+
+  let tiersClaimed = 0;
+  let invitationsClaimed = 0;
+  const failures: SweepFailure[] = [];
+
+  for (const row of rows) {
+    try {
+      const outcome = await capacity.getByName(row.id).claimInviteReleases({ now: now.getTime() });
+      if (outcome.kind === "claimed" && outcome.playerIds.length > 0) {
+        tiersClaimed += 1;
+        invitationsClaimed += outcome.playerIds.length;
+      }
+    } catch (error) {
+      failures.push({
+        fixtureId: row.id,
+        gameId: row.gameId,
+        stage: "claim",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return { tiersClaimed, invitationsClaimed, failures };
 }
 
 interface GameTiming {
@@ -513,11 +577,14 @@ async function eligiblePlayers(
       name: players.name,
       email: players.email,
       isGuest: players.isGuest,
+      invitedAt: responses.invitedAt,
+      gatedInvitesEnabled: games.gatedInvitesEnabled,
       mutedAt: memberships.mutedAt,
       mutedUntil: memberships.mutedUntil,
     })
     .from(responses)
     .innerJoin(players, eq(responses.playerId, players.id))
+    .innerJoin(games, eq(games.id, gameId))
     .leftJoin(
       memberships,
       and(eq(memberships.gameId, gameId), eq(memberships.playerId, responses.playerId)),
@@ -526,6 +593,10 @@ async function eligiblePlayers(
 
   return rows
     .filter((row) => !isMuted({ mutedAt: row.mutedAt, mutedUntil: row.mutedUntil }, now))
+    // BR-39/BR-41, M34. The `gatedInvitesEnabled` half is load-bearing, not a
+    // shortcut: `invited_at` is never written for an ungated Game, so a bare
+    // `invitedAt !== null` would silence every reminder in the product.
+    .filter((row) => !row.gatedInvitesEnabled || row.invitedAt !== null)
     .map(({ playerId, name, email, isGuest }) => ({ playerId, name, email, isGuest }));
 }
 

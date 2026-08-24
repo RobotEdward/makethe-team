@@ -127,11 +127,11 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(3) });
     const notifier = new RecordingNotifier();
 
-    const before = await openAndRemind(db, notifier, new Date("2026-08-12T07:59:00Z"), SECRET);
+    const before = await openAndRemind(db, notifier, new Date("2026-08-12T07:59:00Z"), SECRET, env.FIXTURE_CAPACITY);
     expect(before.remindersSent).toBe(0);
     expect(notifier.sent).toHaveLength(0);
 
-    const after = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    const after = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
     expect(after.remindersSent).toBe(3);
     expect(notifier.sent.flat()).toHaveLength(3);
 
@@ -151,7 +151,7 @@ describe("openAndRemind", () => {
     await insertSubscription(db, "device-player", "https://push.example.com/device-player");
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     // `remindersSent` stays a pure email count (review fix, Critical 2) —
     // `src/cron/handler.ts` logs it as one — with the push leg's own count
@@ -175,7 +175,7 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: onePlayer });
     const notifier = new RecordingNotifier();
 
-    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     const logRows = await db
       .select()
@@ -200,7 +200,7 @@ describe("openAndRemind", () => {
     notifier.ceilingFor.add("device-player@example.com");
     const now = new Date("2026-08-12T09:00:00Z");
 
-    const first = await openAndRemind(db, notifier, now, SECRET);
+    const first = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(first.remindersSent).toBe(0);
     expect(first.pushRemindersSent).toBe(1); // the push
     expect(first.remindersDeferred).toBe(1); // the email
@@ -213,7 +213,7 @@ describe("openAndRemind", () => {
     expect(afterFirst.map((r) => r.channel)).toEqual(["push"]);
 
     notifier.ceilingFor.delete("device-player@example.com");
-    const second = await openAndRemind(db, notifier, now, SECRET);
+    const second = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     // The email is retried and sent. It must NOT be skipped as "already told"
     // just because a push row for this player/fixture already exists.
@@ -239,7 +239,7 @@ describe("openAndRemind", () => {
     const notifier = new RecordingNotifier();
     const now = new Date("2026-08-12T09:00:00Z");
 
-    await openAndRemind(db, notifier, now, SECRET);
+    await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     const message = notifier.sent.flat()[0];
     const match = message && requireEmailMessage(message).html.match(/\/leave\/([^"]+)"/);
@@ -256,8 +256,8 @@ describe("openAndRemind", () => {
     const notifier = new RecordingNotifier();
     const now = new Date("2026-08-12T09:00:00Z");
 
-    const first = await openAndRemind(db, notifier, now, SECRET);
-    const second = await openAndRemind(db, notifier, now, SECRET);
+    const first = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
+    const second = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     expect(first.remindersSent).toBe(4);
     expect(second.remindersSent).toBe(0);
@@ -273,10 +273,10 @@ describe("openAndRemind", () => {
     const notifier = new RecordingNotifier();
 
     // Well after the early open, but before the scheduled reminder instant (08:00Z on the 12th).
-    const stillEarly = await openAndRemind(db, notifier, new Date("2026-08-11T12:00:00Z"), SECRET);
+    const stillEarly = await openAndRemind(db, notifier, new Date("2026-08-11T12:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
     expect(stillEarly.remindersSent).toBe(0);
 
-    const atReminderTime = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    const atReminderTime = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
     expect(atReminderTime.remindersSent).toBe(2);
   });
 
@@ -285,7 +285,7 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(2), lifecycle: "scheduled" });
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.fixturesOpened).toBe(1);
     const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
@@ -300,7 +300,7 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(2), lifecycle: "scheduled" });
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, new Date("2026-08-11T00:00:00Z"), SECRET);
+    const result = await openAndRemind(db, notifier, new Date("2026-08-11T00:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.fixturesOpened).toBe(0);
     expect(result.remindersSent).toBe(0);
@@ -317,7 +317,7 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(1), lifecycle: "scheduled" });
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, now, SECRET);
+    const result = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.fixturesOpened).toBe(0);
     expect(result.remindersSent).toBe(0);
@@ -335,7 +335,7 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(1), lifecycle: "open" });
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, now, SECRET);
+    const result = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.remindersSent).toBe(0);
     expect(result.failures).toHaveLength(0);
@@ -359,7 +359,7 @@ describe("openAndRemind", () => {
     await db.update(fixtures).set({ durationMinutes: 120 }).where(eq(fixtures.id, fixtureId));
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, now, SECRET);
+    const result = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.remindersSent).toBe(1);
     expect(result.failures).toHaveLength(0);
@@ -374,7 +374,7 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(2), lifecycle: "open" });
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, now, SECRET);
+    const result = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.remindersSent).toBe(2);
     expect(result.failures).toHaveLength(0);
@@ -390,7 +390,7 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: mixed });
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, new Date("2026-08-12T09:00:00Z"), SECRET);
+    const result = await openAndRemind(db, notifier, new Date("2026-08-12T09:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.remindersSent).toBe(1);
     expect(result.guestsSkipped).toBe(1);
@@ -413,7 +413,7 @@ describe("openAndRemind", () => {
     notifier.failFor.add("bad@example.com");
     const now = new Date("2026-08-12T09:00:00Z");
 
-    const result = await openAndRemind(db, notifier, now, SECRET);
+    const result = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.remindersSent).toBe(1);
     expect(result.remindersFailed).toBe(1);
@@ -434,7 +434,7 @@ describe("openAndRemind", () => {
     expect(badRow?.error).toBe("simulated-provider-failure");
 
     // A second run must not retry the failed row — it already has a log row.
-    const second = await openAndRemind(db, notifier, now, SECRET);
+    const second = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(second.remindersSent).toBe(0);
     expect(second.remindersFailed).toBe(0);
     expect(second.failures).toHaveLength(0);
@@ -447,10 +447,10 @@ describe("openAndRemind", () => {
     const { fixtureId } = await seedFixture({ kicksOffAt, squad: squad(1) });
     const notifier = new RecordingNotifier();
 
-    const tooEarly = await openAndRemind(db, notifier, new Date("2026-10-28T08:59:00Z"), SECRET);
+    const tooEarly = await openAndRemind(db, notifier, new Date("2026-10-28T08:59:00Z"), SECRET, env.FIXTURE_CAPACITY);
     expect(tooEarly.remindersSent).toBe(0);
 
-    const onTime = await openAndRemind(db, notifier, new Date("2026-10-28T09:00:00Z"), SECRET);
+    const onTime = await openAndRemind(db, notifier, new Date("2026-10-28T09:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
     expect(onTime.remindersSent).toBe(1);
 
     const logRows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
@@ -466,7 +466,7 @@ describe("openAndRemind", () => {
     notifier.rejectForFixture.add(badFixtureId);
     const now = new Date("2026-08-12T09:00:00Z");
 
-    const result = await openAndRemind(db, notifier, now, SECRET);
+    const result = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     // The healthy fixture still got its reminders.
     expect(result.remindersSent).toBe(2);
@@ -495,7 +495,7 @@ describe("openAndRemind", () => {
     const notifier = new RecordingNotifier();
     const now = new Date("2026-08-12T09:00:00Z");
 
-    const result = await openAndRemind(db, notifier, now, SECRET);
+    const result = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.remindersSent).toBe(2);
     expect(result.failures.some((f) => f.fixtureId === badFixtureId && f.stage === "reminder-instant")).toBe(true);
@@ -516,7 +516,7 @@ describe("openAndRemind", () => {
     notifier.ceilingFor.add(playerEmail);
     const now = new Date("2026-08-12T09:00:00Z");
 
-    const first = await openAndRemind(db, notifier, now, SECRET);
+    const first = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(first.remindersSent).toBe(0);
     expect(first.remindersDeferred).toBe(1);
     // A deferral is expected under a low ceiling, so it must NOT reject the
@@ -528,7 +528,7 @@ describe("openAndRemind", () => {
     expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(0);
 
     notifier.ceilingFor.delete(playerEmail);
-    const second = await openAndRemind(db, notifier, now, SECRET);
+    const second = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(second.remindersSent).toBe(1);
     expect(second.remindersDeferred).toBe(0);
 
@@ -551,7 +551,7 @@ describe("openAndRemind", () => {
     notifier.ceilingFor.add(playerEmail);
     const now = new Date("2026-08-12T09:00:00Z");
 
-    await openAndRemind(db, notifier, now, SECRET);
+    await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     const deferred = await db
       .select()
@@ -571,7 +571,7 @@ describe("openAndRemind", () => {
     const notifier = new RecordingNotifier();
     const now = new Date("2026-08-12T09:00:00Z");
 
-    await openAndRemind(db, notifier, now, SECRET);
+    await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     expect(
       await db.select().from(auditLog).where(eq(auditLog.action, "fixture.reminder_email_deferred")),
@@ -591,7 +591,7 @@ describe("openAndRemind", () => {
     notifier.ceilingFor.add(playerEmail);
 
     const first = new Date("2026-08-12T09:00:00Z");
-    await openAndRemind(db, notifier, first, SECRET);
+    await openAndRemind(db, notifier, first, SECRET, env.FIXTURE_CAPACITY);
     expect(
       await db.select().from(auditLog).where(eq(auditLog.action, "fixture.reminder_email_deferred")),
     ).toHaveLength(1);
@@ -599,7 +599,7 @@ describe("openAndRemind", () => {
     // Five minutes later — well inside the one-hour collapse window — the
     // sweep retries and is refused again. No second row.
     const second = new Date(first.getTime() + 5 * 60 * 1000);
-    await openAndRemind(db, notifier, second, SECRET);
+    await openAndRemind(db, notifier, second, SECRET, env.FIXTURE_CAPACITY);
     expect(
       await db.select().from(auditLog).where(eq(auditLog.action, "fixture.reminder_email_deferred")),
     ).toHaveLength(1);
@@ -608,7 +608,7 @@ describe("openAndRemind", () => {
     // a fresh row is written — proving the condition is still ongoing rather
     // than a single one-off row that looks identical to a resolved blip.
     const third = new Date(first.getTime() + 61 * 60 * 1000);
-    await openAndRemind(db, notifier, third, SECRET);
+    await openAndRemind(db, notifier, third, SECRET, env.FIXTURE_CAPACITY);
     const rows = await db
       .select()
       .from(auditLog)
@@ -626,12 +626,12 @@ describe("openAndRemind", () => {
     notifier.failFor.add(playerEmail);
     const now = new Date("2026-08-12T09:00:00Z");
 
-    const first = await openAndRemind(db, notifier, now, SECRET);
+    const first = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(first.remindersFailed).toBe(1);
     expect(first.remindersDeferred).toBe(0);
 
     notifier.failFor.delete(playerEmail);
-    const second = await openAndRemind(db, notifier, now, SECRET);
+    const second = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(second.remindersSent).toBe(0);
     expect(second.remindersFailed).toBe(0);
 
@@ -658,7 +658,7 @@ describe("openAndRemind", () => {
     const notifier = new RecordingNotifier();
     const now = new Date("2026-08-12T09:00:00Z");
 
-    const first = await openAndRemind(db, notifier, now, SECRET);
+    const first = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(first.remindersSent).toBe(1);
     expect(first.guestsSkipped).toBe(1);
     expect(first.remindersDeferred).toBe(0);
@@ -673,7 +673,7 @@ describe("openAndRemind", () => {
 
     // The loop is closed: a second run does exactly the same nothing, rather
     // than re-signing a token and re-inserting a row.
-    const second = await openAndRemind(db, notifier, now, SECRET);
+    const second = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(second.remindersSent).toBe(0);
     expect(second.guestsSkipped).toBe(1);
     expect(second.remindersDeferred).toBe(0);
@@ -709,7 +709,7 @@ describe("openAndRemind", () => {
       },
     }) as Db;
 
-    const result = await openAndRemind(flakyDb, notifier, now, SECRET);
+    const result = await openAndRemind(flakyDb, notifier, now, SECRET, env.FIXTURE_CAPACITY);
 
     const rows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
     expect(rows).toHaveLength(3);
@@ -729,7 +729,7 @@ describe("openAndRemind", () => {
     // Marked failed, not deleted: the notifier already returned results, so
     // these may well have been delivered, and BR-19 prefers a miss to a
     // duplicate. A later run must therefore not retry them.
-    const second = await openAndRemind(db, notifier, now, SECRET);
+    const second = await openAndRemind(db, notifier, now, SECRET, env.FIXTURE_CAPACITY);
     expect(second.remindersSent).toBe(0);
     expect(second.remindersFailed).toBe(0);
     expect(await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId))).toHaveLength(3);
@@ -751,7 +751,7 @@ describe("openAndRemind", () => {
     });
     const notifier = new RecordingNotifier();
 
-    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     expect(result.fixturesOpened).toBe(1);
     expect(result.remindersSent).toBe(0);
@@ -782,7 +782,7 @@ describe("openAndRemind and the auto-decline switch (M28)", () => {
       .where(eq(memberships.playerId, members[1]!.id));
     const notifier = new RecordingNotifier();
 
-    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     const logRows = await db
       .select()
@@ -802,7 +802,7 @@ describe("openAndRemind and the auto-decline switch (M28)", () => {
       .where(eq(memberships.playerId, members[0]!.id));
     const notifier = new RecordingNotifier();
 
-    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     expect(notifier.sent.flat()).toHaveLength(2);
   });
@@ -819,7 +819,7 @@ describe("openAndRemind and the auto-decline switch (M28)", () => {
       .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, members[0]!.id)));
     const notifier = new RecordingNotifier();
 
-    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET);
+    await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     expect(notifier.sent.flat()).toHaveLength(2);
   });

@@ -96,7 +96,7 @@ describe("sendLateInvitations", () => {
       responseTokenSecret: SECRET,
       now: NOW,
     });
-    const sweep = await openAndRemind(db, notifier, NOW, SECRET);
+    const sweep = await openAndRemind(db, notifier, NOW, SECRET, env.FIXTURE_CAPACITY);
 
     expect(sweep.remindersSent).toBe(0);
     expect(notifier.all.filter((m) => m.channel === "email" && m.to === "late@example.com")).toHaveLength(1);

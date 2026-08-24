@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { fixtures, games, players } from "../db/schema.js";
+import { fixtures, games, players, responses } from "../db/schema.js";
 import { applySendResult, insertQueuedLogRows, markOrphanedRowsFailed } from "./delivery.js";
 import type { Notifier } from "./notifier.js";
 import { buildReminderMessages } from "./reminder-messages.js";
@@ -63,6 +63,22 @@ export async function sendLateInvitations(params: {
     if (!row || row.fixture.lifecycle !== "open") {
       summary.skipped++;
       continue;
+    }
+
+    // BR-2′ backfills a row for a late joiner, but a gated Game (M34) has not
+    // necessarily asked their tier yet (BR-41). Skipping here leaves them to
+    // the reconciler, which stamps them the moment their tier is released and
+    // hands them to the sweep's own N-1 — the same message, a little later.
+    // Without this, joining a gated squad would jump the whole invite order.
+    if (row.game.gatedInvitesEnabled) {
+      const [response] = await db
+        .select({ invitedAt: responses.invitedAt })
+        .from(responses)
+        .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, playerId)));
+      if (!response || response.invitedAt === null) {
+        summary.skipped++;
+        continue;
+      }
     }
 
     const pending = await buildReminderMessages({

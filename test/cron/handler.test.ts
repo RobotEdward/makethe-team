@@ -468,7 +468,7 @@ describe("handleScheduled: the sweep", () => {
     await addRespondent(fixtureId, "player@example.com");
 
     const notifier = createNotifier(env, db, remindNow);
-    const remindResult = await openAndRemind(db, notifier, remindNow, env.RESPONSE_TOKEN_SECRET);
+    const remindResult = await openAndRemind(db, notifier, remindNow, env.RESPONSE_TOKEN_SECRET, env.FIXTURE_CAPACITY);
     expect(remindResult.remindersSent).toBe(1);
     expect(remindResult.failures).toHaveLength(0);
 

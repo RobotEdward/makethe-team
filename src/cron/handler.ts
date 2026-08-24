@@ -54,7 +54,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       const db = getDb(env.DB);
       const notifier = createNotifier(env, db, now);
 
-      const remindResult = await openAndRemind(db, notifier, now, env.RESPONSE_TOKEN_SECRET);
+      const remindResult = await openAndRemind(db, notifier, now, env.RESPONSE_TOKEN_SECRET, env.FIXTURE_CAPACITY);
       console.log("open-and-remind", JSON.stringify(remindResult));
       for (const failure of remindResult.failures) {
         console.error(
