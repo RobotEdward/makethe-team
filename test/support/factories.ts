@@ -4,6 +4,7 @@ import {
   fixtureResultClaims,
   fixtures,
   games,
+  inviteTiers,
   memberships,
   players,
   pushSubscriptions,
@@ -66,6 +67,7 @@ const RESET_TABLES = [
   "fixture_result_claims",
   "responses",
   "memberships",
+  "invite_tiers",
   "fixtures",
   "games",
   "players",
@@ -202,6 +204,17 @@ export async function insertMembership(
   // `NOW` would otherwise be racing the few milliseconds between the two — the
   // same class of clock-relative fragility `clock.ts` exists to remove.
   await db.insert(memberships).values({ id, gameId, playerId, joinedAt: NOW, ...overrides });
+  return id;
+}
+
+/** One rung of a Game's invite order. Position defaults to 1. */
+export async function insertInviteTier(
+  db: Db,
+  gameId: string,
+  overrides: Partial<typeof inviteTiers.$inferInsert> = {},
+): Promise<string> {
+  const id = crypto.randomUUID();
+  await db.insert(inviteTiers).values({ id, gameId, name: "Tier", position: 1, ...overrides });
   return id;
 }
 

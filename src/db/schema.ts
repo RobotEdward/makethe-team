@@ -209,10 +209,54 @@ export const games = sqliteTable("games", {
    * be sent, measured from this offset rather than from full time.
    */
   resultPromptOffsetHours: integer("result_prompt_offset_hours").notNull().default(0),
+  /**
+   * M34, BR-39. Whether this Game asks its squad in priority order rather than
+   * all at once. Off by default, so every Game that existed before this
+   * milestone behaves exactly as it did.
+   *
+   * Read live from `games`, never snapshotted onto `fixtures`, for the reason
+   * the M26 switches above give: a switch is not history.
+   */
+  gatedInvitesEnabled: integer("gated_invites_enabled", { mode: "boolean" }).notNull().default(false),
+  /**
+   * How many hours before kickoff the fallback release starts (BR-44), or null
+   * for never.
+   *
+   * Nullable rather than a sentinel integer: "never" is a real choice an owner
+   * makes — release only on a decline — and a magic 0 or -1 is the kind of
+   * value a later reader mistakes for "at kickoff".
+   */
+  gatedFallbackHoursBefore: integer("gated_fallback_hours_before"),
   inviteToken: text("invite_token").notNull(),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
 }, (t) => [uniqueIndex("games_invite_token_unique").on(t.inviteToken)]);
+
+/**
+ * One rung of a Game's invite order (BR-38, M34).
+ *
+ * **The index on (game_id, position) is deliberately not unique.** Reordering
+ * rewrites every row's position in one `db.batch()`, and SQLite checks a unique
+ * index per statement — a batch that swaps positions 1 and 2 would fail on its
+ * first statement, with no way to defer the check. Order is therefore
+ * `ORDER BY position, created_at`, and a duplicated position is a display-order
+ * tie rather than a write that cannot happen.
+ *
+ * There is no row for the implicit final tier. It is every active member with a
+ * null `memberships.invite_tier_id`, which is what makes a player who joins
+ * next week reachable that same day with no owner action.
+ */
+export const inviteTiers = sqliteTable(
+  "invite_tiers",
+  {
+    id: text("id").primaryKey(),
+    gameId: text("game_id").notNull().references(() => games.id),
+    name: text("name").notNull(),
+    position: integer("position").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (t) => [index("invite_tiers_game_position_idx").on(t.gameId, t.position)],
+);
 
 export const memberships = sqliteTable(
   "memberships",
@@ -237,6 +281,20 @@ export const memberships = sqliteTable(
      */
     mutedAt: integer("muted_at", { mode: "timestamp_ms" }),
     mutedUntil: integer("muted_until", { mode: "timestamp_ms" }),
+    /**
+     * Which rung of the Game's invite order this member sits on (BR-38), or
+     * null for the implicit final tier.
+     *
+     * On `memberships` rather than a join table because
+     * `UNIQUE (game_id, player_id)` one line down already enforces "one tier
+     * per player per Game" for free. Deleting a tier nulls this column,
+     * dropping its members to the implicit tier rather than orphaning them.
+     *
+     * SQLite cannot cheaply express "the referenced tier belongs to *this*
+     * Game". The write path scopes every tier lookup by `game_id`, and
+     * `test/routes/invite-order.test.ts` pins it.
+     */
+    inviteTierId: text("invite_tier_id").references(() => inviteTiers.id),
   },
   (t) => [uniqueIndex("memberships_game_player_unique").on(t.gameId, t.playerId)],
 );
@@ -359,6 +417,16 @@ export const responses = sqliteTable(
      * renders a departed player, so no submitted form ever names them.
      */
     team: text("team", { enum: ["a", "b"] }),
+    /**
+     * When this player was invited to this fixture (BR-41, M34), or null if
+     * they have not been. Null forever, and never read, for an ungated Game.
+     *
+     * **Nothing ever clears it.** Releasing a tier is one-way, and this column
+     * is the durable record of what has gone out — which is what lets the
+     * release rule be derived from current state with no event log, and what
+     * makes a second reconcile a no-op.
+     */
+    invitedAt: integer("invited_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [
