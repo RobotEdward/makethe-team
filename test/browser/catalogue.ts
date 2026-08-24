@@ -170,6 +170,16 @@ export const CATALOGUE: CataloguePage[] = [
     note: "The same form as creation, populated, plus the edit-only Notifications section (M26).",
   },
   {
+    id: "invite-order",
+    title: "Invite order",
+    path: (world) => `/g/${world.gameId}/invites`,
+    persona: "owner",
+    note:
+      "Who the game asks first, and in what order everyone else follows (M34). " +
+      "Entirely scriptless — a select per member and a number per group — so it " +
+      "is also the check that the gating editor works with no JavaScript at all.",
+  },
+  {
     id: "game-message",
     title: "Message the squad",
     path: (w) => `/g/${w.gameId}/message`,
