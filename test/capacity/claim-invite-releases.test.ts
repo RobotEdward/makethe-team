@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { responses } from "../../src/db/schema.js";
+import { notificationLog, responses } from "../../src/db/schema.js";
 import {
   insertFixture,
   insertGame,
@@ -129,5 +129,53 @@ describe("claimInviteReleases", () => {
 
     expect(await claim(fixtureId)).toEqual({ kind: "claimed", playerIds: [] });
     expect(await claim(fixtureId, true)).toEqual({ kind: "claimed", playerIds: ["p-2", "p-3"] });
+  });
+});
+
+describe("gating switched on after the invitations already went out", () => {
+  /** The n1 row the ungated sweep would have written for every member. */
+  async function alreadyMailed(fixtureId: string, playerIds: readonly string[]) {
+    for (const playerId of playerIds) {
+      await db.insert(notificationLog).values({
+        id: crypto.randomUUID(),
+        dedupeKey: `n1:${fixtureId}:${playerId}`,
+        notificationType: "n1",
+        fixtureId,
+        playerId,
+        channel: "email",
+        status: "sent",
+      });
+    }
+  }
+
+  it("leaves the fixture alone — everyone has already been asked", async () => {
+    const { fixtureId } = await gatedFixture({ core: 2, subs: 2 });
+    await alreadyMailed(fixtureId, ["p-0", "p-1", "p-2", "p-3"]);
+
+    const outcome = await claim(fixtureId);
+
+    expect(outcome).toEqual({ kind: "skipped", reason: "already-invited" });
+    const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
+    // Nothing stamped: `invited_at` must not claim a tier was released when
+    // the whole squad was mailed before gating was ever switched on.
+    expect(rows.every((row) => row.invitedAt === null)).toBe(true);
+  });
+
+  it("still releases normally once gating has taken effect on the fixture", async () => {
+    // The pair to the test above, and what stops it breaking the feature: a
+    // properly gated fixture also holds n1 rows the moment its core is
+    // mailed, so the skip must key on "mailed AND never stamped", not on
+    // "mailed".
+    const { fixtureId } = await gatedFixture({ core: 2, subs: 2 });
+    await claim(fixtureId);
+    await alreadyMailed(fixtureId, ["p-0", "p-1"]);
+    await db
+      .update(responses)
+      .set({ status: "out", respondedAt: NOW })
+      .where(eq(responses.playerId, "p-0"));
+
+    const outcome = await claim(fixtureId);
+
+    expect(outcome).toEqual({ kind: "claimed", playerIds: ["p-2", "p-3"] });
   });
 });

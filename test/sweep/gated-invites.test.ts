@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { notificationLog, responses } from "../../src/db/schema.js";
+import { games, memberships, notificationLog, responses } from "../../src/db/schema.js";
 import { ConsoleNotifier } from "../../src/notify/console-notifier.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import {
@@ -129,5 +129,71 @@ describe("the sweep and gated invites", () => {
     const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
     // Never written for an ungated game, so nothing can come to depend on it.
     expect(rows.every((row) => row.invitedAt === null)).toBe(true);
+  });
+});
+
+describe("switching gating on after a fixture has already been mailed", () => {
+  it("leaves that fixture ungated for the rest of its life", async () => {
+    // An ordinary ungated game opens and the whole squad is invited.
+    const gameId = await insertGame(db, {
+      reminderDaysBefore: 1,
+      reminderLocalTime: "09:00",
+      timezone: "Europe/London",
+    });
+    const fixtureId = await insertFixture(db, gameId, {
+      kicksOffAt: KICKOFF,
+      minPlayers: 2,
+      maxPlayers: 10,
+    });
+    for (let i = 0; i < 6; i++) {
+      const playerId = await insertPlayer(db, { id: `p-${i}`, email: `p${i}@example.com` });
+      await insertMembership(db, gameId, playerId);
+    }
+    await openAndRemind(db, notifier, NOW, SECRET, env.FIXTURE_CAPACITY);
+    expect(await emailedN1(fixtureId)).toHaveLength(6);
+
+    // Only now does the owner switch gating on and define an order.
+    const core = await insertInviteTier(db, gameId, { name: "Core", position: 1 });
+    await db.update(games).set({ gatedInvitesEnabled: true }).where(eq(games.id, gameId));
+    for (const playerId of ["p-0", "p-1"]) {
+      await db
+        .update(memberships)
+        .set({ inviteTierId: core })
+        .where(eq(memberships.playerId, playerId));
+    }
+
+    await openAndRemind(db, notifier, new Date("2026-08-24T10:30:00Z"), SECRET, env.FIXTURE_CAPACITY);
+
+    // Nothing stamped, so no screen can claim a tier is held while the people
+    // in it are holding the invitation, and nobody is mailed a second time.
+    const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
+    expect(rows.every((row) => row.invitedAt === null)).toBe(true);
+    expect(await emailedN1(fixtureId)).toHaveLength(6);
+  });
+
+  it("gates the next fixture normally", async () => {
+    const gameId = await insertGame(db, {
+      gatedInvitesEnabled: true,
+      reminderDaysBefore: 1,
+      reminderLocalTime: "09:00",
+      timezone: "Europe/London",
+    });
+    const core = await insertInviteTier(db, gameId, { name: "Core", position: 1 });
+    await insertInviteTier(db, gameId, { name: "Subs", position: 2 });
+    for (let i = 0; i < 4; i++) {
+      const playerId = await insertPlayer(db, { id: `q-${i}`, email: `q${i}@example.com` });
+      await insertMembership(db, gameId, playerId, {
+        inviteTierId: i < 2 ? core : null,
+      });
+    }
+    const fixtureId = await insertFixture(db, gameId, {
+      kicksOffAt: KICKOFF,
+      minPlayers: 2,
+      maxPlayers: 10,
+    });
+
+    await openAndRemind(db, notifier, NOW, SECRET, env.FIXTURE_CAPACITY);
+
+    expect((await emailedN1(fixtureId)).sort()).toEqual(["q-0", "q-1"]);
   });
 });

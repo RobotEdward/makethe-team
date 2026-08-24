@@ -94,10 +94,7 @@ ${problem}
     </ol>
   </section>
 
-  ${rest
-    .slice(0, -1)
-    .map((tier) => renderMembersFor(tier, tiers))
-    .join("")}
+  ${rest.map((tier) => renderMembersFor(tier, tiers)).join("")}
 
   <button type="submit" class="button">Save invite order</button>
 </form>
@@ -122,6 +119,16 @@ ${deleteForms}
   });
 }
 
+/**
+ * One tier's own section of assignment controls.
+ *
+ * Rendered for **every** tier, the implicit one included. An earlier version
+ * skipped the implicit tier on the reasoning that it is not a real row — which
+ * made the editor unusable the moment an owner added their first group, since
+ * at that instant every member of the squad is still unplaced and so had no
+ * control at all. Being named in the order row above is not the same as being
+ * assignable: that line is plain text.
+ */
 function renderMembersFor(tier: OrderTier, allTiers: OrderTier[]): string {
   return `
   <section class="invite-box">

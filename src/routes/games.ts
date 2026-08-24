@@ -1272,6 +1272,8 @@ async function ownerFixtureParams(
       game.gatedInvitesEnabled && fixture.lifecycle === "open"
         ? await inviteProgressParams(db, game, fixture)
         : undefined,
+    // `inviteProgressParams` returns undefined of its own accord when no
+    // order is running on this fixture — see its comment.
     ...extras,
   };
 }
@@ -1290,8 +1292,18 @@ async function inviteProgressParams(
   db: Db,
   game: typeof games.$inferSelect,
   fixture: typeof fixtures.$inferSelect,
-): Promise<InviteProgressParams> {
+): Promise<InviteProgressParams | undefined> {
   const tiers = await loadInviteOrder(db, game.id, fixture.id);
+
+  // Nothing stamped means the invite order is not running on this fixture —
+  // either it opened and was mailed before gating was switched on (the Durable
+  // Object then refuses to release, `already-invited`), or it has not reached
+  // its reminder instant yet. Either way a panel would report every tier as
+  // "held" and offer a button that releases nothing, which is worse than no
+  // panel: it describes a gate that is not there.
+  if (!tiers.some((tier) => tier.members.some((member) => member.invitedAt !== null))) {
+    return undefined;
+  }
 
   const rendered = tiers.map((tier) => {
     const stamps = tier.members
@@ -1452,12 +1464,20 @@ export async function renderPlayerFixture(
   // Read straight from the row rather than widened onto `SquadMember`: this
   // is the only page that asks, and `SquadMember` is threaded through the
   // owner page, the dashboard and the picker, none of which want it.
-  const [viewerResponse] = game.gatedInvitesEnabled
+  // Two questions in one read: is an invite order actually running on this
+  // fixture, and has this viewer been reached by it. Both are needed, because
+  // a fixture mailed before gating was switched on has no stamps at all — and
+  // testing only the viewer's own row would tell the entire squad they had not
+  // been asked, while every one of them held the invitation.
+  const inviteRows = game.gatedInvitesEnabled
     ? await db
-        .select({ invitedAt: responses.invitedAt })
+        .select({ playerId: responses.playerId, invitedAt: responses.invitedAt })
         .from(responses)
-        .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, viewerPlayerId)))
+        .where(eq(responses.fixtureId, fixtureId))
     : [];
+  const orderIsRunning = inviteRows.some((row) => row.invitedAt !== null);
+  const viewerInvited =
+    inviteRows.find((row) => row.playerId === viewerPlayerId)?.invitedAt != null;
 
   return c.html(
     renderPlayerFixturePage({
@@ -1495,7 +1515,7 @@ export async function renderPlayerFixture(
       mute: mute === null ? undefined : muteControlsFor(game, mute),
       // M34, BR-40. Copy only — the viewer may still answer, and nothing on
       // this page is disabled on the strength of it.
-      notYetInvited: game.gatedInvitesEnabled && viewerResponse?.invitedAt == null,
+      notYetInvited: orderIsRunning && !viewerInvited,
     }),
     status,
   );

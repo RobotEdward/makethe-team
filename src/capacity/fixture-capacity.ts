@@ -1,9 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, type Db } from "../db/client.js";
-import { loadInviteState, stampInvited } from "../db/invite-queries.js";
+import { loadInviteState, stampInvited, type InviteState } from "../db/invite-queries.js";
 import { planReleases } from "../domain/invite-tiers.js";
-import { fixtures, players, responses } from "../db/schema.js";
+import { fixtures, notificationLog, players, responses } from "../db/schema.js";
 import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
 import type {
@@ -69,6 +69,24 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     if (fixture.lifecycle !== "open") return { kind: "skipped", reason: "fixture-not-open" };
     if (!state.gated) return { kind: "skipped", reason: "not-gated" };
 
+    // Gating switched on *after* this fixture's invitations already went out.
+    //
+    // Every member has had the N-1 and nothing has ever been stamped, so
+    // releasing a tier now would record that a group had been "asked" when the
+    // truth is that the whole squad was asked hours ago. Nobody would be
+    // mailed twice — the `n1` dedupe key sees to that — but the organiser's
+    // progress panel would report tiers as held, and the people in them would
+    // be told "you haven't been asked yet" while holding the invitation.
+    //
+    // So the fixture stays ungated for the rest of its life and the order
+    // takes effect from the next one. The condition is **mailed and never
+    // stamped**, not merely mailed: a properly gated fixture also holds `n1`
+    // rows the moment its core goes out, and keying on those alone would stop
+    // it ever releasing a second tier.
+    if (await this.#invitedBeforeGating(db, fixtureId, state)) {
+      return { kind: "skipped", reason: "already-invited" };
+    }
+
     const plan = planReleases({
       tiers: state.tiers,
       guestInCount: state.guestInCount,
@@ -80,6 +98,34 @@ export class FixtureCapacity extends DurableObject<Bindings> {
 
     const playerIds = await stampInvited(db, fixtureId, plan.toInvite, now);
     return { kind: "claimed", playerIds };
+  }
+
+  /**
+   * Whether this fixture's N-1 went out before gating ever applied to it.
+   *
+   * Read as one question, not two: `invited_at` is what gating writes and the
+   * `n1` log is what the ungated sweep wrote, so "log rows exist and no stamp
+   * does" is precisely "the squad was invited without gating".
+   */
+  async #invitedBeforeGating(db: Db, fixtureId: string, state: InviteState): Promise<boolean> {
+    const anyStamped = state.tiers.some((tier) =>
+      tier.members.some((member) => member.invitedAt !== null),
+    );
+    if (anyStamped) return false;
+
+    const [mailed] = await db
+      .select({ id: notificationLog.id })
+      .from(notificationLog)
+      .where(
+        and(
+          eq(notificationLog.fixtureId, fixtureId),
+          eq(notificationLog.notificationType, "n1"),
+          eq(notificationLog.channel, "email"),
+        ),
+      )
+      .limit(1);
+
+    return mailed !== undefined;
   }
 
   /**

@@ -345,11 +345,30 @@ against `test/views/style-cascade.test.ts`.
 
 The migration adds one table and four nullable-or-defaulted columns. No backfill.
 
-Enabling gating on a Game whose Fixture is already open degrades safely: the
-reconciler sees nothing released, releases the core, and stamps — but every one
-of those players already holds an `n1` row, so the UNIQUE on `dedupe_key` drops
-the duplicate and nobody is mailed twice. Gating takes effect from the next
-Fixture.
+**BR-46 (added 24 August 2026, after the first production use).** A Fixture
+whose N-1 has already gone out is never brought under gating. If an owner
+switches the order on mid-week, `claimInviteReleases` answers `already-invited`
+and the Fixture finishes its life ungated; the order takes effect from the next
+one.
+
+The first draft of this section claimed the mid-flight case "degrades safely",
+on the grounds that the `n1` dedupe key stops a second email. The delivery half
+was right and the display half was wrong. Releasing a tier writes `invited_at`,
+which is the product's record of *who has been asked* — so a Fixture mailed
+before gating was switched on would have shown its organiser later tiers marked
+`held`, and told the people in those tiers "you haven't been asked yet" while
+they held the invitation. Nobody would have been mailed twice; the product would
+simply have been lying about the past.
+
+The guard keys on **mailed and never stamped**, not on mailed: a properly gated
+Fixture also holds `n1` rows the moment its core goes out, so keying on those
+alone would stop it ever releasing a second tier.
+
+Both owner-facing screens follow the same rule from the other direction. The
+progress panel and the "you haven't been asked yet" note appear only when at
+least one stamp exists on the Fixture — that is, when an order is genuinely
+running on it. A panel over an ungated Fixture would report tiers as held and
+offer a button the Durable Object refuses.
 
 ## Testing
 

@@ -102,6 +102,47 @@ describe("the invite-order editor", () => {
     expect(html).toContain("always last");
   });
 
+  it("offers an assignment control for a member of the implicit tier", async () => {
+    // The exact production path: a game with no tiers yet, whose owner adds
+    // their first group. Every squad member is still unplaced at that moment,
+    // so if the implicit tier's members carry no control the editor is
+    // unusable precisely when it is first opened.
+    const { cookie, gameId } = await ownedGatedGame();
+    await insertInviteTier(db, gameId, { name: "Core", position: 1 });
+    const unplaced = await insertPlayer(db, { name: "Bo" });
+    await insertMembership(db, gameId, unplaced);
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/invites`, { headers: { cookie } })
+    ).text();
+
+    // Named somewhere is not enough — the order row lists names as plain text.
+    // The select is what makes them assignable.
+    expect(html).toContain(`name="tier-${unplaced}"`);
+  });
+
+  it("offers an assignment control for every squad member, whatever tier they are in", async () => {
+    const { cookie, gameId } = await ownedGatedGame();
+    const core = await insertInviteTier(db, gameId, { name: "Core", position: 1 });
+    const middle = await insertInviteTier(db, gameId, { name: "Regulars", position: 2 });
+    const inCore = await insertPlayer(db, { name: "Ada" });
+    const inMiddle = await insertPlayer(db, { name: "Fin" });
+    const unplaced = await insertPlayer(db, { name: "Jo" });
+    await insertMembership(db, gameId, inCore, { inviteTierId: core });
+    await insertMembership(db, gameId, inMiddle, { inviteTierId: middle });
+    await insertMembership(db, gameId, unplaced);
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/invites`, { headers: { cookie } })
+    ).text();
+
+    for (const playerId of [inCore, inMiddle, unplaced]) {
+      expect(html, `every member needs a control, ${playerId} had none`).toContain(
+        `name="tier-${playerId}"`,
+      );
+    }
+  });
+
   it("saves a member's tier assignment", async () => {
     const { cookie, gameId } = await ownedGatedGame();
     const core = await insertInviteTier(db, gameId, { name: "Core", position: 1 });
@@ -301,6 +342,10 @@ describe("the player's not-yet-asked state (BR-40)", () => {
       maxPlayers: 10,
     });
     await openFixture(db, fixtureId, NOW);
+    // The core has been released — which is what makes an invite order
+    // *running* on this fixture, and is the difference between "your tier has
+    // not come up yet" and "gating is not in effect here at all".
+    await db.update(responses).set({ invitedAt: NOW }).where(eq(responses.playerId, ownerId));
     if (opts.invited === true) {
       await db.update(responses).set({ invitedAt: NOW }).where(eq(responses.playerId, viewerId));
     }
@@ -337,5 +382,77 @@ describe("the player's not-yet-asked state (BR-40)", () => {
     ).text();
 
     expect(html).not.toContain("been asked yet");
+  });
+});
+
+describe("a fixture whose invitations went out before gating was switched on", () => {
+  /**
+   * The mid-flight case: the fixture opened and was mailed while the Game was
+   * ungated, and only then did the owner switch gating on. Nothing is ever
+   * stamped on it (the Durable Object skips it), so every screen has to read
+   * "gating is not running here" rather than "nobody has been asked".
+   */
+  async function midFlightGating() {
+    const { cookie } = await signIn();
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    const viewerId = viewer!.id;
+
+    const ownerId = await insertPlayer(db, { name: "The Owner" });
+    const gameId = await insertGame(db, { gatedInvitesEnabled: true });
+    await insertInviteTier(db, gameId, { name: "Core", position: 1 });
+    await insertMembership(db, gameId, ownerId, { role: "owner" });
+    await insertMembership(db, gameId, viewerId, { role: "player" });
+
+    const fixtureId = await insertFixture(db, gameId, {
+      kicksOffAt: kickoffIn(30),
+      minPlayers: 1,
+      maxPlayers: 10,
+    });
+    await openFixture(db, fixtureId, NOW);
+    // Everyone was mailed before gating existed, and nothing is stamped.
+    for (const playerId of [ownerId, viewerId]) {
+      await db.insert(notificationLog).values({
+        id: crypto.randomUUID(),
+        dedupeKey: `n1:${fixtureId}:${playerId}`,
+        notificationType: "n1",
+        fixtureId,
+        playerId,
+        channel: "email",
+        status: "sent",
+      });
+    }
+
+    return { cookie, gameId, fixtureId, ownerId };
+  }
+
+  it("does not tell a player they are unasked when they have had the invitation", async () => {
+    const { cookie, gameId, fixtureId } = await midFlightGating();
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })
+    ).text();
+
+    expect(html).not.toContain("been asked yet");
+  });
+
+  it("shows the owner no progress panel, since no order is running here", async () => {
+    const { gameId, fixtureId, ownerId } = await midFlightGating();
+    // Sign in as the owner to reach the organiser's view of the same fixture.
+    const [owner] = await db.select().from(players).where(eq(players.id, ownerId));
+    expect(owner).toBeDefined();
+    const { cookie } = await signIn();
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    await db
+      .update(memberships)
+      .set({ role: "owner" })
+      .where(eq(memberships.playerId, viewer!.id));
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })
+    ).text();
+
+    // A panel here would report tiers as "held" and offer a button that the
+    // Durable Object refuses, which is worse than no panel at all.
+    expect(html).not.toContain("Invite progress");
   });
 });

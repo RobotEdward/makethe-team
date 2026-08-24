@@ -164,4 +164,7 @@ export interface ClaimInviteReleasesInput {
  */
 export type ClaimInviteReleasesOutcome =
   | { kind: "claimed"; playerIds: string[] }
-  | { kind: "skipped"; reason: "not-gated" | "fixture-not-open" | "fixture-not-found" };
+  | {
+      kind: "skipped";
+      reason: "not-gated" | "fixture-not-open" | "fixture-not-found" | "already-invited";
+    };
