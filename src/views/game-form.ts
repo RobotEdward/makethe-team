@@ -1,5 +1,6 @@
+import { inviteOrderPath } from "../auth/paths.js";
 import type { FieldError } from "../domain/game-form.js";
-import { NOTIFICATION_SWITCHES, supportedTimezones } from "../domain/game-form.js";
+import { GATED_FALLBACK_NEVER, NOTIFICATION_SWITCHES, supportedTimezones } from "../domain/game-form.js";
 import { WEEKDAYS } from "../domain/recurrence/parse.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FORM_CSS } from "./styles.js";
@@ -114,6 +115,42 @@ function switchChecked(values: Partial<Record<string, string>>, field: string): 
   return values[field] === undefined || values[field] === "on";
 }
 
+/**
+ * What the fallback select offers, coarsest first, with "never" at the head.
+ *
+ * Ordered that way because a value the list does not carry leaves no option
+ * selected and the browser falls back to the first one — and the safe landing
+ * for an unrecognised fallback is BR-44's "never", not a release the owner
+ * never asked for.
+ */
+const FALLBACK_OPTIONS: readonly (readonly [string, string])[] = [
+  [GATED_FALLBACK_NEVER, "Never"],
+  ["3", "3 hours before"],
+  ["6", "6 hours before"],
+  ["12", "12 hours before"],
+  ["24", "24 hours before"],
+  ["48", "48 hours before"],
+];
+
+/**
+ * What the select shows when the caller said nothing, matching the default
+ * `shortWarningOffsetHours` carries (spec, "games (two new columns)"). It is a
+ * rendering default only: an owner who never opens this section saves a null
+ * fallback, because the section is edit-only and submits nothing on create.
+ */
+const OFFERED_FALLBACK_HOURS = "12";
+
+/**
+ * Whether the gating switch renders ticked.
+ *
+ * Deliberately not `switchChecked`: gating defaults *off* (BR-39), so a fresh
+ * render with nothing said must leave the box clear. Sharing that helper would
+ * show every game as gated until the owner saved the form.
+ */
+function gatedChecked(values: Partial<Record<string, string>>): boolean {
+  return values["gatedInvitesEnabled"] === "on";
+}
+
 export interface GameFormPageParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
@@ -127,6 +164,8 @@ export interface GameFormPageParams {
   warnings: readonly string[];
   /** The Advanced block appears on edit only — see spec §3.1. */
   showAdvanced: boolean;
+  /** Absent on create: the invite order belongs to a game that exists (M34). */
+  gameId?: string;
   /** "This will update 4 scheduled fixtures…", on edit. */
   affectedNotice?: string;
 }
@@ -140,7 +179,7 @@ export interface GameFormPageParams {
  * route answers 422 with this page rather than a bare 400.
  */
 export function renderGameFormPage(params: GameFormPageParams): string {
-  const { action, heading, submitLabel, values, errors, warnings, showAdvanced, affectedNotice } = params;
+  const { action, heading, submitLabel, values, errors, warnings, showAdvanced, affectedNotice, gameId } = params;
 
   const errorFor = (field: string): string | undefined =>
     errors.find((error) => error.field === field)?.message;
@@ -278,6 +317,32 @@ export function renderGameFormPage(params: GameFormPageParams): string {
       </fieldset>`
     : "";
 
+  const fallbackOptions = FALLBACK_OPTIONS.map(([code, label]) =>
+    `<option value="${escapeHtml(code)}"${
+      (values["gatedFallbackHoursBefore"] ?? OFFERED_FALLBACK_HOURS) === code ? " selected" : ""
+    }>${escapeHtml(label)}</option>`,
+  ).join("");
+
+  const invites = showAdvanced
+    ? `
+      <fieldset class="notify-group">
+        <legend>Invites</legend>
+        ${switchRow({
+          name: "gatedInvitesEnabled",
+          submitted: markerFor("gatedInvitesEnabled"),
+          label: "Ask in priority order",
+          hint: "Off — everyone is asked at once. On, only the core group is asked first, and the rest as spots come free.",
+          checked: gatedChecked(values),
+        })}
+        ${field(
+          "gatedFallbackHoursBefore",
+          "If we're still short of the minimum, ask the next group",
+          `<select id="gatedFallbackHoursBefore" name="gatedFallbackHoursBefore">${fallbackOptions}</select>`,
+        )}
+        ${gameId === undefined ? "" : `<p><a href="${escapeHtml(inviteOrderPath(gameId))}">Edit the invite order &rarr;</a></p>`}
+      </fieldset>`
+    : "";
+
   const advanced = showAdvanced
     ? `
       <details>
@@ -327,6 +392,7 @@ export function renderGameFormPage(params: GameFormPageParams): string {
         ${field("teamBName", "Second team's name", textInput("teamBName"))}
       </div>
       ${notifications}
+      ${invites}
       ${advanced}
       <div class="actions">
         <button class="button primary" type="submit">${escapeHtml(submitLabel)}</button>

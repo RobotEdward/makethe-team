@@ -44,6 +44,14 @@ export const DEFAULT_SHORT_WARNING_OFFSET_HOURS = 12;
 export const DEFAULT_RESULT_PROMPT_OFFSET_HOURS = 0;
 
 /**
+ * The fallback select's "never" option (BR-44), as the option value and as the
+ * string the parser recognises. One constant, because a select offering a word
+ * the parser does not know would reject the owner's own choice with a field
+ * error they cannot clear from the form.
+ */
+export const GATED_FALLBACK_NEVER = "never";
+
+/**
  * The notification switches (M26), and the hidden marker that rides with each.
  *
  * An unticked checkbox is absent from the POST body, so "the owner turned this
@@ -56,6 +64,11 @@ export const DEFAULT_RESULT_PROMPT_OFFSET_HOURS = 0;
  * `prefersEvenNumbersSubmitted`, whose section appears on both forms and whose
  * marker exists only for the 422 redisplay. Both halves live here so the view
  * cannot name a field the parser does not read.
+ *
+ * `gatedInvitesEnabled` (M34) rides the same marker convention but defaults
+ * *off*, not on: BR-39 says a Game nobody has configured asks its whole squad
+ * at once. Its default is written out below rather than taken from
+ * `switchValue`.
  */
 export const NOTIFICATION_SWITCHES = [
   { field: "reminderEnabled", submitted: "reminderEnabledSubmitted" },
@@ -64,6 +77,7 @@ export const NOTIFICATION_SWITCHES = [
   { field: "resultPromptEnabled", submitted: "resultPromptEnabledSubmitted" },
   { field: "teamsPublishedEmailEnabled", submitted: "teamsPublishedEmailEnabledSubmitted" },
   { field: "teamPickerEmailEnabled", submitted: "teamPickerEmailEnabledSubmitted" },
+  { field: "gatedInvitesEnabled", submitted: "gatedInvitesEnabledSubmitted" },
 ] as const;
 
 export interface GameFormValues {
@@ -91,6 +105,9 @@ export interface GameFormValues {
   teamsPublishedEmailEnabled: boolean;
   teamPickerEmailEnabled: boolean;
   resultPromptOffsetHours: number;
+  gatedInvitesEnabled: boolean;
+  /** Hours before kickoff; null is BR-44's "never". */
+  gatedFallbackHoursBefore: number | null;
 }
 
 export interface FieldError {
@@ -324,6 +341,33 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
     );
   }
 
+  // Off unless the section that offers it was submitted with the box ticked.
+  // `switchValue` cannot serve here: its absent-means-on default would turn
+  // gating on for every game created from the create form, which has no
+  // gating section (BR-39).
+  const gatedInvitesEnabled = body["gatedInvitesEnabledSubmitted"] !== undefined &&
+    typeof body["gatedInvitesEnabled"] === "string";
+
+  // Absent is the create form's silence and "never" is the owner saying it out
+  // loud; both are BR-44's null. Bounded by the same ceiling as the short
+  // warning, because both name an offset back from the same kickoff.
+  const fallbackSubmitted = body["gatedFallbackHoursBefore"] !== undefined;
+  const fallbackNever = text(body["gatedFallbackHoursBefore"]) === GATED_FALLBACK_NEVER;
+  const gatedFallbackHoursBefore = !fallbackSubmitted || fallbackNever
+    ? null
+    : integer(body["gatedFallbackHoursBefore"]);
+  if (
+    fallbackSubmitted && !fallbackNever &&
+    (gatedFallbackHoursBefore === null ||
+      gatedFallbackHoursBefore < 0 ||
+      gatedFallbackHoursBefore > MAX_WARNING_OFFSET_HOURS)
+  ) {
+    fail(
+      "gatedFallbackHoursBefore",
+      `Ask the next group between 0 and ${MAX_WARNING_OFFSET_HOURS} hours before kickoff, or never.`,
+    );
+  }
+
   if (errors.length > 0) return { ok: false, errors, warnings };
 
   return {
@@ -358,6 +402,8 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
       teamsPublishedEmailEnabled,
       teamPickerEmailEnabled,
       resultPromptOffsetHours: resultPromptOffsetHours!,
+      gatedInvitesEnabled,
+      gatedFallbackHoursBefore,
     },
   };
 }
