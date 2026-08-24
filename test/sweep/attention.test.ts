@@ -71,6 +71,21 @@ interface SeedOptions {
   timezone?: string;
   /** The owner's N-4 switch (M26). Defaults on, as a real game does. */
   shortWarningEnabled?: boolean;
+  /** The Game's gating switch (M34, BR-39). Defaults off, as every pre-M34 game is. */
+  gatedInvitesEnabled?: boolean;
+  /** Hours before kickoff the fallback release starts (BR-44). Defaults to the factory's null — never. */
+  gatedFallbackHoursBefore?: number | null;
+  /**
+   * Stamped on every response row this seed writes, so a gated fixture can be
+   * described as "everyone who holds a row has been asked". Left null — the
+   * pre-M34 state of every row — unless given.
+   */
+  invitedAt?: Date;
+  /**
+   * Active squad members holding a live `pending` row with a null `invited_at`:
+   * a tier that has not been released yet. These are what BR-45 suppresses on.
+   */
+  heldBack?: number;
 }
 
 let seq = 0;
@@ -85,6 +100,10 @@ async function seed(opts: SeedOptions): Promise<{ gameId: string; fixtureId: str
     minPlayers: opts.minPlayers ?? 10,
     maxPlayers: opts.maxPlayers ?? 14,
     shortWarningEnabled: opts.shortWarningEnabled ?? true,
+    gatedInvitesEnabled: opts.gatedInvitesEnabled ?? false,
+    ...(opts.gatedFallbackHoursBefore !== undefined
+      ? { gatedFallbackHoursBefore: opts.gatedFallbackHoursBefore }
+      : {}),
     ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
   });
   const fixtureId = nextId("fixture");
@@ -106,13 +125,36 @@ async function seed(opts: SeedOptions): Promise<{ gameId: string; fixtureId: str
     const playerId = nextId("in");
     await db.insert(players).values({ id: playerId, name: `In ${i}`, email: `${playerId}@example.com` });
     await db.insert(memberships).values({ id: nextId("m"), gameId, playerId, role: "player", active: true });
-    await db.insert(responses).values({ id: nextId("r"), fixtureId, playerId, status: "in", source: "token" });
+    await db.insert(responses).values({
+      id: nextId("r"),
+      fixtureId,
+      playerId,
+      status: "in",
+      source: "token",
+      ...(opts.invitedAt !== undefined ? { invitedAt: opts.invitedAt } : {}),
+    });
   }
 
   for (let i = 0; i < (opts.pending ?? 0); i++) {
     const playerId = nextId("pending");
     await db.insert(players).values({ id: playerId, name: `Pending ${i}`, email: `${playerId}@example.com` });
     await db.insert(memberships).values({ id: nextId("m"), gameId, playerId, role: "player", active: true });
+    await db.insert(responses).values({
+      id: nextId("r"),
+      fixtureId,
+      playerId,
+      status: "pending",
+      source: "system",
+      ...(opts.invitedAt !== undefined ? { invitedAt: opts.invitedAt } : {}),
+    });
+  }
+
+  for (let i = 0; i < (opts.heldBack ?? 0); i++) {
+    const playerId = nextId("held");
+    await db.insert(players).values({ id: playerId, name: `Held ${i}`, email: `${playerId}@example.com` });
+    await db.insert(memberships).values({ id: nextId("m"), gameId, playerId, role: "player", active: true });
+    // Null `invited_at` is the whole signal: a row exists (BR-2 backfills one
+    // for every member when the fixture opens) but nobody has asked them yet.
     await db.insert(responses).values({ id: nextId("r"), fixtureId, playerId, status: "pending", source: "system" });
   }
 
@@ -640,4 +682,148 @@ it("sends nothing for a game whose short/uneven warning is switched off", async 
     .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n4")));
   expect(rows).toHaveLength(0);
 });
+});
+
+describe("sendOwnerAttention and gated invites (M34, BR-45)", () => {
+  /**
+   * Everyone the seed has already asked. Any instant before `NOW` will do —
+   * `invited_at` is only ever read for null-ness here, never compared — but it
+   * is a real past instant rather than `NOW` so a row can never look invited
+   * "in the future" if this file's clock assumptions are ever revisited.
+   */
+  const INVITED = new Date(NOW.getTime() - 3_600_000);
+  /** Kickoff is NOW + 9h, so a 12-hour fallback is already three hours overdue and a 6-hour one is three hours away. */
+  const FALLBACK_PASSED_HOURS = 12;
+  const FALLBACK_PENDING_HOURS = 6;
+
+  it("does not warn about a gated fixture that still has a tier to release", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      minPlayers: 10,
+      gatedInvitesEnabled: true,
+      gatedFallbackHoursBefore: null,
+      invitedAt: INVITED,
+      heldBack: 3,
+    });
+
+    const result = await run(notifier);
+
+    // Not merely unsent: the fixture must never become a candidate, because
+    // N-4 is once per fixture per owner *ever* and a logged row would silence
+    // the warning that is genuinely due once the last tier goes out.
+    expect(result.fixturesNeedingAttention).toBe(0);
+    expect(result.attentionSent).toBe(0);
+    expect(notifier.sent).toHaveLength(0);
+    expect(await attentionRows(fixtureId)).toHaveLength(0);
+  });
+
+  it("warns about a gated fixture once every tier has been released", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      minPlayers: 10,
+      gatedInvitesEnabled: true,
+      gatedFallbackHoursBefore: null,
+      invitedAt: INVITED,
+      pending: 3,
+      heldBack: 0,
+    });
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(1);
+    expect(requireEmailMessage(notifier.sent.flat()[0]!).text).toContain("2 players short");
+    expect(await attentionRows(fixtureId)).toHaveLength(1);
+  });
+
+  it("warns about a gated fixture once the fallback instant has passed, even with a tier still held", async () => {
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      minPlayers: 10,
+      gatedInvitesEnabled: true,
+      gatedFallbackHoursBefore: FALLBACK_PASSED_HOURS,
+      invitedAt: INVITED,
+      heldBack: 3,
+    });
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(1);
+    expect(await attentionRows(fixtureId)).toHaveLength(1);
+  });
+
+  it("keeps suppressing while the fallback instant is still ahead", async () => {
+    // The pair to the test above, and the reason it cannot pass vacuously:
+    // the same fixture with the fallback still in the future stays silent, so
+    // the send there is attributable to the instant having passed and not to
+    // the column merely being non-null.
+    const notifier = new RecordingNotifier();
+    await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      minPlayers: 10,
+      gatedInvitesEnabled: true,
+      gatedFallbackHoursBefore: FALLBACK_PENDING_HOURS,
+      invitedAt: INVITED,
+      heldBack: 3,
+    });
+
+    expect((await run(notifier)).attentionSent).toBe(0);
+  });
+
+  it("warns about an ungated short fixture exactly as before (BR-39)", async () => {
+    // The milestone's safety property: an uninvited-looking row is the pre-M34
+    // state of every response row ever written, so a Game that never opted in
+    // must not be silenced by rows whose `invited_at` nobody has ever set.
+    const notifier = new RecordingNotifier();
+    const { fixtureId } = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      minPlayers: 10,
+      gatedInvitesEnabled: false,
+      heldBack: 3,
+    });
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(1);
+    expect(requireEmailMessage(notifier.sent.flat()[0]!).text).toContain("2 players short");
+    expect(await attentionRows(fixtureId)).toHaveLength(1);
+  });
+
+  it("does not treat a withdrawn or a departed member's row as a held-back tier", async () => {
+    // Neither can ever be invited — `withdrawn` is the owner having taken the
+    // player out of this fixture (BR-3), an inactive membership is someone who
+    // left the Game — so counting either would suppress N-4 for the rest of
+    // the fixture's life, on a tier that will never be released.
+    const notifier = new RecordingNotifier();
+    const { gameId, fixtureId } = await seed({
+      kicksOffAt: KICKOFF_INSIDE_WINDOW,
+      inCount: 8,
+      minPlayers: 10,
+      gatedInvitesEnabled: true,
+      gatedFallbackHoursBefore: null,
+      invitedAt: INVITED,
+    });
+
+    for (const [kind, status, active] of [
+      ["withdrawn", "withdrawn", true],
+      ["departed", "pending", false],
+    ] as const) {
+      const playerId = nextId(kind);
+      await db.insert(players).values({ id: playerId, name: kind, email: `${playerId}@example.com` });
+      await db.insert(memberships).values({ id: nextId("m"), gameId, playerId, role: "player", active });
+      await db.insert(responses).values({ id: nextId("r"), fixtureId, playerId, status, source: "system" });
+    }
+
+    const result = await run(notifier);
+
+    expect(result.attentionSent).toBe(1);
+    expect(await attentionRows(fixtureId)).toHaveLength(1);
+  });
 });
