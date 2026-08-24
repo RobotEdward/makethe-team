@@ -207,6 +207,19 @@ export const STYLES = `
   a { color: var(--link); }
   .danger-link { color: var(--danger); font-weight: 600; }
 
+  /* A label for a control whose meaning is obvious to a sighted reader from
+     the row it sits in, and invisible to a screen reader without this.
+     Clipped rather than display:none or the hidden attribute, both of which
+     take the text out of the accessibility tree as well as off the screen,
+     leaving the control with no name at all. A global primitive, beside
+     .nudge below: a page that forgot to load a block defining it would render
+     the label as ordinary body text next to every control, which is exactly
+     how this was found (M34). */
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+
   .nudge {
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 1rem;
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-support); text-align: left;

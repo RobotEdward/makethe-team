@@ -1222,7 +1222,11 @@ export const INVITE_ORDER_CSS = `
     padding: 0.45rem 0; border-bottom: 1px solid var(--line);
   }
   .invite-members > li:last-child { border-bottom: none; }
-  .invite-name { flex: 1; }
+  /* Both given an explicit shrink budget and min-width: 0. Without it the
+     select claims its widest option's width, the name is squeezed to whatever
+     is left, and a two-word name wraps to one word per line. */
+  .invite-name { flex: 1 1 40%; min-width: 0; }
+  .invite-select { flex: 1 1 55%; min-width: 0; max-width: 60%; }
   .invite-select, .invite-pos {
     font: inherit; font-size: var(--t-support); color: var(--fg);
     background: var(--field); border: 1px solid var(--line);

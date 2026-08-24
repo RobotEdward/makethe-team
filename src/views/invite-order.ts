@@ -153,7 +153,7 @@ function renderMemberRow(member: OrderMember, tier: OrderTier, allTiers: OrderTi
   return `
     <li>
       <span class="invite-name">${escapeHtml(member.name)}</span>
-      <label class="signal-label" for="${escapeHtml(field)}">Group for ${escapeHtml(member.name)}</label>
+      <label class="visually-hidden" for="${escapeHtml(field)}">Group for ${escapeHtml(member.name)}</label>
       <select id="${escapeHtml(field)}" name="${escapeHtml(field)}" class="invite-select">${options}</select>
     </li>`;
 }
@@ -182,7 +182,7 @@ function renderOrderRow(tier: OrderTier): string {
       <span class="invite-grp">${escapeHtml(tier.name)}
         <span class="invite-who">${escapeHtml(names)}</span>
       </span>
-      <label class="signal-label" for="pos-${id}">Position of ${escapeHtml(tier.name)}</label>
+      <label class="visually-hidden" for="pos-${id}">Position of ${escapeHtml(tier.name)}</label>
       <input id="pos-${id}" class="invite-pos" type="number" min="1" max="99"
              name="position-${id}" value="${tier.position}">
       <button type="submit" form="delete-${id}" class="invite-remove">Remove</button>
