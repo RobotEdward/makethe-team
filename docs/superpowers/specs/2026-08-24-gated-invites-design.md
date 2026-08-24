@@ -146,6 +146,8 @@ repeat until nothing is released:
         release the next tier
     recompute
 
+releasing steps over an empty tier without spending the release on it
+
 finally: stamp invited_at on every uninvited live response row
          belonging to a released tier
 ```
@@ -191,6 +193,14 @@ Game, but a core of 12 against the same `max_players` of 10.
 | Core released, nobody has answered | 0 | 12 | 1 | 1 | nothing owed |
 | One core member declines | 1 | 11 | 2 | 2 | owed a tier, but `potential` 11 ≥ 10 — **vetoed by BR-43** |
 | Two more decline | 3 | 9 | 4 | 4 | `potential` 9 < 10, so the release held back above happens now |
+
+**An empty tier does not consume a release.** A tier whose members have all left
+the squad invites nobody, so letting it absorb the release owed to the tier
+behind it would spend a decline on nobody and leave the real subs unasked —
+silently, because every count still reconciles afterwards. Releasing therefore
+steps over empty tiers in one move. `|released|` is likewise derived from the
+*last* tier carrying a stamp rather than the first gap, so an empty tier in the
+middle does not read as a break in the sequence and stall everything behind it.
 
 The loop terminates because each iteration releases at least one tier and the
 tier list is finite. `max(|released|, ...)` is what lets the manual button and
