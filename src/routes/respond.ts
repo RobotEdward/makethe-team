@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   countActiveOwners,
   findMembershipInGame,
@@ -26,7 +26,13 @@ import { removeMember } from "../domain/remove-member.js";
 import type { ResponseIntent, SetResponseOutcome, WaitlistPromotion } from "../capacity/types.js";
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
+import {
+  applySendResult,
+  insertQueuedLogRows,
+  markOrphanedRowsFailed,
+} from "../notify/delivery.js";
 import { createNotifier } from "../notify/factory.js";
+import { buildReminderMessages } from "../notify/reminder-messages.js";
 import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
@@ -361,6 +367,12 @@ respond.post("/r/:token", async (c) => {
     c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, fixtureId, outcome.promoted, now));
   }
 
+  // Only a decline can owe a tier (BR-41), so only a decline pays for the
+  // claim. An `in` never releases anybody.
+  if (intent === "out") {
+    c.executionCtx.waitUntil(notifyReleasedSubs(c.env, fixtureId, now));
+  }
+
   const pushOffer = await resolvePushOffer(c.env, db, playerId, outcome, now);
 
   const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent, pushOffer });
@@ -371,6 +383,109 @@ respond.post("/r/:token", async (c) => {
 
   return c.html(html, 200);
 });
+
+/**
+ * Claim any tier this response released, and send the N-1 to whoever it newly
+ * invited (BR-41, BR-42), in the background.
+ *
+ * **`waitUntil`, not `await`, for the reasons `notifyPromotedPlayer` gives at
+ * length** — this runs on the *declining* player's request, and nothing on
+ * their page depends on somebody else's invitation.
+ *
+ * **This path is an optimisation, never the guarantee.** If the claim lands and
+ * the send then fails, `invited_at` is stamped with no message sent — and the
+ * next sweep tick finds that player invited, finds no `n1` row for them, and
+ * mails them. That is why there is no compensating write here and no attempt to
+ * roll the stamp back: rolling it back is what would break the property, by
+ * making the sweep unable to tell a failed send from a tier never released.
+ *
+ * The notifier is built here rather than passed in so that it is the
+ * quota-wrapped one from `createNotifier` (TR-31): the daily ceiling is the
+ * project's only cost control, and a per-request send path is exactly where a
+ * runaway would show up.
+ */
+export async function notifyReleasedSubs(
+  env: AppEnv["Bindings"],
+  fixtureId: string,
+  now: Date,
+): Promise<void> {
+  try {
+    const outcome = await env.FIXTURE_CAPACITY.getByName(fixtureId).claimInviteReleases({
+      now: now.getTime(),
+    });
+    if (outcome.kind !== "claimed" || outcome.playerIds.length === 0) return;
+
+    const db = getDb(env.DB);
+    const [row] = await db
+      .select({ fixture: fixtures, game: games })
+      .from(fixtures)
+      .innerJoin(games, eq(fixtures.gameId, games.id))
+      .where(eq(fixtures.id, fixtureId));
+    if (!row) {
+      console.error(`released subs for a fixture that no longer exists: ${fixtureId}`);
+      return;
+    }
+
+    const candidates = await db
+      .select({
+        playerId: players.id,
+        name: players.name,
+        email: players.email,
+        isGuest: players.isGuest,
+      })
+      .from(players)
+      .where(inArray(players.id, outcome.playerIds));
+
+    // BR-32, and the same `.trim()` the sweep applies: an email of `" "` is
+    // truthy, so letting one through means a queued row that comes back
+    // `no-recipient` and is retried forever.
+    const mailable = candidates.filter(
+      (candidate) =>
+        !candidate.isGuest && candidate.email !== null && candidate.email.trim() !== "",
+    );
+    if (mailable.length === 0) return;
+
+    const pending = await buildReminderMessages({
+      db,
+      fixture: row.fixture,
+      game: row.game,
+      candidates: mailable,
+      responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
+      now,
+    });
+
+    const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n1" }, pending);
+    if (inserted.length === 0) return;
+
+    const notifier = createNotifier(env, db, now);
+    let results;
+    try {
+      results = await notifier.send(inserted.map((entry) => entry.message));
+    } catch (error) {
+      // Whether anything reached a provider is unknowable, so the rows are
+      // marked `failed` — ambiguous, never retried — exactly as the sweep
+      // does. BR-19 treats a duplicate as strictly worse than a miss.
+      const message = error instanceof Error ? error.message : String(error);
+      await markOrphanedRowsFailed(db, inserted, `released-sub send rejected: ${message}`);
+      console.error(`released-sub send rejected for fixture ${fixtureId}: ${message}`);
+      return;
+    }
+
+    for (let i = 0; i < inserted.length; i++) {
+      const entry = inserted[i];
+      if (!entry) continue;
+      await applySendResult(db, entry, results[i], now);
+    }
+  } catch (error) {
+    // Without this the whole promise rejects inside a `waitUntil` and vanishes
+    // — the failure mode this file has already been bitten by once.
+    console.error(
+      `releasing subs failed for fixture ${fixtureId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
 
 /**
  * Send the N-2 email to the one player this response promoted off the
@@ -601,6 +716,9 @@ respond.post("/r/:token/mute", async (c) => {
     return c.html(renderLinkProblemPage(), 200);
   }
 
+  // See the identical collector in `src/routes/games.ts`'s mute route for why
+  // the ids are gathered here rather than returned by `SetMuteResult`.
+  const autoDeclined: string[] = [];
   const result = await setMute({
     db,
     playerId,
@@ -608,20 +726,28 @@ respond.post("/r/:token/mute", async (c) => {
     duration,
     applyToAll: form["all-games"] !== undefined,
     now,
-    decline: (declineFixtureId, declinePlayerId) =>
-      c.env.FIXTURE_CAPACITY.getByName(declineFixtureId).setResponse({
+    decline: (declineFixtureId, declinePlayerId) => {
+      autoDeclined.push(declineFixtureId);
+      return c.env.FIXTURE_CAPACITY.getByName(declineFixtureId).setResponse({
         playerId: declinePlayerId,
         intent: "out",
         actorPlayerId: null,
         source: "token",
         now: now.getTime(),
         whenFull: "waitlist",
-      }),
+      });
+    },
   });
   // Not on this squad any more: the same link-problem page a bad token gets,
   // for the reason `POST /leave/:token` gives — saying more would confirm the
   // game exists.
   if (result.kind === "not-a-member") return c.html(renderLinkProblemPage(), 200);
+
+  // A mute is a decline the player made in advance (M28), so each fixture it
+  // answered owes a tier just as a live decline does.
+  for (const declinedFixtureId of autoDeclined) {
+    c.executionCtx.waitUntil(notifyReleasedSubs(c.env, declinedFixtureId, now));
+  }
 
   return c.redirect(`/r/${encodeURIComponent(token)}`, 303);
 });

@@ -86,7 +86,7 @@ import { renderRemoveMemberPage } from "../views/remove-member.js";
 import { derivedResultWords, outcomeNames, type ResultPanelParams } from "../views/result.js";
 import { renderSquadMemberPage } from "../views/squad-member.js";
 import { rowName } from "../views/team-picker.js";
-import { notifyPromotedPlayer } from "./respond.js";
+import { notifyPromotedPlayer, notifyReleasedSubs } from "./respond.js";
 
 /**
  * Owner-facing game management, mounted at `/g/*` (see `GAMES_PREFIX` in
@@ -548,6 +548,11 @@ gamesRoutes.post("/g/:id/mute", requirePlayer, async (c) => {
     return c.text('Bad Request: "duration" must be one of 2w, 4w, 8w, forever', 400);
   }
 
+  // The fixture ids the mute declined on the player's behalf. `SetMuteResult`
+  // carries only a count, and the callback below is the one place each id is
+  // visible — collecting them here avoids widening that interface for one
+  // caller.
+  const autoDeclined: string[] = [];
   const result = await setMute({
     db,
     playerId: player.id,
@@ -555,8 +560,9 @@ gamesRoutes.post("/g/:id/mute", requirePlayer, async (c) => {
     duration,
     applyToAll: form["all-games"] !== undefined,
     now,
-    decline: (fixtureId, playerId) =>
-      c.env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+    decline: (fixtureId, playerId) => {
+      autoDeclined.push(fixtureId);
+      return c.env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
         playerId,
         intent: "out",
         // The player is acting on themselves, so there is no override to
@@ -566,9 +572,16 @@ gamesRoutes.post("/g/:id/mute", requirePlayer, async (c) => {
         source: "web",
         now: now.getTime(),
         whenFull: "waitlist",
-      }),
+      });
+    },
   });
   if (result.kind === "not-a-member") return c.text("Not found", 404);
+
+  // A mute is a decline the player made in advance (M28), so each fixture it
+  // answered owes a tier just as a live decline does.
+  for (const fixtureId of autoDeclined) {
+    c.executionCtx.waitUntil(notifyReleasedSubs(c.env, fixtureId, now));
+  }
 
   return c.redirect(gamePath(gameId), 303);
 });
@@ -1301,6 +1314,12 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
   // promotes exactly as any other dropout does (BR-7).
   if (outcome.kind === "recorded" && outcome.promoted) {
     c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, target.fixture.id, outcome.promoted, now));
+  }
+
+  // An owner marking somebody out owes a tier exactly as the player's own
+  // decline does (BR-41) — the fixture does not care who pressed the button.
+  if (intent === "out") {
+    c.executionCtx.waitUntil(notifyReleasedSubs(c.env, target.fixture.id, now));
   }
 
   return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
