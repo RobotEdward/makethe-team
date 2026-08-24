@@ -49,10 +49,10 @@ Optional, per Game, **off by default**. When on:
   under the same dedupe key, that the core group received. There is no separate
   "you're needed" notification.
 - **BR-43.** A release is vetoed while the Fixture does not need players:
-  `potential >= max_players`, where `potential` is every live `in` response —
-  guests and early volunteers included — plus every released member still
-  `pending`. A vetoed release is not lost; it happens on the next reconcile after
-  `potential` drops.
+  `potential >= max_players`, where `potential` is every live `in` or
+  `waitlisted` response — guests and early volunteers included — plus every
+  released member still `pending`. A vetoed release is not lost; it happens on
+  the next reconcile after `potential` drops.
 - **BR-44.** After a Game's fallback instant (`kicks_off_at` minus
   `gated_fallback_hours_before`), Tiers are released until `potential >=
   min_players` or the Tiers run out, regardless of whether anyone declined. A
@@ -130,11 +130,12 @@ tiers      = invite_tiers for the game, by (position, created_at),
 released   = tiers where any member holds a non-null invited_at
 
 # capacity-facing: how many slots are spoken for
-potential  = every live response with status `in`          # guests and
-             + released members still `pending`            # volunteers included
+potential  = every live response that is `in` or `waitlisted`   # guests and
+             + released members still `pending`                 # volunteers too
 
 # owed-facing: released people who will not be filling a slot
-shortfall  = released members holding no live `in` or `pending` response
+shortfall  = released members whose response is `out`, `withdrawn`,
+             or absent entirely
 owed       = 1 + shortfall            # tier 1, plus one per member lost
 target     = max(|released|, min(owed, |tiers|))
 
@@ -152,8 +153,12 @@ finally: stamp invited_at on every uninvited live response row
 The two quantities are defined separately on purpose. `potential` has to count
 an early volunteer (BR-40) and an owner-added guest, because both really do take
 a slot; `shortfall` must not, because neither is a released member who went
-missing. Folding them into one number — `expected - potential` — gets the
+missing. Folding the two into one number — `expected - potential` — gets the
 volunteer case wrong in both directions at once.
+
+A `waitlisted` member counts towards `potential` and never towards `shortfall`,
+for a related reason: they want the next free slot and BR-7 will hand it to them,
+so treating them as missing would release a tier on behalf of somebody keen.
 
 `shortfall` counts from the **membership** side, not by counting declines. That
 matters: `withdrawMember` *deletes* the row of a `pending`, `out` or `waitlisted`
