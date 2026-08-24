@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray, isNull, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { TierState } from "../domain/invite-tiers.js";
 import { chunk, INSERT_CHUNK_SIZE } from "./chunk.js";
 import type { Db } from "./client.js";
-import { fixtures, games, inviteTiers, memberships, responses } from "./schema.js";
+import { fixtures, games, inviteTiers, memberships, players, responses } from "./schema.js";
 
 const HOUR_MS = 3_600_000;
 
@@ -150,4 +150,89 @@ export async function stampInvited(
     stamped.push(...updated.map((update) => update.playerId));
   }
   return stamped;
+}
+
+/** One member of a tier as the owner's two M34 screens list them. */
+export interface OrderedMember {
+  playerId: string;
+  name: string;
+  /** Null when this member holds no live response row on the fixture, or when no fixture was asked for. */
+  status: string | null;
+  invitedAt: Date | null;
+}
+
+/** One rung of a Game's invite order, named, with its members. */
+export interface OrderedTier {
+  tierId: string | null;
+  name: string;
+  /** Ascending. Zero for the implicit tier, which has no stored row to carry one. */
+  position: number;
+  members: OrderedMember[];
+}
+
+/**
+ * A Game's invite order with names attached, for the editor and the fixture
+ * progress panel (M34).
+ *
+ * Separate from `loadInviteState`, which the release rule uses: that one is
+ * deliberately name-free and shaped for arithmetic, and widening it to carry
+ * display strings would put player names into the Durable Object's critical
+ * section for no reason.
+ *
+ * `fixtureId` is optional. Without it every `status` and `invitedAt` is null,
+ * which is what the editor wants — it is about the Game, not about any one
+ * fixture.
+ */
+export async function loadInviteOrder(
+  db: Db,
+  gameId: string,
+  fixtureId?: string,
+): Promise<OrderedTier[]> {
+  const tierRows = await db
+    .select({ id: inviteTiers.id, name: inviteTiers.name, position: inviteTiers.position })
+    .from(inviteTiers)
+    .where(eq(inviteTiers.gameId, gameId))
+    .orderBy(asc(inviteTiers.position), asc(inviteTiers.createdAt));
+
+  const memberRows = await db
+    .select({
+      playerId: memberships.playerId,
+      name: players.name,
+      inviteTierId: memberships.inviteTierId,
+      status: responses.status,
+      invitedAt: responses.invitedAt,
+    })
+    .from(memberships)
+    .innerJoin(players, eq(players.id, memberships.playerId))
+    .leftJoin(
+      responses,
+      fixtureId === undefined
+        ? // A condition that is never true, so the join contributes null
+          // columns without a second query shape for the no-fixture case.
+          eq(responses.id, sql`NULL`)
+        : and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, memberships.playerId)),
+    )
+    .where(and(eq(memberships.gameId, gameId), eq(memberships.active, true)))
+    .orderBy(asc(players.name));
+
+  const byTier = new Map<string | null, OrderedTier>();
+  for (const tier of tierRows) {
+    byTier.set(tier.id, { tierId: tier.id, name: tier.name, position: tier.position, members: [] });
+  }
+  byTier.set(null, { tierId: null, name: "Everyone else", position: 0, members: [] });
+
+  for (const member of memberRows) {
+    // An unknown key means a membership pointing at another Game's tier. It
+    // falls to the implicit tier rather than vanishing from the page, so the
+    // owner can see the person and move them.
+    const bucket = byTier.get(member.inviteTierId) ?? byTier.get(null)!;
+    bucket.members.push({
+      playerId: member.playerId,
+      name: member.name,
+      status: member.status ?? null,
+      invitedAt: member.invitedAt ?? null,
+    });
+  }
+
+  return [...tierRows.map((tier) => byTier.get(tier.id)!), byTier.get(null)!];
 }

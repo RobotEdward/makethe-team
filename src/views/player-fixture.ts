@@ -110,6 +110,30 @@ export interface PlayerFixtureParams {
    * shape.
    */
   fixturePath: string;
+  /**
+   * True when this Game asks in priority order (M34) and this viewer's tier
+   * has not been released yet.
+   *
+   * Sets copy and nothing else. BR-40 is explicit that gating governs who is
+   * *notified*, never who may respond — so no control is disabled anywhere on
+   * the strength of this flag, and a keen sub who says yes takes the slot.
+   */
+  notYetInvited?: boolean;
+}
+
+/**
+ * "The core group is being asked first" (M34, BR-40).
+ *
+ * Only on a fixture still taking answers: on a played or cancelled one there
+ * is no spot left to open up, and the sentence would be a promise about a game
+ * that is over.
+ */
+function renderNotYetInvited(params: PlayerFixtureParams): string {
+  if (params.notYetInvited !== true) return "";
+  if (params.lifecycle !== "open" && params.lifecycle !== "scheduled") return "";
+  return `
+    <p class="nudge">You haven't been asked yet. The core group is being asked first —
+    we'll let you know if a spot opens up.</p>`;
 }
 
 export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
@@ -145,6 +169,8 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
     ${addressLine}
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="status-badge status-${escapeHtml(lifecycle)}">${escapeHtml(fixtureStatusWords(lifecycle))}</p>
+
+    ${renderNotYetInvited(params)}
 
     ${resultPanel}
 

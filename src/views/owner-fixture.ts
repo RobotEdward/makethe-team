@@ -20,12 +20,14 @@ import { renderStatusLine } from "./fixture.js";
 import { attribution, squadStatusLabel } from "./squad-row.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
 import { renderFreshness } from "./freshness.js";
+import { renderInviteProgress, type InviteProgressParams } from "./invite-order.js";
 import { renderResultPanel, type ResultPanelParams } from "./result.js";
 import { COPY_BUTTON_JS, FRESHNESS_JS, TEAM_PICKER_JS, type PageScriptBlock } from "./scripts.js";
 import {
   FIXTURE_STYLES_CSS,
   FORM_CSS,
   FRESHNESS_CSS,
+  INVITE_ORDER_CSS,
   RESULT_CSS,
   SQUAD_STYLES_CSS,
   TEAM_PICKER_CSS,
@@ -36,6 +38,14 @@ import { renderWhatsAppCard, type WhatsAppMessage } from "./whatsapp.js";
 export interface OwnerFixtureParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
+  /**
+   * The invite-order panel (M34), or absent for an ungated Game.
+   *
+   * Absent rather than an empty panel: an ungated fixture has no invite order
+   * to report on, and a panel there would advertise a feature the owner has
+   * switched off.
+   */
+  inviteProgress?: InviteProgressParams;
   gameId: string;
   gameName: string;
   fixtureId: string;
@@ -504,6 +514,8 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     <h2>Squad</h2>
     ${renderSquadList(gameId, fixtureId, squad, takingChanges(view))}
 
+    ${params.inviteProgress === undefined ? "" : renderInviteProgress(params.inviteProgress)}
+
     ${renderTeams(params)}
 
     ${renderPickerControl(gameId, fixtureId, params)}
@@ -562,6 +574,9 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
       WHATSAPP_CSS,
       RESULT_CSS,
       FRESHNESS_CSS,
+      // Last, and it declares no selector any block above declares — M34's
+      // classes are all `invite-` prefixed for exactly that reason.
+      INVITE_ORDER_CSS,
     ],
     pageScripts,
   });

@@ -976,6 +976,16 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } }),
       );
 
+      // The invite-order editor (M34). Same owner membership again. Captured
+      // rather than excluded because it is a page with a template of its own,
+      // which is exactly what this enumeration exists to hold to the script
+      // and header rules.
+      await capture(
+        "invite order",
+        /<h1>Invite order<\/h1>/,
+        new Request(`${ORIGIN}/g/${gameId}/invites`, { headers: { cookie } }),
+      );
+
       // The squad-removal confirmation (Task 9, J6a). A second member is added
       // to the squad so this captures a removable member's own page, rather
       // than the game's only (organiser) member.
@@ -1126,6 +1136,7 @@ describe("no password field anywhere (TR-16)", () => {
         "cancel done",
         "game form",
         "game overview",
+        "invite order",
         "game edit",
         "past fixtures",
         "owner fixture",
@@ -1335,6 +1346,7 @@ describe("no password field anywhere (TR-16)", () => {
       "message squad",
       "squad remove confirm",
       "squad member",
+      "invite order",
     ]);
     for (const { name, body } of pages) {
       expect(
@@ -1420,6 +1432,25 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "POST /g/:id/unmute":
       "never returns HTML on any branch — a plain-text 403, a plain-text 404 or a " +
       "303 redirect only, exactly as POST /g/:id/mute above (src/routes/games.ts).",
+    "POST /g/:id/invites":
+      "has no template of its own — a plain-text 403 (wrong origin), a plain-text " +
+      "404 (not the owner), or a 303 redirect back to GET /g/:id/invites, which " +
+      "the \"invite order\" capture already covers (src/routes/games.ts, M34); its " +
+      "own coverage lives in test/routes/invite-order.test.ts.",
+    "POST /g/:id/invites/tier":
+      "on its one HTML-returning branch (the blank-name refusal, 422) it renders " +
+      "through the same renderInviteOrderPage as GET /g/:id/invites — no template " +
+      "of its own — and its other branches are a plain-text 403, a plain-text 404 " +
+      "or a 303 redirect (src/routes/games.ts, M34).",
+    "POST /g/:id/invites/tier/:tierId/delete":
+      "never returns HTML on any branch — a plain-text 403, a plain-text 404 (a " +
+      "tier of another game, TR-18) or a 303 redirect only " +
+      "(src/routes/games.ts, M34).",
+    "POST /g/:id/f/:fixtureId/invite/next":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
+      "plain-text 404 (not the owner) or a 303 redirect back to the fixture page, " +
+      "which the \"owner fixture\" capture already covers " +
+      "(src/routes/games.ts, M34).",
     "POST /app/presence":
       "returns no body at all on any branch — 204 for a signed-in player, 204 " +
       "for an anonymous one, and a plain-text 403 on a wrong origin " +
@@ -1666,6 +1697,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",
+    "GET /g/:id/invites": "invite order",
     "GET /g/:id/fixtures": "past fixtures",
     "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
     "GET /g/:id/squad/:playerId": "squad member",

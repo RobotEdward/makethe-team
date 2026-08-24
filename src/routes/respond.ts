@@ -408,10 +408,17 @@ export async function notifyReleasedSubs(
   env: AppEnv["Bindings"],
   fixtureId: string,
   now: Date,
+  options: { force?: boolean } = {},
 ): Promise<void> {
   try {
+    // The claim happens *here*, not at the call site, and the owner's forced
+    // release has to come through this flag rather than claim first and let
+    // this function claim again. The claim is idempotent by design, so a
+    // second one returns an empty list — a caller that claimed for itself
+    // would stamp the tier and then mail nobody.
     const outcome = await env.FIXTURE_CAPACITY.getByName(fixtureId).claimInviteReleases({
       now: now.getTime(),
+      force: options.force ?? false,
     });
     if (outcome.kind !== "claimed" || outcome.playerIds.length === 0) return;
 

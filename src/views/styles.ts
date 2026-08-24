@@ -1198,6 +1198,87 @@ export const SQUAD_SIGNALS_CSS = `
   }
 `;
 
+/**
+ * The owner's invite-order editor and the fixture progress panel (M34).
+ *
+ * Named `INVITE_ORDER_CSS`, not `INVITE_CSS`: that name is taken by the
+ * join-link page, and two blocks a letter apart styling unrelated screens is
+ * how a rule ends up applying to the wrong one.
+ *
+ * Every colour is a token from `STYLES`, so `test/views/contrast.test.ts`
+ * already covers the pairs and nothing here introduces a new one to floor.
+ */
+export const INVITE_ORDER_CSS = `
+  .invite-sub { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
+  .invite-box {
+    background: var(--card-raised); border-radius: 1.25rem;
+    padding: 0.85rem 0.9rem; margin-bottom: 0.7rem;
+  }
+  .invite-cap { font-weight: 600; font-size: var(--t-support); margin: 0 0 0.45rem; }
+  .invite-empty { color: var(--mut); font-size: var(--t-support); margin: 0; }
+  .invite-members { list-style: none; margin: 0; padding: 0; }
+  .invite-members > li {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.45rem 0; border-bottom: 1px solid var(--line);
+  }
+  .invite-members > li:last-child { border-bottom: none; }
+  .invite-name { flex: 1; }
+  .invite-select, .invite-pos {
+    font: inherit; font-size: var(--t-support); color: var(--fg);
+    background: var(--field); border: 1px solid var(--line);
+    border-radius: 0.55rem; padding: 0.25rem 0.55rem;
+  }
+  .invite-pos { width: 3.5rem; }
+  .invite-ord { list-style: none; margin: 0; padding: 0; counter-reset: invite-tier; }
+  .invite-ord > li {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.45rem 0; border-bottom: 1px solid var(--line);
+  }
+  .invite-ord > li:last-child { border-bottom: none; }
+  .invite-ord > li::before {
+    counter-increment: invite-tier; content: counter(invite-tier);
+    font-family: var(--mono); font-size: var(--t-support); font-weight: 600;
+    color: var(--mut); background: var(--field); border-radius: 999px;
+    width: 1.5rem; height: 1.5rem; display: grid; place-items: center; flex: none;
+  }
+  .invite-implicit { opacity: 0.72; }
+  .invite-grp { flex: 1; }
+  .invite-who { display: block; color: var(--mut); font-size: var(--t-support); }
+  .invite-pinned { color: var(--mut); font-size: var(--t-support); white-space: nowrap; }
+  .invite-remove {
+    font: inherit; font-size: var(--t-support); cursor: pointer;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: transparent; color: var(--danger); padding: 0.2rem 0.7rem;
+  }
+  .invite-add { margin-top: 1.25rem; display: flex; align-items: end; gap: 0.5rem; flex-wrap: wrap; }
+  .invite-add label { font-size: var(--t-support); color: var(--mut); display: block; width: 100%; }
+  .invite-add input {
+    flex: 1; font: inherit; border-radius: 0.65rem; border: 2px solid var(--line);
+    background: var(--bg); color: var(--fg); padding: 0.5rem 0.7rem; min-width: 8rem;
+  }
+  .invite-progress { margin-top: 1.5rem; }
+  .invite-progress h2 { font-size: var(--t-body); margin: 0 0 0.6rem; }
+  .invite-states { list-style: none; margin: 0; padding: 0; }
+  .invite-state {
+    background: var(--card-raised); border-radius: 1.25rem;
+    padding: 0.7rem 0.85rem; margin-bottom: 0.5rem;
+    border-left: 4px solid var(--line);
+  }
+  .invite-state-sent { border-left-color: var(--ok); }
+  .invite-state-next { border-left-color: var(--wait); }
+  .invite-state-held { opacity: 0.72; }
+  .invite-state-top { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+  .invite-state-label { font-weight: 600; font-size: var(--t-support); }
+  .invite-meter { display: block; margin-top: 0.15rem; color: var(--mut); font-size: var(--t-support); }
+  .invite-badge {
+    font-size: var(--t-support); padding: 0.12rem 0.55rem;
+    border-radius: 999px; white-space: nowrap;
+  }
+  .invite-badge-ok { background: var(--ok-bg); color: var(--ok-fg); }
+  .invite-badge-wait { background: var(--warn-bg); color: var(--warn); }
+  .invite-badge-idle { background: var(--field); color: var(--mut); }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -1219,6 +1300,7 @@ export const PAGE_STYLE_BLOCKS = [
   FRESHNESS_CSS,
   MUTE_CSS,
   SQUAD_SIGNALS_CSS,
+  INVITE_ORDER_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

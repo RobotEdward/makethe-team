@@ -211,7 +211,7 @@ describe("pageStyles cascade order", () => {
         "RESULT_CSS) and is the page whose 440px-wide squad rows at a 390px " +
         "viewport this guard was written for. If the scan can no longer see " +
         "it, fix the scan before trusting the assertions below.",
-    ).toHaveLength(7);
+    ).toHaveLength(8);
   });
 
   it("lists every selector two of a page's blocks declare", () => {

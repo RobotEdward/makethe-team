@@ -44,7 +44,12 @@ import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
 import { displayName } from "../domain/display-name.js";
 import { fixtureView, takingChanges } from "../domain/fixture-view.js";
-import { parseGameForm } from "../domain/game-form.js";
+import { GATED_FALLBACK_NEVER, parseGameForm } from "../domain/game-form.js";
+import { loadInviteOrder } from "../db/invite-queries.js";
+import { inviteTiers, memberships } from "../db/schema.js";
+import { inviteOrderPath } from "../auth/paths.js";
+import { renderInviteOrderPage } from "../views/invite-order.js";
+import type { InviteProgressParams } from "../views/invite-order.js";
 import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
@@ -635,6 +640,181 @@ gamesRoutes.post("/g/:id/invite/rotate", requirePlayer, async (c) => {
   return c.redirect(gamePath(game.id), 303);
 });
 
+/**
+ * The owner's invite-order editor (M34, BR-38).
+ *
+ * Entitled by `findGameForOwner` and a 404 on refusal, like every other route
+ * in this file: a 403 would confirm the Game exists to somebody who has no
+ * business knowing (TR-18).
+ */
+gamesRoutes.get("/g/:id/invites", requirePlayer, async (c) => {
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
+  if (game === null) return c.text("Not found", 404);
+
+  const tiers = await loadInviteOrder(db, game.id);
+  return c.html(
+    renderInviteOrderPage({
+      nav: pageNav(c, "games"),
+      gameId: game.id,
+      gameName: game.name,
+      squadSize: tiers.reduce((total, tier) => total + tier.members.length, 0),
+      tiers: tiers.map((tier) => ({
+        tierId: tier.tierId,
+        name: tier.name,
+        position: tier.position,
+        members: tier.members.map((member) => ({ playerId: member.playerId, name: member.name })),
+      })),
+    }),
+  );
+});
+
+/**
+ * Save the whole order and every member's tier in one submission.
+ *
+ * **Every tier id in the form is checked against this Game's own tiers**, and
+ * anything else is written as null rather than rejected. That check is the
+ * only thing standing behind `memberships.invite_tier_id`: SQLite cannot
+ * express "the referenced tier belongs to this Game", so a hand-built request
+ * naming another squad's tier would otherwise be stored, and the invite order
+ * of two unrelated Games would be quietly entangled.
+ */
+gamesRoutes.post("/g/:id/invites", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
+  if (game === null) return c.text("Not found", 404);
+
+  const form = await c.req.parseBody();
+  const tiers = await loadInviteOrder(db, game.id);
+  const ownTierIds = new Set(
+    tiers.map((tier) => tier.tierId).filter((tierId): tierId is string => tierId !== null),
+  );
+
+  const statements = [];
+
+  for (const tier of tiers) {
+    for (const member of tier.members) {
+      const raw = form[`tier-${member.playerId}`];
+      if (typeof raw !== "string") continue;
+      const target = ownTierIds.has(raw) ? raw : null;
+      if (target === tier.tierId) continue;
+      statements.push(
+        db
+          .update(memberships)
+          .set({ inviteTierId: target })
+          .where(and(eq(memberships.gameId, game.id), eq(memberships.playerId, member.playerId))),
+      );
+    }
+  }
+
+  for (const tierId of ownTierIds) {
+    const raw = form[`position-${tierId}`];
+    if (typeof raw !== "string") continue;
+    const position = Number.parseInt(raw, 10);
+    // A blank or junk box leaves the tier where it is rather than sending it
+    // to the front: `Number.parseInt("")` is NaN, and writing that would make
+    // every ordering comparison false.
+    if (!Number.isInteger(position) || position < 1) continue;
+    statements.push(
+      db
+        .update(inviteTiers)
+        .set({ position })
+        .where(and(eq(inviteTiers.gameId, game.id), eq(inviteTiers.id, tierId))),
+    );
+  }
+
+  // Same cast `updateGame` uses: D1's batch signature wants a non-empty
+  // tuple, and the length check above is what actually guarantees it.
+  if (statements.length > 0) {
+    await db.batch(statements as [typeof statements[number], ...typeof statements]);
+  }
+
+  return c.redirect(inviteOrderPath(game.id), 303);
+});
+
+/** Add one named group to the end of the order (M34). */
+gamesRoutes.post("/g/:id/invites/tier", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
+  if (game === null) return c.text("Not found", 404);
+
+  const form = await c.req.parseBody();
+  const name = typeof form["name"] === "string" ? form["name"].trim() : "";
+  if (name === "") {
+    const tiers = await loadInviteOrder(db, game.id);
+    return c.html(
+      renderInviteOrderPage({
+        nav: pageNav(c, "games"),
+        gameId: game.id,
+        gameName: game.name,
+        squadSize: tiers.reduce((total, tier) => total + tier.members.length, 0),
+        tiers: tiers.map((tier) => ({
+          tierId: tier.tierId,
+          name: tier.name,
+          position: tier.position,
+          members: tier.members.map((member) => ({ playerId: member.playerId, name: member.name })),
+        })),
+        problem: "Give the group a name.",
+      }),
+      422,
+    );
+  }
+
+  const existing = await loadInviteOrder(db, game.id);
+  // One past the highest stored position, so a new group lands last — which is
+  // where an owner adding a fallback group almost always wants it, and is the
+  // only placement that cannot displace an order they already set.
+  const position =
+    existing.reduce((highest, tier) => Math.max(highest, tier.position), 0) + 1;
+
+  await db.insert(inviteTiers).values({
+    id: crypto.randomUUID(),
+    gameId: game.id,
+    name: name.slice(0, 60),
+    position,
+  });
+
+  return c.redirect(inviteOrderPath(game.id), 303);
+});
+
+/**
+ * Delete one group, dropping its members to the implicit final tier.
+ *
+ * The membership update runs *before* the delete, in one batch: the column
+ * holds a foreign key, so deleting first would leave rows pointing at a tier
+ * that no longer exists.
+ */
+gamesRoutes.post("/g/:id/invites/tier/:tierId/delete", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
+  if (game === null) return c.text("Not found", 404);
+
+  const tierId = c.req.param("tierId");
+  // Scoped by game id as well as tier id, so a tier belonging to another squad
+  // can neither be probed nor deleted through this route (TR-18).
+  const [tier] = await db
+    .select({ id: inviteTiers.id })
+    .from(inviteTiers)
+    .where(and(eq(inviteTiers.gameId, game.id), eq(inviteTiers.id, tierId)));
+  if (!tier) return c.text("Not found", 404);
+
+  await db.batch([
+    db
+      .update(memberships)
+      .set({ inviteTierId: null })
+      .where(and(eq(memberships.gameId, game.id), eq(memberships.inviteTierId, tier.id))),
+    db.delete(inviteTiers).where(eq(inviteTiers.id, tier.id)),
+  ]);
+
+  return c.redirect(inviteOrderPath(game.id), 303);
+});
+
 gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
   const now = new Date(Date.now());
   const db = getDb(c.env.DB);
@@ -678,10 +858,18 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
         teamsPublishedEmailEnabled: game.teamsPublishedEmailEnabled ? "on" : "",
         teamPickerEmailEnabled: game.teamPickerEmailEnabled ? "on" : "",
         resultPromptOffsetHours: String(game.resultPromptOffsetHours),
+        gatedInvitesEnabled: game.gatedInvitesEnabled ? "on" : "",
+        gatedFallbackHoursBefore:
+          game.gatedFallbackHoursBefore === null
+            ? GATED_FALLBACK_NEVER
+            : String(game.gatedFallbackHoursBefore),
       },
       errors: [],
       warnings: [],
       showAdvanced: true,
+      // Without this the "Edit the invite order" link has no game to point at
+      // and the whole gating section renders as if the feature did not exist.
+      gameId: game.id,
       affectedNotice: propagationNotice(counts),
     }),
   );
@@ -724,6 +912,10 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
         errors: parsed.errors,
         warnings: parsed.warnings,
         showAdvanced: true,
+        // Same reason as the GET: without it the redisplayed form loses its
+        // gating section, so an unrelated validation error would look like the
+        // feature had been switched off.
+        gameId: game.id,
         affectedNotice: propagationNotice(counts),
       }),
       422,
@@ -1073,7 +1265,67 @@ async function ownerFixtureParams(
       : undefined,
     cancellationReason: fixture.cancellationReason,
     result,
+    // M34. Only a gated Game, and only while the fixture is still taking
+    // answers: a played or cancelled fixture releases nothing, so a panel
+    // offering to invite the next group would be a control with no effect.
+    inviteProgress:
+      game.gatedInvitesEnabled && fixture.lifecycle === "open"
+        ? await inviteProgressParams(db, game, fixture)
+        : undefined,
     ...extras,
+  };
+}
+
+/**
+ * The owner's invite-progress panel for one open, gated fixture (M34).
+ *
+ * A tier counts as asked when **any** of its members carries a stamp, and the
+ * time shown is the earliest of them. Reading the earliest rather than the
+ * latest is what keeps the line stable: a member backfilled into an
+ * already-released tier days later (BR-2′) is stamped when they join, and
+ * showing the latest would make the tier look as though it had been asked
+ * again.
+ */
+async function inviteProgressParams(
+  db: Db,
+  game: typeof games.$inferSelect,
+  fixture: typeof fixtures.$inferSelect,
+): Promise<InviteProgressParams> {
+  const tiers = await loadInviteOrder(db, game.id, fixture.id);
+
+  const rendered = tiers.map((tier) => {
+    const stamps = tier.members
+      .map((member) => member.invitedAt)
+      .filter((invitedAt): invitedAt is Date => invitedAt !== null);
+    const askedAt =
+      stamps.length === 0
+        ? null
+        : stamps.reduce((earliest, stamp) => (stamp < earliest ? stamp : earliest));
+    return {
+      name: tier.name,
+      askedAtLocal: askedAt === null ? null : formatLocalDateTime(askedAt, game.timezone),
+      inCount: tier.members.filter((member) => member.status === "in").length,
+      outCount: tier.members.filter((member) => member.status === "out").length,
+      waitingCount: tier.members.filter((member) => member.status === "waitlisted").length,
+      memberCount: tier.members.length,
+    };
+  });
+
+  const nextIndex = rendered.findIndex((tier) => tier.askedAtLocal === null);
+
+  return {
+    gameId: game.id,
+    fixtureId: fixture.id,
+    tiers: rendered,
+    // The sentence the panel exists for. Null when the owner has switched the
+    // fallback off, in which case the held tiers really do wait for a decline
+    // and saying otherwise would be a promise the sweep never keeps.
+    fallbackNote:
+      game.gatedFallbackHoursBefore === null
+        ? null
+        : `asked automatically at ${game.gatedFallbackHoursBefore}h before, if still short`,
+    canReleaseNext: nextIndex !== -1,
+    nextTierName: nextIndex === -1 ? null : (rendered[nextIndex]?.name ?? null),
   };
 }
 
@@ -1197,6 +1449,16 @@ export async function renderPlayerFixture(
       ? null
       : await muteStateFor(db, game.id, viewerPlayerId, now);
 
+  // Read straight from the row rather than widened onto `SquadMember`: this
+  // is the only page that asks, and `SquadMember` is threaded through the
+  // owner page, the dashboard and the picker, none of which want it.
+  const [viewerResponse] = game.gatedInvitesEnabled
+    ? await db
+        .select({ invitedAt: responses.invitedAt })
+        .from(responses)
+        .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, viewerPlayerId)))
+    : [];
+
   return c.html(
     renderPlayerFixturePage({
       nav: pageNav(c, "games"),
@@ -1231,6 +1493,9 @@ export async function renderPlayerFixture(
             }
           : undefined,
       mute: mute === null ? undefined : muteControlsFor(game, mute),
+      // M34, BR-40. Copy only — the viewer may still answer, and nothing on
+      // this page is disabled on the strength of it.
+      notYetInvited: game.gatedInvitesEnabled && viewerResponse?.invitedAt == null,
     }),
     status,
   );
@@ -1330,6 +1595,29 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
  * waitlists — `whenFull` is `"refuse"` or `"exceed"` only — because a slot
  * held "maybe" for someone with no login and no address helps nobody.
  */
+/**
+ * The owner's "invite the next group now" button (M34).
+ *
+ * `force: true`, so BR-43's veto does not apply: the owner is looking at the
+ * numbers and has decided anyway, and a button that silently did nothing when
+ * the fixture happened to be full would be worse than no button.
+ *
+ * The send goes through the same `notifyReleasedSubs` a decline uses, in a
+ * `waitUntil` for the same reason — and with the same guarantee behind it, so
+ * a failed send here is picked up by the next sweep tick rather than lost.
+ */
+gamesRoutes.post("/g/:id/f/:fixtureId/invite/next", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
+  c.executionCtx.waitUntil(notifyReleasedSubs(c.env, target.fixture.id, now, { force: true }));
+
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+});
+
 gamesRoutes.post("/g/:id/f/:fixtureId/guest", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
 

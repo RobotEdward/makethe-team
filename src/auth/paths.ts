@@ -170,6 +170,35 @@ export function gameEditPath(gameId: string): string {
 }
 
 /**
+ * The owner's invite-order editor and its two mutating routes (M34, BR-38).
+ *
+ * Under `/g/:id` like the rest of game management, so the same session mount
+ * and the same owner entitlement check cover them with no new plumbing.
+ */
+export function inviteOrderPath(gameId: string): string {
+  return `/g/${gameId}/invites`;
+}
+
+export function inviteTierPath(gameId: string): string {
+  return `/g/${gameId}/invites/tier`;
+}
+
+/**
+ * Takes the tier id in the path, and the handler scopes its lookup by game id
+ * as well — so a tier id belonging to another Game can neither be probed nor
+ * deleted through this route (TR-18), which is the one invariant SQLite cannot
+ * express for `memberships.invite_tier_id`.
+ */
+export function inviteTierDeletePath(gameId: string, tierId: string): string {
+  return `/g/${gameId}/invites/tier/${tierId}/delete`;
+}
+
+/** The owner's "invite the next group now" button on a fixture (M34, BR-43). */
+export function inviteNextPath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/invite/next`;
+}
+
+/**
  * The public invite link. Outside every authenticated prefix — a visitor
  * holding one has no session and must not need one (BR-26, §1.6 "Visitor").
  */
