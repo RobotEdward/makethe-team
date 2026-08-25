@@ -236,6 +236,21 @@ export const CATALOGUE: CataloguePage[] = [
     note: "An owner's one-tap link out of the fixture-needs-attention email.",
   },
   {
+    id: "link-not-found",
+    title: "We can't find that page",
+    path: () => "/j/00000000-0000-4000-8000-000000000000",
+    persona: "anonymous",
+    note: "The 404 behind a link somebody actually tapped — a rotated invite link, or a game they are not in (M38).",
+    expectedStatus: 404,
+  },
+  {
+    id: "join-member",
+    title: "Join a squad, as somebody already in it",
+    path: (w) => `/j/${w.inviteToken}`,
+    persona: "player",
+    note: "The invite page's banner for a signed-in member (M38) — deliberately a banner, not a redirect, so an organiser can still preview their own link.",
+  },
+  {
     id: "not-found",
     title: "Not found",
     path: () => "/definitely-not-a-page",

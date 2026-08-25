@@ -1,16 +1,19 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
+import { resolveSessionPlayer } from "../auth/session.js";
 import { getDb, type Db } from "../db/client.js";
-import { findFirstUpcomingFixture, findGameByInviteToken, listSquad } from "../db/queries.js";
+import { findFirstUpcomingFixture, findGameByInviteToken, findGameForMember, listSquad } from "../db/queries.js";
 import type { games } from "../db/schema.js";
 import { backfillOpenFixtureResponses } from "../domain/backfill-open-responses.js";
 import { isPlausibleEmail, joinSquad, normaliseEmail, type JoinOutcome } from "../domain/join-squad.js";
+import { gamePath } from "../auth/paths.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendLateInvitations } from "../notify/send-late-invitations.js";
 import { sendWelcomeEmail } from "../notify/send-welcome.js";
 import { renderInvitePage, renderJoinOutcomePage } from "../views/join.js";
+import { renderNotFoundPage } from "../views/not-found.js";
 
 export const join = new Hono<AppEnv>();
 
@@ -48,8 +51,9 @@ async function invitePageFor(params: {
   now: Date;
   values?: { name?: string; email?: string };
   error?: string;
+  viewer?: { email: string; gamePath: string };
 }): Promise<string> {
-  const { db, game, now, values, error } = params;
+  const { db, game, now, values, error, viewer } = params;
   const [squad, firstFixture] = await Promise.all([
     listSquad(db, game.id),
     findFirstUpcomingFixture(db, game.id, now),
@@ -79,7 +83,51 @@ async function invitePageFor(params: {
       : null,
     values,
     error,
+    viewer,
   });
+}
+
+/**
+ * The banner facts for a signed-in visitor who is already in this squad, or
+ * `undefined` (M38).
+ *
+ * **`resolveSessionPlayer`, not a `sessionMiddleware` mount on `/j/*`.** That
+ * function's own doc comment is the argument: a mount would put a cookie
+ * parse, an HMAC verification and a D1 round trip on a path every stranger,
+ * prefetcher and crawler reaches, which is the same blast-radius reasoning
+ * that keeps the middleware off `/r/:token`. Called from here it costs
+ * nothing for a request with no cookie, and it changes nothing about who may
+ * reach this page without one (§1.6).
+ *
+ * **Never fatal**, exactly as `resolveOtherGames` in `src/routes/respond.ts`
+ * is not: this is the one part of the page that wants a session, on a route
+ * whose whole promise is that it works without one, so a D1 fault must cost
+ * the banner rather than the page.
+ *
+ * The membership re-check is `findGameForMember` rather than anything new —
+ * a session says *who*, never *whether* (TR-18), and an ex-member whose row
+ * is inactive must be offered the join form like anyone else rather than
+ * told they are already in.
+ */
+async function resolveViewer(
+  c: Context<AppEnv>,
+  db: Db,
+  gameId: string,
+  now: Date,
+): Promise<{ email: string; gamePath: string } | undefined> {
+  try {
+    const player = await resolveSessionPlayer(c.env, db, now, c.req.raw.headers);
+    if (player === null || player.email === null) return undefined;
+    if ((await findGameForMember(db, gameId, player.id)) === null) return undefined;
+    return { email: player.email, gamePath: gamePath(gameId) };
+  } catch (error) {
+    console.error(
+      `invite-page viewer lookup failed, rendering without the banner: ${
+        error instanceof Error ? (error.stack ?? error.message) : String(error)
+      }`,
+    );
+    return undefined;
+  }
 }
 
 join.get("/j/:token", async (c) => {
@@ -89,9 +137,9 @@ join.get("/j/:token", async (c) => {
   const db = getDb(c.env.DB);
 
   const game = await findGameByInviteToken(db, c.req.param("token"));
-  if (game === null) return c.text("Not found", 404);
+  if (game === null) return c.html(renderNotFoundPage(), 404);
 
-  return c.html(await invitePageFor({ db, game, now }));
+  return c.html(await invitePageFor({ db, game, now, viewer: await resolveViewer(c, db, game.id, now) }));
 });
 
 join.post("/j/:token", async (c) => {

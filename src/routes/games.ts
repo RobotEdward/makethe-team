@@ -80,6 +80,7 @@ import { sendPickerHandover } from "../notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { sendTeamsEmails } from "../notify/send-teams.js";
 import { renderGameFormPage } from "../views/game-form.js";
+import { renderNotFoundPage } from "../views/not-found.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderPickerPage } from "../views/picker-page.js";
@@ -271,7 +272,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
     // Not an owner. A member gets their own page; everyone else gets the same
     // 404 an owner-entitlement failure gets, so the two are indistinguishable.
     const asMember = await findGameForMember(db, c.req.param("id"), player.id);
-    if (asMember === null) return c.text("Not found", 404);
+    if (asMember === null) return c.html(renderNotFoundPage(), 404);
     return renderPlayerGame(c, asMember, player.id, now);
   }
 
@@ -335,7 +336,7 @@ gamesRoutes.get("/g/:id/fixtures", requirePlayer, async (c) => {
 
   const asOwner = await findGameForOwner(db, gameId, player.id);
   const game = asOwner ?? (await findGameForMember(db, gameId, player.id));
-  if (game === null) return c.text("Not found", 404);
+  if (game === null) return c.html(renderNotFoundPage(), 404);
 
   // Two shapes into one: the organiser's rows come from the game's own
   // fixtures, the member's from the entitled join that starts at their own
@@ -1388,7 +1389,7 @@ gamesRoutes.get("/g/:id/f/:fixtureId", requirePlayer, async (c) => {
   // 404 an owner-entitlement failure gets, so the two are indistinguishable
   // and a fixture id cannot be probed (TR-18).
   const game = await findGameForMember(getDb(c.env.DB), c.req.param("id"), player.id);
-  if (game === null) return c.text("Not found", 404);
+  if (game === null) return c.html(renderNotFoundPage(), 404);
   return renderPlayerFixture(c, game, c.req.param("fixtureId"), player.id, now);
 });
 

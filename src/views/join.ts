@@ -61,6 +61,16 @@ export interface InvitePageParams {
   squad: ReadonlyArray<{ name: string }>;
   /** The next upcoming (`open` or `scheduled`) fixture, already formatted in the Game's timezone (BR-2′). */
   firstFixtureLocal: string | null;
+  /**
+   * Set only when the visitor is signed in **and** already an active member
+   * of this game (M38) — the banner at the top of the page.
+   *
+   * `undefined` for a stranger, and the page is then byte-identical to what
+   * it has always been: `test/routes/join-member-banner.test.ts` pins that,
+   * because a banner that varied for a non-member would turn this public page
+   * into a way of asking "is this address in that squad?".
+   */
+  viewer?: { email: string; gamePath: string };
   /** Preserved across a rejected submission so nobody retypes on a phone. */
   values?: { name?: string; email?: string };
   /** Shown above the form when a submission was refused. */
@@ -88,7 +98,7 @@ export function renderInvitePage(params: InvitePageParams): string {
   const {
     gameName, venueName, venueAddress, venueUrl, recurrenceRule, kickoffTime,
     durationMinutes, timezone, minPlayers, maxPlayers,
-    inviteToken, squad, firstFixtureLocal, values, error,
+    inviteToken, squad, firstFixtureLocal, values, error, viewer,
   } = params;
 
   const addressLine = venueAddress === null ? "" : `<p>${escapeHtml(venueAddress)}</p>`;
@@ -144,7 +154,22 @@ export function renderInvitePage(params: InvitePageParams): string {
   // way to satisfy that is to add no new block at all.
   const errorBlock = error === undefined ? "" : `<p class="nudge">${escapeHtml(error)}</p>`;
 
+  // Same `.nudge` primitive as the error above, for the same reason: no new
+  // `<style>` block means nothing to forget in `STYLE_BLOCKS`.
+  //
+  // A banner rather than a redirect to the game. An organiser previewing
+  // their own invite link — or scanning the QR code `/g/:id` renders from it
+  // — is signed in and is a member, and bouncing them would make their own
+  // invite page unreachable without a private window, silently, in a way that
+  // reads as a broken link.
+  const viewerBlock =
+    viewer === undefined
+      ? ""
+      : `<p class="nudge">You're already in this squad, signed in as ${escapeHtml(viewer.email)}. ` +
+        `<a href="${escapeHtml(viewer.gamePath)}">Go to the game</a>.</p>`;
+
   const body = `
+    ${viewerBlock}
     <h1>Join ${escapeHtml(gameName)}</h1>
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}

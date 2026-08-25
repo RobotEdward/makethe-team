@@ -72,6 +72,14 @@ describe("layout", () => {
     "src/routes/home.ts",
     "src/views/cancel.ts",
     "src/views/link-problem.ts",
+    // The 404 behind a tapped link (M38). Terminal on the same terms as
+    // link-problem.ts above: a heading, two sentences and one link home.
+    // Nothing to scan, and deliberately nothing to act on — the recovery it
+    // describes ("ask whoever invited you for the /j/ link") happens outside
+    // the product, because a page that could offer more would be a page that
+    // knew which game the reader meant, which TR-18 is precisely there to
+    // prevent it knowing.
+    "src/views/not-found.ts",
     "src/views/offline.ts",
     "src/views/signin.ts",
     // The rate-limit refusal page (TR-37). Terminal by the same argument as
