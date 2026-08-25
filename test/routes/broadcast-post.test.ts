@@ -492,8 +492,8 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     const today = new Date(Date.now()).toISOString().slice(0, 10);
     await db
       .insert(emailQuota)
-      .values({ day: today, sentCount: 50 })
-      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 50 } });
+      .values({ day: today, sentCount: 80 })
+      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 80 } });
 
     const response = await appPost(
       `/g/${gameId}/f/${fixtureId}/message`,
@@ -531,8 +531,8 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     const today = new Date(Date.now()).toISOString().slice(0, 10);
     await db
       .insert(emailQuota)
-      .values({ day: today, sentCount: 50 })
-      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 50 } });
+      .values({ day: today, sentCount: 80 })
+      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 80 } });
 
     await appPost(
       `/g/${gameId}/f/${fixtureId}/message`,

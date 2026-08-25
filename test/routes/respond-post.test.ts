@@ -595,7 +595,7 @@ describe("POST /r/:token — the promoted player is told (N-2, BR-7, J4)", () =>
   });
 
   it("records an audit row when the daily send ceiling stops the promoted player being told (TR-31)", async () => {
-    // `MAX_EMAILS_PER_DAY` is "50" (wrangler.jsonc); pre-filling today's
+    // `MAX_EMAILS_PER_DAY` is "80" (wrangler.jsonc); pre-filling today's
     // quota to the ceiling makes QuotaNotifier refuse the N-2. The refusal
     // deletes the `notification_log` row, which keeps a retry *possible* —
     // but nothing retries it, and it could not be retried faithfully anyway,
@@ -603,7 +603,7 @@ describe("POST /r/:token — the promoted player is told (N-2, BR-7, J4)", () =>
     // Task 4's review accepted the delete on the condition that this row
     // exists; this is that row.
     const { fixtureId, holderId, waiterId } = await seedPromotionReady();
-    await db.insert(emailQuota).values({ day: new Date(Date.now()).toISOString().slice(0, 10), sentCount: 50 });
+    await db.insert(emailQuota).values({ day: new Date(Date.now()).toISOString().slice(0, 10), sentCount: 80 });
 
     const token = await tokenFor(fixtureId, holderId);
     expect((await postIntent(token, "out")).status).toBe(200);

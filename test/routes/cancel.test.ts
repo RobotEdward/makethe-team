@@ -427,14 +427,14 @@ describe("POST /cancel/:token", () => {
   });
 
   it("records an audit row naming everyone the daily send ceiling stopped being told (TR-31)", async () => {
-    // `MAX_EMAILS_PER_DAY` is "50" (wrangler.jsonc); pre-filling today's
+    // `MAX_EMAILS_PER_DAY` is "80" (wrangler.jsonc); pre-filling today's
     // quota to the ceiling makes QuotaNotifier refuse every N-3 this request
     // would send. The refusal deletes each `notification_log` row so a retry
     // stays possible — but nothing retries a cancellation, the fixture is
     // terminal, and the squad would otherwise turn up to a game that is off.
     // The audit row is the only durable record that happened.
     const { fixtureId } = await seedSquad();
-    await db.insert(emailQuota).values({ day: new Date(Date.now()).toISOString().slice(0, 10), sentCount: 50 });
+    await db.insert(emailQuota).values({ day: new Date(Date.now()).toISOString().slice(0, 10), sentCount: 80 });
 
     const response = await postCancel(await cancelToken(fixtureId), "Pitch flooded");
     expect(response.status).toBe(200);

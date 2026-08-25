@@ -80,7 +80,7 @@ describe("the admin usage screen", () => {
   it("shows today's sends against the configured ceiling", async () => {
     const cookie = await signInAs({ admin: true });
     const response = await createApp().fetch(usageRequest(cookie), bindings());
-    expect(await response.text()).toContain("of 50");
+    expect(await response.text()).toContain("of 80");
   });
 
   it("is linked from the admin index", async () => {

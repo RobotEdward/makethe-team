@@ -225,11 +225,11 @@ describe("handleScheduled: the sweep", () => {
     const kicksOffAt = new Date("2026-08-13T18:00:00Z");
     const remindNow = new Date("2026-08-12T09:00:00Z");
 
-    // MAX_EMAILS_PER_DAY is "50" (wrangler.jsonc); pre-filling today's quota
+    // MAX_EMAILS_PER_DAY is "80" (wrangler.jsonc); pre-filling today's quota
     // to that ceiling makes QuotaNotifier refuse every send this run with
     // DAILY_CEILING_REASON, which openAndRemind reports as `deferred`, not a
     // failure (src/sweep/open-and-remind.ts, `applyReminderResult`).
-    await db.insert(emailQuota).values({ day: remindNow.toISOString().slice(0, 10), sentCount: 50 });
+    await db.insert(emailQuota).values({ day: remindNow.toISOString().slice(0, 10), sentCount: 80 });
 
     const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
     await addRespondent(fixtureId, "player@example.com");
