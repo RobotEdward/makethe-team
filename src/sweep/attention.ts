@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { fixturePath } from "../auth/paths.js";
 import type { Db } from "../db/client.js";
 import { getFixtureWithSquad } from "../db/queries.js";
-import { fixtures, games, memberships, notificationLog, players } from "../db/schema.js";
+import { fixtures, memberships, notificationLog, players } from "../db/schema.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { cancelTokenExpiry, signCancelToken } from "../domain/token.js";
@@ -16,6 +16,7 @@ import {
   SITE_ORIGIN,
   type PendingNotification,
 } from "../notify/delivery.js";
+import { loadNotificationSettings } from "../notify/notification-settings.js";
 import type { Notifier } from "../notify/notifier.js";
 import { PUSH_COPY } from "../notify/push-copy.js";
 import { renderAttentionEmail, type AttentionProblem } from "../notify/templates/attention.js";
@@ -148,10 +149,23 @@ export async function sendOwnerAttention(params: SendOwnerAttentionParams): Prom
     failures: [],
   };
 
-  for (const candidate of await fixturesNeedingAttention(db, now)) {
+  const candidates = await fixturesNeedingAttention(db, now);
+  const settings = await loadNotificationSettings(db, candidates.map((c) => c.gameId));
+
+  // The owner's and administrator's switches (M37). A fixture with both
+  // channels off is skipped before any `notification_log` row exists for it.
+  const enabled = candidates.filter(
+    (c) => settings.isEnabled(c.gameId, "n4", "email") || settings.isEnabled(c.gameId, "n4", "push"),
+  );
+
+  for (const candidate of enabled) {
     result.fixturesNeedingAttention++;
+    const channels = {
+      email: settings.isEnabled(candidate.gameId, "n4", "email"),
+      push: settings.isEnabled(candidate.gameId, "n4", "push"),
+    };
     try {
-      await processFixture({ db, notifier, now, cancelTokenSecret, ceilingReached }, candidate, result);
+      await processFixture({ db, notifier, now, cancelTokenSecret, ceilingReached }, candidate, channels, result);
     } catch (error) {
       result.failures.push({
         fixtureId: candidate.fixtureId,
@@ -191,20 +205,12 @@ async function fixturesNeedingAttention(db: Db, now: Date): Promise<AttentionCan
       maxPlayers: fixtures.maxPlayers,
       prefersEvenNumbers: fixtures.prefersEvenNumbers,
       shortWarningOffsetHours: fixtures.shortWarningOffsetHours,
-      shortWarningEnabled: games.shortWarningEnabled,
     })
     .from(fixtures)
-    .innerJoin(games, eq(fixtures.gameId, games.id))
     .where(eq(fixtures.lifecycle, "open"));
 
   const candidates: AttentionCandidate[] = [];
   for (const row of rows) {
-    // The owner's switch (M26). Read live from `games`, unlike the offset one
-    // line up, which is the fixture's own snapshot: an owner who turns the
-    // warning off means the fixtures already scheduled, and re-materialisation
-    // is not something that happens to them.
-    if (!row.shortWarningEnabled) continue;
-
     if (row.kicksOffAt.getTime() + row.durationMinutes * MINUTE_MS <= now.getTime()) continue;
 
     // The whole of the decision, made in one place for the whole product.
@@ -230,6 +236,7 @@ async function fixturesNeedingAttention(db: Db, now: Date): Promise<AttentionCan
 async function processFixture(
   params: SendOwnerAttentionParams,
   candidate: AttentionCandidate,
+  channels: { email: boolean; push: boolean },
   result: AttentionResult,
 ): Promise<void> {
   const { db, notifier, now, cancelTokenSecret, ceilingReached } = params;
@@ -293,24 +300,26 @@ async function processFixture(
       cancelUrl,
       ceilingReached,
     };
-    const rendered = renderAttentionEmail(emailPayload);
-
     const dedupeKey = attentionKey(fixtureId, owner.playerId);
-    pending.push({
-      logId: crypto.randomUUID(),
-      dedupeKey,
-      playerId: owner.playerId,
-      message: {
-        channel: "email",
-        to: owner.email,
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-        dedupeKey,
-      },
-    });
 
-    if (subscribed.has(owner.playerId)) {
+    if (channels.email) {
+      const rendered = renderAttentionEmail(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey,
+        playerId: owner.playerId,
+        message: {
+          channel: "email",
+          to: owner.email,
+          subject: rendered.subject,
+          html: rendered.html,
+          text: rendered.text,
+          dedupeKey,
+        },
+      });
+    }
+
+    if (channels.push && subscribed.has(owner.playerId)) {
       const copy = PUSH_COPY.n4(emailPayload);
       pending.push({
         logId: crypto.randomUUID(),

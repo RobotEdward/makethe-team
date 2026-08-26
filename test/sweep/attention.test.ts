@@ -7,7 +7,13 @@ import { attentionKey, pushKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { verifyCancelToken } from "../../src/domain/token.js";
 import { sendOwnerAttention } from "../../src/sweep/attention.js";
-import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
+import {
+  insertGame,
+  insertNotificationSetting,
+  insertSubscription,
+  requireEmailMessage,
+  resetDatabase,
+} from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-cancel-secret";
@@ -69,8 +75,6 @@ interface SeedOptions {
   durationMinutes?: number;
   /** Defaults to the factory's own default ("Europe/London"). Overridden only to make `formatLocalDateTime` throw for one fixture in isolation tests. */
   timezone?: string;
-  /** The owner's N-4 switch (M26). Defaults on, as a real game does. */
-  shortWarningEnabled?: boolean;
   /** The Game's gating switch (M34, BR-39). Defaults off, as every pre-M34 game is. */
   gatedInvitesEnabled?: boolean;
   /** Hours before kickoff the fallback release starts (BR-44). Defaults to the factory's null — never. */
@@ -99,7 +103,6 @@ async function seed(opts: SeedOptions): Promise<{ gameId: string; fixtureId: str
     prefersEvenNumbers: opts.prefersEvenNumbers ?? true,
     minPlayers: opts.minPlayers ?? 10,
     maxPlayers: opts.maxPlayers ?? 14,
-    shortWarningEnabled: opts.shortWarningEnabled ?? true,
     gatedInvitesEnabled: opts.gatedInvitesEnabled ?? false,
     ...(opts.gatedFallbackHoursBefore !== undefined
       ? { gatedFallbackHoursBefore: opts.gatedFallbackHoursBefore }
@@ -647,20 +650,22 @@ describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
 
 });
 
-describe("sendOwnerAttention and the owner's warning switch (M26)", () => {
+describe("sendOwnerAttention and the owner's/administrator's switches (M37)", () => {
 /**
- * The owner's warning switch (M26). Read live from `games`, unlike
- * `shortWarningOffsetHours`, which each fixture snapshots at
- * materialisation: turning the warning off has to silence the fixtures that
- * already exist, since nothing re-materialises them.
+ * The owner's warning switch, now per channel via `loadNotificationSettings`
+ * (M37) rather than the game's own `shortWarningEnabled` column: a fixture
+ * with both channels off never becomes a candidate at all, unlike the
+ * pre-M37 column, which is read live from `games` and could only be all or
+ * nothing.
  */
-it("sends nothing for a game whose short/uneven warning is switched off", async () => {
-  const { fixtureId } = await seed({
+it("sends nothing for a game whose short/uneven warning is switched off on both channels", async () => {
+  const { gameId, fixtureId } = await seed({
     kicksOffAt: KICKOFF_INSIDE_WINDOW,
     inCount: 4,
-    shortWarningEnabled: false,
     owners: [{ name: "Owner", email: "owner@example.com" }],
   });
+  await insertNotificationSetting(db, gameId, "n4", "email", false);
+  await insertNotificationSetting(db, gameId, "n4", "push", false);
   const notifier = new RecordingNotifier();
 
   const result = await sendOwnerAttention({
@@ -681,6 +686,18 @@ it("sends nothing for a game whose short/uneven warning is switched off", async 
     .from(notificationLog)
     .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n4")));
   expect(rows).toHaveLength(0);
+});
+
+it("emails without pushing when push is switched off (M37)", async () => {
+  // Seed as the "pushes the owner" case does, then switch push off.
+  const notifier = new RecordingNotifier();
+  const { gameId, ownerIds } = await seed({ kicksOffAt: KICKOFF_INSIDE_WINDOW, inCount: 8, pending: 3 });
+  await insertSubscription(db, ownerIds[0]!, "https://push.example.com/owner");
+  await insertNotificationSetting(db, gameId, "n4", "push", false);
+
+  await sendOwnerAttention({ db, notifier, now: NOW, cancelTokenSecret: SECRET, ceilingReached: false });
+
+  expect(notifier.sent.flat().map((m) => m.channel)).toEqual(["email"]);
 });
 });
 
