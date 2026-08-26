@@ -7,7 +7,13 @@ import { pushKey, welcomeKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import { sendWelcomeEmail } from "../../src/notify/send-welcome.js";
-import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
+import {
+  insertGame,
+  insertSubscription,
+  requireEmailMessage,
+  resetDatabase,
+  setAdminSwitch,
+} from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
@@ -342,6 +348,33 @@ describe("sendWelcomeEmail (N-6)", () => {
     const rows = await logRows();
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("failed");
+  });
+
+  it("administrator email off sends only the push (M37)", async () => {
+    const joined = await seedJoin();
+    await insertSubscription(db, joined.playerId, "https://push.example.com/joiner");
+    await setAdminSwitch(db, "n6", "email", false);
+    const notifier = new RecordingNotifier();
+
+    const outcome = await send(joined, notifier);
+
+    expect(outcome).toEqual({ kind: "sent" });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["push"]);
+  });
+
+  it("returns switched-off and writes no row when the administrator has both channels off (M37)", async () => {
+    const joined = await seedJoin();
+    await insertSubscription(db, joined.playerId, "https://push.example.com/joiner");
+    await setAdminSwitch(db, "n6", "email", false);
+    await setAdminSwitch(db, "n6", "push", false);
+    const notifier = new RecordingNotifier();
+
+    const outcome = await send(joined, notifier);
+
+    expect(outcome).toEqual({ kind: "switched-off" });
+    expect(notifier.sent).toEqual([]);
+    expect(await logRows()).toEqual([]);
   });
 
   it("reports, rather than throws, when the game or player has disappeared underneath it", async () => {

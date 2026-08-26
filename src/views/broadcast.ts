@@ -45,6 +45,14 @@ export interface BroadcastPageParams {
   errors?: readonly FieldError[];
   /** A whole-page refusal, e.g. the daily cap. Rendered above the form. */
   problem?: string;
+  /**
+   * Which channel controls the administrator lets this page offer at all
+   * (M37, N-10). A channel that is `false` here renders no checkbox for
+   * itself — a hint explaining why stands in its place — because a control
+   * the handler will refuse regardless would just be a lie the organiser
+   * could tick.
+   */
+  offered: { email: boolean; push: boolean };
 }
 
 function count(n: number): string {
@@ -100,19 +108,41 @@ function audienceFields(
     </fieldset>`;
 }
 
-function channelFields(values: BroadcastFormValues, errorMessage: string | undefined): string {
+/**
+ * One channel's control: a live checkbox when the administrator offers it,
+ * or — in its place — a sentence saying why there is no checkbox (M37,
+ * TR-18). Hiding the control is not enforcement on its own (the handler
+ * refuses the field regardless of what a forged submission carries), but
+ * offering a box the handler will always refuse would be a lie the organiser
+ * could tick and only discover was pointless after sending.
+ */
+function channelControl(id: "email" | "push", label: string, hint: string, checked: boolean, offered: boolean): string {
+  if (!offered) {
+    return `<p class="hint notify-admin-off">${escapeHtml(`${label} is switched off for everyone by the site administrator.`)}</p>`;
+  }
+  return `
+      <div class="switch-row">
+        <label for="${id}">${escapeHtml(label)}</label>
+        <input id="${id}" name="${id}" type="checkbox"${checked ? " checked" : ""}>
+        <span class="hint">${escapeHtml(hint)}</span>
+      </div>`;
+}
+
+function channelFields(
+  values: BroadcastFormValues,
+  errorMessage: string | undefined,
+  offered: { email: boolean; push: boolean },
+): string {
   return `
     <div class="field${errorMessage ? " field-invalid" : ""}">
-      <div class="switch-row">
-        <label for="email">Email</label>
-        <input id="email" name="email" type="checkbox"${values.email ? " checked" : ""}>
-        <span class="hint">Send by email.</span>
-      </div>
-      <div class="switch-row">
-        <label for="push">Push notification</label>
-        <input id="push" name="push" type="checkbox"${values.push ? " checked" : ""}>
-        <span class="hint">Send as a push notification, to anyone with a device registered.</span>
-      </div>
+      ${channelControl("email", "Email", "Send by email.", values.email, offered.email)}
+      ${channelControl(
+        "push",
+        "Push notification",
+        "Send as a push notification, to anyone with a device registered.",
+        values.push,
+        offered.push,
+      )}
       ${errorMessage ? `<span class="error" id="channels-error">${escapeHtml(errorMessage)}</span>` : ""}
     </div>`;
 }
@@ -186,7 +216,7 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
         }>${escapeHtml(values.message)}</textarea>
         ${messageMessage ? `<span class="error" id="message-error">${escapeHtml(messageMessage)}</span>` : ""}
       </div>
-      ${channelFields(values, errorFor("channels"))}
+      ${channelFields(values, errorFor("channels"), params.offered)}
       <div class="actions">
         <button class="button primary" type="submit">${sendLabel(buttonCount)}</button>
       </div>

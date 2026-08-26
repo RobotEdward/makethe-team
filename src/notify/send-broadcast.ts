@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { gamePath } from "../auth/paths.js";
 import { listFixtureRecipients, listGameRecipients, type BroadcastRecipient } from "../db/broadcast-queries.js";
+import { loadAdminNotificationSwitches } from "../domain/app-settings.js";
 import type { Db } from "../db/client.js";
 import { fixtures, games, notificationLog } from "../db/schema.js";
 import { audienceSelectsStatus, isAddressable, type BroadcastAudience } from "../domain/broadcast-audience.js";
@@ -112,10 +113,22 @@ export async function sendBroadcast(params: SendBroadcastParams): Promise<Broadc
     subject,
     message,
     organiserName,
-    channels,
     now,
     responseTokenSecret,
   } = params;
+
+  // M37: masked here, not just at the compose form. `broadcast.ts`'s handler
+  // already refuses a submission that asks for a switched-off channel
+  // (TR-18 — hiding the control is not enforcement), but this function has a
+  // caller of its own that bypasses that form entirely
+  // (`test/notify/notification-invariants.test.ts`'s n10 driver calls it
+  // directly with both channels requested), so the administrator's word is
+  // enforced again here rather than trusted from the caller.
+  const admin = await loadAdminNotificationSwitches(db);
+  const channels = {
+    email: params.channels.email && admin.isOn("n10", "email"),
+    push: params.channels.push && admin.isOn("n10", "push"),
+  };
 
   const [game] = await db
     .select({ name: games.name, timezone: games.timezone, venueName: games.venueName })

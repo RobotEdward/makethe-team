@@ -12,6 +12,7 @@ import {
   type BroadcastRecipient,
 } from "../db/broadcast-queries.js";
 import { findGameForOwner, getFixtureWithSquad } from "../db/queries.js";
+import { loadAdminNotificationSwitches } from "../domain/app-settings.js";
 import {
   BROADCAST_AUDIENCES,
   DEFAULT_FIXTURE_AUDIENCE,
@@ -132,9 +133,15 @@ function reachableCount(
   ).length;
 }
 
-/** The empty form a fresh `GET` renders: no text, both channels on. */
-function emptyValues(audience: BroadcastAudience): BroadcastFormValues {
-  return { subject: "", message: "", email: true, push: true, audience };
+/**
+ * The empty form a fresh `GET` renders: no text, each channel defaulted to
+ * whatever the administrator currently offers (M37) — not hard-coded `true`,
+ * or a channel switched off would still arrive pre-ticked on a control the
+ * page goes on to hide, and a later re-offer would then silently un-hide a
+ * box the organiser never chose to tick.
+ */
+function emptyValues(audience: BroadcastAudience, offered: { email: boolean; push: boolean }): BroadcastFormValues {
+  return { subject: "", message: "", email: offered.email, push: offered.push, audience };
 }
 
 /**
@@ -152,7 +159,9 @@ broadcast.get("/g/:id/message", requirePlayer, async (c) => {
   if (game === null) return c.text("Not found", 404);
 
   const recipients = await listGameRecipients(db, game.id, new Date(Date.now()));
-  const values = emptyValues("everyone");
+  const admin = await loadAdminNotificationSwitches(db);
+  const offered = { email: admin.isOn("n10", "email"), push: admin.isOn("n10", "push") };
+  const values = emptyValues("everyone", offered);
 
   return c.html(
     renderBroadcastPage({
@@ -162,6 +171,7 @@ broadcast.get("/g/:id/message", requirePlayer, async (c) => {
       counts: countsForGame(recipients),
       reachableCount: reachableCount(recipients, values.audience, values),
       values,
+      offered,
     }),
   );
 });
@@ -192,7 +202,9 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
   const { fixture } = withSquad;
 
   const recipients = await listFixtureRecipients(db, game.id, fixtureId, new Date(Date.now()));
-  const values = emptyValues(DEFAULT_FIXTURE_AUDIENCE);
+  const admin = await loadAdminNotificationSwitches(db);
+  const offered = { email: admin.isOn("n10", "email"), push: admin.isOn("n10", "push") };
+  const values = emptyValues(DEFAULT_FIXTURE_AUDIENCE, offered);
 
   return c.html(
     renderBroadcastPage({
@@ -206,6 +218,7 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
       counts: countsForFixture(recipients),
       reachableCount: reachableCount(recipients, values.audience, values),
       values,
+      offered,
     }),
   );
 });
@@ -283,6 +296,12 @@ interface SendScope {
   redirectTo: string;
 }
 
+/** Loaded once per `handleSend` call and reused for both the rerender and the refusal check below. */
+async function offeredChannels(db: Db): Promise<{ email: boolean; push: boolean }> {
+  const admin = await loadAdminNotificationSwitches(db);
+  return { email: admin.isOn("n10", "email"), push: admin.isOn("n10", "push") };
+}
+
 /**
  * The shared body of both `POST` routes below (M15 spec §2, §7, §8, N-10) —
  * ownership and fixture-ownership have already been checked by the caller,
@@ -309,6 +328,7 @@ async function handleSend(
   scope: SendScope,
   now: Date,
 ): Promise<Response> {
+  const offered = await offeredChannels(db);
   const rerender = (values: BroadcastFormValues, extra: Partial<BroadcastPageParams>) =>
     c.html(
       renderBroadcastPage({
@@ -319,6 +339,7 @@ async function handleSend(
         counts: scope.counts,
         reachableCount: reachableCount(scope.recipients, values.audience, values),
         values,
+        offered,
         ...extra,
       }),
       422,
@@ -327,6 +348,15 @@ async function handleSend(
   const form = await c.req.parseBody();
   const parsed = parseBroadcastForm(form, scope.formScope);
   if (!parsed.ok) return rerender(parsed.values, { errors: parsed.errors });
+
+  // TR-18: hiding the control is not enforcement. A submission asking for a
+  // channel the administrator has switched off is refused as a 404, exactly
+  // as an entitlement the caller does not hold — whether the box was never
+  // rendered (this route's own page) or the request bypassed the form
+  // entirely.
+  if ((parsed.values.email && !offered.email) || (parsed.values.push && !offered.push)) {
+    return c.text("Not found", 404);
+  }
 
   // The audience narrowed by the submitted channels, from the rows already
   // loaded — no second query. Channel-aware because the channel-agnostic

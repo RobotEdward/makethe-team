@@ -12,6 +12,7 @@ import {
   insertResponse,
   insertSubscription,
   resetDatabase,
+  setAdminSwitch,
   testDb,
 } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
@@ -158,6 +159,40 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
       expect(row.fixtureId).toBe(fixtureId);
       expect(row.status).toBe("sent");
     }
+  });
+
+  it("refuses an email broadcast the administrator has switched off, even though the box was never rendered (TR-18)", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId } = await seedFixture(viewerId);
+    await setAdminSwitch(testDb(), "n10", "email", false);
+
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { ...VALID_FIELDS, audience: "playing" },
+      cookie,
+    );
+
+    expect(response.status).toBe(404);
+    expect(await testDb().select().from(notificationLog)).toEqual([]);
+    expect(await testDb().select().from(auditLog).where(eq(auditLog.action, "game.broadcast_sent"))).toEqual([]);
+  });
+
+  it("still sends a push-only broadcast when email is switched off", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, inPlayerId } = await seedFixture(viewerId);
+    await insertSubscription(testDb(), inPlayerId, "https://push.example.com/in-player");
+    await setAdminSwitch(testDb(), "n10", "email", false);
+
+    const response = await appPost(
+      `/g/${gameId}/f/${fixtureId}/message`,
+      { subject: "Change of time", message: "Kick-off has moved to 7:30.", push: "on", audience: "playing" },
+      cookie,
+    );
+    await settleSend(1);
+
+    expect(response.status).toBe(303);
+    const sent = await testDb().select().from(notificationLog);
+    expect(sent.map((row) => row.channel)).toEqual(["push"]);
   });
 
   it("records the audience, channels, count, fixture id and subject on the audit row — never the message body", async () => {

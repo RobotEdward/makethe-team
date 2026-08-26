@@ -287,6 +287,11 @@ export async function notifyJoiner(
     switch (result.kind) {
       case "sent":
         return;
+      case "switched-off":
+        // Expected and permanent (M37), not a fault: the administrator has
+        // turned N-6 off on every channel.
+        console.log(`welcome email (N-6) switched off by the administrator: ${who}`);
+        return;
       case "skipped-no-recipient":
         // Not reachable from this route today — a join always carries an
         // address — but J6's "add a squad member by hand" will share this

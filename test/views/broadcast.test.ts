@@ -30,6 +30,7 @@ const BASE: BroadcastPageParams = {
   counts: COUNTS,
   reachableCount: 12,
   values: VALUES,
+  offered: { email: true, push: true },
 };
 
 function params(over: Partial<BroadcastPageParams> = {}): BroadcastPageParams {
@@ -57,6 +58,13 @@ describe("renderBroadcastPage", () => {
     const html = renderBroadcastPage(params());
     expect(html).toMatch(/id="email"[^>]*checked/);
     expect(html).toMatch(/id="push"[^>]*checked/);
+  });
+
+  it("omits a channel's checkbox and explains why when the administrator does not offer it (M37)", () => {
+    const html = renderBroadcastPage(params({ offered: { email: false, push: true } }));
+    expect(html).not.toContain('name="email"');
+    expect(html).toMatch(/id="push"[^>]*checked/);
+    expect(html).toContain("Email is switched off for everyone by the site administrator.");
   });
 
   it("names the channel-aware reachable count on the submit button, not the audience's own count", () => {

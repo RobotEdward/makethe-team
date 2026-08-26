@@ -9,6 +9,7 @@ import {
   insertSubscription,
   requireEmailMessage,
   resetDatabase,
+  setAdminSwitch,
   testDb,
 } from "../support/factories.js";
 
@@ -141,6 +142,41 @@ describe("sendRemovedEmail", () => {
     await sendRemovedEmail({ ...base, leftAt: new Date("2026-09-01T09:00:00Z") });
 
     expect(notifier.sent).toHaveLength(2);
+  });
+
+  it("administrator email off sends only the push (M37)", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    const playerId = await insertPlayer(db, { name: "Sam Okafor", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example.com/sam");
+    await setAdminSwitch(db, "n7", "email", false);
+    const notifier = recordingNotifier();
+
+    const outcome = await sendRemovedEmail({
+      db, notifier, gameId, playerId, membershipId: "m-1", leftAt: LEFT_AT, now: NOW,
+    });
+
+    expect(outcome).toEqual({ kind: "sent" });
+    const rows = await db.select().from(notificationLog);
+    expect(rows.map((r) => r.channel)).toEqual(["push"]);
+  });
+
+  it("returns switched-off and writes no row when the administrator has both channels off (M37)", async () => {
+    const db = testDb();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    const playerId = await insertPlayer(db, { name: "Sam Okafor", email: "sam@example.com" });
+    await insertSubscription(db, playerId, "https://push.example.com/sam");
+    await setAdminSwitch(db, "n7", "email", false);
+    await setAdminSwitch(db, "n7", "push", false);
+    const notifier = recordingNotifier();
+
+    const outcome = await sendRemovedEmail({
+      db, notifier, gameId, playerId, membershipId: "m-1", leftAt: LEFT_AT, now: NOW,
+    });
+
+    expect(outcome).toEqual({ kind: "switched-off" });
+    expect(notifier.sent).toHaveLength(0);
+    expect(await db.select().from(notificationLog)).toHaveLength(0);
   });
 
   it("reports a game that has vanished, without writing a row", async () => {

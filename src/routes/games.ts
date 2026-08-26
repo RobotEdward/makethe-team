@@ -2478,6 +2478,9 @@ export async function notifyRemovedPlayer(
     // and permanent (BR-32), not a fault — a guest has no address, so every
     // guest removal would otherwise file an error line for working correctly.
     if (result.kind === "skipped-no-recipient") console.log(`n7 removal email skipped, no address, for ${who}`);
+    // Expected and permanent (M37), not a fault: the administrator has
+    // turned N-7 off on every channel.
+    if (result.kind === "switched-off") console.log(`n7 removal email switched off by the administrator for ${who}`);
   } catch (error) {
     console.error(
       `n7 removal email threw for ${who}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,

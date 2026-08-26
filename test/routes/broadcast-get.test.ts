@@ -10,6 +10,7 @@ import {
   insertResponse,
   insertSubscription,
   resetDatabase,
+  setAdminSwitch,
   testDb,
 } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
@@ -104,6 +105,21 @@ describe("GET /g/:id/message", () => {
     const html = await response.text();
     // Only the owner themselves is addressable.
     expect(html).toContain("Send to 1 player<");
+  });
+
+  it("omits the email checkbox and says why when the administrator has it off (M37)", async () => {
+    const { cookie, viewerId } = await ownerSession();
+    const db = testDb();
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    await insertMembership(db, gameId, viewerId, { role: "owner" });
+    await setAdminSwitch(db, "n10", "email", false);
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/message`, { headers: { cookie } });
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).not.toContain('name="email"');
+    expect(html).toContain("Email is switched off for everyone by the site administrator.");
   });
 });
 
