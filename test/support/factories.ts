@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
 import {
+  appSettings,
   fixtureResultClaims,
   fixtures,
   gameNotificationSettings,
@@ -68,6 +69,14 @@ export async function insertNotificationSetting(
       target: [gameNotificationSettings.gameId, gameNotificationSettings.notificationType, gameNotificationSettings.channel],
       set: { enabled },
     });
+}
+
+/** One administrator switch (M37). Strings, not unions, for the stored-lookups case. */
+export async function setAdminSwitch(db: Db, type: string, channel: string, on: boolean): Promise<void> {
+  await db
+    .insert(appSettings)
+    .values({ key: `notify.${type}.${channel}`, value: on ? "on" : "off" })
+    .onConflictDoUpdate({ target: appSettings.key, set: { value: on ? "on" : "off" } });
 }
 
 /**

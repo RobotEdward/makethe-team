@@ -20,11 +20,21 @@ import { audienceSelectsStatus } from "../src/domain/broadcast-audience.js";
 import { deriveResult, tally } from "../src/domain/result.js";
 import { outcomeNames, renderResultPanel } from "../src/views/result.js";
 import type { SquadMember } from "../src/db/queries.js";
-import { insertFixture, insertGame, insertMembership, insertPlayer, insertResponse, resetDatabase } from "./support/factories.js";
+import {
+  insertFixture,
+  insertGame,
+  insertMembership,
+  insertNotificationSetting,
+  insertPlayer,
+  insertResponse,
+  resetDatabase,
+  setAdminSwitch,
+} from "./support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "./support/sign-in.js";
-import { players } from "../src/db/schema.js";
+import { appSettings, players } from "../src/db/schema.js";
 import { ACCOUNT_PATH } from "../src/auth/paths.js";
 import { eq } from "drizzle-orm";
+import { loadNotificationSettings } from "../src/notify/notification-settings.js";
 
 /**
  * Every place a value read out of the database is turned into words, and the
@@ -550,5 +560,28 @@ describe("the shapes this defect keeps taking, checked against the source", () =
         entry.proof,
       );
     }
+  });
+});
+
+describe("game_notification_settings and the notify.* app settings", () => {
+  beforeEach(async () => {
+    await resetDatabase();
+  });
+
+  it("survives a notification_type and a channel it has never heard of", async () => {
+    const db = getDb(env.DB);
+    const gameId = await insertGame(db);
+    await insertNotificationSetting(db, gameId, OUT_OF_UNION, "email", false);
+    await insertNotificationSetting(db, gameId, "n9", OUT_OF_UNION, false);
+    const settings = await loadNotificationSettings(db, [gameId]);
+    expect(settings.isEnabled(gameId, "n9", "email")).toBe(true);
+  });
+
+  it("survives an app_settings value it has never heard of, reading it as on", async () => {
+    const db = getDb(env.DB);
+    await setAdminSwitch(db, "n9", "email", false);
+    await db.update(appSettings).set({ value: OUT_OF_UNION }).where(eq(appSettings.key, "notify.n9.email"));
+    const settings = await loadNotificationSettings(db, []);
+    expect(settings.adminAllows("n9", "email")).toBe(true);
   });
 });
