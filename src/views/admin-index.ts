@@ -1,6 +1,7 @@
 import {
   ADMIN_ALLOWLIST_PATH,
   ADMIN_DELIVERY_PATH,
+  ADMIN_NOTIFICATIONS_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
   ADMIN_USAGE_PATH,
 } from "../auth/paths.js";
@@ -43,6 +44,10 @@ export function renderAdminIndexPage(params: AdminIndexPageParams): string {
         <li>
           <a href="${escapeHtml(ADMIN_USAGE_PATH)}">Usage</a>
           <p class="tool-note">How many teams, how much activity, and how close anything is to a limit.</p>
+        </li>
+        <li>
+          <a href="${escapeHtml(ADMIN_NOTIFICATIONS_PATH)}">Notifications</a>
+          <p class="tool-note">Which automated messages may go out at all, by email and by push, across every game.</p>
         </li>
       </ul>
     `,

@@ -150,6 +150,13 @@ export const ADMIN_DELIVERY_PATH = `${ADMIN_PATH}/delivery`;
 export const ADMIN_USAGE_PATH = `${ADMIN_PATH}/usage`;
 
 /**
+ * The administrator's global notification grid (M37): which automated
+ * messages may go out at all, by email and by push, across every game.
+ */
+export const ADMIN_NOTIFICATIONS_PATH = `${ADMIN_PATH}/notifications`;
+export const ADMIN_NOTIFICATIONS_SET_PATH = `${ADMIN_NOTIFICATIONS_PATH}/set`;
+
+/**
  * Better Auth's own mount point: every endpoint it owns (`/sign-in/magic-link`,
  * `/magic-link/verify`, `/sign-out`, …) hangs off this. It is the framework's
  * default `basePath`, restated here because this project's own code builds

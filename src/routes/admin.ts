@@ -7,6 +7,8 @@ import {
   ADMIN_ALLOWLIST_PATH,
   ADMIN_ALLOWLIST_REMOVE_PATH,
   ADMIN_DELIVERY_PATH,
+  ADMIN_NOTIFICATIONS_PATH,
+  ADMIN_NOTIFICATIONS_SET_PATH,
   ADMIN_PATH,
   ADMIN_SIGNIN_CHECK_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
@@ -17,7 +19,7 @@ import { requireSession, pageNav } from "../auth/session.js";
 import { explainSignIn, foldAsciiCase, isSignInPermitted } from "../auth/sign-in-gate.js";
 import { getDb, type Db } from "../db/client.js";
 import { emailQuota, notificationLog, signinRefusals, signupAllowlist, user, verification } from "../db/schema.js";
-import { isOpenSignups, setOpenSignups } from "../domain/app-settings.js";
+import { isOpenSignups, loadAdminNotificationSwitches, setAdminNotificationChannel, setOpenSignups } from "../domain/app-settings.js";
 import { isPlausibleEmail } from "../domain/join-squad.js";
 import type { AppEnv } from "../env.js";
 import {
@@ -29,9 +31,11 @@ import {
 } from "../db/usage-queries.js";
 import { dayKey } from "../notify/quota.js";
 import { parseMaxEmailsPerDay } from "../notify/factory.js";
+import { isChannel, isNotificationType, NOTIFICATION_CONTROLS } from "../notify/notification-controls.js";
 import { renderAdminAllowlistPage } from "../views/admin-allowlist.js";
 import { renderAdminDeliveryPage } from "../views/admin-delivery.js";
 import { renderAdminIndexPage } from "../views/admin-index.js";
+import { renderAdminNotificationsPage } from "../views/admin-notifications.js";
 import { renderAdminSigninDoctorPage } from "../views/admin-signin-doctor.js";
 import { renderAdminUsagePage } from "../views/admin-usage.js";
 
@@ -330,4 +334,36 @@ admin.get(ADMIN_USAGE_PATH, requireSession, async (c) => {
       gamesShown: GAMES_SHOWN,
     }),
   );
+});
+
+/**
+ * The administrator's global notification grid (M37).
+ *
+ * `requireSession` establishes *who*; `loadAdminDb` re-asks *is this person an
+ * admin* per TR-18, and the refusal is a 404 to anyone without the bit — same
+ * pattern as every other handler in this file.
+ */
+admin.get(ADMIN_NOTIFICATIONS_PATH, requireSession, async (c) => {
+  const db = await loadAdminDb(c);
+  if (db === null) return c.text("Not found", 404);
+  return c.html(
+    renderAdminNotificationsPage({ nav: pageNav(c, "admin"), switches: await loadAdminNotificationSwitches(db) }),
+  );
+});
+
+admin.post(ADMIN_NOTIFICATIONS_SET_PATH, requireSession, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+  const db = await loadAdminDb(c);
+  if (db === null) return c.text("Not found", 404);
+  const form = await c.req.formData();
+  const type = String(form.get("type") ?? "");
+  const channel = String(form.get("channel") ?? "");
+  // A cell the catalogue does not have is not a thing that can be set — 404,
+  // the same answer as any other resource that does not exist.
+  if (!isNotificationType(type) || !isChannel(channel)) return c.text("Not found", 404);
+  if (NOTIFICATION_CONTROLS[type].scope === "none" || !NOTIFICATION_CONTROLS[type].channels.includes(channel)) {
+    return c.text("Not found", 404);
+  }
+  await setAdminNotificationChannel(db, type, channel, String(form.get("on") ?? "") === "on");
+  return c.redirect(ADMIN_NOTIFICATIONS_PATH, 303);
 });

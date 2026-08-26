@@ -1304,6 +1304,19 @@ export const NOTIFY_MATRIX_CSS = `
   table.notify-matrix .notify-timing .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
 `;
 
+/** The administrator's notification grid (M37) — `src/views/admin-notifications.ts`. Namespaced under `.admin-notify`. */
+export const ADMIN_NOTIFICATIONS_CSS = `
+  table.admin-notify { width: 100%; border-collapse: collapse; margin: 0.6rem 0 1.4rem; }
+  table.admin-notify th { text-align: center; font-size: var(--t-support); color: var(--mut); padding: 0.4rem 0; }
+  table.admin-notify th.notify-what { text-align: left; }
+  table.admin-notify td { padding: 0.5rem 0; border-top: 1px solid var(--line); vertical-align: middle; }
+  table.admin-notify .notify-label { font-weight: 600; }
+  table.admin-notify .hint { display: block; font-size: var(--t-support); color: var(--mut); }
+  table.admin-notify td.notify-cell { width: 6rem; text-align: center; }
+  table.admin-notify td.notify-cell form { display: inline; }
+  table.admin-notify td.notify-none { color: var(--mut); }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -1327,6 +1340,7 @@ export const PAGE_STYLE_BLOCKS = [
   SQUAD_SIGNALS_CSS,
   INVITE_ORDER_CSS,
   NOTIFY_MATRIX_CSS,
+  ADMIN_NOTIFICATIONS_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];
