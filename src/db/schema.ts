@@ -165,6 +165,44 @@ export const games = sqliteTable("games", {
   reminderLocalTime: text("reminder_local_time").notNull().default("09:00"),
   shortWarningOffsetHours: integer("short_warning_offset_hours").notNull().default(12),
   /**
+   * The owner's notification switches (M26), one per scheduled or
+   * owner-triggered notification the game can send.
+   *
+   * **Read live, never snapshotted onto `fixtures`** — unlike
+   * `shortWarningOffsetHours` one line up, which is copied at materialisation
+   * so an edit cannot rewrite history. A switch is not history: an owner who
+   * turns reminders off means the fixtures that already exist, and a
+   * snapshotted flag would keep emailing next week's fixture until it was
+   * re-materialised, which never happens.
+   *
+   * Every one defaults on, so a game created before this milestone behaves
+   * exactly as it did.
+   */
+  reminderEnabled: integer("reminder_enabled", { mode: "boolean" }).notNull().default(true),
+  shortWarningEnabled: integer("short_warning_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  groupNudgeEnabled: integer("group_nudge_enabled", { mode: "boolean" }).notNull().default(true),
+  resultPromptEnabled: integer("result_prompt_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  teamsPublishedEmailEnabled: integer("teams_published_email_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  /**
+   * M29. Whether delegating a fixture's team pick tells the delegate (N-13).
+   *
+   * Off means the job is handed over silently and the delegate finds it on
+   * their own fixture page. Defaults on with the rest of the M26 switches:
+   * a hand-over nobody is told about is one nobody does.
+   *
+   * There is no switch for `open` mode because opening the pick to the squad
+   * sends nothing at all — see `src/routes/games.ts`'s picker route for why.
+   */
+  teamPickerEmailEnabled: integer("team_picker_email_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  /**
    * How long after full time the "how did it go?" prompt (N-12) may first go
    * out. Zero — the default — is the pre-M26 behaviour: the first sweep run
    * after the whistle. `RESULT_NUDGE_WINDOW_MS` still bounds how late it may
@@ -176,9 +214,8 @@ export const games = sqliteTable("games", {
    * all at once. Off by default, so every Game that existed before this
    * milestone behaves exactly as it did.
    *
-   * Read live from `games`, never snapshotted onto `fixtures`: a switch is
-   * not history, so an owner's toggle must apply to fixtures that already
-   * exist, not just ones materialised after the change.
+   * Read live from `games`, never snapshotted onto `fixtures`, for the reason
+   * the M26 switches above give: a switch is not history.
    */
   gatedInvitesEnabled: integer("gated_invites_enabled", { mode: "boolean" }).notNull().default(false),
   /**

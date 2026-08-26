@@ -76,7 +76,7 @@ const n1Driver: Driver = {
       timezone: "Europe/London",
       reminderDaysBefore: 1,
       reminderLocalTime: "09:00",
-      // No row in `game_notification_settings` means enabled (M37 default).
+      reminderEnabled: true,
     });
     const fixtureId = crypto.randomUUID();
     await db.insert(fixtures).values({
@@ -116,7 +116,7 @@ const n4Driver: Driver = {
       prefersEvenNumbers: true,
       minPlayers: 10,
       maxPlayers: 14,
-      // No row in `game_notification_settings` means enabled (M37 default).
+      shortWarningEnabled: true,
     });
     const fixtureId = crypto.randomUUID();
     await db.insert(fixtures).values({
@@ -188,8 +188,7 @@ const N11_DUE_NOW = new Date("2026-08-12T10:00:00Z"); // past the 08:00Z reminde
 
 const n11Driver: Driver = {
   async seed(db) {
-    // No row in `game_notification_settings` means enabled (M37 default).
-    const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
+    const gameId = await insertGame(db, { name: "Thursday 7-a-side", groupNudgeEnabled: true });
     const fixtureId = crypto.randomUUID();
     await db.insert(fixtures).values({
       id: fixtureId,
