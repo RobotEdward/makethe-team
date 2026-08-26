@@ -218,15 +218,27 @@ const N12_DURATION_MINUTES = 60;
 const N12_FULL_TIME = new Date(N12_KICKOFF.getTime() + N12_DURATION_MINUTES * 60_000);
 const N12_NOW = new Date(N12_FULL_TIME.getTime() + 60 * 60 * 1000); // 1h after full time: inside the 12h window
 
+// n12's own send path is push-preferred/email-fallback *per player*: a
+// single recipient who has both a device and an email always takes the push
+// branch and never reaches the email one, so with only that recipient the
+// email cell could never fail no matter what the switches do. A second
+// recipient with an email and no device is the only way to give the email
+// leg a player who can actually carry it.
 const n12Driver: Driver = {
   async seed(db) {
     const gameId = await insertGame(db);
-    const playerId = "n12-player";
-    // Both channels, per the brief: push is preferred when both are present,
-    // so the email-off case only proves anything because a device exists too.
-    await db.insert(players).values({ id: playerId, name: "Both Channels", email: "n12-player@example.com" });
-    await db.insert(memberships).values({ id: "n12-m", gameId, playerId, active: true });
-    await insertSubscription(db, playerId, "https://push.example.com/n12-player");
+    const devicePlayerId = "n12-player";
+    const emailOnlyPlayerId = "n12-email-only-player";
+    // Both channels: push is preferred when both are present on one player.
+    await db.insert(players).values({ id: devicePlayerId, name: "Both Channels", email: "n12-player@example.com" });
+    await db.insert(memberships).values({ id: "n12-m", gameId, playerId: devicePlayerId, active: true });
+    await insertSubscription(db, devicePlayerId, "https://push.example.com/n12-player");
+    // Email only, no device: the recipient the email leg is actually
+    // observable through.
+    await db
+      .insert(players)
+      .values({ id: emailOnlyPlayerId, name: "Email Only", email: "n12-email-only@example.com" });
+    await db.insert(memberships).values({ id: "n12-email-only-m", gameId, playerId: emailOnlyPlayerId, active: true });
     const fixtureId = crypto.randomUUID();
     await db.insert(fixtures).values({
       id: fixtureId,
@@ -239,7 +251,10 @@ const n12Driver: Driver = {
       shortWarningOffsetHours: 12,
       durationMinutes: N12_DURATION_MINUTES,
     });
-    await db.insert(responses).values({ id: "n12-r", fixtureId, playerId, status: "in", source: "token" });
+    await db.insert(responses).values({ id: "n12-r", fixtureId, playerId: devicePlayerId, status: "in", source: "token" });
+    await db
+      .insert(responses)
+      .values({ id: "n12-r-email-only", fixtureId, playerId: emailOnlyPlayerId, status: "in", source: "token" });
     return gameId;
   },
   async send(db, _gameId, notifier) {
