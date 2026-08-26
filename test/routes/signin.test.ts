@@ -19,6 +19,7 @@ import {
   ACCOUNT_PATH,
   ADMIN_ALLOWLIST_PATH,
   ADMIN_DELIVERY_PATH,
+  ADMIN_NOTIFICATIONS_PATH,
   ADMIN_PATH,
   ADMIN_SIGNIN_DOCTOR_PATH,
   ADMIN_USAGE_PATH,
@@ -823,6 +824,11 @@ describe("no password field anywhere (TR-16)", () => {
         /<h1>Usage<\/h1>/,
         new Request(`${ORIGIN}${ADMIN_USAGE_PATH}`, { headers: { cookie } }),
       );
+      await capture(
+        "admin notifications",
+        /<h1>Notifications<\/h1>/,
+        new Request(`${ORIGIN}${ADMIN_NOTIFICATIONS_PATH}`, { headers: { cookie } }),
+      );
 
       // The delete-my-data page (M7b Task 4). Captured *before* the membership
       // below is promoted to `owner`: an ordinary member reaches the `offer`
@@ -1113,6 +1119,7 @@ describe("no password field anywhere (TR-16)", () => {
         "admin index",
         "admin sign-in doctor",
         "admin usage",
+        "admin notifications",
         "privacy",
         "offline",
         "robots",
@@ -1336,6 +1343,7 @@ describe("no password field anywhere (TR-16)", () => {
       "admin index",
       "admin sign-in doctor",
       "admin usage",
+      "admin notifications",
       "game form",
       "game overview",
       "game edit",
@@ -1424,6 +1432,12 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "plain-text 404 (not an admin), or a 303 redirect back to " +
       "GET /app/admin/allowlist, which this enumeration already covers " +
       "(src/routes/admin.ts); its own coverage lives in test/routes/admin.test.ts.",
+    "POST /app/admin/notifications/set":
+      "never returns HTML of its own — a plain-text 403 (wrong origin), a " +
+      "plain-text 404 (not an admin, or an unknown/undeclared type-channel " +
+      "cell), or a 303 redirect back to GET /app/admin/notifications, which " +
+      "this enumeration already covers (src/routes/admin.ts); its own " +
+      "coverage lives in test/routes/admin-notifications.test.ts.",
     "POST /g/:id/mute":
       "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
       "plain-text 400 (a duration outside the catalogue), a plain-text 404 " +
@@ -1694,6 +1708,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /app/admin/sign-in": "admin sign-in doctor",
     "GET /app/admin/delivery": "admin delivery",
     "GET /app/admin/usage": "admin usage",
+    "GET /app/admin/notifications": "admin notifications",
     "GET /g/new": "game form",
     "GET /g/:id": "game overview",
     "GET /g/:id/edit": "game edit",
