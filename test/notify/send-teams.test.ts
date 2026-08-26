@@ -91,8 +91,13 @@ async function seedFixture(
   return { gameId, fixtureId };
 }
 
-async function send(fixtureId: string, notifier: Notifier, publishedAt = PUBLISHED_AT) {
-  return sendTeamsEmails({ db, notifier, fixtureId, publishedAt, now: NOW, responseTokenSecret: SECRET });
+async function send(
+  fixtureId: string,
+  notifier: Notifier,
+  publishedAt = PUBLISHED_AT,
+  channels: { email: boolean; push: boolean } = { email: true, push: true },
+) {
+  return sendTeamsEmails({ db, notifier, fixtureId, publishedAt, now: NOW, responseTokenSecret: SECRET, channels });
 }
 
 async function logRows() {
@@ -378,5 +383,33 @@ describe("sendTeamsEmails (N-9)", () => {
     expect(notifier.all).toHaveLength(SQUAD_SIZE);
     const rows = await logRows();
     expect(rows).toHaveLength(SQUAD_SIZE);
+  });
+
+  it("sends only the push when the email channel is off (M37)", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "alice", name: "Alice", email: "alice@example.com", team: "a" },
+    ]);
+    await insertSubscription(db, "alice", "https://push.example.com/alice");
+    const notifier = new RecordingNotifier();
+
+    const result = await send(fixtureId, notifier, PUBLISHED_AT, { email: false, push: true });
+
+    expect(result).toEqual({ sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 1, pushFailed: 0, guestsSkipped: 0 });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["push"]);
+  });
+
+  it("sends only the email when the push channel is off (M37)", async () => {
+    const { fixtureId } = await seedFixture([
+      { id: "alice", name: "Alice", email: "alice@example.com", team: "a" },
+    ]);
+    await insertSubscription(db, "alice", "https://push.example.com/alice");
+    const notifier = new RecordingNotifier();
+
+    const result = await send(fixtureId, notifier, PUBLISHED_AT, { email: true, push: false });
+
+    expect(result).toEqual({ sent: 1, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 });
+    const rows = await logRows();
+    expect(rows.map((r) => r.channel)).toEqual(["email"]);
   });
 });

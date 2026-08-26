@@ -17,6 +17,7 @@ import {
   type PendingNotification,
 } from "./delivery.js";
 import type { Notifier } from "./notifier.js";
+import { loadNotificationSettings } from "./notification-settings.js";
 import { PUSH_COPY } from "./push-copy.js";
 import { renderTeamsEmail } from "./templates/teams.js";
 
@@ -50,7 +51,12 @@ export interface TeamsSendResult {
   pushSent: number;
   /** The push leg's own `failed` count — informational only, never folded into `failed` above. Also where a push `deferred` outcome lands, since the push leg can't legitimately produce one. */
   pushFailed: number;
-  /** BR-32: guests, and anyone with no usable address. Not a log row (see the guard below). */
+  /**
+   * BR-32: guests, and anyone left with no leg still standing once channel
+   * switches and address are both accounted for (M37) — e.g. email off and
+   * no device, or a usable address but email off and no device. Not a log
+   * row (see the guard below).
+   */
   guestsSkipped: number;
 }
 
@@ -68,6 +74,19 @@ export interface SendTeamsEmailsParams {
   /** The request's `now`. Used for `sent_at` and the leave token's expiry. */
   now: Date;
   responseTokenSecret: string;
+  /**
+   * Whether each channel may be attempted (M37). Resolved by the caller; a
+   * ceiling, never a promise. `src/routes/games.ts`'s publish handler always
+   * supplies it, loading `loadNotificationSettings` once per publish.
+   *
+   * Optional only so that `test/notify/notification-invariants.test.ts`'s n9
+   * driver — which calls this function directly, bypassing the route that
+   * normally resolves it, and is committed fixed scaffolding this task may
+   * not edit — still exercises the owner and administrator switches: when
+   * omitted, resolved here from the game's own settings instead of trusting
+   * an absent ceiling to mean "send everything".
+   */
+  channels?: { email: boolean; push: boolean };
 }
 
 /**
@@ -115,6 +134,19 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
     return { sent: 0, failed: 0, deferred: 0, deferredPlayerIds: [], pushSent: 0, pushFailed: 0, guestsSkipped: 0 };
   }
   const { fixture, game, squad } = withSquad;
+
+  // See `SendTeamsEmailsParams.channels`'s doc comment: every real caller
+  // supplies this, so the settings load below runs only for the one direct
+  // test caller that predates the route's own resolution.
+  const channels =
+    params.channels ??
+    (await (async () => {
+      const settings = await loadNotificationSettings(db, [game.id]);
+      return {
+        email: settings.isEnabled(game.id, "n9", "email"),
+        push: settings.isEnabled(game.id, "n9", "push"),
+      };
+    })());
 
   const inStatusSquad = squad.filter((member) => member.status === "in");
   // `isTeamId`, not `!== null`: `responses.team` is a bare `text` column with
@@ -185,20 +217,27 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
   const pending: PendingNotification[] = [];
 
   for (const member of inSquad) {
-    // BR-32: a guest, or anyone whose address is missing or blank, is skipped
-    // before a message is built and before anything is written. The
-    // `.trim()` matches `send-welcome.ts` and `send-promotion.ts` exactly,
-    // and is load-bearing for the same reason: an email of `" "` is truthy,
-    // and letting it through would produce a `queued` row and a
-    // `no-recipient` result that nothing usefully acts on.
+    // Guests are skipped outright, on every channel — that has never been
+    // conditional on a switch. The `.trim()` matches `send-welcome.ts` and
+    // `send-promotion.ts` exactly, and is load-bearing for the same reason:
+    // an email of `" "` is truthy, and letting it through would produce a
+    // `queued` row and a `no-recipient` result that nothing usefully acts on.
     const email = emailByPlayerId.get(member.playerId)?.trim() ?? "";
-    if (member.isGuest || email === "") {
+    // BR-32 (M37): "no usable address" is decided per leg — a player with no
+    // address but a registered device must still get the push when the email
+    // channel alone is off, so the address is only disqualifying for the leg
+    // it actually blocks.
+    const canEmail = channels.email && email !== "";
+    const canPush = channels.push && subscribed.has(member.playerId);
+    if (member.isGuest || (!canEmail && !canPush)) {
       guestsSkipped++;
       continue;
     }
 
     // A leave token, scoped to the Game rather than to this Fixture — same
-    // reasoning as every other game-scoped notification (BR-22, §2.2).
+    // reasoning as every other game-scoped notification (BR-22, §2.2). Built
+    // even for a push-only send: `emailPayload` below is shared by both
+    // legs' copy.
     const leaveToken = await signLeaveToken(
       { gameId: game.id, playerId: member.playerId, expiresAt: leaveTokenExpiry(now).getTime() },
       responseTokenSecret,
@@ -218,24 +257,27 @@ export async function sendTeamsEmails(params: SendTeamsEmailsParams): Promise<Te
       lineUps,
       leaveUrl,
     };
-    const rendered = renderTeamsEmail(emailPayload);
 
     const dedupeKey = teamsKey(fixtureId, member.playerId, publishedAtIso);
-    pending.push({
-      logId: crypto.randomUUID(),
-      dedupeKey,
-      playerId: member.playerId,
-      message: {
-        channel: "email",
-        to: email,
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-        dedupeKey,
-      },
-    });
 
-    if (subscribed.has(member.playerId)) {
+    if (canEmail) {
+      const rendered = renderTeamsEmail(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey,
+        playerId: member.playerId,
+        message: {
+          channel: "email",
+          to: email,
+          subject: rendered.subject,
+          html: rendered.html,
+          text: rendered.text,
+          dedupeKey,
+        },
+      });
+    }
+
+    if (canPush) {
       const copy = PUSH_COPY.n9(emailPayload);
       // A response token, exactly as N-1 and N-2 already sign one for their
       // own push (`sweep/open-and-remind.ts`, `send-promotion.ts`) — not

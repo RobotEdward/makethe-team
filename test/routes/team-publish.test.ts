@@ -1,10 +1,17 @@
 import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditLog, emailQuota, fixtures, games, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, emailQuota, fixtures, notificationLog, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
+import {
+  insertGame,
+  insertMembership,
+  insertNotificationSetting,
+  insertPlayer,
+  resetDatabase,
+  testDb,
+} from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
 
@@ -607,10 +614,7 @@ describe("publishing with the teams email switched off", () => {
   it("publishes the teams and emails nobody", async () => {
     const { cookie, viewerId } = await ownerSession();
     const seed = await seedPublishableFixture(viewerId);
-    await testDb()
-      .update(games)
-      .set({ teamsPublishedEmailEnabled: false })
-      .where(eq(games.id, seed.gameId));
+    await insertNotificationSetting(testDb(), seed.gameId, "n9", "email", false);
     await savePick(seed, cookie, completePick(seed));
 
     const response = await publish(seed, cookie);
@@ -635,10 +639,7 @@ describe("publishing with the teams email switched off", () => {
     const withEmail = await page();
     expect(withEmail).not.toContain("Email is off for this game");
 
-    await testDb()
-      .update(games)
-      .set({ teamsPublishedEmailEnabled: false })
-      .where(eq(games.id, seed.gameId));
+    await insertNotificationSetting(testDb(), seed.gameId, "n9", "email", false);
 
     const withoutEmail = await page();
     expect(withoutEmail).toContain("Email is off for this game");

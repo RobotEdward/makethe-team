@@ -13,6 +13,7 @@ import {
   type PendingNotification,
 } from "./delivery.js";
 import type { Notifier } from "./notifier.js";
+import { loadNotificationSettings } from "./notification-settings.js";
 import { PUSH_COPY } from "./push-copy.js";
 import { renderPickerHandoverEmail } from "./templates/picker-handover.js";
 
@@ -44,6 +45,19 @@ export interface SendPickerHandoverParams {
   /** The request's `now`, used for `sent_at` and the leave token's expiry. */
   now: Date;
   responseTokenSecret: string;
+  /**
+   * Whether each channel may be attempted (M37). Resolved by the caller; a
+   * ceiling, never a promise. `src/routes/games.ts`'s picker handler always
+   * supplies it.
+   *
+   * Optional only so that `test/notify/notification-invariants.test.ts`'s
+   * n13 driver — which calls this function directly, bypassing the route
+   * that normally resolves it, and is committed fixed scaffolding this task
+   * may not edit — still exercises the owner and administrator switches:
+   * when omitted, resolved here from the game's own settings instead of
+   * trusting an absent ceiling to mean "send everything".
+   */
+  channels?: { email: boolean; push: boolean };
 }
 
 /**
@@ -87,13 +101,37 @@ export async function sendPickerHandover(params: SendPickerHandoverParams): Prom
     .where(eq(players.id, playerId));
   if (!player) return { kind: "player-not-found" };
 
+  // See `SendPickerHandoverParams.channels`'s doc comment: every real caller
+  // supplies this, so the settings load below runs only for the one direct
+  // test caller that predates the route's own resolution.
+  const channels =
+    params.channels ??
+    (await (async () => {
+      const settings = await loadNotificationSettings(db, [game.id]);
+      return {
+        email: settings.isEnabled(game.id, "n13", "email"),
+        push: settings.isEnabled(game.id, "n13", "push"),
+      };
+    })());
+
   // BR-32, and the same `.trim()` the other senders carry for the same
   // reason: an email of `" "` is truthy, and letting it through produces a
   // `queued` row and a `no-recipient` result nothing usefully acts on. The
   // hand-over route refuses a guest before it gets here, so this is the
-  // belt to that braces rather than the only guard.
+  // belt to that braces rather than the only guard. Guests are excluded on
+  // every channel, unconditionally — that has never been switch-dependent.
   const email = player.email?.trim() ?? "";
-  if (player.isGuest || email === "") return { kind: "skipped-no-recipient" };
+  const canEmail = channels.email && email !== "";
+
+  // Only a player with a registered device, so somebody without a phone does
+  // not accumulate a `no-recipient` row per hand-over (spec §9.3 rule 1).
+  // Fetched before the "nothing to send" check below, since a device-only
+  // recipient (email off, or no address) still needs this to know whether
+  // there is anything left to attempt.
+  const subscribed = await playersWithPushSubscriptions(db, [playerId]);
+  const canPush = channels.push && subscribed.has(playerId);
+
+  if (player.isGuest || (!canEmail && !canPush)) return { kind: "skipped-no-recipient" };
 
   const leaveToken = await signLeaveToken(
     { gameId: game.id, playerId, expiresAt: leaveTokenExpiry(now).getTime() },
@@ -112,11 +150,13 @@ export async function sendPickerHandover(params: SendPickerHandoverParams): Prom
     pickerUrl,
     leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
   };
-  const rendered = renderPickerHandoverEmail(emailPayload);
 
   const dedupeKey = pickerHandoverKey(fixtureId, playerId, setAt.toISOString());
-  const pending: PendingNotification[] = [
-    {
+  const pending: PendingNotification[] = [];
+
+  if (canEmail) {
+    const rendered = renderPickerHandoverEmail(emailPayload);
+    pending.push({
       logId: crypto.randomUUID(),
       dedupeKey,
       playerId,
@@ -128,13 +168,10 @@ export async function sendPickerHandover(params: SendPickerHandoverParams): Prom
         text: rendered.text,
         dedupeKey,
       },
-    },
-  ];
+    });
+  }
 
-  // Only a player with a registered device, so somebody without a phone does
-  // not accumulate a `no-recipient` row per hand-over (spec §9.3 rule 1).
-  const subscribed = await playersWithPushSubscriptions(db, [playerId]);
-  if (subscribed.has(playerId)) {
+  if (canPush) {
     const copy = PUSH_COPY.n13(emailPayload);
     pending.push({
       logId: crypto.randomUUID(),

@@ -75,7 +75,12 @@ async function seed(
   return { gameId, fixtureId, playerId: delegate.id };
 }
 
-function send(fixtureId: string, playerId: string, notifier: Notifier) {
+function send(
+  fixtureId: string,
+  playerId: string,
+  notifier: Notifier,
+  channels: { email: boolean; push: boolean } = { email: true, push: true },
+) {
   return sendPickerHandover({
     db,
     notifier,
@@ -84,6 +89,7 @@ function send(fixtureId: string, playerId: string, notifier: Notifier) {
     setAt: SET_AT,
     now: NOW,
     responseTokenSecret: SECRET,
+    channels,
   });
 }
 
@@ -171,6 +177,7 @@ describe("sendPickerHandover (N-13)", () => {
       setAt: later,
       now: NOW,
       responseTokenSecret: SECRET,
+      channels: { email: true, push: true },
     });
 
     expect(outcome).toEqual({ kind: "sent" });
@@ -241,5 +248,31 @@ describe("sendPickerHandover (N-13)", () => {
 
     const [row] = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
     expect(row?.notificationType).toBe("n13");
+  });
+
+  it("sends only the push when the email channel is off (M37)", async () => {
+    const { fixtureId, playerId } = await seed();
+    await insertSubscription(db, playerId, "https://push.example/endpoint-1");
+    const notifier = new RecordingNotifier();
+
+    const outcome = await send(fixtureId, playerId, notifier, { email: false, push: true });
+
+    expect(outcome).toEqual({ kind: "already-logged" });
+    expect(notifier.all.map((m) => m.channel)).toEqual(["push"]);
+    const rows = await db.select().from(notificationLog);
+    expect(rows.map((row) => row.channel)).toEqual(["push"]);
+  });
+
+  it("sends only the email when the push channel is off (M37)", async () => {
+    const { fixtureId, playerId } = await seed();
+    await insertSubscription(db, playerId, "https://push.example/endpoint-1");
+    const notifier = new RecordingNotifier();
+
+    const outcome = await send(fixtureId, playerId, notifier, { email: true, push: false });
+
+    expect(outcome).toEqual({ kind: "sent" });
+    expect(notifier.all.map((m) => m.channel)).toEqual(["email"]);
+    const rows = await db.select().from(notificationLog);
+    expect(rows.map((row) => row.channel)).toEqual(["email"]);
   });
 });

@@ -76,6 +76,7 @@ import { countFixturesByPropagation, updateGame } from "../domain/update-game.js
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
+import { loadNotificationSettings } from "../notify/notification-settings.js";
 import { sendPickerHandover } from "../notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { sendTeamsEmails } from "../notify/send-teams.js";
@@ -1191,6 +1192,7 @@ async function ownerFixtureParams(
     fixture.lifecycle === "played"
       ? await ownerResultParams(db, game, fixture, viewerPlayerId, now)
       : undefined;
+  const notificationSettings = await loadNotificationSettings(db, [game.id]);
   return {
     nav,
     gameId: game.id,
@@ -1231,7 +1233,7 @@ async function ownerFixtureParams(
     // M26. The picker says publishing emails the squad, and for a game with
     // that switch off it does not — an organiser reading the unqualified
     // sentence would believe the squad had been told.
-    teamsEmailEnabled: game.teamsPublishedEmailEnabled,
+    teamsEmailEnabled: notificationSettings.isEnabled(game.id, "n9", "email"),
     // M29. Absent once the fixture has stopped taking changes: there is
     // nothing to hand over on a game that has been played or called off, so
     // the control would be an act with no effect.
@@ -1823,6 +1825,7 @@ async function renderPicker(
   const { fixture, game, squad } = withSquad;
   const playing = squad.filter((member) => member.status === "in");
   const counts = sideCounts(squad);
+  const notificationSettings = await loadNotificationSettings(target.db, [game.id]);
 
   return c.html(
     renderPickerPage({
@@ -1841,7 +1844,7 @@ async function renderPicker(
       published: fixture.teamsPublishedAt !== null,
       needsAnotherLook: teamsNeedAnotherLook(assignments),
       announcementOutstanding: announcementOutstanding(fixture, assignments),
-      teamsEmailEnabled: game.teamsPublishedEmailEnabled,
+      teamsEmailEnabled: notificationSettings.isEnabled(game.id, "n9", "email"),
       // The owner is never barred from publishing, whatever the mode; the
       // restriction `mayPublish` carries is about members in `open` mode.
       canPublish:
@@ -1980,12 +1983,23 @@ gamesRoutes.post("/g/:id/f/:fixtureId/picker", requirePlayer, async (c) => {
     }),
   ]);
 
-  // Only a genuinely new holder is told, and only if this game has the switch
-  // on (M26's shape). `setAt` is non-null on this branch by construction —
-  // `handedToSomebodyNew` implies `mode === "delegate"` — and is passed rather
-  // than re-read so the key matches the row that was just written.
-  if (handedToSomebodyNew && setAt !== null && target.game.teamPickerEmailEnabled) {
-    c.executionCtx.waitUntil(notifyPicker(c.env, target.fixture.id, delegatePlayerId!, setAt, now));
+  // Only a genuinely new holder is told, and only on whichever channels this
+  // game and the administrator both leave switched on (M37). `setAt` is
+  // non-null on this branch by construction — `handedToSomebodyNew` implies
+  // `mode === "delegate"` — and is passed rather than re-read so the key
+  // matches the row that was just written.
+  if (handedToSomebodyNew && setAt !== null) {
+    const settings = await loadNotificationSettings(target.db, [target.game.id]);
+    const channels = {
+      email: settings.isEnabled(target.game.id, "n13", "email"),
+      push: settings.isEnabled(target.game.id, "n13", "push"),
+    };
+    // M37. The hand-over itself still happened — the delegate can already
+    // pick — but with both channels off none is sent and no
+    // `notification_log` row is written.
+    if (channels.email || channels.push) {
+      c.executionCtx.waitUntil(notifyPicker(c.env, target.fixture.id, delegatePlayerId!, setAt, now, channels));
+    }
   }
 
   return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
@@ -2005,6 +2019,7 @@ async function notifyPicker(
   playerId: string,
   setAt: Date,
   now: Date,
+  channels: { email: boolean; push: boolean },
 ): Promise<void> {
   const who = `fixture ${fixtureId}, player ${playerId}`;
   try {
@@ -2017,6 +2032,7 @@ async function notifyPicker(
       setAt,
       now,
       responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
+      channels,
     });
     if (result.kind === "failed") console.error(`n13 picker hand-over failed for ${who}: ${result.reason}`);
     if (result.kind === "deferred") {
@@ -2256,11 +2272,16 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
   // depends on delivery, and a slow provider must not hold up their redirect.
   // Failures are not silent — every outcome is a durable `notification_log`
   // row and `publishTeams` logs the rest.
-  // M26. The publish itself still happened — `teams_published_at` is set
-  // above and players can see their side — but this game has asked for no
-  // email, so none is sent and no `notification_log` row is written.
-  if (target.game.teamsPublishedEmailEnabled) {
-    c.executionCtx.waitUntil(publishTeams(c.env, target.fixture.id, now));
+  const settings = await loadNotificationSettings(target.db, [target.game.id]);
+  const channels = {
+    email: settings.isEnabled(target.game.id, "n9", "email"),
+    push: settings.isEnabled(target.game.id, "n9", "push"),
+  };
+  // M37. The publish itself still happened — `teams_published_at` is set
+  // above and players can see their side — but with both channels off none
+  // is sent and no `notification_log` row is written.
+  if (channels.email || channels.push) {
+    c.executionCtx.waitUntil(publishTeams(c.env, target.fixture.id, now, channels));
   }
 
   // Back to the page the form was on, as the save route does and for the same
@@ -2289,7 +2310,12 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams/publish", requirePlayer, async (c) =
  * token's expiry, and collapsing them here would tie a future re-send of an
  * *older* publish to whenever it happened to be retried.
  */
-async function publishTeams(env: AppEnv["Bindings"], fixtureId: string, publishedAt: Date): Promise<void> {
+async function publishTeams(
+  env: AppEnv["Bindings"],
+  fixtureId: string,
+  publishedAt: Date,
+  channels: { email: boolean; push: boolean },
+): Promise<void> {
   const who = `fixture ${fixtureId}`;
   try {
     const db = getDb(env.DB);
@@ -2300,6 +2326,7 @@ async function publishTeams(env: AppEnv["Bindings"], fixtureId: string, publishe
       publishedAt,
       now: publishedAt,
       responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
+      channels,
     });
     if (result.failed > 0) console.error(`teams email (N-9) failed for ${result.failed} player(s) on ${who}`);
     if (result.deferred > 0) {
