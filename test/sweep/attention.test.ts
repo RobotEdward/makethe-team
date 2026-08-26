@@ -653,10 +653,10 @@ describe("sendOwnerAttention and the daily send ceiling (TR-31)", () => {
 describe("sendOwnerAttention and the owner's/administrator's switches (M37)", () => {
 /**
  * The owner's warning switch, now per channel via `loadNotificationSettings`
- * (M37) rather than the game's own `shortWarningEnabled` column: a fixture
- * with both channels off never becomes a candidate at all, unlike the
- * pre-M37 column, which is read live from `games` and could only be all or
- * nothing.
+ * (M37) rather than the game's own `short_warning_enabled` column (dropped in
+ * migration 0025): a fixture with both channels off never becomes a
+ * candidate at all, unlike the pre-M37 column, which was read live from
+ * `games` and could only be all or nothing.
  */
 it("sends nothing for a game whose short/uneven warning is switched off on both channels", async () => {
   const { gameId, fixtureId } = await seed({
