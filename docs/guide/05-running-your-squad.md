@@ -75,10 +75,13 @@ to the venue. **Save changes** applies everything at once.
 
 ## Choosing what your game sends
 
-![The Notifications section of the edit form: one switch per message the game sends, each with the timing it governs](images/notification-settings.png)
+![The Notifications section of the edit form: one row per message the game sends, an Email box and a Push box for each, and the timing it governs](images/notification-settings.png)
 
-**Notifications**, on the same form, lists every message the game sends by
-itself, with a switch for each and the timing it uses. All five start on.
+**Notifications**, on the same form, is a table: one row per message the game
+sends by itself, an **Email** box and a **Push** box beside it, and the
+timing underneath where the message has one. A row with a dash instead of a
+box has no version on that channel — there's nothing to switch on there.
+Every box starts checked.
 
 - **Remind players before kickoff** is the message that asks people if they're
   in, and **Days before** and **At** decide when it goes. Turning it off stops
@@ -87,15 +90,26 @@ itself, with a switch for each and the timing it uses. All five start on.
 - **Warn me when a fixture is short or uneven** emails you once about a fixture
   that needs a hand, **Hours before kickoff** ahead of the game. Changing the
   hours applies to fixtures scheduled from now on, not to ones already made.
+- **Tell players when I publish teams** decides whether publishing tells the
+  squad. With it off, publishing still puts the teams on everyone's page — it
+  just sends nothing, and the fixture page says so.
 - **Nudge me to post it to the group chat** is the phone notification that
-  reminds you to share the fixture. It rides with the reminder above, so it has
-  no time of its own.
+  reminds you to share the fixture. It rides with the reminder above, so it
+  has no time of its own, and no Email box — it's push only, so that row shows
+  a dash under Email.
 - **Ask players how it went** is the prompt for the score after full time.
   **Hours after full time** holds it back if you'd rather it landed the next
   morning; zero means as soon as we can.
-- **Email players when I publish teams** decides whether publishing tells the
-  squad. With it off, publishing still puts the teams on everyone's page — it
-  just sends nothing, and the fixture page says so.
+- **Tell a player when I hand them the team pick** is the message sent when
+  you give the team-pick decision to one player rather than opening it to the
+  whole squad. Nothing is sent for the whole-squad case.
+
+An organiser can switch any of these off, but not always on: the site
+administrator can switch a channel off for everyone, for one notification or
+for all of them. If they have, that box shows greyed out and unchecked, with
+a line underneath saying it's off everywhere for now — your own choice is
+kept underneath it and comes back on its own if the administrator turns the
+channel back on.
 
 ## Choosing who sees the squad
 

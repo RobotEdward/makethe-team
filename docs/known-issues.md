@@ -332,3 +332,8 @@ this entry being found.
 
 BR-45 is struck from the M34 spec rather than deleted, so a reader of that document
 is not left wondering why the numbering skips.
+
+## Owner notification switches are edit-only (M37, 26 August 2026)
+
+Owner notification switches cannot be set on the create form; the matrix appears on
+edit only, as the Advanced block always has.

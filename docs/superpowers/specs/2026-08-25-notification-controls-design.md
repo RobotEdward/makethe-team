@@ -2,7 +2,7 @@
 
 **Milestone:** M37
 **Date:** 25 August 2026
-**Status:** approved design, implementation plan not yet written
+**Status:** implemented in M37 (plan: docs/superpowers/plans/2026-08-26-m37-notification-controls.md)
 
 ## 1. What this is
 
@@ -342,3 +342,35 @@ never-switchable types shown read-only with no controls at all.
 - Per-game administrator overrides.
 - An email leg for `n11`.
 - Any change to `n10`'s per-send channel picker beyond the administrator gate on what it offers.
+
+## Implementation notes
+
+Recorded once the implementation plan (`docs/superpowers/plans/2026-08-26-m37-notification-controls.md`)
+was carried out, for where the shipped code deviates from this design:
+
+1. **Two migrations, not one.** §4 describes a single migration that creates
+   `game_notification_settings`, backfills it and drops the six boolean columns from `games`.
+   Shipped as `0024` (create + backfill) and `0025` (drop), because dropping the columns before
+   every reader had been converted to the new table broke typecheck. Both migrations ship in the
+   same release, so the spec's safety argument — the backfill runs before anything can read a row
+   that isn't there — still holds.
+2. **`loadNotificationSettings`'s query count.** §5 says two queries. The shipped resolver runs one
+   `app_settings` query plus a `game_notification_settings` query chunked at D1's 100-bound-parameter
+   limit (`src/db/chunk.ts`), so it is "one plus a chunked one" for a large `gameIds` list, not
+   exactly two. What §5 actually protects — no per-fixture query, no I/O inside `isEnabled` — is
+   unchanged and tested.
+3. **The administrator grid is not in the browser catalogue.** §7's browser-suite requirement is met
+   by excluding `/app/admin/notifications` from `test/browser/catalogue.ts` the same way the other
+   admin pages are (`NOT_CATALOGUED`: reachable only with `user.is_admin`, which no UI sets), and
+   pinning it instead with `test/routes/admin-notifications.test.ts`. The owner matrix rides the
+   already-catalogued `edit-game` page.
+4. **`channels` is optional, not mandatory, on the send functions.** `sendTeamsEmails` and
+   `sendPickerHandover` take an optional `channels: { email: boolean; push: boolean }`; when a
+   caller omits it, the function resolves settings itself. `sendBroadcast` additionally masks its
+   channels with the administrator's `n10` switches, on top of the handler refusing a channel the
+   administrator has switched off.
+5. **Two send paths are not yet gated.** `src/notify/send-late-invitations.ts` (the late-join
+   invitation) and `src/routes/respond.ts` (the promoted-sub message) still build `n1`-shaped
+   messages unconditionally — behaviour unchanged from before this milestone. Flagged here for a
+   follow-up rather than folded into this plan, so the gap is visible rather than silently
+   inherited.
