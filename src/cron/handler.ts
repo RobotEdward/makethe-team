@@ -392,6 +392,7 @@ async function runResultNudgeStep(
       pushFailed: 0,
       alreadyNudged: 0,
       skippedNoAddress: 0,
+      skippedSwitchedOff: 0,
       failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],
     };
   }

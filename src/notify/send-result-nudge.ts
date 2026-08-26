@@ -17,6 +17,7 @@ import {
   SITE_ORIGIN,
   type PendingNotification,
 } from "./delivery.js";
+import { loadNotificationSettings, type EffectiveSettings } from "./notification-settings.js";
 import type { Notifier } from "./notifier.js";
 import { PUSH_COPY } from "./push-copy.js";
 import { renderResultNudgeEmail } from "./templates/result-nudge.js";
@@ -48,6 +49,14 @@ export interface ResultNudgeResult {
   alreadyNudged: number;
   /** BR-32: an eligible player with no usable email and no registered push device. */
   skippedNoAddress: number;
+  /**
+   * An eligible player reachable on a channel — a device for push, an email
+   * address for email — that the owner or administrator switched off for
+   * N-12 (M37). Kept apart from `skippedNoAddress`, which exists to surface
+   * players nobody can ever reach; folding a switched-off game's players into
+   * it would bury that signal in noise.
+   */
+  skippedSwitchedOff: number;
   failures: SweepFailure[];
 }
 
@@ -61,6 +70,7 @@ function emptyResult(): ResultNudgeResult {
     pushFailed: 0,
     alreadyNudged: 0,
     skippedNoAddress: 0,
+    skippedSwitchedOff: 0,
     failures: [],
   };
 }
@@ -108,7 +118,6 @@ export async function sendResultNudges(
       timezone: games.timezone,
       kicksOffAt: fixtures.kicksOffAt,
       durationMinutes: fixtures.durationMinutes,
-      resultPromptEnabled: games.resultPromptEnabled,
       resultPromptOffsetHours: games.resultPromptOffsetHours,
     })
     .from(fixtures)
@@ -118,10 +127,11 @@ export async function sendResultNudges(
   // Filtered in JS against `now.getTime()`, matching `retirePastFixtures`'s
   // own idiom (a broad SQL select, then a precise JS filter for the boundary
   // that matters) rather than inline date arithmetic in the `WHERE` clause.
+  // The owner's on/off switch is no longer read here (M37): it moved to
+  // `gameNotificationSettings` and is resolved per channel, per player,
+  // inside `nudgeOneFixture`, since a switched-off player is not the same
+  // as a fixture with nobody eligible.
   const due = candidateRows.filter((row) => {
-    // The owner's switch (M26).
-    if (!row.resultPromptEnabled) return false;
-
     // The owner's delay (M26), measured from full time. The window runs from
     // the delay rather than from full time, so a game that asks twelve hours
     // later still gets the same twelve hours of catch-up after a missed run —
@@ -135,9 +145,11 @@ export async function sendResultNudges(
   const result = emptyResult();
   result.fixturesConsidered = due.length;
 
+  const settings = await loadNotificationSettings(db, due.map((fixture) => fixture.gameId));
+
   for (const fixture of due) {
     try {
-      await nudgeOneFixture(db, notifier, now, responseTokenSecret, fixture, result);
+      await nudgeOneFixture(db, notifier, now, responseTokenSecret, fixture, result, settings);
     } catch (error) {
       result.failures.push({
         fixtureId: fixture.id,
@@ -166,6 +178,7 @@ async function nudgeOneFixture(
   responseTokenSecret: string,
   fixture: { id: string; gameId: string; gameName: string; timezone: string; kicksOffAt: Date; durationMinutes: number },
   result: ResultNudgeResult,
+  settings: EffectiveSettings,
 ): Promise<void> {
   const { eligibleIds } = await resultElectorate(db, fixture.gameId, fixture.id);
   if (eligibleIds.size === 0) return;
@@ -192,6 +205,14 @@ async function nudgeOneFixture(
 
   const subscribed = await playersWithPushSubscriptions(db, remainingIds);
 
+  // The owner's and administrator's switches (M37), per channel. Resolved
+  // once per fixture, not per player: `loadNotificationSettings` performs no
+  // I/O once loaded, and the answer is the same for every player here.
+  const channels = {
+    email: settings.isEnabled(fixture.gameId, "n12", "email"),
+    push: settings.isEnabled(fixture.gameId, "n12", "push"),
+  };
+
   const whenLocal = formatLocalDateTime(fixture.kicksOffAt, fixture.timezone);
   const fixtureUrl = `${SITE_ORIGIN}${fixturePath(fixture.gameId, fixture.id)}`;
 
@@ -209,9 +230,15 @@ async function nudgeOneFixture(
       continue;
     }
 
+    const reachableByPush = subscribed.has(playerId);
+    const email = player.email?.trim() ?? "";
+    const reachableByEmail = email !== "";
+
     // Push-preferred, email-fallback (see this module's doc comment for why
-    // this is the reverse of `send-teams.ts`'s email-first default).
-    if (subscribed.has(playerId)) {
+    // this is the reverse of `send-teams.ts`'s email-first default). Neither
+    // branch is taken for a channel the owner or administrator switched off
+    // (M37): a disabled channel is never used, not even as the fallback.
+    if (channels.push && reachableByPush) {
       const copy = PUSH_COPY.n12({ gameName: fixture.gameName });
       const dedupeKey = pushKey(resultNudgeKey(fixture.id, playerId));
       pending.push({
@@ -231,8 +258,7 @@ async function nudgeOneFixture(
       continue;
     }
 
-    const email = player.email?.trim() ?? "";
-    if (email !== "") {
+    if (channels.email && reachableByEmail) {
       // A leave token scoped to `(gameId, playerId)`, not to this fixture
       // (BR-22) — the same shape `send-teams.ts` signs its own leave link
       // with, and deliberately not a fixture-scoped token: leaving works long
@@ -251,6 +277,14 @@ async function nudgeOneFixture(
         playerId,
         message: { channel: "email", to: email, subject: rendered.subject, html: rendered.html, text: rendered.text, dedupeKey },
       });
+      continue;
+    }
+
+    if (reachableByPush || reachableByEmail) {
+      // Reachable, but the owner or administrator switched off every channel
+      // that could have reached this player — not BR-32, and deliberately
+      // kept out of `skippedNoAddress` (see that counter's field comment).
+      result.skippedSwitchedOff++;
       continue;
     }
 

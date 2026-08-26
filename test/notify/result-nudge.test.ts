@@ -12,6 +12,7 @@ import {
   insertFixture,
   insertGame,
   insertMembership,
+  insertNotificationSetting,
   insertPlayer,
   insertResponse,
   insertSubscription,
@@ -200,6 +201,66 @@ describe("sendResultNudges", () => {
     const push = notifier.pushes()[0]!;
     expect(push.to).toBe(both);
     expect(push.title).toBe("How did it go?");
+  });
+
+  it("falls back to email when push is switched off, even for a player with a device (M37)", async () => {
+    const gameId = await insertGame(db);
+    const both = await insertPlayer(db, { name: "Both Channels", email: "both@example.com" });
+    await insertMembership(db, gameId, both);
+    await insertSubscription(db, both, "https://push.example/device-1");
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: KICKOFF,
+      durationMinutes: DURATION_MINUTES,
+    });
+    await insertResponse(db, fixtureId, both, { status: "in" });
+    await insertNotificationSetting(db, gameId, "n12", "push", false);
+
+    const notifier = new RecordingNotifier();
+    const result = await sendResultNudges(db, notifier, WITHIN_WINDOW_NOW, SECRET);
+
+    expect(notifier.all.map((m) => m.channel)).toEqual(["email"]);
+    expect(result.pushSent).toBe(0);
+  });
+
+  it("sends nothing, and does not count the player as unreachable, when both channels are off", async () => {
+    const gameId = await insertGame(db);
+    const both = await insertPlayer(db, { name: "Both Channels", email: "both@example.com" });
+    await insertMembership(db, gameId, both);
+    await insertSubscription(db, both, "https://push.example/device-1");
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: KICKOFF,
+      durationMinutes: DURATION_MINUTES,
+    });
+    await insertResponse(db, fixtureId, both, { status: "in" });
+    await insertNotificationSetting(db, gameId, "n12", "email", false);
+    await insertNotificationSetting(db, gameId, "n12", "push", false);
+
+    const notifier = new RecordingNotifier();
+    const result = await sendResultNudges(db, notifier, WITHIN_WINDOW_NOW, SECRET);
+
+    expect(notifier.all).toEqual([]);
+    expect(result.skippedNoAddress).toBe(0);
+    expect(result.skippedSwitchedOff).toBe(1);
+  });
+
+  it("still counts a genuinely unreachable player under BR-32 when channels are on", async () => {
+    const gameId = await insertGame(db);
+    const noAddress = await insertPlayer(db, { name: "No Address", email: null });
+    await insertMembership(db, gameId, noAddress);
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: KICKOFF,
+      durationMinutes: DURATION_MINUTES,
+    });
+    await insertResponse(db, fixtureId, noAddress, { status: "in" });
+
+    const notifier = new RecordingNotifier();
+    const result = await sendResultNudges(db, notifier, WITHIN_WINDOW_NOW, SECRET);
+
+    expect(result.skippedNoAddress).toBe(1);
+    expect(result.skippedSwitchedOff).toBe(0);
   });
 
   it("does not nudge twice across two sweep runs", async () => {
@@ -407,14 +468,16 @@ describe("sendResultNudges", () => {
       return { gameId, fixtureId };
     }
 
-    it("sends nothing when the prompt is switched off", async () => {
-      await playedFixtureWithOnePlayer({ resultPromptEnabled: false });
+    it("sends nothing when both channels are switched off", async () => {
+      const { gameId } = await playedFixtureWithOnePlayer({});
+      await insertNotificationSetting(db, gameId, "n12", "email", false);
+      await insertNotificationSetting(db, gameId, "n12", "push", false);
 
       const notifier = new RecordingNotifier();
       const result = await sendResultNudges(db, notifier, WITHIN_WINDOW_NOW, SECRET);
 
-      expect(result.fixturesConsidered).toBe(0);
       expect(notifier.all).toHaveLength(0);
+      expect(result.skippedSwitchedOff).toBe(1);
       // Nothing logged either, so switching it back on before the window
       // closes leaves the fixture still eligible.
       expect(await db.select().from(notificationLog)).toHaveLength(0);
