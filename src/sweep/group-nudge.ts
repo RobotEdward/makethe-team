@@ -12,6 +12,7 @@ import {
   type PendingNotification,
 } from "../notify/delivery.js";
 import type { Notifier } from "../notify/notifier.js";
+import { loadNotificationSettings } from "../notify/notification-settings.js";
 import { PUSH_COPY } from "../notify/push-copy.js";
 import { WHATSAPP_CARD_ID } from "../views/whatsapp.js";
 import { activeOwners } from "./attention.js";
@@ -67,11 +68,12 @@ export async function sendGroupNudges(db: Db, notifier: Notifier, now: Date): Pr
   // the run's failure total. A fixture that cannot say when its reminder is
   // simply is not due a nudge either.
   const { due: allDue } = await fixturesDueByLifecycle(db, "open", now);
-  // The owner's switch (M26). Filtered here rather than skipped in the loop so
-  // `fixturesConsidered` keeps meaning "fixtures this step could have nudged
-  // for" — a run that considered nothing because every game has the nudge off
-  // is not the same as one that found nothing due.
-  const due = allDue.filter((fixture) => fixture.switches.groupNudgeEnabled);
+  const settings = await loadNotificationSettings(db, allDue.map((fixture) => fixture.gameId));
+  // The owner's and administrator's switches (M37). Filtered here rather than
+  // skipped in the loop so `fixturesConsidered` keeps meaning "fixtures this
+  // step could have nudged for" — a run that considered nothing because every
+  // game has the nudge off is not the same as one that found nothing due.
+  const due = allDue.filter((fixture) => settings.isEnabled(fixture.gameId, "n11", "push"));
   const result: GroupNudgeResult = {
     fixturesConsidered: due.length,
     nudgesSent: 0,

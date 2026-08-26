@@ -452,13 +452,17 @@ export async function notifyReleasedSubs(
     );
     if (mailable.length === 0) return;
 
-    const pending = await buildReminderMessages({
+    // Not gated by `loadNotificationSettings` (M37 Task 4 scoped that to the
+    // hourly sweep only) — both legs stay open here, unconditionally, so this
+    // path's behaviour is unchanged pending a follow-up task.
+    const { pending } = await buildReminderMessages({
       db,
       fixture: row.fixture,
       game: row.game,
       candidates: mailable,
       responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
       now,
+      channels: { email: true, push: true },
     });
 
     const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n1" }, pending);

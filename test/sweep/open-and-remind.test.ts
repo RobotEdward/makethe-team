@@ -8,7 +8,13 @@ import { verifyLeaveToken } from "../../src/domain/token.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import { pushKey, reminderKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, SendResult } from "../../src/notify/notifier.js";
-import { insertGame, insertSubscription, requireEmailMessage, resetDatabase } from "../support/factories.js";
+import {
+  insertGame,
+  insertNotificationSetting,
+  insertSubscription,
+  requireEmailMessage,
+  resetDatabase,
+} from "../support/factories.js";
 
 const db = getDb(env.DB);
 const SECRET = "test-secret";
@@ -56,8 +62,6 @@ class RejectingNotifier implements Notifier {
 
 interface SeedOptions {
   kicksOffAt: Date;
-  /** The owner's N-1 switch (M26). Defaults on, as a real game does. */
-  reminderEnabled?: boolean;
   timezone?: string;
   reminderDaysBefore?: number;
   reminderLocalTime?: string;
@@ -72,7 +76,6 @@ async function seedFixture(opts: SeedOptions): Promise<{ gameId: string; fixture
     timezone: opts.timezone ?? "Europe/London",
     reminderDaysBefore: opts.reminderDaysBefore ?? 1,
     reminderLocalTime: opts.reminderLocalTime ?? "09:00",
-    reminderEnabled: opts.reminderEnabled ?? true,
   });
   const fixtureId = crypto.randomUUID();
 
@@ -167,6 +170,26 @@ describe("openAndRemind", () => {
     expect(logRows.find((r) => r.channel === "push")?.dedupeKey).toBe(pushKey(emailKey));
     const pushMessage = notifier.sent.flat().find((m) => m.channel === "push");
     expect(pushMessage).toMatchObject({ channel: "push", to: "device-player", tag: `n1:${fixtureId}` });
+  });
+
+  it("sends the push leg alone when only email is switched off (M37)", async () => {
+    const kicksOffAt = new Date("2026-08-13T18:00:00Z");
+    const onePlayer = [{ id: "device-player", name: "Player", email: "device-player@example.com" }];
+    const { gameId, fixtureId } = await seedFixture({ kicksOffAt, squad: onePlayer });
+    await insertSubscription(db, "device-player", "https://push.example.com/device-player");
+    const notifier = new RecordingNotifier();
+
+    await insertNotificationSetting(db, gameId, "n1", "email", false);
+    const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
+
+    expect(notifier.sent.flat().map((m) => m.channel)).toEqual(["push"]);
+    expect(result.pushRemindersSent).toBe(1);
+    expect(result.remindersSent).toBe(0);
+    const logRows = await db
+      .select()
+      .from(notificationLog)
+      .where(and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n1")));
+    expect(logRows.map((r) => r.channel)).toEqual(["push"]);
   });
 
   it("still emails a player with no device at all", async () => {
@@ -743,12 +766,14 @@ describe("openAndRemind", () => {
    */
   it("sends no reminder when the owner has switched them off, but still opens the fixture", async () => {
     const kicksOffAt = new Date("2026-08-13T18:00:00Z");
-    const { fixtureId } = await seedFixture({
+    const { gameId, fixtureId } = await seedFixture({
       kicksOffAt,
       lifecycle: "scheduled",
-      reminderEnabled: false,
       squad: squad(3),
     });
+    // Both legs off (M37) — the old single switch meant both.
+    await insertNotificationSetting(db, gameId, "n1", "email", false);
+    await insertNotificationSetting(db, gameId, "n1", "push", false);
     const notifier = new RecordingNotifier();
 
     const result = await openAndRemind(db, notifier, new Date("2026-08-12T08:00:00Z"), SECRET, env.FIXTURE_CAPACITY);

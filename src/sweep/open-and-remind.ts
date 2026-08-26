@@ -4,6 +4,7 @@ import { fixtures, games, memberships, notificationLog, players, responses } fro
 import { isMuted } from "../domain/mute.js";
 import { openFixture } from "../domain/open-fixture.js";
 import { reminderInstant } from "../domain/reminder-time.js";
+import { loadNotificationSettings } from "../notify/notification-settings.js";
 import { buildReminderMessages, type ReminderCandidate } from "../notify/reminder-messages.js";
 import type { FixtureCapacity } from "../capacity/fixture-capacity.js";
 import type { Notifier } from "../notify/notifier.js";
@@ -182,17 +183,10 @@ export interface DueFixture {
   gameId: string;
   kicksOffAt: Date;
   game: GameTiming;
-  /**
-   * The owner's switches for the two notifications keyed off this due-set
-   * (M26). Carried here rather than filtered in the query because all three
-   * callers share the query and only two of them care: **opening a fixture is
-   * not a notification**, and a game with reminders off must still have its
-   * fixtures opened on the same schedule, or nobody can respond at all.
-   *
-   * Read live from `games`, never from the fixture's own snapshot: turning a
-   * switch off means the fixtures that already exist.
-   */
-  switches: { reminderEnabled: boolean; groupNudgeEnabled: boolean };
+  // Switches are not carried here (M37): the three callers share this query
+  // and only two of them notify. Each of those loads `loadNotificationSettings`
+  // over the due set's game ids once, so the answer is per channel and never
+  // per-fixture I/O.
 }
 
 /** Step 1: open every `scheduled` fixture whose reminder instant has passed. */
@@ -259,8 +253,6 @@ export async function fixturesDueByLifecycle(
       timezone: games.timezone,
       reminderDaysBefore: games.reminderDaysBefore,
       reminderLocalTime: games.reminderLocalTime,
-      reminderEnabled: games.reminderEnabled,
-      groupNudgeEnabled: games.groupNudgeEnabled,
     })
     .from(fixtures)
     .innerJoin(games, eq(fixtures.gameId, games.id))
@@ -281,10 +273,6 @@ export async function fixturesDueByLifecycle(
         timezone: row.timezone,
         reminderDaysBefore: row.reminderDaysBefore,
         reminderLocalTime: row.reminderLocalTime,
-      },
-      switches: {
-        reminderEnabled: row.reminderEnabled,
-        groupNudgeEnabled: row.groupNudgeEnabled,
       },
     };
     try {
@@ -320,6 +308,7 @@ async function sendDueReminders(
   responseTokenSecret: string,
 ): Promise<RemindResult> {
   const { due, failures } = await fixturesDueByLifecycle(db, "open", now);
+  const settings = await loadNotificationSettings(db, due.map((fixture) => fixture.gameId));
 
   let remindersSent = 0;
   let remindersFailed = 0;
@@ -329,11 +318,15 @@ async function sendDueReminders(
   let guestsSkipped = 0;
 
   for (const fixture of due) {
-    // The owner's switch (M26). Skipped before the per-fixture query, and
-    // before any `notification_log` row is written, so turning reminders back
-    // on later leaves the next due fixture still eligible rather than
-    // already-logged.
-    if (!fixture.switches.reminderEnabled) continue;
+    // The owner's and administrator's switches (M37), per channel. Skipped
+    // before the per-fixture query and before any `notification_log` row is
+    // written, so switching back on later leaves the next due fixture still
+    // eligible rather than already-logged.
+    const channels = {
+      email: settings.isEnabled(fixture.gameId, "n1", "email"),
+      push: settings.isEnabled(fixture.gameId, "n1", "push"),
+    };
+    if (!channels.email && !channels.push) continue;
 
     try {
       const [row] = await db
@@ -347,39 +340,28 @@ async function sendDueReminders(
       const candidates = await eligiblePlayers(db, fixture.id, fixtureRow.gameId, now);
       const alreadyLogged = await existingReminderLog(db, fixture.id);
 
-      const toBuild: ReminderCandidate[] = [];
-      for (const candidate of candidates) {
-        if (alreadyLogged.has(candidate.playerId)) continue;
-        if (candidate.isGuest || !candidate.email || candidate.email.trim() === "") {
-          // BR-32: guests (and anyone with no usable address) are skipped
-          // before a message is ever built — no message, no log row, not a
-          // failure.
-          //
-          // The `.trim()` is load-bearing, not defensive tidying. A
-          // `players.email` of `" "` is truthy, so it used to pass this guard,
-          // get a token signed and a `queued` row inserted, then be trimmed to
-          // empty inside `QuotaNotifier` and come back `NO_RECIPIENT_REASON` —
-          // which the sweep treated as retryable and deleted, so the whole
-          // cycle repeated on every single sweep run, forever, while raising a
-          // false daily-ceiling alarm each time. Trimming *here*, at the same
-          // place a null address is caught, makes "no usable address" the one
-          // permanent, silent skip it always should have been.
-          guestsSkipped++;
-          continue;
-        }
-        toBuild.push(candidate);
-      }
+      // Not filtered for a usable address here any more (M37): with the two
+      // legs switchable independently, whether a candidate should be skipped
+      // depends on *which* leg they can actually receive, and only
+      // `buildReminderMessages` (below) knows both `channels` and each
+      // candidate's subscription. `guestsSkipped` is incremented from its
+      // `skippedPlayerIds`, once that's known, not here.
+      const toBuild: ReminderCandidate[] = candidates.filter(
+        (candidate) => !alreadyLogged.has(candidate.playerId),
+      );
 
       if (toBuild.length === 0) continue;
 
-      const pending = await buildReminderMessages({
+      const { pending, skippedPlayerIds } = await buildReminderMessages({
         db,
         fixture: fixtureRow,
         game: gameRow,
         candidates: toBuild,
         responseTokenSecret,
         now,
+        channels,
       });
+      guestsSkipped += skippedPlayerIds.length;
 
       const inserted = await insertQueuedLogRows(db, { fixtureId: fixture.id, notificationType: "n1" }, pending);
       if (inserted.length === 0) continue;

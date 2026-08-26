@@ -81,13 +81,17 @@ export async function sendLateInvitations(params: {
       }
     }
 
-    const pending = await buildReminderMessages({
+    // Not gated by `loadNotificationSettings` (M37 Task 4 scoped that to the
+    // hourly sweep only) — both legs stay open here, unconditionally, so this
+    // path's behaviour is unchanged pending a follow-up task.
+    const { pending } = await buildReminderMessages({
       db,
       fixture: row.fixture,
       game: row.game,
       candidates: [{ playerId, name: player.name, email: player.email, isGuest: player.isGuest }],
       responseTokenSecret,
       now,
+      channels: { email: true, push: true },
     });
 
     const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n1" }, pending);

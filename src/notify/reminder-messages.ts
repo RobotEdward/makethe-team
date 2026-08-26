@@ -25,6 +25,20 @@ export interface ReminderCandidate {
  * dedupe key — which is what lets the hourly sweep see the log row and not
  * send a second one.
  */
+export interface ReminderMessages {
+  pending: PendingNotification[];
+  /**
+   * Candidates for whom neither leg was built — email off (or no address)
+   * and push off (or no subscription). The caller's BR-32 count: "no usable
+   * address" used to be decided before this function ran, but that guard
+   * could no longer say "skip" correctly once a candidate's two legs can be
+   * switched independently (M37) — a guest with no address but a device must
+   * still get the push. Deciding it per leg, in here, is the only place that
+   * knows both.
+   */
+  skippedPlayerIds: string[];
+}
+
 export async function buildReminderMessages(params: {
   db: Db;
   fixture: typeof fixtures.$inferSelect;
@@ -32,8 +46,9 @@ export async function buildReminderMessages(params: {
   candidates: ReminderCandidate[];
   responseTokenSecret: string;
   now: Date;
-}): Promise<PendingNotification[]> {
-  const { db, fixture, game, candidates, responseTokenSecret, now } = params;
+  channels: { email: boolean; push: boolean };
+}): Promise<ReminderMessages> {
+  const { db, fixture, game, candidates, responseTokenSecret, now, channels } = params;
 
   const kicksOffAtLocal = formatLocalDateTime(fixture.kicksOffAt, game.timezone);
   const inCount = fixture.inCount;
@@ -50,12 +65,8 @@ export async function buildReminderMessages(params: {
   );
 
   const pending: PendingNotification[] = [];
+  const skippedPlayerIds: string[] = [];
   for (const candidate of candidates) {
-    // Filtered by the caller, but narrowed again here so the compiler — not
-    // just the runtime check — refuses to let a null email reach `Message.to`.
-    const email = candidate.email;
-    if (!email) continue;
-
     const token = await signResponseToken(
       { playerId: candidate.playerId, fixtureId: fixture.id, expiresAt },
       responseTokenSecret,
@@ -70,6 +81,9 @@ export async function buildReminderMessages(params: {
     );
 
     const respondInUrl = `${SITE_ORIGIN}/r/${token}?intent=in`;
+    // Built unconditionally: it is the push copy's input as well as the
+    // email's, and which leg(s) actually get sent is decided independently,
+    // below.
     const emailPayload = {
       playerName: candidate.name,
       gameName: game.name,
@@ -81,24 +95,40 @@ export async function buildReminderMessages(params: {
       respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
       leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
     };
-    const rendered = renderReminderEmail(emailPayload);
 
     const dedupeKey = reminderKey(fixture.id, candidate.playerId);
-    pending.push({
-      logId: crypto.randomUUID(),
-      dedupeKey,
-      playerId: candidate.playerId,
-      message: {
-        channel: "email",
-        to: email,
-        subject: rendered.subject,
-        html: rendered.html,
-        text: rendered.text,
-        dedupeKey,
-      },
-    });
+    let builtSomething = false;
 
-    if (subscribed.has(candidate.playerId)) {
+    // BR-32 (M37): "no usable address" is decided per leg, here, rather than
+    // by the caller before this function runs — the caller can no longer say
+    // in advance that a candidate should be skipped altogether, since a guest
+    // with no address but a registered device must still get the push when
+    // the email leg alone is off. The `.trim()` is load-bearing, not
+    // defensive tidying: a `players.email` of `" "` is truthy, so without it
+    // a blank address would pass this guard, get a token signed and a
+    // `queued` row inserted, then be trimmed to empty inside `QuotaNotifier`
+    // and come back `NO_RECIPIENT_REASON` — which the sweep treats as
+    // retryable and deletes, so the whole cycle repeats on every sweep run,
+    // forever, while raising a false daily-ceiling alarm each time.
+    if (channels.email && candidate.email !== null && candidate.email.trim() !== "") {
+      const rendered = renderReminderEmail(emailPayload);
+      pending.push({
+        logId: crypto.randomUUID(),
+        dedupeKey,
+        playerId: candidate.playerId,
+        message: {
+          channel: "email",
+          to: candidate.email,
+          subject: rendered.subject,
+          html: rendered.html,
+          text: rendered.text,
+          dedupeKey,
+        },
+      });
+      builtSomething = true;
+    }
+
+    if (channels.push && subscribed.has(candidate.playerId)) {
       const copy = PUSH_COPY.n1(emailPayload);
       pending.push({
         logId: crypto.randomUUID(),
@@ -117,7 +147,10 @@ export async function buildReminderMessages(params: {
           dedupeKey: pushKey(dedupeKey),
         },
       });
+      builtSomething = true;
     }
+
+    if (!builtSomething) skippedPlayerIds.push(candidate.playerId);
   }
-  return pending;
+  return { pending, skippedPlayerIds };
 }

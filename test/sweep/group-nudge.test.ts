@@ -6,7 +6,7 @@ import { fixtures, memberships, notificationLog, players } from "../../src/db/sc
 import { groupNudgeKey, pushKey } from "../../src/notify/dedupe-key.js";
 import type { Message, Notifier, PushMessage, SendResult } from "../../src/notify/notifier.js";
 import { sendGroupNudges } from "../../src/sweep/group-nudge.js";
-import { insertGame, insertSubscription, resetDatabase } from "../support/factories.js";
+import { insertGame, insertNotificationSetting, insertSubscription, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 
@@ -42,14 +42,8 @@ class RecordingNotifier implements Notifier {
 let seq = 0;
 const nextId = (kind: string) => `${kind}-${++seq}`;
 
-async function seedFixture(
-  opts: { lifecycle?: "scheduled" | "open"; inCount?: number; groupNudgeEnabled?: boolean } = {},
-) {
-  const gameId = await insertGame(db, {
-    name: "Thursday 7-a-side",
-    // The owner's N-11 switch (M26). Defaults on, as a real game does.
-    groupNudgeEnabled: opts.groupNudgeEnabled ?? true,
-  });
+async function seedFixture(opts: { lifecycle?: "scheduled" | "open"; inCount?: number } = {}) {
+  const gameId = await insertGame(db, { name: "Thursday 7-a-side" });
   const fixtureId = nextId("fixture");
   await db.insert(fixtures).values({
     id: fixtureId,
@@ -229,7 +223,8 @@ describe("sendGroupNudges (N-11, M22)", () => {
   });
 
   it("nudges nobody for a game whose group nudge is switched off", async () => {
-    const { gameId, fixtureId } = await seedFixture({ groupNudgeEnabled: false });
+    const { gameId, fixtureId } = await seedFixture();
+    await insertNotificationSetting(db, gameId, "n11", "push", false);
     await addMember(gameId, "owner", { push: true });
     const notifier = new RecordingNotifier();
 
