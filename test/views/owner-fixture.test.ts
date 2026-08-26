@@ -11,6 +11,7 @@ const BASE: OwnerFixtureParams = {
   nav: { isAdmin: false, current: "games" } as const,
   gameId: "g-1",
   gameName: "Thursday 7-a-side",
+  inviteToken: "tok-1",
   fixtureId: "f-1",
   kicksOffAtLocal: "Thursday 13 August, 19:00",
   venueName: "Oxford Sports Park",

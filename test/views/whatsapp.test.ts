@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { renderWhatsAppCard, WHATSAPP_CARD_ID } from "../../src/views/whatsapp.js";
+import { linkIdFor, renderWhatsAppCard, WHATSAPP_CARD_ID } from "../../src/views/whatsapp.js";
 import { PAGE_STYLE_BLOCKS, WHATSAPP_CSS } from "../../src/views/styles.js";
-import { BROADCAST_WHATSAPP_JS, COPY_BUTTON_JS, PAGE_SCRIPT_BLOCKS } from "../../src/views/scripts.js";
+import { BROADCAST_WHATSAPP_JS, COPY_BUTTON_JS, PAGE_SCRIPT_BLOCKS, WHATSAPP_LINKS_JS } from "../../src/views/scripts.js";
 import { broadcastMessage } from "../../src/domain/whatsapp-message.js";
 
 describe("renderWhatsAppCard", () => {
@@ -197,3 +197,139 @@ describe("COPY_BUTTON_JS behaviour", () => {
     expect(run({ hasClipboard: false, targetExists: true }).button.hidden).toBe(true);
   });
 });
+
+describe("the Include switches (M38)", () => {
+  const OPTIONS = [
+    { key: "squad" as const, label: "Link for the squad", line: "In or out?: https://makethe.team/g/g1" },
+    { key: "invite" as const, label: "Link for someone new", line: "New here?: https://makethe.team/j/t1" },
+  ];
+  const FIXED = "⚽ Thursday Fives\n9 in so far — 1 more needed.";
+  const FULL = [FIXED, ...OPTIONS.map((option) => option.line)].join("\n");
+
+  const card = renderWhatsAppCard({
+    messages: [{ id: "whatsapp-open", label: "Numbers", text: FULL, options: OPTIONS }],
+  });
+
+  it("renders every line, ticked, so a browser with no scripting gets the whole message", () => {
+    // The switches only ever subtract — see `WhatsAppMessage.options`. This is
+    // the property that keeps the invite link in the message for a reader
+    // whose browser never runs the block below.
+    expect(card).toContain(escapeForTextarea(FULL));
+    expect(card.match(/<input type="checkbox" checked/g)).toHaveLength(2);
+  });
+
+  it("ships the switches hidden, for the script to reveal", () => {
+    expect(card).toContain('class="whatsapp-options" data-target="whatsapp-open" hidden');
+  });
+
+  it("labels each switch with the words openMessageParts gave it", () => {
+    expect(card).toContain("Link for the squad");
+    expect(card).toContain("Link for someone new");
+  });
+
+  it("gives the wa.me anchor an id, so the script can keep its href in step", () => {
+    expect(card).toContain('id="whatsapp-open-link"');
+    expect(linkIdFor("whatsapp-open")).toBe("whatsapp-open-link");
+  });
+
+  it("renders no switches for a message that has none", () => {
+    const plain = renderWhatsAppCard({ messages: [{ id: "a", label: "L", text: "t" }] });
+    expect(plain).not.toContain("whatsapp-options");
+  });
+
+  it("is registered, so the CSP hashes it", () => {
+    expect(PAGE_SCRIPT_BLOCKS).toContain(WHATSAPP_LINKS_JS);
+  });
+
+  it("names no off-origin URL of its own", () => {
+    expect(WHATSAPP_LINKS_JS).not.toContain("wa.me");
+  });
+
+  it("makes no network request", () => {
+    expect(WHATSAPP_LINKS_JS).not.toContain("fetch(");
+  });
+
+  /** The card's DOM, reduced to what the block actually touches. */
+  function run() {
+    const base = "https://wa.me/?text=";
+    let href = base + encodeURIComponent(FULL);
+    const field = { value: FULL };
+    const link = {
+      getAttribute: (name: string) => (name === "href" ? href : null),
+      setAttribute: (name: string, value: string) => {
+        if (name === "href") href = value;
+      },
+    };
+    const boxes = OPTIONS.map((option) => ({
+      checked: true,
+      handler: null as (() => void) | null,
+      getAttribute: (name: string) => (name === "data-line" ? option.line : null),
+      addEventListener(type: string, handler: () => void) {
+        if (type === "change") this.handler = handler;
+      },
+    }));
+    const group = {
+      hidden: true,
+      getAttribute: (name: string) => (name === "data-target" ? "whatsapp-open" : null),
+      querySelectorAll: () => boxes,
+    };
+    const byId: Record<string, unknown> = { "whatsapp-open": field, "whatsapp-open-link": link };
+    const documentFake = {
+      querySelectorAll: () => [group],
+      getElementById: (id: string) => byId[id] ?? null,
+    };
+    new Function("document", WHATSAPP_LINKS_JS)(documentFake);
+    const change = () => boxes[0]!.handler!();
+    return { group, field, boxes, change, text: () => decodeURIComponent(href.slice(base.length)) };
+  }
+
+  it("reveals the switches and changes nothing while all are ticked", () => {
+    const { group, field, text } = run();
+    expect(group.hidden).toBe(false);
+    expect(field.value).toBe(FULL);
+    expect(text()).toBe(FULL);
+  });
+
+  it("drops just the unticked line, from the textarea and the wa.me link alike", () => {
+    const { boxes, field, change, text } = run();
+    boxes[1]!.checked = false;
+    change();
+
+    const expected = [FIXED, OPTIONS[0]!.line].join("\n");
+    expect(field.value).toBe(expected);
+    expect(text()).toBe(expected);
+  });
+
+  it("leaves an announcement with no link when everything is unticked", () => {
+    // Deliberately allowed: an organiser posting "we're on for Wednesday" and
+    // nothing else is a real message, and there is no minimum to enforce.
+    const { boxes, field, change, text } = run();
+    boxes[0]!.checked = false;
+    boxes[1]!.checked = false;
+    change();
+
+    expect(field.value).toBe(FIXED);
+    expect(text()).toBe(FIXED);
+  });
+
+  it("puts a line back when its box is re-ticked, in message order", () => {
+    const { boxes, field, change } = run();
+    boxes[0]!.checked = false;
+    change();
+    expect(field.value).toBe([FIXED, OPTIONS[1]!.line].join("\n"));
+
+    boxes[0]!.checked = true;
+    change();
+    expect(field.value).toBe(FULL);
+  });
+
+  it("does nothing at all when the card is not on the page", () => {
+    const documentFake = { querySelectorAll: () => [], getElementById: () => null };
+    expect(() => new Function("document", WHATSAPP_LINKS_JS)(documentFake)).not.toThrow();
+  });
+});
+
+/** The textarea's escaped form, as `escapeHtml` writes it. */
+function escapeForTextarea(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}

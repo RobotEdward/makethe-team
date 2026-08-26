@@ -1194,6 +1194,7 @@ async function ownerFixtureParams(
   return {
     nav,
     gameId: game.id,
+    inviteToken: game.inviteToken,
     teamNames: teamNames(game),
     prefersEvenNumbers: fixture.prefersEvenNumbers,
     gameName: game.name,

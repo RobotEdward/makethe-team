@@ -16,6 +16,7 @@ import type { ResponseStatus } from "../../src/domain/response-status.js";
 
 const BASE = {
   gameName: "Thursday 7-a-side",
+  inviteToken: "tok-1",
   venueName: "Oxford Sports Park",
   kicksOffAtLocal: "Thursday 13 August, 19:00",
   view: { status: "open" as const, flags: [], inCount: 9, minPlayers: 10, maxPlayers: 14, spotsLeft: 5, needsOwnerAttention: false },
@@ -722,6 +723,7 @@ describe("fixture page", () => {
         nav: { isAdmin: false, current: "games" } as const,
         gameId: "g-1",
         gameName: "Thursday 7-a-side",
+        inviteToken: "tok-1",
         fixtureId: "f-1",
         kicksOffAtLocal: "Thursday 13 August, 19:00",
         venueName: "Oxford Sports Park",
@@ -1126,6 +1128,7 @@ describe("the capacity bar", () => {
       nav: { isAdmin: false, current: "games" } as const,
       gameId: "g-1",
       gameName: "Thursday 7-a-side",
+      inviteToken: "tok-1",
       fixtureId: "f-1",
       kicksOffAtLocal: "Thursday 13 August, 19:00",
       venueName: "Oxford Sports Park",

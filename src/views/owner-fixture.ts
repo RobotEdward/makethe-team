@@ -2,6 +2,7 @@ import {
   fixtureMessagePath,
   pickerModePath,
   gamePath,
+  joinPath,
   fixturePath,
   ownerGuestPath,
   ownerGuestRemovePath,
@@ -13,7 +14,7 @@ import { displayName } from "../domain/display-name.js";
 import { takingChanges, type FixtureView } from "../domain/fixture-view.js";
 import { PICKER_MODES, type PickerMode } from "../domain/picker.js";
 import { sideCounts, type TeamId } from "../domain/teams.js";
-import { cancelledMessage, openMessage, teamsMessage } from "../domain/whatsapp-message.js";
+import { cancelledMessage, openMessageParts, teamsMessage } from "../domain/whatsapp-message.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
@@ -22,7 +23,7 @@ import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
 import { renderFreshness } from "./freshness.js";
 import { renderInviteProgress, type InviteProgressParams } from "./invite-order.js";
 import { renderResultPanel, type ResultPanelParams } from "./result.js";
-import { COPY_BUTTON_JS, FRESHNESS_JS, TEAM_PICKER_JS, type PageScriptBlock } from "./scripts.js";
+import { COPY_BUTTON_JS, FRESHNESS_JS, TEAM_PICKER_JS, WHATSAPP_LINKS_JS, type PageScriptBlock } from "./scripts.js";
 import {
   FIXTURE_STYLES_CSS,
   FORM_CSS,
@@ -48,6 +49,12 @@ export interface OwnerFixtureParams {
   inviteProgress?: InviteProgressParams;
   gameId: string;
   gameName: string;
+  /**
+   * The game's current `invite_token`, for the WhatsApp card's "someone new"
+   * link (M38). Read from the game row the route already loaded, never
+   * rebuilt — rotating the token has to change this link in the same breath.
+   */
+  inviteToken: string;
   fixtureId: string;
   /** Already formatted for display in the game's timezone by the caller. */
   kicksOffAtLocal: string;
@@ -433,6 +440,7 @@ function renderTeams(params: OwnerFixtureParams): string {
 function whatsappMessages(params: OwnerFixtureParams): WhatsAppMessage[] {
   const { gameName, kicksOffAtLocal, venueName, view, squad, teamNames } = params;
   const gameUrl = `${SITE_ORIGIN}${gamePath(params.gameId)}`;
+  const inviteUrl = `${SITE_ORIGIN}${joinPath(params.inviteToken)}`;
 
   if (view.status === "cancelled") {
     return [
@@ -454,18 +462,23 @@ function whatsappMessages(params: OwnerFixtureParams): WhatsAppMessage[] {
     }));
     messages.push({ id: "whatsapp-teams", label: "Teams", text: teamsMessage({ gameName, kicksOffAtLocal, lineUps }) });
   }
+  const open = openMessageParts({
+    gameName,
+    venueName,
+    kicksOffAtLocal,
+    inCount: view.inCount,
+    minPlayers: view.minPlayers,
+    maxPlayers: view.maxPlayers,
+    gameUrl,
+    inviteUrl,
+  });
   messages.push({
     id: "whatsapp-open",
     label: "Numbers",
-    text: openMessage({
-      gameName,
-      venueName,
-      kicksOffAtLocal,
-      inCount: view.inCount,
-      minPlayers: view.minPlayers,
-      maxPlayers: view.maxPlayers,
-      gameUrl,
-    }),
+    // Every option's line is in `text` already — the switches subtract. See
+    // `WhatsAppMessage.options`.
+    text: [open.fixed, ...open.options.map((option) => option.line)].join("\n"),
+    options: open.options,
   });
   return messages;
 }
@@ -497,6 +510,10 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   const pageScripts: PageScriptBlock[] = [];
   if (takingChanges(view)) pageScripts.push(TEAM_PICKER_JS);
   if (whatsapp.length > 0) pageScripts.push(COPY_BUTTON_JS);
+  // Only when a message actually has switches — an all-cancelled card has
+  // none, and a block that finds nothing to do is a hash in the CSP for
+  // nothing.
+  if (whatsapp.some((message) => message.options !== undefined)) pageScripts.push(WHATSAPP_LINKS_JS);
   pageScripts.push(FRESHNESS_JS);
 
   const body = `

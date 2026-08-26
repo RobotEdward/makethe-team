@@ -1023,6 +1023,17 @@ export const WHATSAPP_CSS = `
      drops Copy to its own row if there really is no room. */
   .whatsapp-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.6rem; }
   .whatsapp-actions .button { white-space: nowrap; }
+  /* The "Include" switches (M38). A fieldset carries the browser's default
+     border and padding, both of which would box the switches off from the
+     textarea they belong to — stripped, and the legend does the grouping
+     visually as well as for a screen reader. */
+  .whatsapp-options { border: 0; margin: 0.6rem 0 0; padding: 0; }
+  .whatsapp-options legend { padding: 0; color: var(--mut); font-size: var(--t-support); }
+  /* Each switch is its own row: at 390px two of these side by side wrap
+     mid-label, which reads as one long sentence with stray boxes in it. */
+  .whatsapp-option { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; font-size: var(--t-support); }
+  /* Big enough to hit with a thumb — the browser default is around 13px. */
+  .whatsapp-option input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); flex: none; }
 `;
 
 /**

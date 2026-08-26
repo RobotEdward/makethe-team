@@ -1,3 +1,4 @@
+import type { OpenMessageOption } from "../domain/whatsapp-message.js";
 import { whatsappShareUrl } from "../domain/whatsapp-message.js";
 import { escapeHtml } from "./layout.js";
 
@@ -15,6 +16,17 @@ export interface WhatsAppMessage {
   label: string;
   /** The plain text to post, as `src/domain/whatsapp-message.ts` built it. */
   text: string;
+  /**
+   * The trailing lines of `text` the organiser may switch off (M38), or
+   * absent for a message with nothing optional in it.
+   *
+   * `text` already contains every one of them: the checkboxes ship ticked and
+   * `WHATSAPP_LINKS_JS` only ever *subtracts*. That is what keeps a browser
+   * with no scripting correct rather than crippled — it gets the whole
+   * message and no switches, which is the message an organiser wants by
+   * default anyway.
+   */
+  options?: readonly OpenMessageOption[];
 }
 
 /**
@@ -39,8 +51,9 @@ export function renderWhatsAppCard(params: { messages: readonly WhatsAppMessage[
       <div class="whatsapp-message">
         ${several ? `<h3>${escapeHtml(message.label)}</h3>` : ""}
         <textarea id="${escapeHtml(message.id)}" readonly rows="${rowsFor(message.text)}">${escapeHtml(message.text)}</textarea>
+        ${renderOptions(message)}
         <div class="whatsapp-actions">
-          <a class="button" href="${escapeHtml(whatsappShareUrl(message.text))}" target="_blank" rel="noopener">Open in WhatsApp</a>
+          <a class="button" id="${escapeHtml(linkIdFor(message.id))}" href="${escapeHtml(whatsappShareUrl(message.text))}" target="_blank" rel="noopener">Open in WhatsApp</a>
           <button class="button" type="button" data-copy="${escapeHtml(message.id)}" hidden>Copy</button>
         </div>
       </div>`,
@@ -53,6 +66,44 @@ export function renderWhatsAppCard(params: { messages: readonly WhatsAppMessage[
       <p>Opens WhatsApp with this ready to send — pick the group chat and add your own words.</p>
       ${blocks}
     </div>`;
+}
+
+/** The `wa.me` anchor belonging to a message, so the script can find it. */
+export function linkIdFor(messageId: string): string {
+  return `${messageId}-link`;
+}
+
+/**
+ * The switches, shipped `hidden` (M38).
+ *
+ * Same contract as the Copy button beside them: the page is complete without
+ * the script, and revealing these is all the script does for a reader who has
+ * one. A `<fieldset>` rather than loose labels so the group is announced as a
+ * group, and no `<form>` — nothing here is submitted, and wrapping controls
+ * that only a script reads in a form that posts nowhere would be a lie about
+ * what pressing enter does.
+ *
+ * `data-line` carries each line's exact text rather than an index into
+ * anything: the script rebuilds the message by subtracting these strings, so
+ * they have to be the strings, and `test/views/whatsapp.test.ts` runs the
+ * block against a fake DOM to hold it to the same answer the server gives.
+ */
+function renderOptions(message: WhatsAppMessage): string {
+  if (message.options === undefined || message.options.length === 0) return "";
+  const boxes = message.options
+    .map(
+      (option) => `
+        <label class="whatsapp-option">
+          <input type="checkbox" checked data-line="${escapeHtml(option.line)}">
+          ${escapeHtml(option.label)}
+        </label>`,
+    )
+    .join("");
+  return `
+      <fieldset class="whatsapp-options" data-target="${escapeHtml(message.id)}" hidden>
+        <legend>Include</legend>
+        ${boxes}
+      </fieldset>`;
 }
 
 /**

@@ -100,12 +100,19 @@ describe("the script enumeration", () => {
       // `PRESENCE_JS` (M33) is a capability guard again rather than a DOM
       // one: everything it does is a `fetch`, so `if (!window.fetch) return;`
       // is both the detection and the whole reason to carry on.
+      // `WHATSAPP_LINKS_JS` (M38) is a DOM guard for the same reason as
+      // `BROADCAST_WHATSAPP_JS` beside it — `encodeURIComponent`,
+      // `setAttribute` and `checked` need no detecting — and it guards the
+      // two anchors a group cannot work without: `if (!field || !link)
+      // return;`. It runs per matched fieldset, so a page with no WhatsApp
+      // card matches nothing and does nothing, which is the same silent
+      // no-op by another route.
       // `SIGN_IN_SUBMIT_JS` (August 2026) is that same shape once more:
       // `addEventListener` and `disabled` need no detecting, so what it
       // guards is its two anchors together — `if (!form || !button) return;`
       // — and a page without the sign-in form gets the usual silent no-op.
       expect(block, "must feature-detect before use, in a guard-then-return").toMatch(
-        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!bar\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;|if\s*\(!form \|\| !button\)\s*return;|if\s*\(!window\.fetch\)\s*return;/,
+        /if\s*\([^)]*PublicKeyCredential[^)]*\)\s*return;|if\s*\([^)]*navigator\.clipboard[^)]*\)\s*return;|if\s*\([^)]*DataTransfer[^)]*\)\s*return;|if\s*\(!\([^)]*serviceWorker[^)]*\)\)\s*return;|if\s*\(!section\)\s*return;|if\s*\(!bar\)\s*return;|if\s*\(!panel \|\| !link \|\| !subject \|\| !message\)\s*return;|if\s*\(!form \|\| !button\)\s*return;|if\s*\(!field \|\| !link\)\s*return;|if\s*\(!window\.fetch\)\s*return;/,
       );
     }
   });

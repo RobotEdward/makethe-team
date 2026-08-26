@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { auditLog, fixtures, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { COPY_BUTTON_JS, FRESHNESS_JS, PRESENCE_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, TEAM_PICKER_JS } from "../../src/views/scripts.js";
+import { COPY_BUTTON_JS, FRESHNESS_JS, PRESENCE_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, TEAM_PICKER_JS, WHATSAPP_LINKS_JS } from "../../src/views/scripts.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
@@ -241,10 +241,11 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     // longer true of the raw count — every page now carries that plus
     // whatever it opts into. M22 added a second opt-in to an open fixture's
     // page: the Post-to-WhatsApp card's Copy button. M24 added a third, the
-    // freshness bar's re-fetch-on-resume. The page's *own* opt-ins are
-    // therefore exactly those three, named here so a fourth cannot arrive
-    // unnoticed, and the assertion is narrowed to the scripts that are not
-    // the site-wide block.
+    // freshness bar's re-fetch-on-resume. M38 added a fourth, the card's
+    // "Include" switches, which subtract a link line from the prepared
+    // message. The page's *own* opt-ins are therefore exactly those four,
+    // named here so a fifth cannot arrive unnoticed, and the assertion is
+    // narrowed to the scripts that are not the site-wide block.
     const scripts = [...served.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
     // PRESENCE_JS (M33) is filtered with it, and for the same reason: it
     // rides on every page carrying the signed-in header rather than being an
@@ -255,8 +256,8 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     );
     expect(
       ownScripts.map(([, , js]) => js),
-      "the picker page carries exactly the picker, the copy button and the freshness bar",
-    ).toEqual([TEAM_PICKER_JS, COPY_BUTTON_JS, FRESHNESS_JS]);
+      "the picker page carries exactly the picker, the copy button, the WhatsApp switches and the freshness bar",
+    ).toEqual([TEAM_PICKER_JS, COPY_BUTTON_JS, WHATSAPP_LINKS_JS, FRESHNESS_JS]);
     // Guards against layout() emitting a site-wide block twice: the two
     // assertions above (some() finds it, ownScripts has length 2) would both
     // still pass if SERVICE_WORKER_JS appeared a second time, since a

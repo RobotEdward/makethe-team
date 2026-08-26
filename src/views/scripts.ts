@@ -1175,12 +1175,77 @@ export const PRESENCE_JS = `
  *
  * `SERVICE_WORKER_JS` is deliberately absent — see its own comment for why.
  */
+
+/**
+ * The "Include" switches on the WhatsApp card (M38).
+ *
+ * Subtractive, and only subtractive. The server renders the whole message —
+ * every link — into the textarea and the `wa.me` href, and every checkbox
+ * ships ticked; this block removes the lines whose box is unticked. So a
+ * browser with no scripting, or one that fails to run this, shows the
+ * complete message and no switches, which is the same page minus a
+ * convenience rather than a page missing a link. Same contract as
+ * `COPY_BUTTON_JS`, and the `hidden` attribute on the fieldset is what
+ * enforces it.
+ *
+ * The line each box governs travels in its own `data-line`, so the message is
+ * rebuilt from the exact strings the server built rather than from an index
+ * or a regex over the text — the shape lives in `openMessageParts`
+ * (`src/domain/whatsapp-message.ts`) and nothing here re-derives it.
+ * `test/views/whatsapp.test.ts` runs this block against a fake DOM and holds
+ * the two to the same answer.
+ *
+ * The `wa.me` prefix is **read off the anchor's own `href`**, never written
+ * here, for the reason `BROADCAST_WHATSAPP_JS` gives: `test/views/scripts.test.ts`
+ * forbids an off-origin URL in a script block, and rightly.
+ *
+ * Unticking everything is allowed and yields a message with no link at all —
+ * an announcement, which is a thing an organiser may legitimately want to
+ * post. There is no minimum to enforce.
+ *
+ * No `fetch`, so `connect-src` is untouched.
+ */
+export const WHATSAPP_LINKS_JS = `
+(function () {
+  var groups = document.querySelectorAll("fieldset.whatsapp-options");
+  for (var i = 0; i < groups.length; i++) {
+    (function (group) {
+      var field = document.getElementById(group.getAttribute("data-target"));
+      var link = document.getElementById(group.getAttribute("data-target") + "-link");
+      if (!field || !link) return;
+      var href = link.getAttribute("href") || "";
+      var marker = href.indexOf("?text=");
+      if (marker === -1) return;
+      var base = href.slice(0, marker + 6);
+      var boxes = group.querySelectorAll("input[type=checkbox][data-line]");
+      var fixed = field.value;
+      for (var j = 0; j < boxes.length; j++) {
+        fixed = fixed.replace("\\n" + boxes[j].getAttribute("data-line"), "");
+      }
+      function update() {
+        var text = fixed;
+        for (var k = 0; k < boxes.length; k++) {
+          if (boxes[k].checked) text += "\\n" + boxes[k].getAttribute("data-line");
+        }
+        field.value = text;
+        link.setAttribute("href", base + encodeURIComponent(text));
+      }
+      for (var m = 0; m < boxes.length; m++) {
+        boxes[m].addEventListener("change", update);
+      }
+      group.hidden = false;
+    })(groups[i]);
+  }
+})();
+`;
+
 export const PAGE_SCRIPT_BLOCKS = [
   PASSKEY_SIGN_IN_JS,
   SIGN_IN_SUBMIT_JS,
   PASSKEY_REGISTER_JS,
   COPY_BUTTON_JS,
   BROADCAST_WHATSAPP_JS,
+  WHATSAPP_LINKS_JS,
   TEAM_PICKER_JS,
   INSTALL_JS,
   PUSH_SUBSCRIBE_JS,
