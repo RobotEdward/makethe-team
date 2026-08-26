@@ -177,6 +177,13 @@ export const games = sqliteTable("games", {
    *
    * Every one defaults on, so a game created before this milestone behaves
    * exactly as it did.
+   *
+   * Unread since M37: every reader moved to `game_notification_settings`
+   * (migration 0024). These six columns are dropped by a follow-up migration
+   * once the M37 worker is live — not in the same deploy, because
+   * `migrations apply` runs before `wrangler deploy` and dropping them here
+   * would 500 the still-running old worker, which selects them by name, in
+   * the gap between the two steps.
    */
   reminderEnabled: integer("reminder_enabled", { mode: "boolean" }).notNull().default(true),
   shortWarningEnabled: integer("short_warning_enabled", { mode: "boolean" })

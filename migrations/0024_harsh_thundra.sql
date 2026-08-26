@@ -11,7 +11,8 @@
 -- off pushes being delivered today, to owners who never asked for that.
 -- `group_nudge_enabled` gates a push-only notification.
 --
--- The six columns are dropped by migration 0025, once nothing reads them.
+-- The six columns are dropped by a follow-up migration once the M37 worker
+-- is live, not in this deploy.
 CREATE TABLE `game_notification_settings` (
 	`game_id` text NOT NULL,
 	`notification_type` text NOT NULL,

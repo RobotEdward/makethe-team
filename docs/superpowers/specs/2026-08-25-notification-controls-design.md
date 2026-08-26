@@ -348,12 +348,15 @@ never-switchable types shown read-only with no controls at all.
 Recorded once the implementation plan (`docs/superpowers/plans/2026-08-26-m37-notification-controls.md`)
 was carried out, for where the shipped code deviates from this design:
 
-1. **Two migrations, not one.** §4 describes a single migration that creates
-   `game_notification_settings`, backfills it and drops the six boolean columns from `games`.
-   Shipped as `0024` (create + backfill) and `0025` (drop), because dropping the columns before
-   every reader had been converted to the new table broke typecheck. Both migrations ship in the
-   same release, so the spec's safety argument — the backfill runs before anything can read a row
-   that isn't there — still holds.
+1. **Two migrations, not one, and not in the same deploy.** §4 describes a single migration that
+   creates `game_notification_settings`, backfills it and drops the six boolean columns from
+   `games`. Shipped as `0024` (create + backfill) and a follow-up drop migration, because dropping
+   the columns before every reader had been converted to the new table broke typecheck. The drop
+   also cannot ship in the same release as `0024`: the deploy workflow applies D1 migrations before
+   `wrangler deploy`, so dropping the columns before the new worker is live would 500 the
+   still-running old worker, which selects them by name, in the gap between the two steps. The drop
+   ships in a second deploy once the M37 worker is live everywhere. The spec's safety argument for
+   the backfill — it runs before anything can read a row that isn't there — still holds regardless.
 2. **`loadNotificationSettings`'s query count.** §5 says two queries. The shipped resolver runs one
    `app_settings` query plus a `game_notification_settings` query chunked at D1's 100-bound-parameter
    limit (`src/db/chunk.ts`), so it is "one plus a chunked one" for a large `gameIds` list, not

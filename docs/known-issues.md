@@ -337,3 +337,18 @@ is not left wondering why the numbering skips.
 
 Owner notification switches cannot be set on the create form; the matrix appears on
 edit only, as the Advanced block always has.
+
+## Six switch columns on `games` remain until a follow-up deploy (M37, 26 August 2026)
+
+`reminder_enabled`, `short_warning_enabled`, `group_nudge_enabled`, `result_prompt_enabled`,
+`teams_published_email_enabled` and `team_picker_email_enabled` are unread since M37 — every
+reader moved to `game_notification_settings` in migration `0024`. The migration that drops
+them (originally shipped as `0025` in this branch) was reverted before merge: `deploy.yml`
+applies D1 migrations before `wrangler deploy`, so dropping the columns in the same release as
+the code that stops reading them would 500 the still-running old worker, which selects them by
+name, in the gap between the two steps.
+
+The six columns and their doc comments are back on `src/db/schema.ts`, dead but harmless — they
+are never read or written. A follow-up migration drops them once the M37 worker is confirmed
+live everywhere. Not deferred as an oversight; deferred because the two-step deploy pipeline
+makes doing it in the same release actively dangerous.
