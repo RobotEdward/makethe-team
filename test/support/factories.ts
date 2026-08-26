@@ -3,6 +3,7 @@ import { getDb, type Db } from "../../src/db/client.js";
 import {
   fixtureResultClaims,
   fixtures,
+  gameNotificationSettings,
   games,
   inviteTiers,
   memberships,
@@ -50,6 +51,26 @@ export async function insertGame(db: Db, overrides: Partial<GameInsert> = {}): P
 }
 
 /**
+ * One owner switch (M37). `type` and `channel` are plain strings so a test
+ * can write a value this build does not recognise — the stored-lookups case.
+ */
+export async function insertNotificationSetting(
+  db: Db,
+  gameId: string,
+  type: string,
+  channel: string,
+  enabled: boolean,
+): Promise<void> {
+  await db
+    .insert(gameNotificationSettings)
+    .values({ gameId, notificationType: type, channel, enabled })
+    .onConflictDoUpdate({
+      target: [gameNotificationSettings.gameId, gameNotificationSettings.notificationType, gameNotificationSettings.channel],
+      set: { enabled },
+    });
+}
+
+/**
  * Every table a test might have written, in foreign-key-safe order (children
  * before parents).
  */
@@ -69,6 +90,7 @@ const RESET_TABLES = [
   "memberships",
   "invite_tiers",
   "fixtures",
+  "game_notification_settings",
   "games",
   "players",
   // Better Auth tables (M5). Children before parent: session, account and

@@ -169,6 +169,13 @@
       "when": 1787574582295,
       "tag": "0023_shocking_corsair",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1787737678036,
+      "tag": "0024_harsh_thundra",
+      "breakpoints": true
     }
   ]
 }

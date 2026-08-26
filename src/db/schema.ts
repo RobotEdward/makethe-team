@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { AUDIT_ACTIONS, AUDIT_ENTITY_TYPES } from "../domain/audit.js";
 import { INITIAL_LIFECYCLE, LIFECYCLES } from "../domain/lifecycle.js";
 import { INITIAL_PICKER_MODE, PICKER_MODES } from "../domain/picker.js";
@@ -231,6 +231,35 @@ export const games = sqliteTable("games", {
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
 }, (t) => [uniqueIndex("games_invite_token_unique").on(t.inviteToken)]);
+
+/**
+ * Per-game notification switches, one row per (game, type, channel) (M37).
+ *
+ * **No row means on.** The owner form upserts a row for every cell it
+ * renders, so a missing row means the game predates M37 or the type is newer
+ * than the game's last save — both must behave as the product did before.
+ *
+ * `notification_type` and `channel` are bare `text NOT NULL` with no CHECK, so
+ * a row can hold a string this build has never heard of. Readers drop such
+ * rows rather than index `NOTIFICATION_CONTROLS` with them — the failure
+ * class `test/stored-lookups.test.ts` exists for.
+ *
+ * Deliberately not `text(..., { enum })`: the enum is a type-level claim, and
+ * the reader must be written as though it is not there.
+ */
+export const gameNotificationSettings = sqliteTable(
+  "game_notification_settings",
+  {
+    gameId: text("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    notificationType: text("notification_type").notNull(),
+    channel: text("channel").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (table) => [primaryKey({ columns: [table.gameId, table.notificationType, table.channel] })],
+);
 
 /**
  * One rung of a Game's invite order (BR-38, M34).
