@@ -9,7 +9,7 @@ import type { FieldError } from "../domain/game-form.js";
 import { whatsappShareUrl } from "../domain/whatsapp-message.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { BROADCAST_WHATSAPP_JS } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, WHATSAPP_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, NOTIFY_MATRIX_CSS, WHATSAPP_CSS } from "./styles.js";
 import { WHATSAPP_CARD_ID } from "./whatsapp.js";
 
 /**
@@ -229,7 +229,7 @@ export function renderBroadcastPage(params: BroadcastPageParams): string {
     nav: params.nav,
     title: `Message the squad — ${params.gameName} — Make The Team`,
     body,
-    pageStyles: [FORM_CSS, FIXTURE_STYLES_CSS, WHATSAPP_CSS],
+    pageStyles: [FORM_CSS, FIXTURE_STYLES_CSS, WHATSAPP_CSS, NOTIFY_MATRIX_CSS],
     pageScripts: [BROADCAST_WHATSAPP_JS],
   });
 }

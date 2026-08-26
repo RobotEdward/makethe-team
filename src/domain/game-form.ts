@@ -1,3 +1,6 @@
+import type { NotificationType } from "../notify/dedupe-key.js";
+import { cellKey, cellsWithScope } from "../notify/notification-controls.js";
+import type { Channel } from "../notify/notifier.js";
 import { formatRecurrenceRule, WEEKDAYS, type Weekday } from "./recurrence/parse.js";
 import { formatLocalDate, LocalTimeError, parseLocalTime } from "./time/local.js";
 import { toLocalParts } from "./time/zone.js";
@@ -52,33 +55,71 @@ export const DEFAULT_RESULT_PROMPT_OFFSET_HOURS = 0;
 export const GATED_FALLBACK_NEVER = "never";
 
 /**
- * The notification switches (M26), and the hidden marker that rides with each.
+ * The hidden marker that rides with `gatedInvitesEnabled`'s checkbox (M34).
  *
- * An unticked checkbox is absent from the POST body, so "the owner turned this
- * off" and "this form never showed the section" arrive as the same
- * `undefined`. The notification section is edit-only, and every switch
- * defaults on, so without a marker the create form's submission would read as
- * an owner who had turned all five off.
+ * An unticked checkbox is absent from the POST body, so "the owner turned
+ * this off" and "this form never showed the section" arrive as the same
+ * `undefined`. The gating section is edit-only, so without a marker the
+ * create form's submission would be indistinguishable from an owner who had
+ * turned it off.
  *
  * The marker is therefore parsed, not merely rendered — unlike
  * `prefersEvenNumbersSubmitted`, whose section appears on both forms and whose
  * marker exists only for the 422 redisplay. Both halves live here so the view
  * cannot name a field the parser does not read.
  *
- * `gatedInvitesEnabled` (M34) rides the same marker convention but defaults
- * *off*, not on: BR-39 says a Game nobody has configured asks its whole squad
- * at once. Its default is written out below rather than taken from
- * `switchValue`.
+ * The six owner notification switches this list used to carry (M26) are gone
+ * (M37): they are now `game_notification_settings` rows, parsed by
+ * `parseNotificationCells` below, not form-level booleans. `gatedInvitesEnabled`
+ * stays here because it is a plain game column, not a notification control.
  */
 export const NOTIFICATION_SWITCHES = [
-  { field: "reminderEnabled", submitted: "reminderEnabledSubmitted" },
-  { field: "shortWarningEnabled", submitted: "shortWarningEnabledSubmitted" },
-  { field: "groupNudgeEnabled", submitted: "groupNudgeEnabledSubmitted" },
-  { field: "resultPromptEnabled", submitted: "resultPromptEnabledSubmitted" },
-  { field: "teamsPublishedEmailEnabled", submitted: "teamsPublishedEmailEnabledSubmitted" },
-  { field: "teamPickerEmailEnabled", submitted: "teamPickerEmailEnabledSubmitted" },
   { field: "gatedInvitesEnabled", submitted: "gatedInvitesEnabledSubmitted" },
 ] as const;
+
+export interface NotificationCellValue {
+  type: NotificationType;
+  channel: Channel;
+  enabled: boolean;
+}
+
+const CELL_PREFIX = "notify.";
+
+/** Field name of a cell's checkbox: `notify.n9.email`. Its marker is `notify.n9.email.seen`. */
+export function cellFieldName(type: NotificationType, channel: Channel): string {
+  return `${CELL_PREFIX}${cellKey(type, channel)}`;
+}
+
+export function cellMarkerName(type: NotificationType, channel: Channel): string {
+  return `${cellFieldName(type, channel)}.seen`;
+}
+
+/**
+ * The owner's notification cells, from the posted body (M37).
+ *
+ * A browser sends nothing for an unticked box, so each rendered checkbox has
+ * a hidden marker beside it, and only a cell whose marker arrived is
+ * returned. A cell the form did not render — because the administrator has
+ * it off, or because the form predates the type — has no marker and is left
+ * exactly as stored. Without that, an owner's first save would write `false`
+ * into every administrator-disabled cell, which surfaces as settings nobody
+ * chose the moment the administrator re-enables the channel.
+ *
+ * Driven off the catalogue, never off the body's keys: a forged marker for a
+ * cell that does not exist is ignored.
+ */
+export function parseNotificationCells(body: Record<string, unknown>): NotificationCellValue[] {
+  const cells: NotificationCellValue[] = [];
+  for (const cell of cellsWithScope("owner")) {
+    if (body[cellMarkerName(cell.type, cell.channel)] === undefined) continue;
+    cells.push({
+      type: cell.type,
+      channel: cell.channel,
+      enabled: typeof body[cellFieldName(cell.type, cell.channel)] === "string",
+    });
+  }
+  return cells;
+}
 
 export interface GameFormValues {
   name: string;
@@ -98,12 +139,6 @@ export interface GameFormValues {
   reminderDaysBefore: number;
   reminderLocalTime: string;
   shortWarningOffsetHours: number;
-  reminderEnabled: boolean;
-  shortWarningEnabled: boolean;
-  groupNudgeEnabled: boolean;
-  resultPromptEnabled: boolean;
-  teamsPublishedEmailEnabled: boolean;
-  teamPickerEmailEnabled: boolean;
   resultPromptOffsetHours: number;
   gatedInvitesEnabled: boolean;
   /** Hours before kickoff; null is BR-44's "never". */
@@ -313,20 +348,6 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
     fail("shortWarningOffsetHours", `Warn between 1 and ${MAX_WARNING_OFFSET_HOURS} hours before.`);
   }
 
-  // A switch the form never showed stays on; see NOTIFICATION_SWITCHES.
-  const switchValue = (field: string, submitted: string): boolean =>
-    body[submitted] === undefined ? true : typeof body[field] === "string";
-
-  const reminderEnabled = switchValue("reminderEnabled", "reminderEnabledSubmitted");
-  const shortWarningEnabled = switchValue("shortWarningEnabled", "shortWarningEnabledSubmitted");
-  const groupNudgeEnabled = switchValue("groupNudgeEnabled", "groupNudgeEnabledSubmitted");
-  const resultPromptEnabled = switchValue("resultPromptEnabled", "resultPromptEnabledSubmitted");
-  const teamsPublishedEmailEnabled = switchValue(
-    "teamsPublishedEmailEnabled",
-    "teamsPublishedEmailEnabledSubmitted",
-  );
-  const teamPickerEmailEnabled = switchValue("teamPickerEmailEnabled", "teamPickerEmailEnabledSubmitted");
-
   const resultPromptOffsetHours = body["resultPromptOffsetHours"] === undefined
     ? DEFAULT_RESULT_PROMPT_OFFSET_HOURS
     : integer(body["resultPromptOffsetHours"]);
@@ -395,12 +416,6 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
       reminderDaysBefore: reminderDaysBefore!,
       reminderLocalTime,
       shortWarningOffsetHours: shortWarningOffsetHours!,
-      reminderEnabled,
-      shortWarningEnabled,
-      groupNudgeEnabled,
-      resultPromptEnabled,
-      teamsPublishedEmailEnabled,
-      teamPickerEmailEnabled,
       resultPromptOffsetHours: resultPromptOffsetHours!,
       gatedInvitesEnabled,
       gatedFallbackHoursBefore,

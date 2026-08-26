@@ -1,4 +1,4 @@
-import { env } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb, type Db } from "../../src/db/client.js";
@@ -7,6 +7,7 @@ import { sendOwnerAttention } from "../../src/sweep/attention.js";
 import { sendGroupNudges } from "../../src/sweep/group-nudge.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import { NOTIFICATION_CONTROLS, cellsWithScope } from "../../src/notify/notification-controls.js";
+import { loadNotificationSettings } from "../../src/notify/notification-settings.js";
 import { sendBroadcast } from "../../src/notify/send-broadcast.js";
 import { sendPickerHandover } from "../../src/notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../../src/notify/send-removed.js";
@@ -22,6 +23,7 @@ import {
   resetDatabase,
   setAdminSwitch,
 } from "../support/factories.js";
+import { ORIGIN, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
 
@@ -475,4 +477,100 @@ describe("invariant 2: the administrator masks, never overwrites", () => {
       expect(after).toEqual(before);
     });
   }
+});
+
+/**
+ * Invariant 3, at the form rather than the send path: a browser never posts
+ * a disabled field, so an administrator-off cell's checkbox — rendered
+ * `disabled`, with no hidden marker — carries nothing back to the server
+ * whatever the owner's saved value is or was. `parseNotificationCells`
+ * leaves an unmarked cell exactly as stored (its whole reason for existing —
+ * see its doc comment in src/domain/game-form.ts). Exercised through the
+ * real edit route, not the parser in isolation, because the parser being
+ * correct proves nothing if the view ever rendered a marker for a cell it
+ * had disabled.
+ */
+describe("invariant 3: a disabled checkbox posts nothing, and that is not a choice", () => {
+  async function post(path: string, cookie: string, fields: Record<string, string>) {
+    return SELF.fetch(`${ORIGIN}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, cookie },
+      body: new URLSearchParams(fields),
+      redirect: "manual",
+    });
+  }
+
+  /** The minimum a valid create-form submission carries (mirrors test/routes/games.test.ts's VALID). */
+  const VALID: Record<string, string> = {
+    name: "Thursday 7-a-side",
+    venueName: "Oxford Sports Park",
+    weekday: "TH",
+    interval: "1",
+    kickoffTime: "19:00",
+    durationMinutes: "60",
+    minPlayers: "10",
+    maxPlayers: "14",
+    prefersEvenNumbers: "on",
+    prefersEvenNumbersSubmitted: "1",
+    squadVisibleToPlayers: "on",
+    squadVisibleToPlayersSubmitted: "1",
+  };
+
+  /**
+   * Every `<input>` inside the Notifications fieldset of a rendered edit
+   * page, as a browser would submit it: a checked checkbox's value, a hidden
+   * marker's value, and nothing at all for an unchecked or `disabled` one —
+   * regexes rather than a DOM, because the only thing this needs from the
+   * markup is exactly what a form submission would send.
+   */
+  function notificationFieldsFromHtml(html: string): Record<string, string> {
+    const start = html.indexOf("<legend>Notifications</legend>");
+    const end = html.indexOf("</fieldset>", start);
+    if (start === -1 || end === -1) throw new Error("no Notifications fieldset found in the edit page");
+    const section = html.slice(start, end);
+
+    const fields: Record<string, string> = {};
+    for (const match of section.matchAll(/<input\b([^>]*)>/g)) {
+      const attrs = match[1]!;
+      const name = attrs.match(/name="([^"]+)"/)?.[1];
+      if (!name) continue;
+      const type = attrs.match(/type="([^"]+)"/)?.[1] ?? "text";
+      if (type === "checkbox") {
+        if (/\bchecked\b/.test(attrs)) fields[name] = "on";
+        // Unchecked or disabled: a browser sends nothing, so neither does this.
+      } else {
+        fields[name] = attrs.match(/value="([^"]*)"/)?.[1] ?? "";
+      }
+    }
+    return fields;
+  }
+
+  it("leaves an owner's true untouched when the administrator has the cell off and the owner saves the form", async () => {
+    const { cookie } = await signIn();
+    const created = await post("/g/new", cookie, VALID);
+    const gameId = created.headers.get("location")!.replace("/g/", "");
+
+    await insertNotificationSetting(db, gameId, "n9", "email", true);
+    await setAdminSwitch(db, "n9", "email", false);
+
+    const editHtml = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+    const notifyFields = notificationFieldsFromHtml(editHtml);
+
+    // n9.email is administrator-disabled: its checkbox must have contributed
+    // neither a value nor a marker, whatever the owner's stored `true` says.
+    expect(notifyFields["notify.n9.email"]).toBeUndefined();
+    expect(notifyFields["notify.n9.email.seen"]).toBeUndefined();
+
+    // n9.push is administrator-allowed and defaults on; the owner unticks it
+    // here (deleting the value while its marker survives), which is what a
+    // real uncheck looks like in the posted body.
+    delete notifyFields["notify.n9.push"];
+
+    const response = await post(`/g/${gameId}/edit`, cookie, { ...VALID, ...notifyFields });
+    expect(response.status).toBe(303);
+
+    const settings = await loadNotificationSettings(db, [gameId]);
+    expect(settings.ownerWants(gameId, "n9", "email")).toBe(true);
+    expect(settings.ownerWants(gameId, "n9", "push")).toBe(false);
+  });
 });

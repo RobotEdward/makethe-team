@@ -3,7 +3,7 @@ import { renderBroadcastPage, type BroadcastPageParams } from "../../src/views/b
 import { AUDIENCE_LABELS, type BroadcastAudience } from "../../src/domain/broadcast-audience.js";
 import type { BroadcastFormValues } from "../../src/domain/broadcast-form.js";
 import { escapeHtml } from "../../src/views/layout.js";
-import { FORM_CSS, WHATSAPP_CSS } from "../../src/views/styles.js";
+import { FORM_CSS, NOTIFY_MATRIX_CSS, WHATSAPP_CSS } from "../../src/views/styles.js";
 import { BROADCAST_WHATSAPP_JS } from "../../src/views/scripts.js";
 
 const COUNTS: Record<BroadcastAudience, number> = {
@@ -185,6 +185,14 @@ describe("renderBroadcastPage", () => {
     const html = renderBroadcastPage(params());
     expect(html.indexOf(FORM_CSS)).toBeGreaterThan(-1);
     expect(html).not.toMatch(/style="/);
+  });
+
+  // Task 8 left `.notify-admin-off` (channelControl's disabled-channel hint)
+  // with no declared style — a class the browser drops silently. This block
+  // is what declares it; the page must actually ship it.
+  it("ships NOTIFY_MATRIX_CSS, which declares .notify-admin-off", () => {
+    const html = renderBroadcastPage(params());
+    expect(html.indexOf(NOTIFY_MATRIX_CSS)).toBeGreaterThan(-1);
   });
 
   it("links back to the fixture page when fixture-scoped", () => {

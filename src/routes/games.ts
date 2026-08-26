@@ -44,7 +44,7 @@ import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
 import { displayName } from "../domain/display-name.js";
 import { fixtureView, takingChanges } from "../domain/fixture-view.js";
-import { GATED_FALLBACK_NEVER, parseGameForm } from "../domain/game-form.js";
+import { GATED_FALLBACK_NEVER, parseGameForm, parseNotificationCells } from "../domain/game-form.js";
 import { loadInviteOrder } from "../db/invite-queries.js";
 import { inviteTiers, memberships } from "../db/schema.js";
 import { inviteOrderPath } from "../auth/paths.js";
@@ -76,11 +76,11 @@ import { countFixturesByPropagation, updateGame } from "../domain/update-game.js
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
-import { loadNotificationSettings } from "../notify/notification-settings.js";
+import { loadNotificationSettings, saveOwnerNotificationSettings } from "../notify/notification-settings.js";
 import { sendPickerHandover } from "../notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { sendTeamsEmails } from "../notify/send-teams.js";
-import { renderGameFormPage } from "../views/game-form.js";
+import { ownerNotificationRows, renderGameFormPage } from "../views/game-form.js";
 import { renderNotFoundPage } from "../views/not-found.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
@@ -825,6 +825,7 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
 
   const counts = await countFixturesByPropagation(db, game.id, now);
   const rule = parseRecurrenceRule(game.recurrenceRule);
+  const settings = await loadNotificationSettings(db, [game.id]);
 
   return c.html(
     renderGameFormPage({
@@ -851,14 +852,6 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
         reminderDaysBefore: String(game.reminderDaysBefore),
         reminderLocalTime: game.reminderLocalTime,
         shortWarningOffsetHours: String(game.shortWarningOffsetHours),
-        // "" rather than absent for a saved false: the renderer's fallback for
-        // "the caller said nothing" is on, for every one of these (M26).
-        reminderEnabled: game.reminderEnabled ? "on" : "",
-        shortWarningEnabled: game.shortWarningEnabled ? "on" : "",
-        groupNudgeEnabled: game.groupNudgeEnabled ? "on" : "",
-        resultPromptEnabled: game.resultPromptEnabled ? "on" : "",
-        teamsPublishedEmailEnabled: game.teamsPublishedEmailEnabled ? "on" : "",
-        teamPickerEmailEnabled: game.teamPickerEmailEnabled ? "on" : "",
         resultPromptOffsetHours: String(game.resultPromptOffsetHours),
         gatedInvitesEnabled: game.gatedInvitesEnabled ? "on" : "",
         gatedFallbackHoursBefore:
@@ -873,6 +866,7 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
       // and the whole gating section renders as if the feature did not exist.
       gameId: game.id,
       affectedNotice: propagationNotice(counts),
+      notifications: ownerNotificationRows(game.id, settings),
     }),
   );
 });
@@ -903,6 +897,7 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
     // form and deciding whether to submit it again. Dropping it here would
     // make the warning appear only on the attempts that did not need it.
     const counts = await countFixturesByPropagation(db, game.id, now);
+    const settings = await loadNotificationSettings(db, [game.id]);
 
     return c.html(
       renderGameFormPage({
@@ -919,12 +914,17 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
         // feature had been switched off.
         gameId: game.id,
         affectedNotice: propagationNotice(counts),
+        // Built from the stored settings, exactly as the GET is — a validation
+        // failure elsewhere on the form does not touch the notifications
+        // matrix, whose own submission is applied separately below.
+        notifications: ownerNotificationRows(game.id, settings),
       }),
       422,
     );
   }
 
   await updateGame({ db, game, values: parsed.values, actorPlayerId: c.get("player")!.id, now });
+  await saveOwnerNotificationSettings(db, game.id, parseNotificationCells(form));
 
   return c.redirect(gamePath(game.id), 303);
 });

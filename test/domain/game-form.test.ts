@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localDateToday, parseGameForm, supportedTimezones } from "../../src/domain/game-form.js";
+import { localDateToday, parseGameForm, parseNotificationCells, supportedTimezones } from "../../src/domain/game-form.js";
 
 /** The minimum a valid submission carries. Individual tests override one key. */
 function body(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -224,68 +224,17 @@ describe("localDateToday", () => {
   });
 });
 
-describe("parseGameForm — notification settings (M26)", () => {
-  /** What the edit form always submits: every marker present, every box ticked. */
-  function notifyBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return body({
-      reminderEnabledSubmitted: "1",
-      reminderEnabled: "on",
-      shortWarningEnabledSubmitted: "1",
-      shortWarningEnabled: "on",
-      groupNudgeEnabledSubmitted: "1",
-      groupNudgeEnabled: "on",
-      resultPromptEnabledSubmitted: "1",
-      resultPromptEnabled: "on",
-      teamsPublishedEmailEnabledSubmitted: "1",
-      teamsPublishedEmailEnabled: "on",
-      resultPromptOffsetHours: "0",
-      ...overrides,
-    });
-  }
-
-  it("defaults every switch on when the section was not rendered", () => {
-    // The create form has no notification section, so nothing about it is
-    // submitted. Absent must not read as "the owner unticked all five".
+describe("parseGameForm — result-prompt offset", () => {
+  it("defaults to zero when the section was not rendered", () => {
+    // The create form has no notification section, so nothing about the
+    // offset is submitted.
     const result = parseGameForm(body());
     if (!result.ok) throw new Error("expected ok");
-
-    expect(result.values.reminderEnabled).toBe(true);
-    expect(result.values.shortWarningEnabled).toBe(true);
-    expect(result.values.groupNudgeEnabled).toBe(true);
-    expect(result.values.resultPromptEnabled).toBe(true);
-    expect(result.values.teamsPublishedEmailEnabled).toBe(true);
     expect(result.values.resultPromptOffsetHours).toBe(0);
   });
 
-  it("reads every switch back when the section was submitted", () => {
-    const result = parseGameForm(notifyBody());
-    if (!result.ok) throw new Error("expected ok");
-
-    expect(result.values.reminderEnabled).toBe(true);
-    expect(result.values.teamsPublishedEmailEnabled).toBe(true);
-  });
-
-  it("treats an unticked box in a submitted section as off", () => {
-    // The marker is the whole point: without it this body is indistinguishable
-    // from the create form's, and the owner's untick would be discarded.
-    const result = parseGameForm(
-      notifyBody({
-        reminderEnabled: undefined,
-        groupNudgeEnabled: undefined,
-        resultPromptEnabled: undefined,
-      }),
-    );
-    if (!result.ok) throw new Error("expected ok");
-
-    expect(result.values.reminderEnabled).toBe(false);
-    expect(result.values.groupNudgeEnabled).toBe(false);
-    expect(result.values.resultPromptEnabled).toBe(false);
-    expect(result.values.shortWarningEnabled).toBe(true);
-    expect(result.values.teamsPublishedEmailEnabled).toBe(true);
-  });
-
   it("accepts a result-prompt offset inside the range", () => {
-    const result = parseGameForm(notifyBody({ resultPromptOffsetHours: "12" }));
+    const result = parseGameForm(body({ resultPromptOffsetHours: "12" }));
     if (!result.ok) throw new Error("expected ok");
     expect(result.values.resultPromptOffsetHours).toBe(12);
   });
@@ -294,6 +243,24 @@ describe("parseGameForm — notification settings (M26)", () => {
     expect(errorsFor({ resultPromptOffsetHours: "-1" })).toContain("resultPromptOffsetHours");
     expect(errorsFor({ resultPromptOffsetHours: "49" })).toContain("resultPromptOffsetHours");
     expect(errorsFor({ resultPromptOffsetHours: "later" })).toContain("resultPromptOffsetHours");
+  });
+});
+
+describe("parseNotificationCells", () => {
+  it("returns only cells whose marker was posted, with their checkbox state", () => {
+    const cells = parseNotificationCells({
+      "notify.n9.email.seen": "1", "notify.n9.email": "on",
+      "notify.n9.push.seen": "1",
+      "notify.n1.email": "on", // no marker: an unrendered cell, ignored
+    });
+    expect(cells).toEqual([
+      { type: "n9", channel: "email", enabled: true },
+      { type: "n9", channel: "push", enabled: false },
+    ]);
+  });
+
+  it("ignores a marker for a cell the catalogue does not have", () => {
+    expect(parseNotificationCells({ "notify.n11.email.seen": "1", "notify.n2.email.seen": "1" })).toEqual([]);
   });
 });
 

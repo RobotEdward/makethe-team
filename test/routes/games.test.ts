@@ -5,6 +5,8 @@ import { createApp } from "../../src/app.js";
 import { auditLog, fixtures, games, memberships, players } from "../../src/db/schema.js";
 import { formatLocalDateTime } from "../../src/domain/time/zone.js";
 import { COPY_BUTTON_JS, SCRIPT_BLOCKS } from "../../src/views/scripts.js";
+import { cellsWithScope } from "../../src/notify/notification-controls.js";
+import { loadNotificationSettings } from "../../src/notify/notification-settings.js";
 import { interferingBinding } from "../support/interference.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { bindings, ORIGIN, signIn } from "../support/sign-in.js";
@@ -765,10 +767,14 @@ describe("the copy button script's targets stay in sync with the page", () => {
 });
 
 /**
- * The notification settings section (M26). Edit-only, like Advanced, and the
- * one place an owner can see what their game sends and when.
+ * The owner's notification matrix on the edit form (M37). Edit-only, like
+ * Advanced, and the one place an owner can see what their game sends and
+ * when. Assertions land on `game_notification_settings`, via
+ * `loadNotificationSettings(...).ownerWants`, rather than on the six `games`
+ * columns this section used to round-trip (M26) — those columns are gone
+ * from the form now that the matrix is per-notification-type rows.
  */
-describe("notification settings on the edit form", () => {
+describe("the owner notifications matrix on the edit form", () => {
   beforeEach(resetDatabase);
 
   async function ownedGame() {
@@ -778,32 +784,30 @@ describe("notification settings on the edit form", () => {
     return { cookie, gameId };
   }
 
-  /** Every switch and marker a browser submits from the rendered section. */
-  const NOTIFY_FIELDS: Record<string, string> = {
-    reminderEnabled: "on",
-    reminderEnabledSubmitted: "1",
-    shortWarningEnabled: "on",
-    shortWarningEnabledSubmitted: "1",
-    groupNudgeEnabled: "on",
-    groupNudgeEnabledSubmitted: "1",
-    resultPromptEnabled: "on",
-    resultPromptEnabledSubmitted: "1",
-    teamsPublishedEmailEnabled: "on",
-    teamsPublishedEmailEnabledSubmitted: "1",
-    resultPromptOffsetHours: "0",
-  };
+  async function ownerWants(gameId: string, type: string, channel: string): Promise<boolean> {
+    const settings = await loadNotificationSettings(testDb(), [gameId]);
+    return settings.ownerWants(gameId, type as never, channel as never);
+  }
 
-  it("renders a row for every notification, ticked by default", async () => {
+  /** Every cell and marker a browser submits from the rendered matrix, all ticked. */
+  const NOTIFY_FIELDS: Record<string, string> = Object.fromEntries(
+    cellsWithScope("owner").flatMap(({ type, channel }) => [
+      [`notify.${type}.${channel}`, "on"],
+      [`notify.${type}.${channel}.seen`, "1"],
+    ]),
+  );
+
+  it("renders a row for every owner-scoped notification, ticked by default", async () => {
     const { cookie, gameId } = await ownedGame();
     const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
 
     expect(html).toContain("<legend>Notifications</legend>");
-    for (const field of Object.keys(NOTIFY_FIELDS)) {
-      if (field.endsWith("Submitted") || field === "resultPromptOffsetHours") continue;
-      const box = html.match(new RegExp(`<input id="${field}"[^>]*>`))?.[0] ?? "";
-      expect(box, field).toContain('type="checkbox"');
-      expect(box, field).toContain("checked");
-      expect(html, field).toContain(`<input type="hidden" name="${field}Submitted" value="1">`);
+    for (const { type, channel } of cellsWithScope("owner")) {
+      const name = `notify.${type}.${channel}`;
+      const box = html.match(new RegExp(`<input id="${name.replace(/\./g, "\\.")}"[^>]*>`))?.[0] ?? "";
+      expect(box, name).toContain('type="checkbox"');
+      expect(box, name).toContain("checked");
+      expect(html, name).toContain(`<input type="hidden" name="${name}.seen" value="1">`);
     }
   });
 
@@ -829,55 +833,41 @@ describe("notification settings on the edit form", () => {
     expect(html).not.toContain("<legend>Notifications</legend>");
   });
 
-  it("leaves every switch on for a game created without the section", async () => {
+  it("leaves every owner cell on for a game created without the section", async () => {
     // The create form submits none of these fields. Absent must not read as
-    // "the owner turned all five off" — the whole reason the markers exist.
+    // "the owner turned every cell off" — the whole reason the markers exist.
     const { gameId } = await ownedGame();
+    for (const { type, channel } of cellsWithScope("owner")) {
+      expect(await ownerWants(gameId, type, channel), `${type}.${channel}`).toBe(true);
+    }
     const [row] = await testDb().select().from(games).where(eq(games.id, gameId));
-
-    expect(row!.reminderEnabled).toBe(true);
-    expect(row!.shortWarningEnabled).toBe(true);
-    expect(row!.groupNudgeEnabled).toBe(true);
-    expect(row!.resultPromptEnabled).toBe(true);
-    expect(row!.teamsPublishedEmailEnabled).toBe(true);
     expect(row!.resultPromptOffsetHours).toBe(0);
   });
 
-  it("saves the switches and the result-prompt offset", async () => {
+  it("saves the matrix and the result-prompt offset", async () => {
     const { cookie, gameId } = await ownedGame();
     const body: Record<string, string> = { ...VALID, ...NOTIFY_FIELDS, resultPromptOffsetHours: "10" };
-    delete body["reminderEnabled"];
-    delete body["teamsPublishedEmailEnabled"];
+    delete body["notify.n1.email"];
+    delete body["notify.n9.email"];
 
     expect((await post(`/g/${gameId}/edit`, cookie, body)).status).toBe(303);
 
+    expect(await ownerWants(gameId, "n1", "email")).toBe(false);
+    expect(await ownerWants(gameId, "n9", "email")).toBe(false);
+    expect(await ownerWants(gameId, "n1", "push")).toBe(true);
     const [row] = await testDb().select().from(games).where(eq(games.id, gameId));
-    expect(row!.reminderEnabled).toBe(false);
-    expect(row!.teamsPublishedEmailEnabled).toBe(false);
-    expect(row!.groupNudgeEnabled).toBe(true);
     expect(row!.resultPromptOffsetHours).toBe(10);
   });
 
-  it("shows a saved-off switch as unticked when the form reloads", async () => {
+  it("shows a saved-off cell as unticked when the form reloads", async () => {
     const { cookie, gameId } = await ownedGame();
     const body: Record<string, string> = { ...VALID, ...NOTIFY_FIELDS };
-    delete body["resultPromptEnabled"];
+    delete body["notify.n9.email"];
     await post(`/g/${gameId}/edit`, cookie, body);
 
     const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
-    const box = html.match(/<input id="resultPromptEnabled"[^>]*>/)?.[0] ?? "";
+    const box = html.match(/<input id="notify\.n9\.email"[^>]*>/)?.[0] ?? "";
     expect(box).toContain('type="checkbox"');
-    expect(box).not.toContain("checked");
-  });
-
-  it("keeps a switch unticked through a 422 redisplay", async () => {
-    const { cookie, gameId } = await ownedGame();
-    const body: Record<string, string> = { ...VALID, ...NOTIFY_FIELDS, kickoffTime: "not a time" };
-    delete body["groupNudgeEnabled"];
-
-    const response = await post(`/g/${gameId}/edit`, cookie, body);
-    expect(response.status).toBe(422);
-    const box = (await response.text()).match(/<input id="groupNudgeEnabled"[^>]*>/)?.[0] ?? "";
     expect(box).not.toContain("checked");
   });
 
@@ -894,5 +884,8 @@ describe("notification settings on the edit form", () => {
     expect(await response.text()).toContain("Ask between 0 and 48 hours after full time.");
     const [row] = await testDb().select().from(games).where(eq(games.id, gameId));
     expect(row!.name).toBe("Thursday 7-a-side");
+    // Nothing was saved on the failed attempt either — the matrix is only
+    // touched after updateGame succeeds.
+    expect(await ownerWants(gameId, "n1", "email")).toBe(true);
   });
 });
