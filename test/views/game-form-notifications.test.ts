@@ -54,6 +54,11 @@ describe("the owner notifications matrix", () => {
     expect(html).not.toMatch(/name="notify\.n9\.email"[^>]*checked/);
     expect(html).not.toContain('name="notify.n9.email.seen"');
     expect(html).toContain("Email is switched off for everyone by the site administrator. Your own setting is kept and comes back if they turn it on again.");
+    // A screen reader announces the checkbox's row and channel even though
+    // it is disabled and un-focusable — same accessible name as the enabled
+    // branch gives, so a table of "Email"/"Push" columns is not the reader's
+    // only way to tell one disabled checkbox from another.
+    expect(html).toMatch(/name="notify\.n9\.email"[^>]*aria-label="[^"]+"/);
   });
 
   it("ticks a cell from the owner's stored value", () => {

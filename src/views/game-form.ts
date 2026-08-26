@@ -337,7 +337,7 @@ export function renderGameFormPage(params: GameFormPageParams): string {
     if (!found) return `<td class="notify-cell notify-none">—</td>`;
     const name = cellFieldName(row.type, channel);
     if (!found.adminAllows) {
-      return `<td class="notify-cell"><input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox" disabled aria-describedby="${escapeHtml(name)}-note"></td>`;
+      return `<td class="notify-cell"><input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox" disabled aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}" aria-describedby="${escapeHtml(name)}-note"></td>`;
     }
     return `<td class="notify-cell">
         <input type="hidden" name="${escapeHtml(cellMarkerName(row.type, channel))}" value="1">

@@ -45,6 +45,11 @@ export interface SweepResult {
   pushRemindersSent: number;
   /** The push leg's own `failed` count — informational only, never folded into `remindersFailed`. Also where a push `deferred` outcome lands, since the push leg can't legitimately produce one. */
   pushRemindersFailed: number;
+  /**
+   * BR-32: guests, and anyone left with no leg still standing once channel
+   * switches and address are both accounted for (M37) — e.g. email off and
+   * no device, or a usable address but email off and no device.
+   */
   guestsSkipped: number;
   /** Tiers released across every gated fixture on this run (M34) — informational. */
   tiersClaimed: number;

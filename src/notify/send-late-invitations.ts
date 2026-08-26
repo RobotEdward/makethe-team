@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { fixtures, games, players, responses } from "../db/schema.js";
 import { applySendResult, insertQueuedLogRows, markOrphanedRowsFailed } from "./delivery.js";
+import { loadNotificationSettings } from "./notification-settings.js";
 import type { Notifier } from "./notifier.js";
 import { buildReminderMessages } from "./reminder-messages.js";
 
@@ -81,9 +82,21 @@ export async function sendLateInvitations(params: {
       }
     }
 
-    // Not gated by `loadNotificationSettings` (M37 Task 4 scoped that to the
-    // hourly sweep only) — both legs stay open here, unconditionally, so this
-    // path's behaviour is unchanged pending a follow-up task.
+    // Masked by the administrator's switch only, never the owner's: an owner
+    // who turns reminders off has never gated an invitation before (n1 was
+    // unconditional pre-M37), and this join-triggered send is a promotion
+    // into the fixture the invitee just asked for, not a reminder about one
+    // they already hold. The administrator's switch is the one global kill
+    // switch and must have no holes, so it alone masks this send.
+    const settings = await loadNotificationSettings(db, [row.game.id]);
+    const channels = {
+      email: settings.adminAllows("n1", "email"),
+      push: settings.adminAllows("n1", "push"),
+    };
+    if (!channels.email && !channels.push) {
+      continue;
+    }
+
     const { pending } = await buildReminderMessages({
       db,
       fixture: row.fixture,
@@ -91,7 +104,7 @@ export async function sendLateInvitations(params: {
       candidates: [{ playerId, name: player.name, email: player.email, isGuest: player.isGuest }],
       responseTokenSecret,
       now,
-      channels: { email: true, push: true },
+      channels,
     });
 
     const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n1" }, pending);

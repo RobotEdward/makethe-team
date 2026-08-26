@@ -32,6 +32,7 @@ import {
   markOrphanedRowsFailed,
 } from "../notify/delivery.js";
 import { createNotifier } from "../notify/factory.js";
+import { loadNotificationSettings } from "../notify/notification-settings.js";
 import { buildReminderMessages } from "../notify/reminder-messages.js";
 import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
@@ -452,9 +453,19 @@ export async function notifyReleasedSubs(
     );
     if (mailable.length === 0) return;
 
-    // Not gated by `loadNotificationSettings` (M37 Task 4 scoped that to the
-    // hourly sweep only) — both legs stay open here, unconditionally, so this
-    // path's behaviour is unchanged pending a follow-up task.
+    // Masked by the administrator's switch only, never the owner's: an owner
+    // who turns reminders off has never gated a promotion off the waitlist
+    // before (n1 was unconditional pre-M37), and this is a promotion, not a
+    // reminder about a place the player already held. The administrator's
+    // switch is the one global kill switch and must have no holes, so it
+    // alone masks this send.
+    const settings = await loadNotificationSettings(db, [row.game.id]);
+    const channels = {
+      email: settings.adminAllows("n1", "email"),
+      push: settings.adminAllows("n1", "push"),
+    };
+    if (!channels.email && !channels.push) return;
+
     const { pending } = await buildReminderMessages({
       db,
       fixture: row.fixture,
@@ -462,7 +473,7 @@ export async function notifyReleasedSubs(
       candidates: mailable,
       responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
       now,
-      channels: { email: true, push: true },
+      channels,
     });
 
     const inserted = await insertQueuedLogRows(db, { fixtureId, notificationType: "n1" }, pending);

@@ -11,8 +11,11 @@ import {
   insertGame,
   insertInviteTier,
   insertMembership,
+  insertNotificationSetting,
   insertPlayer,
+  insertSubscription,
   resetDatabase,
+  setAdminSwitch,
 } from "../support/factories.js";
 
 const db = getDb(env.DB);
@@ -64,11 +67,11 @@ function tokenFor(fixtureId: string, playerId: string) {
  * row reaching a terminal status — rather than a clock, for the reason
  * `test/routes/respond-post.test.ts` documents at its own helper.
  */
-async function waitForN1(playerId: string, timeoutMs = 3000) {
+async function waitForN1(playerId: string, timeoutMs = 3000, channel: "email" | "push" = "email") {
   const deadline = Date.now() + timeoutMs;
   const read = async () =>
     (await db.select().from(notificationLog).where(eq(notificationLog.playerId, playerId))).filter(
-      (row) => row.notificationType === "n1" && row.channel === "email",
+      (row) => row.notificationType === "n1" && row.channel === channel,
     );
 
   let rows = await read();
@@ -127,5 +130,39 @@ describe("a decline releases the next tier in the same request", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     const [row] = await db.select().from(responses).where(eq(responses.playerId, subId));
     expect(row?.invitedAt).toBeNull();
+  });
+
+  // Item 2: the administrator's n1 switch is a global kill switch and must
+  // have no holes — `notifyReleasedSubs` used to build both legs unconditionally.
+  it("masks the email leg when the administrator's n1 switch is off, but still sends push", async () => {
+    const { fixtureId, coreId, subId } = await seedGatedOpenFixture();
+    await insertSubscription(db, subId, "https://push.example.com/sub");
+    await setAdminSwitch(db, "n1", "email", false);
+    const token = await tokenFor(fixtureId, coreId);
+
+    const response = await SELF.fetch(`https://makethe.team/r/${token}`, {
+      method: "POST",
+      body: new URLSearchParams({ intent: "out" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await waitForN1(subId, 3000, "push")).toHaveLength(1);
+    expect(await waitForN1(subId, 0, "email")).toHaveLength(0);
+  });
+
+  it("does not mask the send when only the owner's n1 email switch is off", async () => {
+    const { gameId, fixtureId, coreId, subId } = await seedGatedOpenFixture();
+    await insertNotificationSetting(db, gameId, "n1", "email", false);
+    const token = await tokenFor(fixtureId, coreId);
+
+    const response = await SELF.fetch(`https://makethe.team/r/${token}`, {
+      method: "POST",
+      body: new URLSearchParams({ intent: "out" }),
+    });
+
+    expect(response.status).toBe(200);
+    // n1 is unconditional as far as the owner is concerned at this send
+    // path: an owner turning reminders off never gated an invite release.
+    expect(await waitForN1(subId)).toHaveLength(1);
   });
 });

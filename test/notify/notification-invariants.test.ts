@@ -437,6 +437,29 @@ beforeEach(async () => {
   await resetDatabase();
 });
 
+/**
+ * A positive control (Item 3, final review): every case above is a
+ * `not.toContain` on a channel. A driver whose seed drifted and stopped
+ * sending anything at all — a broken fixture state, a query that no longer
+ * matches — would pass every one of those vacuously, since an empty
+ * `sent.channels` contains nothing on every channel. This describe block is
+ * the one place that asserts the positive: with nothing switched off, every
+ * channel `NOTIFICATION_CONTROLS` declares for the type actually goes out.
+ */
+describe("baseline: every driver sends on every declared channel when nothing is switched off", () => {
+  for (const type of Object.keys(DRIVERS) as NotificationType[]) {
+    const control = NOTIFICATION_CONTROLS[type];
+    it(`${type}: sends on ${control.channels.join(" and ")} untouched`, async () => {
+      const gameId = await driverFor(type).seed(db);
+      const sent = recording();
+      await driverFor(type).send(db, gameId, sent.notifier);
+      for (const channel of control.channels) {
+        expect(sent.channels).toContain(channel);
+      }
+    });
+  }
+});
+
 describe("invariant 1: every owner cell is enforced, per channel", () => {
   for (const cell of cellsWithScope("owner")) {
     const control = NOTIFICATION_CONTROLS[cell.type];

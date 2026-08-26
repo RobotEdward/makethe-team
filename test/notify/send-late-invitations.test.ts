@@ -12,9 +12,12 @@ import { kickoffIn, NOW } from "../support/clock.js";
 import {
   insertFixture,
   insertGame,
+  insertNotificationSetting,
   insertPlayer,
+  insertSubscription,
   requireEmailMessage,
   resetDatabase,
+  setAdminSwitch,
 } from "../support/factories.js";
 
 const db = getDb(env.DB);
@@ -145,5 +148,47 @@ describe("sendLateInvitations", () => {
       .from(notificationLog)
       .where(eq(notificationLog.playerId, playerId));
     expect(rows).toHaveLength(0);
+  });
+
+  // Item 2: the administrator's n1 switch is a global kill switch and must
+  // have no holes — this send path used to build both legs unconditionally.
+  it("masks the email leg when the administrator's n1 switch is off, but still sends push", async () => {
+    const { fixtureId, playerId } = await seedOpenFixture();
+    await insertSubscription(db, playerId, "https://push.example.com/late");
+    await setAdminSwitch(db, "n1", "email", false);
+    const notifier = new RecordingNotifier();
+
+    const result = await sendLateInvitations({
+      db,
+      notifier,
+      playerId,
+      fixtureIds: [fixtureId],
+      responseTokenSecret: SECRET,
+      now: NOW,
+    });
+
+    expect(result.sent).toBe(1);
+    expect(notifier.all).toHaveLength(1);
+    expect(notifier.all[0]?.channel).toBe("push");
+  });
+
+  it("does not mask the send when only the owner's n1 email switch is off", async () => {
+    const { gameId, fixtureId, playerId } = await seedOpenFixture();
+    await insertNotificationSetting(db, gameId, "n1", "email", false);
+    const notifier = new RecordingNotifier();
+
+    const result = await sendLateInvitations({
+      db,
+      notifier,
+      playerId,
+      fixtureIds: [fixtureId],
+      responseTokenSecret: SECRET,
+      now: NOW,
+    });
+
+    // n1 is unconditional as far as the owner is concerned at this send
+    // path: an owner turning reminders off never gated a late invitation.
+    expect(result.sent).toBe(1);
+    expect(notifier.all[0]?.channel).toBe("email");
   });
 });
