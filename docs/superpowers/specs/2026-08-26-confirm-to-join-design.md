@@ -38,10 +38,12 @@ from a new phone is not made to check their inbox.
 ## Business rules
 
 - **BR-47.** `POST /j/:token` creates a player or a membership only for an address that is
-  already verified — one with a non-null `players.email_verified_at` — or for a signed-in
-  viewer whose session identifies them. For any other address it writes no `players`,
-  `memberships`, `responses` or `audit_log` row: it sends a confirmation email and renders a
-  "check your inbox" page.
+  already verified — one with a non-null `players.email_verified_at`. A signed-in viewer's
+  case is subsumed by this test rather than a branch of its own: sign-in itself stamps
+  `email_verified_at`, so a signed-in player's address already reads as verified through the
+  one column this rule checks. For any other address it writes no `players`, `memberships`,
+  `responses` or `audit_log` row: it sends a confirmation email and renders a "check your
+  inbox" page.
 - **BR-48.** A confirmation link is a signed, stateless token carrying `(gameId,
   inviteToken, email, name, expiresAt)`. Confirming performs exactly the join that
   `POST /j/:token` would have performed for a verified address, and additionally stamps
@@ -148,6 +150,8 @@ described under "Implementation notes", which holds the address for two calendar
 - Automatic removal of legacy unconfirmed members (BR-52 says why).
 - A pending-join table. The stateless token is the design; if a reason to record pending
   joins appears, it is a different spec.
+- Re-locking a verified address. Once an address has ever signed in or ever confirmed a
+  join, a leaked invite link still seats it in one click with no further confirmation.
 
 ## Invariants to pin as task zero (CLAUDE.md rule 1)
 
