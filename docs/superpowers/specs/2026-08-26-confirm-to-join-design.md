@@ -1,6 +1,6 @@
-# M38 — Confirm to join
+# M39 — Confirm to join
 
-**Status:** draft, 26 August 2026, awaiting approval.
+**Status:** approved 27 August 2026 (plan: docs/superpowers/plans/2026-08-27-m39-confirm-to-join.md). M39, not M38 — M38 is the invite-page viewer banner already in `src/routes/join.ts`.
 Amends `docs/superpowers/specs/2026-08-10-make-the-team-design.md` §4 (the invite flow).
 
 ## The problem
@@ -58,7 +58,7 @@ from a new phone is not made to check their inbox.
   product sends to an address it does not trust yet, and its content is chosen so that
   delivering it to the wrong person costs nothing.
 - **BR-52.** Confirmation is required to *join*, never to *stay*. Every membership that
-  exists when M38 deploys is untouched, verified or not. The owner's squad page marks members
+  exists when M39 deploys is untouched, verified or not. The owner's squad page marks members
   with a null `email_verified_at` as **unconfirmed**, beside the existing Remove control, so
   legacy rows can be tidied by hand; nothing removes them automatically.
 - **BR-53.** The confirmation email is notification type **N-14**, administrator scope
@@ -77,8 +77,8 @@ POST /j/:token
   ├─ address matches a verified player   → joinSquad as today, N-6 + late N-1 as today
   └─ otherwise                           → N-14 to the address; "Check your inbox" page
 
-GET  /j/confirm/:jtoken   → verify; 404 if bad/expired/invite rotated; else "Join X as Name?" page
-POST /j/confirm/:jtoken   → verify again; joinSquad with { emailVerifiedAt: now };
+GET  /join/:jtoken          → verify; 404 if bad/expired/invite rotated; else "Join X as Name?" page
+POST /join/:jtoken         → verify again; joinSquad with { emailVerifiedAt: now };
                             backfill + N-6 + late N-1 exactly as the direct join does;
                             renders the existing join-outcome page
 ```
@@ -101,10 +101,32 @@ on Tuesday is not told it is broken, and bounded anyway by BR-49. `name` travels
 so the product stores nothing about a person until they confirm; it is HTML-escaped at every
 render like every other interpolation.
 
-Nothing is written to D1 at mint time. There is no pending-joins table to sweep, expire or
-erase, and a request that never confirms leaves no trace beyond its `notification_log` row —
-which carries the address, as every N-row for that player would have, and is inside the
-existing retention.
+Nothing about the *join* is written to D1 at mint time. There is no pending-joins table to
+sweep, expire or erase. The one trace a request that never confirms leaves is the dedupe row
+described under "Implementation notes", which holds the address for two calendar days.
+
+## Implementation notes (27 August 2026, from reading the source before planning)
+
+- **Path is `/join/:jtoken`, not `/j/confirm/:jtoken`.** `tokenRateLimit`
+  (`src/security/rate-limit.ts`) keys on the first two path segments, so `/j/confirm/<t>`
+  would put every confirmation on the site into one `j:confirm` bucket of ten per minute.
+  `/join/*` gets its own limiter mount and the same `private, no-store` header as `/j/*`.
+- **N-14 writes no `notification_log` row.** `notification_log.player_id` is `NOT NULL` with
+  a foreign key to `players`, and N-14's whole point is that no player row exists yet. The
+  precedent is N-5, the sign-in link (`src/auth/factory.ts`, `sendSignInLink`): quota-wrapped
+  notifier, no log row, a fresh-UUID `dedupeKey` for the provider. BR-53's once-per-day rule is
+  therefore kept by a table of its own, `join_confirmations (game_id, email, day)` with that
+  composite primary key: the row is inserted *before* the send, a conflict means "already sent
+  today", and every insert also deletes rows older than yesterday, so the table holds at most
+  two days of stranger-typed addresses — the `signin_refusals` ring-buffer argument, keyed on
+  time instead of count. The admin switch (`notify.n14.email` in `app_settings`) still masks
+  it, read through `loadAdminNotificationSwitches` like every other admin cell.
+- **`n14` joins `NOTIFICATION_TYPES`.** `NOTIFICATION_CONTROLS`, the admin page's `NAMES` and
+  the invariants suite's driver map are `Record`s over the union, so the compiler and
+  `test/notify/notification-invariants.test.ts` both refuse a catalogue entry nobody has
+  described. Scope `admin`, channels `["email"]`.
+- **The admin sign-in doctor's `explainSignIn` is untouched**; confirming a join is not a
+  sign-in and grants no session.
 
 ## What is not changed
 
@@ -135,7 +157,7 @@ existing retention.
    versa (extends the existing kind-separation test).
 3. Rotating the invite link 404s a confirmation minted before the rotation.
 4. The rendered N-14 body contains no `/r/`, `/j/`, `/leave/` link and no fixture date.
-5. `GET /j/confirm/:jtoken` writes nothing.
+5. `GET /join/:jtoken` writes nothing.
 6. N-14 is in `NOTIFICATION_TYPES`, `NOTIFICATION_CONTROLS` (scope admin, email only) and
    `test/stored-lookups.test.ts`; the M37 invariants suite gains its cell.
 7. `test/routes/signin.test.ts`'s TR-16 sweep knows the two new public routes.
