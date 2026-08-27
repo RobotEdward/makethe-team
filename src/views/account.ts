@@ -68,6 +68,8 @@ export interface AccountPageOptions {
    * why that renders no button at all rather than a broken one.
    */
   vapidPublicKey: string | undefined;
+  /** Whether any passkey is registered — drives the post-install nudge in `renderInstallBody`. */
+  hasPasskey: boolean;
   /**
    * A push outcome to acknowledge — subscribe landed, test sent, test
    * failed. One of the route's own fixed strings (it reads the query flag
@@ -126,6 +128,7 @@ export function renderAccountPage({
   pushDevices,
   vapidPublicKey,
   pushNotice,
+  hasPasskey,
 }: AccountPageOptions): string {
   const problemNotice = problem === undefined ? "" : `<p class="problem">${escapeHtml(problem)}</p>`;
 
@@ -189,7 +192,7 @@ export function renderAccountPage({
       // so the new device is in the table the moment the player can look
       // for it.
       reloadTo: `${ACCOUNT_PATH}?push=enabled`,
-    })}
+    }, hasPasskey)}
 
     <p><a href="${escapeHtml(DELETE_ACCOUNT_PATH)}">Delete my account and data</a> · <a href="${escapeHtml(PRIVACY_PATH)}">Privacy</a></p>
     ${signOutForm("Sign out")}

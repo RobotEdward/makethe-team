@@ -416,7 +416,11 @@ async function onboardingHintsFor(
       .where(eq(pushSubscriptions.playerId, player.id))
       .limit(1),
   ]);
-  return { passkey: hasPasskey.length === 0, notifications: hasSubscription.length === 0 };
+  return {
+    passkey: hasPasskey.length === 0,
+    installed: player.lastStandaloneAt !== null,
+    notifications: hasSubscription.length === 0,
+  };
 }
 
 /**

@@ -91,6 +91,10 @@ and holds every fixture the game has had, called-off ones included, so
 ![The passkeys page, offering to add a passkey](images/passkeys.png)
 
 Waiting for a sign-in email is fine once. If you look often, add a passkey.
+If you have added Make The Team to your iPhone's home screen, add one now: an
+emailed link opens in Safari and signs Safari in, not the app, so the passkey
+is how you get back into the app itself. Sessions last 30 days of use, so
+this only comes up after a month away.
 
 A passkey signs you in with your phone or laptop's own fingerprint, face or
 screen lock — no email, no waiting. Tap **Add a passkey**, and your device asks

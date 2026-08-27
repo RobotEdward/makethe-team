@@ -1169,6 +1169,20 @@ describe("the onboarding card (M19)", () => {
     expect(body).toContain("Turn on notifications");
   });
 
+  it("sharpens the passkey hint for a player who has opened the installed app (M40)", async () => {
+    const { cookie } = await signIn();
+    const { id } = await viewer();
+    await db.update(players).set({ lastStandaloneAt: new Date("2026-08-27T09:00:00Z") }).where(eq(players.id, id));
+
+    const body = await (await get(cookie)).text();
+
+    // Inside an iOS home-screen app the emailed link signs Safari in, not the
+    // app, so "faster" undersells it: the passkey is the way back in.
+    expect(body).toContain(`<a href="${PASSKEYS_PATH}">Add a passkey now</a>`);
+    expect(body).toContain("an emailed link can't sign it in");
+    expect(body).not.toContain("Add a passkey to sign in faster");
+  });
+
   it("drops the notifications hint once any device is subscribed", async () => {
     const { cookie } = await signIn();
     const { id } = await viewer();

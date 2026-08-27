@@ -151,6 +151,13 @@ export interface DashboardPageOptions {
 export interface OnboardingHints {
   /** No passkey registered to this identity yet. */
   passkey: boolean;
+  /**
+   * This player has opened the installed app at least once
+   * (`players.last_standalone_at`). Sharpens the passkey hint: inside an iOS
+   * home-screen app the emailed link cannot sign the app in, so for them a
+   * passkey is not "faster", it is the way back in.
+   */
+  installed: boolean;
   /** No push subscription on any device yet. */
   notifications: boolean;
 }
@@ -362,7 +369,13 @@ function renderOnboardingCard(hints: OnboardingHints): string {
     <section class="onboarding">
       <h2>Get set up</h2>
       <ul>
-        ${hints.passkey ? `<li><a href="${PASSKEYS_PATH}">Add a passkey to sign in faster</a></li>` : ""}
+        ${
+          !hints.passkey
+            ? ""
+            : hints.installed
+              ? `<li><a href="${PASSKEYS_PATH}">Add a passkey now</a> — you've installed the app, and an emailed link can't sign it in.</li>`
+              : `<li><a href="${PASSKEYS_PATH}">Add a passkey to sign in faster</a></li>`
+        }
         <li class="hint-install"><a href="${ACCOUNT_PATH}">Install the app on this device</a></li>
         ${hints.notifications ? `<li><a href="${ACCOUNT_PATH}">Turn on notifications</a></li>` : ""}
       </ul>

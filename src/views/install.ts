@@ -1,4 +1,4 @@
-import { PUSH_TEST_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
+import { PASSKEYS_PATH, PUSH_TEST_PATH, PUSH_UNSUBSCRIBE_PATH } from "../auth/paths.js";
 import { escapeHtml } from "./layout.js";
 import {
   PUSH_BUTTON_ID,
@@ -33,7 +33,13 @@ import {
  * out-specificity the attribute and reveal a control the platform cannot
  * act on.
  */
-function renderInstallBody(): string {
+function renderInstallBody(hasPasskey: boolean): string {
+  // Server-rendered inside the `hidden` confirmation, so it appears only on
+  // the device that is already the installed app — the one place the emailed
+  // link is no use, because it opens in the browser and signs the browser in.
+  const passkeyNudge = hasPasskey
+    ? ""
+    : ` <a href="${PASSKEYS_PATH}">Add a passkey</a> so you can sign in from here — an emailed link opens in your browser, not in the app.`;
   return `
       <p data-install-instructions>
         Keep Make The Team a tap away, and it opens like an app rather than a tab.
@@ -43,7 +49,7 @@ function renderInstallBody(): string {
         <li>Choose <strong>Add to Home Screen</strong>.</li>
       </ol>
       <button class="button" type="button" data-install-button hidden>Add to home screen</button>
-      <p data-install-done hidden>Make The Team is installed on this device.</p>
+      <p data-install-done hidden>Make The Team is installed on this device.${passkeyNudge}</p>
   `;
 }
 
@@ -277,11 +283,11 @@ function renderPushBody({ vapidPublicKey, devices, defaultDeviceName, notice, re
  * here rather than editing those selectors keeps this change from touching
  * `renderPushOffer` at all.
  */
-export function renderDeviceSections(push: PushSectionOptions): string {
+export function renderDeviceSections(push: PushSectionOptions, hasPasskey: boolean): string {
   return `
     <h2>Install the app</h2>
     <section class="install">
-      ${renderInstallBody()}
+      ${renderInstallBody(hasPasskey)}
     </section>
 
     <h2>Manage notifications</h2>

@@ -94,12 +94,36 @@ import {
  * The failure message is deliberately generic and nothing from the error is
  * shown or logged — a WebAuthn error can name a credential id, and this page
  * is reachable by anyone.
+ *
+ * **Inside the installed app the passkey block moves above the email form**
+ * (M40). A home-screen app on iOS has its own cookie jar: the emailed link
+ * opens in Safari and signs Safari in, and the app stays signed out. There the
+ * passkey is the only sign-in that lands where the player is standing, so it
+ * goes first and the copy says why. Detected the way `PRESENCE_JS` does —
+ * `display-mode` plus the older `navigator.standalone` — never by user agent.
+ * In a browser tab the order is untouched: the email link works there and is
+ * the thing everybody has.
+ *
+ * **Conditional mediation** (M40): where the browser supports it, a
+ * background `credentials.get({ mediation: "conditional" })` lets the
+ * platform offer a saved passkey in the email field's autofill
+ * (`autocomplete="email webauthn"` in `src/views/signin.ts`), so a returning
+ * player need not find the button at all. Each page load that does this
+ * fetches one set of options, which writes one `verification` row — the same
+ * anonymous write `docs/known-issues.md` records for the button, now once per
+ * capable page view instead of once per click. The conditional request is
+ * aborted before a click starts a modal one: two concurrent WebAuthn
+ * requests is a `NotAllowedError`, not a second prompt.
  */
 export const PASSKEY_SIGN_IN_JS = `
 (function () {
   var section = document.getElementById("passkey");
   var button = document.getElementById("passkey-button");
   var problem = document.getElementById("passkey-problem");
+  var lead = document.getElementById("passkey-lead");
+  var intro = document.getElementById("signin-intro");
+  var submit = document.getElementById("signin-submit");
+  var form = document.querySelector("form.signin");
   if (!section || !button || !problem) return;
   if (typeof window.PublicKeyCredential !== "function") return;
   if (typeof window.PublicKeyCredential.parseRequestOptionsFromJSON !== "function") return;
@@ -108,19 +132,34 @@ export const PASSKEY_SIGN_IN_JS = `
 
   section.hidden = false;
 
-  button.addEventListener("click", function () {
-    problem.hidden = true;
-    button.disabled = true;
-    fetch("${AUTH_API_PREFIX}/passkey/generate-authenticate-options", {
+  var installed = !!(
+    (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) ||
+    window.navigator.standalone === true
+  );
+  if (installed && lead && intro && submit && form && form.parentNode) {
+    form.parentNode.insertBefore(section, form);
+    intro.textContent = "Sign in with your passkey. An emailed link opens in your browser, not in this app.";
+    lead.hidden = true;
+    button.className = "button primary";
+    submit.className = "button";
+  }
+
+  var conditional = null;
+  function signIn(mediation) {
+    return fetch("${AUTH_API_PREFIX}/passkey/generate-authenticate-options", {
       credentials: "same-origin",
       headers: { accept: "application/json" }
     }).then(function (response) {
       if (!response.ok) throw new Error("options");
       return response.json();
     }).then(function (options) {
-      return navigator.credentials.get({
-        publicKey: window.PublicKeyCredential.parseRequestOptionsFromJSON(options)
-      });
+      var request = { publicKey: window.PublicKeyCredential.parseRequestOptionsFromJSON(options) };
+      if (mediation) {
+        conditional = new AbortController();
+        request.mediation = mediation;
+        request.signal = conditional.signal;
+      }
+      return navigator.credentials.get(request);
     }).then(function (credential) {
       if (!credential) throw new Error("cancelled");
       return fetch("${AUTH_API_PREFIX}/passkey/verify-authentication", {
@@ -132,12 +171,28 @@ export const PASSKEY_SIGN_IN_JS = `
     }).then(function (response) {
       if (!response.ok) throw new Error("verify");
       window.location.assign("${SIGN_IN_COMPLETE_PATH}");
-    }).catch(function () {
+    });
+  }
+
+  button.addEventListener("click", function () {
+    problem.hidden = true;
+    button.disabled = true;
+    // One WebAuthn request at a time: a pending conditional request makes a
+    // modal one fail with NotAllowedError before any prompt is shown.
+    if (conditional) conditional.abort();
+    conditional = null;
+    signIn(null).catch(function () {
       problem.textContent = "That passkey didn't work. Ask for an email link instead.";
       problem.hidden = false;
       button.disabled = false;
     });
   });
+
+  if (typeof window.PublicKeyCredential.isConditionalMediationAvailable === "function" && typeof window.AbortController === "function") {
+    window.PublicKeyCredential.isConditionalMediationAvailable().then(function (available) {
+      if (available) signIn("conditional").catch(function () {});
+    }).catch(function () {});
+  }
 })();
 `;
 

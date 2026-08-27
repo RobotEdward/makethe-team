@@ -42,7 +42,11 @@ export interface SignInPageOptions {
  * a single, testable condition.
  *
  * The passkey block goes *after* the form for the same reason: the thing that
- * always works is the thing that comes first.
+ * always works is the thing that comes first. Inside the installed app the
+ * script moves it *before* the form, because there the email link is the
+ * thing that does not work — see `PASSKEY_SIGN_IN_JS`. The `webauthn` token
+ * on `autocomplete` is what lets that script's conditional request surface a
+ * passkey in the field's autofill; browsers without it ignore the token.
  */
 export function renderSignInPage({ linkFailed, signedOut }: SignInPageOptions): string {
   const notice = linkFailed
@@ -57,16 +61,16 @@ export function renderSignInPage({ linkFailed, signedOut }: SignInPageOptions): 
     pageScripts: [PASSKEY_SIGN_IN_JS, SIGN_IN_SUBMIT_JS],
     body: `
       <h1>Sign in</h1>
-      <p>We'll email you a link that signs you in. Nothing to remember, nothing to set up.</p>
+      <p id="signin-intro">We'll email you a link that signs you in. Nothing to remember, nothing to set up.</p>
       ${notice}
       <form class="signin" method="post" action="${SIGN_IN_PATH}">
         <label for="email">Your email address</label>
-        <input id="email" name="email" type="email" autocomplete="email" inputmode="email"
+        <input id="email" name="email" type="email" autocomplete="email webauthn" inputmode="email"
                autocapitalize="off" spellcheck="false" required autofocus>
-        <button class="button primary" type="submit">Email me a sign-in link</button>
+        <button class="button primary" type="submit" id="signin-submit">Email me a sign-in link</button>
       </form>
       <div class="passkey" id="passkey" hidden>
-        <p>Already added a passkey to this account?</p>
+        <p id="passkey-lead">Already added a passkey to this account?</p>
         <button class="button" type="button" id="passkey-button">Sign in with a passkey</button>
         <p class="nudge" id="passkey-problem" hidden></p>
       </div>

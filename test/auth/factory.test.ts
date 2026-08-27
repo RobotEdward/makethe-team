@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { createAuth } from "../../src/auth/factory.js";
+import { createAuth, SESSION_EXPIRY_DAYS } from "../../src/auth/factory.js";
 import { getDb } from "../../src/db/client.js";
 import { user as userTable } from "../../src/db/schema.js";
 
@@ -77,5 +77,20 @@ describe("createAuth", () => {
     const ctxA = await authA.$context;
     const ctxB = await authB.$context;
     expect(ctxA.adapter).not.toBe(ctxB.adapter);
+  });
+});
+
+describe("session lifetime", () => {
+  it("is thirty days, sliding daily, not Better Auth's seven", () => {
+    const auth = createAuth(
+      { ...env, BETTER_AUTH_URL: "http://localhost:8787" },
+      getDb(env.DB),
+      NOW,
+    );
+    // An installed iOS app cannot renew a lapsed session by email link — the
+    // link signs Safari in, not the app — so every lapse is a wall.
+    expect(SESSION_EXPIRY_DAYS).toBe(30);
+    expect(auth.options.session?.expiresIn).toBe(30 * 24 * 60 * 60);
+    expect(auth.options.session?.updateAge).toBe(24 * 60 * 60);
   });
 });

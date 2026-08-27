@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ACCOUNT_PATH, DELETE_ACCOUNT_PATH, PASSKEYS_PATH, SIGN_IN_PATH, fixturePath } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
-import { auditLog, players } from "../../src/db/schema.js";
+import { auditLog, passkey, players } from "../../src/db/schema.js";
 import {
   insertFixture,
   insertGame,
@@ -83,6 +83,32 @@ describe("GET /app/account", () => {
     expect(body).not.toContain(`name="email"`);
     expect(body).toContain(`href="${PASSKEYS_PATH}"`);
     expect(body).toContain(`href="${DELETE_ACCOUNT_PATH}"`);
+  });
+
+  it("tells an installed device without a passkey to add one, and stops once it has (M40)", async () => {
+    const { cookie } = await signIn();
+    const nudge = `<a href="${PASSKEYS_PATH}">Add a passkey</a> so you can sign in from here`;
+
+    const before = await (await get(cookie)).text();
+    // Inside the hidden confirmation only: `INSTALL_JS` reveals that paragraph
+    // on the device that is already the installed app, which is the one
+    // device the emailed link cannot sign in.
+    expect(before).toContain(`<p data-install-done hidden>Make The Team is installed on this device. ${nudge}`);
+
+    const [row] = await db.select({ authUserId: players.authUserId }).from(players).where(eq(players.email, ALLOWED));
+    await db.insert(passkey).values({
+      id: "pk-account",
+      publicKey: "irrelevant",
+      userId: row!.authUserId!,
+      credentialID: "cred-account",
+      counter: 0,
+      deviceType: "singleDevice",
+      backedUp: false,
+    });
+
+    const after = await (await get(cookie)).text();
+    expect(after).toContain("<p data-install-done hidden>Make The Team is installed on this device.</p>");
+    expect(after).not.toContain(nudge);
   });
 
   it("reads the email out with a caption, not inside the empty-state box", async () => {

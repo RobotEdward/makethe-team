@@ -16,6 +16,18 @@ import { isSignInPermitted, recordSignInRefusal } from "./sign-in-gate.js";
 const MAGIC_LINK_EXPIRY_MINUTES: number = 5;
 
 /**
+ * How long a session lives without use. Better Auth's default is seven days,
+ * which on an installed iPhone app is the wrong number: a home-screen app has
+ * its own cookie jar, so a session that lapses there cannot be renewed by the
+ * emailed link (it opens in Safari and signs Safari in). Every lapse is a
+ * wall for that player, and a fortnightly five-a-side is exactly the cadence
+ * that lapsed weekly. Thirty days with a daily sliding refresh means anyone
+ * who plays at all stays signed in. Exported for the test that pins it.
+ */
+export const SESSION_EXPIRY_DAYS: number = 30;
+const DAY_SECONDS = 24 * 60 * 60;
+
+/**
  * Builds a Better Auth instance for a single request.
  *
  * TR-1: this must be constructed per request, never cached at module level.
@@ -52,6 +64,11 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
     database: drizzleAdapter(db, { provider: "sqlite" }),
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.BETTER_AUTH_URL,
+    session: {
+      expiresIn: SESSION_EXPIRY_DAYS * DAY_SECONDS,
+      // Sliding: a session used today is extended to thirty days from today.
+      updateAge: DAY_SECONDS,
+    },
     plugins: [
       magicLink({
         expiresIn: MAGIC_LINK_EXPIRY_MINUTES * 60,

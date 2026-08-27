@@ -333,3 +333,145 @@ describe("the update overlay in SERVICE_WORKER_JS", () => {
     expect(harness.reloads()).toBe(1);
   });
 });
+
+describe("PASSKEY_SIGN_IN_JS in the installed app (M40)", () => {
+  interface Node {
+    id: string;
+    hidden: boolean;
+    disabled: boolean;
+    textContent: string;
+    className: string;
+    parentNode: Parent | null;
+    addEventListener(type: string, handler: () => void): void;
+    clickHandler: (() => void) | null;
+  }
+  interface Parent {
+    children: Node[];
+    insertBefore(node: Node, before: Node): void;
+  }
+
+  function node(id: string): Node {
+    return {
+      id,
+      hidden: true,
+      disabled: false,
+      textContent: "",
+      className: "",
+      parentNode: null,
+      clickHandler: null,
+      addEventListener(type, handler) {
+        if (type === "click") this.clickHandler = handler;
+      },
+    };
+  }
+
+  function run(options: { standalone: boolean; navigatorStandalone?: boolean; conditional?: boolean }) {
+    const form = node("form");
+    const section = node("passkey");
+    const button = node("passkey-button");
+    const problem = node("passkey-problem");
+    const lead = node("passkey-lead");
+    lead.textContent = "Already added a passkey to this account?";
+    lead.hidden = false;
+    const intro = node("signin-intro");
+    intro.textContent = "We'll email you a link that signs you in.";
+    const submit = node("signin-submit");
+    submit.className = "button primary";
+    button.className = "button";
+    const parent: Parent = {
+      children: [form, section],
+      insertBefore(n, before) {
+        this.children = this.children.filter((c) => c !== n);
+        this.children.splice(this.children.indexOf(before), 0, n);
+      },
+    };
+    form.parentNode = parent;
+    section.parentNode = parent;
+    const byId: Record<string, Node> = {
+      passkey: section,
+      "passkey-button": button,
+      "passkey-problem": problem,
+      "passkey-lead": lead,
+      "signin-intro": intro,
+      "signin-submit": submit,
+    };
+    const documentFake = {
+      getElementById: (id: string) => byId[id] ?? null,
+      querySelector: (selector: string) => (selector === "form.signin" ? form : null),
+    };
+    const gets: Array<Record<string, unknown>> = [];
+    const navigatorFake = {
+      standalone: options.navigatorStandalone,
+      credentials: {
+        get: (request: Record<string, unknown>) => {
+          gets.push(request);
+          return new Promise(() => undefined); // never settles; the ceremony is not under test
+        },
+      },
+    };
+    class PublicKeyCredential {
+      static parseRequestOptionsFromJSON(o: unknown) {
+        return o;
+      }
+      static isConditionalMediationAvailable() {
+        return Promise.resolve(options.conditional === true);
+      }
+      toJSON() {
+        return {};
+      }
+    }
+    const windowFake = {
+      PublicKeyCredential,
+      AbortController,
+      navigator: navigatorFake,
+      matchMedia: (query: string) => ({ matches: options.standalone && query.includes("standalone") }),
+      location: { assign: () => undefined },
+    };
+    const fetchFake = () => Promise.resolve({ ok: true, json: () => Promise.resolve({ challenge: "c" }) });
+    new Function("document", "navigator", "window", "fetch", scripts.PASSKEY_SIGN_IN_JS)(
+      documentFake,
+      navigatorFake,
+      windowFake,
+      fetchFake,
+    );
+    return { parent, section, lead, intro, button, submit, gets };
+  }
+
+  it("reveals the block below the form in a browser tab, copy unchanged", () => {
+    const { parent, section, lead, intro, button, submit } = run({ standalone: false });
+    expect(section.hidden).toBe(false);
+    expect(parent.children.map((c) => c.id)).toEqual(["form", "passkey"]);
+    expect(lead.hidden).toBe(false);
+    expect(intro.textContent).toBe("We'll email you a link that signs you in.");
+    expect(submit.className).toBe("button primary");
+    expect(button.className).toBe("button");
+  });
+
+  it("moves the block above the form inside the installed app and says why", () => {
+    const { parent, lead, intro, button, submit } = run({ standalone: true });
+    expect(parent.children.map((c) => c.id)).toEqual(["passkey", "form"]);
+    // The intro is retitled rather than a second sentence added under it,
+    // so the page never says "we'll email you a link" above a block that
+    // says the link is no use here; and the orange button follows the path
+    // that works.
+    expect(intro.textContent).toContain("An emailed link opens in your browser, not in this app.");
+    expect(lead.hidden).toBe(true);
+    expect(button.className).toBe("button primary");
+    expect(submit.className).toBe("button");
+  });
+
+  it("treats the older navigator.standalone flag as installed too", () => {
+    const { parent } = run({ standalone: false, navigatorStandalone: true });
+    expect(parent.children.map((c) => c.id)).toEqual(["passkey", "form"]);
+  });
+
+  it("starts a conditional-mediation request only where the browser offers it", async () => {
+    const withIt = run({ standalone: false, conditional: true });
+    const without = run({ standalone: false, conditional: false });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(withIt.gets).toHaveLength(1);
+    expect(withIt.gets[0]?.["mediation"]).toBe("conditional");
+    expect(withIt.gets[0]?.["signal"]).toBeInstanceOf(AbortSignal);
+    expect(without.gets).toHaveLength(0);
+  });
+});

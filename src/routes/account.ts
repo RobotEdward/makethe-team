@@ -13,7 +13,7 @@ import { recordAudit } from "../db/audit.js";
 import { getDb } from "../db/client.js";
 import { listPlayerFixtureHistory } from "../db/dashboard-queries.js";
 import { resultWordsForLockedRows } from "../db/result-summary.js";
-import { players, pushSubscriptions } from "../db/schema.js";
+import { passkey, players, pushSubscriptions } from "../db/schema.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
 import { erasureDeadline } from "../domain/erasure-window.js";
 import { fixtureView, type FixtureStatus } from "../domain/fixture-view.js";
@@ -339,6 +339,14 @@ async function renderAccount(c: Context<AppEnv>, problem?: string) {
   const db = getDb(c.env.DB);
 
   const history = await listPlayerFixtureHistory(db, player.id, HISTORY_LIMIT);
+  const hasPasskey =
+    (
+      await db
+        .select({ id: passkey.id })
+        .from(passkey)
+        .where(eq(passkey.userId, c.get("session")!.user.id))
+        .limit(1)
+    ).length > 0;
   const resultWords = await resultWordsForLockedRows(db, history, now);
 
   // Newest first: the device a player is looking at right now — the one they
@@ -397,6 +405,7 @@ async function renderAccount(c: Context<AppEnv>, problem?: string) {
       // dark) — see that binding's own doc comment. `renderAccountPage` reads
       // `undefined` as "no button can work", not as a bug to surface.
       vapidPublicKey: c.env.VAPID_PUBLIC_KEY || undefined,
+      hasPasskey,
     }),
     problem === undefined ? 200 : 422,
   );
