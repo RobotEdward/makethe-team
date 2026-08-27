@@ -59,7 +59,7 @@ export type TokenVerification<Payload> =
  * secrets differ (bad-signature) or, even where the same secret is reused for
  * both purposes, the embedded `kind` does not match (malformed).
  */
-type TokenKind = "response" | "cancel" | "leave";
+type TokenKind = "response" | "cancel" | "leave" | "join";
 
 /**
  * The env binding each token kind's secret is expected to live under, used
@@ -70,6 +70,7 @@ const SECRET_BINDING_NAME: Record<TokenKind, string> = {
   response: "RESPONSE_TOKEN_SECRET",
   cancel: "CANCEL_TOKEN_SECRET",
   leave: "RESPONSE_TOKEN_SECRET",
+  join: "RESPONSE_TOKEN_SECRET",
 };
 
 /**
@@ -395,4 +396,56 @@ export async function verifyLeaveToken(
   now: Date,
 ): Promise<TokenVerification<LeaveTokenPayload>> {
   return verifyToken("leave", token, secret, now, isLeavePayload);
+}
+
+/**
+ * A join-confirmation token (M39, BR-48). Scoped to one game *and* the
+ * invite token it was minted from: `/join/:jtoken` refuses it when the game's
+ * `invite_token` has since been rotated (BR-49), which is what keeps rotation
+ * a complete remedy for a leaked link — without `inviteToken` in the signed
+ * bytes, every confirmation email already in flight would outlive it.
+ *
+ * `email` and `name` travel here, not in a table, so the product stores
+ * nothing about a person who never confirms. Both are attacker-typed and are
+ * escaped at every render like any other interpolation.
+ */
+export interface JoinTokenPayload {
+  gameId: string;
+  inviteToken: string;
+  email: string;
+  name: string;
+  /** Epoch milliseconds. */
+  expiresAt: number;
+}
+
+/** Seven days (BR-48): long enough to read the email late, bounded anyway by BR-49. */
+const JOIN_TOKEN_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function joinTokenExpiry(now: Date): Date {
+  return new Date(now.getTime() + JOIN_TOKEN_LIFETIME_MS);
+}
+
+function isJoinPayload(value: unknown): value is JoinTokenPayload {
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate["gameId"] === "string" &&
+    typeof candidate["inviteToken"] === "string" &&
+    typeof candidate["email"] === "string" &&
+    typeof candidate["name"] === "string" &&
+    typeof candidate["expiresAt"] === "number" &&
+    Number.isFinite(candidate["expiresAt"])
+  );
+}
+
+export async function signJoinToken(payload: JoinTokenPayload, secret: string): Promise<string> {
+  return signToken("join", payload, secret);
+}
+
+/** Verify and decode a join token. See {@link verifyToken}. */
+export async function verifyJoinToken(
+  token: string,
+  secret: string,
+  now: Date,
+): Promise<TokenVerification<JoinTokenPayload>> {
+  return verifyToken("join", token, secret, now, isJoinPayload);
 }

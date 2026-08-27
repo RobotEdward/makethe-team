@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   cancelTokenExpiry,
+  joinTokenExpiry,
   leaveTokenExpiry,
   responseTokenExpiry,
   signCancelToken,
+  signJoinToken,
   signLeaveToken,
   signResponseToken,
   verifyCancelToken,
+  verifyJoinToken,
   verifyLeaveToken,
   verifyResponseToken,
 } from "../../src/domain/token.js";
@@ -623,5 +626,55 @@ describe("leave tokens", () => {
     );
 
     expect(await verifyLeaveToken(token, "a-different-secret", CLOCK_NOW)).toEqual({ ok: false, reason: "bad-signature" });
+  });
+});
+
+describe("join tokens (M39)", () => {
+  const SECRET = "join-token-tests-only";
+  const payload = () => ({
+    gameId: "g-1",
+    inviteToken: "inv-1",
+    email: "jack@example.com",
+    name: "Jack Hart",
+    expiresAt: joinTokenExpiry(CLOCK_NOW).getTime(),
+  });
+
+  it("round-trips the whole payload, name included", async () => {
+    const token = await signJoinToken(payload(), SECRET);
+    expect(await verifyJoinToken(token, SECRET, CLOCK_NOW)).toEqual({ ok: true, payload: payload() });
+  });
+
+  it("expires seven days after minting (BR-48)", () => {
+    expect(joinTokenExpiry(CLOCK_NOW).getTime()).toBe(CLOCK_NOW.getTime() + 7 * 24 * 60 * 60 * 1000);
+  });
+
+  it("rejects a token presented after its expiry", async () => {
+    const token = await signJoinToken({ ...payload(), expiresAt: CLOCK_NOW.getTime() - 1 }, SECRET);
+    expect(await verifyJoinToken(token, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "expired" });
+  });
+
+  it("refuses a leave token presented as a join token", async () => {
+    const token = await signLeaveToken({ gameId: "g-1", playerId: "p-1", expiresAt: CLOCK_NOW.getTime() + 1000 }, SECRET);
+    expect(await verifyJoinToken(token, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "malformed" });
+  });
+
+  it("refuses a join token presented as a leave or response token", async () => {
+    const token = await signJoinToken(payload(), SECRET);
+    expect(await verifyLeaveToken(token, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "malformed" });
+    expect(await verifyResponseToken(token, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "malformed" });
+  });
+
+  it("refuses a join token signed with a different secret", async () => {
+    const token = await signJoinToken(payload(), "other-secret");
+    expect(await verifyJoinToken(token, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "bad-signature" });
+  });
+
+  it("refuses a payload missing the invite token, so rotation can always be checked (BR-49)", async () => {
+    // Signed as the real kind with a shape the guard must reject — mirrors the
+    // "same-secret body satisfying both shapes" cases above.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { inviteToken: _dropped, ...withoutInvite } = payload();
+    const token = await signJoinToken(withoutInvite as never, SECRET);
+    expect(await verifyJoinToken(token, SECRET, CLOCK_NOW)).toEqual({ ok: false, reason: "malformed" });
   });
 });
