@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { buildAuditInsert } from "../db/audit.js";
 import type { Db } from "../db/client.js";
 import { memberships, players } from "../db/schema.js";
@@ -38,6 +38,13 @@ export interface JoinSquadParams {
   /** Raw from the form. Normalised here, not by the caller. */
   email: string;
   now: Date;
+  /**
+   * M39. Set by the caller once BR-47's confirmation has proved this address
+   * — never trusted from the form itself. Stamped on a freshly-created row;
+   * `coalesce`d onto a reused one so a later, unrelated confirmation can never
+   * move an existing verification date forward.
+   */
+  emailVerifiedAt?: Date;
 }
 
 /**
@@ -129,7 +136,20 @@ async function attemptJoin(params: JoinSquadParams): Promise<JoinOutcome> {
   const playerName = existing?.name ?? name.trim();
 
   if (!existing) {
-    await db.insert(players).values({ id: playerId, name: playerName, email, createdAt: now });
+    await db.insert(players).values({
+      id: playerId,
+      name: playerName,
+      email,
+      createdAt: now,
+      emailVerifiedAt: params.emailVerifiedAt ?? null,
+    });
+  } else if (params.emailVerifiedAt) {
+    // An earlier verification is never moved forward (link-player.ts's rule):
+    // the column records when we *first* knew the address reached them.
+    await db
+      .update(players)
+      .set({ emailVerifiedAt: sql`coalesce(${players.emailVerifiedAt}, ${params.emailVerifiedAt.getTime()})` })
+      .where(eq(players.id, existing.id));
   }
 
   const [membership] = await db

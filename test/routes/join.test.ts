@@ -1,9 +1,14 @@
 import { SELF } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { fixtures, games, memberships, notificationLog, players, responses as responsesTable } from "../../src/db/schema.js";
+import { auditLog, fixtures, games, joinConfirmations, memberships, notificationLog, players, responses as responsesTable } from "../../src/db/schema.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
 import { ORIGIN } from "../support/sign-in.js";
+
+/** A player whose address is already proved to reach them (M39) — the fast path's fixture. */
+function insertVerifiedPlayer(db: ReturnType<typeof testDb>, email: string) {
+  return insertPlayer(db, { email, emailVerifiedAt: new Date(Date.now()) });
+}
 
 async function seedGame(overrides = {}) {
   const db = testDb();
@@ -257,6 +262,11 @@ describe("GET /j/:token", () => {
     // would still render, still 200, and still pass every other test in this
     // file; it fails here.
     const { db, game } = await seedGame();
+    // Verified with the same name the form will post (M39, BR-47): this test's
+    // whole point is proving the form's fields map onto the handler's, and a
+    // pre-existing player's stored name would otherwise win over whatever the
+    // form sends — a fact this test is not the one to be about.
+    await insertPlayer(db, { name: "Alex Smith", email: "alex@example.com", emailVerifiedAt: new Date(Date.now()) });
     const html = await (await SELF.fetch(`${ORIGIN}/j/${game.inviteToken}`)).text();
 
     const form = /<form([^>]*)>([\s\S]*?)<\/form>/.exec(html);
@@ -312,8 +322,13 @@ describe("GET /j/:token", () => {
 describe("POST /j/:token", () => {
   beforeEach(resetDatabase);
 
-  it("creates the player and the membership and welcomes them", async () => {
+  it("creates the membership and welcomes an already-verified address", async () => {
     const { db, game } = await seedGame();
+    // M39, BR-47: the public link now only ever seats an address that has
+    // already proved it reaches someone. The player row therefore already
+    // exists here — creating one from an unverified form submission is
+    // exactly what the tests below this one prove does *not* happen.
+    await insertVerifiedPlayer(db, "alex@example.com");
 
     const response = await joinPost(game.inviteToken, { name: "Alex Smith", email: "alex@example.com" });
 
@@ -324,7 +339,9 @@ describe("POST /j/:token", () => {
     expect(html).toContain("There's no fixture scheduled yet");
 
     const [player] = await db.select().from(players).where(eq(players.email, "alex@example.com"));
-    expect(player?.name).toBe("Alex Smith");
+    // The stored name wins over whatever the form posted — join-squad.ts's
+    // rule for a pre-existing row, unaffected by BR-47.
+    expect(player?.name).toBe("Edward Charles");
     const [membership] = await db.select().from(memberships).where(eq(memberships.gameId, game.id));
     expect(membership?.active).toBe(true);
 
@@ -344,6 +361,7 @@ describe("POST /j/:token", () => {
    */
   it("answers both halves of a double-tapped join without a 500", async () => {
     const { db, game } = await seedGame();
+    await insertVerifiedPlayer(db, "alex@example.com");
 
     const responses = await Promise.all([
       joinPost(game.inviteToken, { name: "Alex Smith", email: "alex@example.com" }),
@@ -362,7 +380,7 @@ describe("POST /j/:token", () => {
 
   it("is idempotent for someone already in the squad", async () => {
     const { db, game } = await seedGame();
-    const playerId = await insertPlayer(db, { email: "alex@example.com" });
+    const playerId = await insertPlayer(db, { email: "alex@example.com", emailVerifiedAt: new Date(Date.now()) });
     await insertMembership(db, game.id, playerId);
 
     const response = await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" });
@@ -416,7 +434,8 @@ describe("POST /j/:token", () => {
   it("allows a post with no Origin header at all", async () => {
     // A non-browser client acting on its own behalf, same rule as the
     // dashboard and sign-out forms.
-    const { game } = await seedGame();
+    const { db, game } = await seedGame();
+    await insertVerifiedPlayer(db, "alex@example.com");
     const response = await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" }, null);
     expect(response.status).toBe(200);
     expect(await waitForNotificationRows(1)).toHaveLength(1);
@@ -432,7 +451,7 @@ describe("POST /j/:token", () => {
 
   it("welcomes someone back after they had left", async () => {
     const { db, game } = await seedGame();
-    const playerId = await insertPlayer(db, { email: "alex@example.com" });
+    const playerId = await insertPlayer(db, { email: "alex@example.com", emailVerifiedAt: new Date(Date.now()) });
     await insertMembership(db, game.id, playerId, { active: false, leftAt: new Date(Date.UTC(2026, 5, 1)) });
 
     const response = await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" });
@@ -477,6 +496,7 @@ describe("POST /j/:token", () => {
         lifecycle: "scheduled",
       },
     ]);
+    await insertVerifiedPlayer(db, "alex@example.com");
 
     const html = await (
       await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" })
@@ -505,7 +525,8 @@ describe("POST /j/:token", () => {
   });
 
   it("shows the onboarding CTA pointing at the dashboard", async () => {
-    const { game } = await seedGame();
+    const { db, game } = await seedGame();
+    await insertVerifiedPlayer(db, "alex@example.com");
 
     const html = await (
       await joinPost(game.inviteToken, { name: "Alex", email: "alex@example.com" })
@@ -518,6 +539,54 @@ describe("POST /j/:token", () => {
     expect(html).toContain("notifications");
     expect(html).toContain("passkey");
     await waitForNotificationRows(1);
+  });
+
+  it("seats nobody for an address it has never verified — one email, no rows (BR-47)", async () => {
+    const { db, game } = await seedGame();
+    const before = {
+      players: (await db.select().from(players)).length,
+      memberships: (await db.select().from(memberships)).length,
+      responses: (await db.select().from(responsesTable)).length,
+      audit: (await db.select().from(auditLog)).length,
+    };
+    const response = await joinPost(game.inviteToken, { name: "Jack Hart", email: "Jack@Example.com" });
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("Check your inbox");
+    expect(html).toContain("jack@example.com");
+
+    expect((await db.select().from(players)).length).toBe(before.players);
+    expect((await db.select().from(memberships)).length).toBe(before.memberships);
+    expect((await db.select().from(responsesTable)).length).toBe(before.responses);
+    expect((await db.select().from(auditLog)).length).toBe(before.audit);
+    expect(await notificationRowsAfterSettling()).toHaveLength(0);
+    expect(await db.select().from(joinConfirmations)).toEqual([
+      expect.objectContaining({ gameId: game.id, email: "jack@example.com" }),
+    ]);
+  });
+
+  it("treats a known but unverified address the same way, then confirmation verifies it", async () => {
+    const { db, game } = await seedGame();
+    const playerId = await insertPlayer(db, { email: "legacy@example.com", emailVerifiedAt: null });
+    const response = await joinPost(game.inviteToken, { name: "Legacy", email: "legacy@example.com" });
+    expect(await response.text()).toContain("Check your inbox");
+    expect(await db.select().from(memberships).where(eq(memberships.playerId, playerId))).toHaveLength(0);
+  });
+
+  it("still joins a verified address in one click", async () => {
+    const { db, game } = await seedGame();
+    await insertVerifiedPlayer(db, "ada@example.com");
+    const response = await joinPost(game.inviteToken, { name: "Ada", email: "ada@example.com" });
+    expect(await response.text()).toContain("You're in");
+    await waitForNotificationRows(1);
+  });
+
+  it("shows the inbox page again on a same-day resubmit rather than revealing the guard", async () => {
+    const { game } = await seedGame();
+    await joinPost(game.inviteToken, { name: "Jack", email: "jack@example.com" });
+    const again = await joinPost(game.inviteToken, { name: "Jack", email: "jack@example.com" });
+    expect(again.status).toBe(200);
+    expect(await again.text()).toContain("Check your inbox");
   });
 });
 

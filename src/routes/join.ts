@@ -1,18 +1,20 @@
+import { eq } from "drizzle-orm";
 import { Hono, type Context } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
 import { resolveSessionPlayer } from "../auth/session.js";
 import { getDb, type Db } from "../db/client.js";
 import { findFirstUpcomingFixture, findGameByInviteToken, findGameForMember, listSquad } from "../db/queries.js";
-import type { games } from "../db/schema.js";
+import { players, type games } from "../db/schema.js";
 import { backfillOpenFixtureResponses } from "../domain/backfill-open-responses.js";
 import { isPlausibleEmail, joinSquad, normaliseEmail, type JoinOutcome } from "../domain/join-squad.js";
 import { gamePath } from "../auth/paths.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
+import { sendJoinConfirmation } from "../notify/send-join-confirmation.js";
 import { sendLateInvitations } from "../notify/send-late-invitations.js";
 import { sendWelcomeEmail } from "../notify/send-welcome.js";
-import { renderInvitePage, renderJoinOutcomePage } from "../views/join.js";
+import { renderCheckInboxPage, renderInvitePage, renderJoinOutcomePage } from "../views/join.js";
 import { renderNotFoundPage } from "../views/not-found.js";
 
 export const join = new Hono<AppEnv>();
@@ -42,6 +44,12 @@ export const join = new Hono<AppEnv>();
 function field(form: Record<string, unknown>, name: string): string {
   const value = form[name];
   return typeof value === "string" ? value : "";
+}
+
+/** BR-47: only a row with `email_verified_at` counts. Guests and erased rows have null email and never match. */
+export async function isVerifiedAddress(db: Db, email: string): Promise<boolean> {
+  const [row] = await db.select({ verified: players.emailVerifiedAt }).from(players).where(eq(players.email, email)).limit(1);
+  return row?.verified != null;
 }
 
 /** Everything both handlers need to render the invite page for one game. */
@@ -178,6 +186,26 @@ join.post("/j/:token", async (c) => {
       }),
       422,
     );
+  }
+
+  if (!(await isVerifiedAddress(db, email))) {
+    // BR-47: nothing is written for an address nobody has proved reaches
+    // anyone. The send is awaited, not handed to waitUntil — the page says
+    // "we've sent", and a ceiling refusal must not make that a lie; it is
+    // reported on the same page instead.
+    const outcome = await sendJoinConfirmation({
+      db, notifier: createNotifier(c.env, db, now), gameId: game.id, gameName: game.name,
+      inviteToken: game.inviteToken, email, name, now, responseTokenSecret: c.env.RESPONSE_TOKEN_SECRET,
+    });
+    if (outcome.kind === "failed" || outcome.kind === "deferred") {
+      console.error(`join confirmation (N-14) not sent for game ${game.id}: ${outcome.kind}${outcome.kind === "failed" ? ` ${outcome.reason}` : ""}`);
+      return c.html(await invitePageFor({ db, game, now, values: { name, email }, error: "We couldn't send the confirmation email just now. Please try again in a little while." }), 503);
+    }
+    // `sent`, `already-sent-today` and `switched-off` all show the same page:
+    // the first two so a resubmit does not reveal the guard, the third so an
+    // administrator switching N-14 off closes joining rather than reopening
+    // the unconfirmed path.
+    return c.html(renderCheckInboxPage({ gameName: game.name, email }));
   }
 
   const outcome = await joinSquad({ db, gameId: game.id, name, email, now });

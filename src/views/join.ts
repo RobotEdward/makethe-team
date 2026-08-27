@@ -226,6 +226,27 @@ export function renderInvitePage(params: InvitePageParams): string {
   return layout({ title: `Join ${gameName} — Make The Team`, body, pageStyles: [SQUAD_STYLES_CSS, FORM_CSS] });
 }
 
+export interface CheckInboxPageParams {
+  gameName: string;
+  email: string;
+}
+
+/**
+ * M39. Shown for every one of `sendJoinConfirmation`'s non-failing outcomes
+ * (`sent`, `already-sent-today`, `switched-off`) so a resubmit or a
+ * switched-off N-14 cannot be told apart from a fresh send (BR-47). Shows the
+ * submitter their own address back (as the 422 branch already does) and
+ * nothing about the squad — nothing has been written yet.
+ */
+export function renderCheckInboxPage({ gameName, email }: CheckInboxPageParams): string {
+  const body = `
+    <h1>Check your inbox</h1>
+    <p>We've sent an email to <strong>${escapeHtml(email)}</strong> to confirm you want to join ${escapeHtml(gameName)}.</p>
+    <p>Tap the button in it and you're in. If it hasn't arrived in a few minutes, check your spam folder — and check the address above is right. If it isn't, go back and try again.</p>
+  `;
+  return layout({ title: `Join ${gameName} — Make The Team`, body, pageStyles: [FORM_CSS] });
+}
+
 export interface JoinOutcomePageParams {
   /** Straight from `JoinOutcome.kind` (`src/domain/join-squad.ts`). */
   kind: "joined" | "rejoined" | "already-member";
