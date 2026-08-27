@@ -213,6 +213,12 @@ export function joinPath(token: string): string {
   return `/j/${token}`;
 }
 
+/** M39: the confirmation link in an N-14 email. Public, token-bearing, rate-limited like `/j/*`. */
+export const JOIN_CONFIRM_PREFIX = "/join/*";
+export function joinConfirmPath(jtoken: string): string {
+  return `/join/${encodeURIComponent(jtoken)}`;
+}
+
 /**
  * The two squad-management controls on a game's own page (J6a).
  *

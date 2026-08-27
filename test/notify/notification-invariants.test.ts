@@ -11,6 +11,7 @@ import { loadNotificationSettings } from "../../src/notify/notification-settings
 import { sendBroadcast } from "../../src/notify/send-broadcast.js";
 import { sendPickerHandover } from "../../src/notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../../src/notify/send-removed.js";
+import { sendJoinConfirmation } from "../../src/notify/send-join-confirmation.js";
 import { sendResultNudges } from "../../src/notify/send-result-nudge.js";
 import { sendWelcomeEmail } from "../../src/notify/send-welcome.js";
 import type { Channel, Message, Notifier, SendResult } from "../../src/notify/notifier.js";
@@ -312,6 +313,28 @@ const n13Driver: Driver = {
   },
 };
 
+// --- n14: sendJoinConfirmation (test/notify/send-join-confirmation.test.ts) ---
+// No recipient player to seed: N-14 is the one type addressed to someone who
+// is not in `players` yet.
+const n14Driver: Driver = {
+  async seed(db) {
+    return insertGame(db, { name: "Thursday 7-a-side", inviteToken: "n14-invite" });
+  },
+  async send(db, gameId, notifier) {
+    await sendJoinConfirmation({
+      db,
+      notifier,
+      gameId,
+      gameName: "Thursday 7-a-side",
+      inviteToken: "n14-invite",
+      email: "n14-joiner@example.com",
+      name: "Nia",
+      now: new Date("2026-08-27T09:00:00Z"),
+      responseTokenSecret: SECRET,
+    });
+  },
+};
+
 // --- n6: sendWelcomeEmail (test/notify/send-welcome.test.ts) ---
 
 const N6_JOINED_AT = new Date("2026-08-12T09:00:00Z");
@@ -425,6 +448,7 @@ const DRIVERS: Partial<Record<NotificationType, Driver>> = {
   n11: n11Driver,
   n12: n12Driver,
   n13: n13Driver,
+  n14: n14Driver,
 };
 
 function driverFor(type: NotificationType): Driver {
