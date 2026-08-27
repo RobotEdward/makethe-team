@@ -25,6 +25,7 @@ import {
   FORM_CSS,
   FRESHNESS_CSS,
   INVITE_CSS,
+  MUTE_CSS,
   RESULT_CSS,
   SQUAD_SIGNALS_CSS,
   SQUAD_STYLES_CSS,
@@ -55,6 +56,12 @@ export interface GameOverviewParams {
      * chasing them is the wrong response.
      */
     muted: boolean;
+    /**
+     * Null `email_verified_at` (M39, BR-52): a member seated before confirm-to-join
+     * existed, whose address has never answered. Shown so the organiser can
+     * tidy legacy rows by hand; nothing removes them automatically.
+     */
+    unconfirmed: boolean;
     /**
      * Which reachability markers this member's row carries (M33), already
      * resolved against the clock by the route for `muted`'s reason — this
@@ -126,6 +133,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       const guest = member.isGuest ? " (guest)" : "";
       const organiser = member.role === "owner" ? " — organiser" : "";
       const muted = member.muted ? ' <span class="member-muted">Auto-declining</span>' : "";
+      const unconfirmed = member.unconfirmed ? ' <span class="member-unconfirmed">Unconfirmed</span>' : "";
       // Inside the member's own span, after the name: see SQUAD_SIGNALS_CSS
       // on why these must not be a third child of the row's grid.
       const signals = renderSquadSignals(member.signals);
@@ -133,7 +141,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       const nextRole = isOwner ? "player" : "owner";
       const roleLabel = isOwner ? "Make an ordinary member" : "Make an organiser";
       return `<li>
-        <span class="member">${name}${organiser}${guest}${you}${signals}</span>${muted}
+        <span class="member">${name}${organiser}${guest}${you}${signals}</span>${muted}${unconfirmed}
         <details class="member-actions">
           <summary>Manage</summary>
           <p><a href="${escapeHtml(memberDetailPath(gameId, member.playerId))}">View details</a></p>
@@ -234,6 +242,11 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     // `RESULT_CSS` for `.result-final` alone (M25 Task 13) — an all-new
     // selector (see that block's own comment in `src/views/styles.ts`), so
     // nothing already on this page changes appearance by adding it.
+    // MUTE_CSS carries `.member-muted`/`.member-unconfirmed` (M39, BR-52) —
+    // this page renders both spans but was missing this block entirely, so
+    // both badges shipped as unstyled text (CLAUDE.md's "a style block not
+    // in a page's pageStyles is simply never sent" failure). Neither
+    // selector collides with anything above.
     // SQUAD_SIGNALS_CSS last, and safely so: every selector in it is rendered
     // by `renderSquadSignals` and by nothing else on this page, so there is
     // no block above it for the order to matter against.
@@ -244,6 +257,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       FIXTURE_STYLES_CSS,
       RESULT_CSS,
       FRESHNESS_CSS,
+      MUTE_CSS,
       SQUAD_SIGNALS_CSS,
     ],
     pageScripts: [COPY_BUTTON_JS, FRESHNESS_JS],

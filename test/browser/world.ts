@@ -1,7 +1,15 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
-import { leaveTokenExpiry, signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
+import {
+  joinTokenExpiry,
+  leaveTokenExpiry,
+  signCancelToken,
+  signJoinToken,
+  signLeaveToken,
+  signResponseToken,
+} from "../../src/domain/token.js";
 import { toLocalParts } from "../../src/domain/time/zone.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn, TEST_OWNER, TEST_PLAYER } from "./sign-in.js";
@@ -156,6 +164,21 @@ export async function seedWorld(
   await joinerPage.fill('input[name="email"]', TEST_PLAYER);
   await joinerPage.click('button[type="submit"]');
   await joinerPage.waitForLoadState("networkidle");
+
+  // M39 (BR-48): a never-before-seen address no longer joins on that click —
+  // the submit above sent N-14 and landed on "Check your inbox" instead of a
+  // squad. The confirmation link is what actually creates the membership and
+  // stamps `emailVerifiedAt`; this harness has no inbox to read it from, so
+  // it mints the same token `sendJoinConfirmation` would have mailed (same
+  // secret, same payload shape) and follows it, exactly as a real click
+  // would.
+  const jtoken = await signJoinToken(
+    { gameId, inviteToken, email: TEST_PLAYER, name: JOINER_NAME, expiresAt: joinTokenExpiry(new Date(Date.now())).getTime() },
+    RESPONSE_SECRET,
+  );
+  await joinerPage.goto(`/join/${jtoken}`);
+  await joinerPage.click('button[type="submit"]');
+  await joinerPage.waitForLoadState("networkidle");
   await joiner.close();
 
   // Verify the postcondition rather than trusting the click. A silently
@@ -171,6 +194,21 @@ export async function seedWorld(
         `shows: ${JSON.stringify(await page.locator("ul.squad li .member").allTextContents())}`,
     );
   }
+
+  // --- a legacy, never-confirmed member ------------------------------------
+  // BR-52's whole premise is a row `confirm-to-join` never touched: nobody
+  // joining through the app today can end up with a null `email_verified_at`
+  // any more (both paths above stamp it), so the only way to put one in front
+  // of the "Unconfirmed" badge is to insert it directly, the way the real
+  // rows it describes actually got there — seated before M39 shipped.
+  // `email_verified_at` is left off entirely rather than passed as NULL, so
+  // there is no doubt this is the column's true default and not this
+  // harness's choice.
+  const legacyMemberId = randomUUID();
+  await query(`INSERT INTO players (id, name, email) VALUES ('${legacyMemberId}', 'Lauren Legacy', 'lauren-legacy@example.test')`);
+  await query(
+    `INSERT INTO memberships (id, game_id, player_id, role, joined_at) VALUES ('${randomUUID()}', '${gameId}', '${legacyMemberId}', 'player', ${Date.now()})`,
+  );
 
   // --- fixtures -----------------------------------------------------------
   // Two crons, and both are needed. `15 3 * * *` materialises fixtures from

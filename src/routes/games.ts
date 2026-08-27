@@ -242,6 +242,9 @@ async function squadForOverview(db: Db, gameId: string, now: Date) {
     return {
       ...member,
       muted: isMuted(member, now),
+      // A guest has no address to confirm, so a guest is never marked even
+      // when `emailVerifiedAt` happens to be null (M39, BR-52).
+      unconfirmed: !member.isGuest && member.emailVerifiedAt === null,
       signals: squadSignals(
         {
           isGuest: member.isGuest,

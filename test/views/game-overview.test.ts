@@ -31,6 +31,7 @@ const BASE = {
     role: "player" | "owner";
     isGuest: boolean;
     muted: boolean;
+    unconfirmed: boolean;
     signals: SquadSignals;
   }>,
   upcoming: [] as Array<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>,
@@ -44,8 +45,8 @@ const render = (overrides: Partial<typeof BASE> = {}) =>
 
 describe("squad controls", () => {
   const squad = [
-    { playerId: "p-owner", name: "Edward Charles", role: "owner" as const, isGuest: false, muted: false, signals: REACHABLE },
-    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false, signals: REACHABLE },
+    { playerId: "p-owner", name: "Edward Charles", role: "owner" as const, isGuest: false, muted: false, unconfirmed: false, signals: REACHABLE },
+    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false, unconfirmed: false, signals: REACHABLE },
   ];
 
   it("offers a remove link for each member", () => {
@@ -93,7 +94,7 @@ describe("squad controls", () => {
 });
 
 describe("per-member disclosure (M10 §3.8)", () => {
-  const m = (name: string) => ({ playerId: `p-${name}`, name, role: "player" as const, isGuest: false, muted: false, signals: REACHABLE });
+  const m = (name: string) => ({ playerId: `p-${name}`, name, role: "player" as const, isGuest: false, muted: false, unconfirmed: false, signals: REACHABLE });
   const params = (overrides: Partial<typeof BASE> & { squad: typeof BASE.squad }) => ({
     ...BASE,
     viewerPlayerId: "p-owner",
@@ -194,7 +195,7 @@ describe("the invite card (M12 §4)", () => {
 
 describe("destructive controls", () => {
   const squad = [
-    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false, signals: REACHABLE },
+    { playerId: "p-sam", name: "Sam Okafor", role: "player" as const, isGuest: false, muted: false, unconfirmed: false, signals: REACHABLE },
   ];
 
   it("marks removing someone as destructive rather than as ordinary navigation", () => {
@@ -383,7 +384,7 @@ describe("the squad list is styled too", () => {
     // the only thing standing between that bug and a silent return.
     const html = render({
       squad: [
-        { playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false, muted: false, signals: REACHABLE },
+        { playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false, muted: false, unconfirmed: false, signals: REACHABLE },
       ],
     });
     const squadAt = html.indexOf(SQUAD_STYLES_CSS);
@@ -409,5 +410,42 @@ describe("game overview — the link to past fixtures (M27)", () => {
   it("links to the game's past fixtures", () => {
     const html = render();
     expect(html).toContain(`href="${gamePastFixturesPath(BASE.gameId)}"`);
+  });
+});
+
+/**
+ * The "Unconfirmed" badge (M39, BR-52): a member seated before confirm-to-join
+ * existed, whose `email_verified_at` has stayed null. Guests carry no address
+ * to confirm, so the route never marks one even if `unconfirmed` were passed
+ * true — the view still asserts that here so a future edit to the row markup
+ * can't reintroduce the badge for a guest by rendering `unconfirmed` unguarded.
+ */
+describe("the unconfirmed badge (M39, BR-52)", () => {
+  it("marks a member whose email has never been verified", () => {
+    const html = render({
+      squad: [
+        { playerId: "p-sam", name: "Sam Okafor", role: "player", isGuest: false, muted: false, unconfirmed: true, signals: REACHABLE },
+        { playerId: "p-freya", name: "Freya Quinn", role: "player", isGuest: false, muted: false, unconfirmed: false, signals: REACHABLE },
+      ],
+    });
+    const samRow = html.slice(html.indexOf("Sam Okafor"), html.indexOf("Freya Quinn"));
+    const freyaRow = html.slice(html.indexOf("Freya Quinn"));
+    expect(samRow).toContain('<span class="member-unconfirmed">Unconfirmed</span>');
+    expect(freyaRow).not.toContain('<span class="member-unconfirmed">Unconfirmed</span>');
+  });
+
+  // The route (`squadForOverview` in src/routes/games.ts) is what refuses to
+  // set `unconfirmed` on a guest — "a guest has no address to confirm" is a
+  // route-level fact, not a rendering rule, so the view is exercised here
+  // with the value the route would actually hand it (`false`) rather than
+  // re-deriving `isGuest` itself. `test/routes/games.test.ts` pins the
+  // route's refusal at the layer that decides it.
+  it("renders a guest's row with no badge when the route says unconfirmed: false", () => {
+    const html = render({
+      squad: [
+        { playerId: "p-guest", name: "Guest Player", role: "player", isGuest: true, muted: false, unconfirmed: false, signals: REACHABLE },
+      ],
+    });
+    expect(html).not.toContain('<span class="member-unconfirmed">Unconfirmed</span>');
   });
 });

@@ -1136,11 +1136,12 @@ export const MUTE_CSS = `
   .mute-legend { font-weight: 600; margin-bottom: 0.4rem; }
   .mute-durations { display: grid; gap: 0.4rem; margin: 0 0 0.9rem; border: none; padding: 0; }
   .mute-durations label { display: flex; align-items: center; gap: 0.5rem; }
-  /* The organiser's marker on a squad row. A quiet pill rather than a colour
-     on the name: the fact is about the member's answers, not about the member,
-     and nothing here is a warning. --mut on --card-raised clears 4.5:1
-     (test/views/contrast.test.ts). */
-  .member-muted {
+  /* The organiser's marker on a squad row — auto-declining (M28), or a
+     legacy member whose email was never confirmed (M39, BR-52). A quiet
+     pill rather than a colour on the name: the fact is about the member's
+     answers or address, not about the member, and nothing here is a
+     warning. --mut on --card-raised clears 4.5:1 (test/views/contrast.test.ts). */
+  .member-muted, .member-unconfirmed {
     display: inline-block; padding: 0.1rem 0.5rem;
     background: var(--card-raised); border-radius: 0.6rem;
     font-size: var(--t-support); color: var(--mut); white-space: nowrap;

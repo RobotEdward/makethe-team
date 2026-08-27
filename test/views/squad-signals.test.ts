@@ -17,6 +17,7 @@ const member = (signals: SquadSignals) => ({
   role: "player" as const,
   isGuest: false,
   muted: false,
+  unconfirmed: false,
   signals,
 });
 

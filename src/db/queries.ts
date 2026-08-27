@@ -323,6 +323,8 @@ export async function listSquad(
     /** The raw columns; the page decides what to say through `isMuted` (M28). */
     mutedAt: Date | null;
     mutedUntil: Date | null;
+    /** Null for a member seated before confirm-to-join existed (M39, BR-52). */
+    emailVerifiedAt: Date | null;
   }>
 > {
   return db
@@ -333,6 +335,7 @@ export async function listSquad(
       isGuest: players.isGuest,
       mutedAt: memberships.mutedAt,
       mutedUntil: memberships.mutedUntil,
+      emailVerifiedAt: players.emailVerifiedAt,
     })
     .from(memberships)
     .innerJoin(players, eq(players.id, memberships.playerId))

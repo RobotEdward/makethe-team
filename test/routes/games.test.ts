@@ -424,6 +424,42 @@ describe("the squad list on /g/:id", () => {
     expect(memberIndex).toBeGreaterThan(-1);
     expect(ownerIndex).toBeLessThan(memberIndex);
   });
+
+  /**
+   * `unconfirmed` is computed here, not in the view (`squadForOverview` in
+   * `src/routes/games.ts`): `!member.isGuest && member.emailVerifiedAt ===
+   * null`. A guest has no address to confirm, so this pins that a guest's
+   * null `emailVerifiedAt` — the same value an ordinary legacy member would
+   * carry — never earns the badge, at the one layer that actually decides.
+   */
+  it("marks a legacy member's null email_verified_at as unconfirmed, but never a guest's", async () => {
+    const { cookie } = await signIn();
+    const db = testDb();
+    const [owner] = await db.select().from(players);
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, owner!.id, { role: "owner" });
+
+    // No `emailVerifiedAt` override: `playerRow`'s default leaves it null,
+    // exactly the legacy shape BR-52 is about.
+    const legacyId = await insertPlayer(db, { name: "Lauren Legacy" });
+    await insertMembership(db, gameId, legacyId, { role: "player" });
+
+    const guestId = await insertPlayer(db, { name: "Gary Guest", email: null, isGuest: true });
+    await insertMembership(db, gameId, guestId, { role: "player" });
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
+
+    // Each row is one `<li>...</li>`; slicing to the next `</li>` rather than
+    // to the other member's name avoids depending on `listSquad`'s
+    // alphabetical order ("Gary Guest" sorts before "Lauren Legacy").
+    const rowFor = (name: string) => {
+      const start = html.indexOf(name);
+      expect(start, `expected to find "${name}" in the rendered squad`).toBeGreaterThan(-1);
+      return html.slice(start, html.indexOf("</li>", start));
+    };
+    expect(rowFor("Lauren Legacy")).toContain('<span class="member-unconfirmed">Unconfirmed</span>');
+    expect(rowFor("Gary Guest")).not.toContain('<span class="member-unconfirmed">Unconfirmed</span>');
+  });
 });
 
 describe("the fixtures list on /g/:id", () => {
