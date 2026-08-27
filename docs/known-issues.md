@@ -352,3 +352,27 @@ The six columns and their doc comments are back on `src/db/schema.ts`, dead but 
 are never read or written. A follow-up migration drops them once the M37 worker is confirmed
 live everywhere. Not deferred as an oversight; deferred because the two-step deploy pipeline
 makes doing it in the same release actively dangerous.
+
+## `guide:capture` is broken for two independent reasons (M39, 27 August 2026)
+
+Running `npm run guide:capture` today fails before it produces anything usable, and has done
+since before M39 for an unrelated reason:
+
+1. **TR-37's `TOKEN_LIMITER`.** `buildGuideWorld` (`test/browser/guide-world.ts`) joins
+   thirteen squad members through `/j/:token` in a tight loop; the limiter admits ten requests
+   per 60 seconds per token, so the run 429s partway through — the sixth guide joiner since 23
+   August, per the standing memory note on this.
+2. **M39's confirm-to-join gate.** Independently of the rate limit, every one of those thirteen
+   addresses is now a first-time address, so each submission to `/j/:token` gets "Check your
+   inbox" instead of a seat (BR-47) — nobody in `SQUAD` is actually joined, and the
+   `squadSize !== SQUAD.length + 1` assertion right after the loop (`guide-world.ts`) would
+   throw even if the limiter allowed every request through.
+
+Both need fixing before `guide:capture` runs again: the pacing fix for TR-37 (`docs/runbooks/cloudflare.md`), and rewriting the
+loop in `test/browser/guide-world.ts` to join each guide member through `/join/:jtoken` with a
+per-address confirmation token — minted the way `test/browser/world.ts` and this file's own
+`freshJoinToken` already do for the catalogue and the "join-confirm" shot — rather than a single
+`/j/:token` submission per person. Neither is done here; this row is the record that the second
+cause exists, alongside the first, so the next attempt to fix TR-37's pacing does not stop at
+"the 429s are gone" and ship a `guide:capture` that still throws on `squadSize`. The trigger to
+revisit is the next time `guide:capture` is meant to run for real.

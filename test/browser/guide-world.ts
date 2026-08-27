@@ -264,6 +264,14 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
 
   // Each joiner in its own context: a joiner carrying the organiser's session
   // would exercise a path no real visitor takes.
+  //
+  // BROKEN since M39 (docs/known-issues.md, "`guide:capture` is broken for
+  // two independent reasons"): every address here is first-time, so each
+  // submission now gets "Check your inbox" and seats nobody (BR-47) — the
+  // squadSize assertion below throws even once TR-37's TOKEN_LIMITER pacing
+  // is fixed. The fix is to join each member through `/join/:jtoken` with a
+  // per-address confirmation token, the way `freshJoinToken` above and
+  // `test/browser/world.ts` already do, not a single `/j/:token` submission.
   for (const person of SQUAD) {
     const context = await browser.newContext();
     const joinerPage = await context.newPage();
