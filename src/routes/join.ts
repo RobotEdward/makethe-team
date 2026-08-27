@@ -7,27 +7,29 @@ import { findFirstUpcomingFixture, findGameByInviteToken, findGameForMember, lis
 import { players, type games } from "../db/schema.js";
 import { backfillOpenFixtureResponses } from "../domain/backfill-open-responses.js";
 import { isPlausibleEmail, joinSquad, normaliseEmail, type JoinOutcome } from "../domain/join-squad.js";
-import { gamePath } from "../auth/paths.js";
+import { gamePath, joinConfirmPath } from "../auth/paths.js";
+import { verifyJoinToken } from "../domain/token.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv } from "../env.js";
 import { createNotifier } from "../notify/factory.js";
 import { sendJoinConfirmation } from "../notify/send-join-confirmation.js";
 import { sendLateInvitations } from "../notify/send-late-invitations.js";
 import { sendWelcomeEmail } from "../notify/send-welcome.js";
-import { renderCheckInboxPage, renderInvitePage, renderJoinOutcomePage } from "../views/join.js";
+import { renderCheckInboxPage, renderInvitePage, renderJoinConfirmPage, renderJoinOutcomePage } from "../views/join.js";
 import { renderNotFoundPage } from "../views/not-found.js";
 
 export const join = new Hono<AppEnv>();
 
 /**
- * The public invite flow (J1, spec §4).
+ * The public invite flow (J1, spec §4) and its confirmation-link sibling
+ * `/join/:jtoken` (M39, BR-48–50).
  *
  * **Unauthenticated, and it both writes rows and sends email** — the same
  * class as `POST /r/:token`. What bounds the cost of abuse is the quota
  * wrapper around the notifier (`MAX_EMAILS_PER_DAY`, TR-31), not the origin
  * check or the token's unguessability; both of those are real but narrower.
- * A WAF rate-limit rule on `/j/*` is a supplement (TR-37), not a control:
- * everything here must hold with it switched off.
+ * A WAF rate-limit rule on `/j/*` and `/join/*` is a supplement (TR-37), not a
+ * control: everything here must hold with it switched off.
  *
  * Mounted outside every session prefix (`src/app.ts`). A visitor holding an
  * invite link has no session and must not need one (§1.6) — that is the whole
@@ -36,7 +38,8 @@ export const join = new Hono<AppEnv>();
  *
  * Every failure to resolve a token is a flat 404 with no explanation: see
  * `findGameByInviteToken` for why "this link has been replaced" is a worse
- * answer than "not found".
+ * answer than "not found". `resolveJoinToken` gives `/join/:jtoken` the same
+ * property for a rotated invite link (BR-49).
  */
 
 
@@ -225,21 +228,80 @@ join.post("/j/:token", async (c) => {
     c.executionCtx.waitUntil(notifyJoiner(c.env, game.id, outcome, now, backfilledFixtureIds));
   }
 
-  const firstFixture = await findFirstUpcomingFixture(db, game.id, now);
+  return c.html(await renderJoinOutcomeFor(db, game, outcome, now));
+});
 
+/**
+ * The page every successful (or already-satisfied) join lands on, shared by
+ * `POST /j/:token` and `POST /join/:jtoken` — both perform the same
+ * `joinSquad` and must agree on what the person sees afterwards.
+ */
+async function renderJoinOutcomeFor(
+  db: Db,
+  game: typeof games.$inferSelect,
+  outcome: JoinOutcome,
+  now: Date,
+): Promise<string> {
+  const firstFixture = await findFirstUpcomingFixture(db, game.id, now);
+  return renderJoinOutcomePage({
+    kind: outcome.kind,
+    gameName: game.name,
+    venueName: game.venueName,
+    firstFixture: firstFixture
+      ? {
+          local: formatLocalDateTime(firstFixture.kicksOffAt, game.timezone),
+          lifecycle: firstFixture.lifecycle,
+        }
+      : null,
+  });
+}
+
+/**
+ * The game a join token points at, or null. `findGameByInviteToken` with the
+ * token's *own* invite token, then an id check: a rotated link (BR-49), an
+ * inactive game and a forged pairing all fall out as one flat 404.
+ */
+async function resolveJoinToken(c: Context<AppEnv, "/join/:jtoken">, db: Db, now: Date) {
+  const verified = await verifyJoinToken(c.req.param("jtoken"), c.env.RESPONSE_TOKEN_SECRET, now);
+  if (!verified.ok) return null;
+  const game = await findGameByInviteToken(db, verified.payload.inviteToken);
+  if (game === null || game.id !== verified.payload.gameId) return null;
+  return { game, payload: verified.payload };
+}
+
+join.get("/join/:jtoken", async (c) => {
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const resolved = await resolveJoinToken(c, db, now);
+  if (resolved === null) return c.html(renderNotFoundPage(), 404);
   return c.html(
-    renderJoinOutcomePage({
-      kind: outcome.kind,
-      gameName: game.name,
-      venueName: game.venueName,
-      firstFixture: firstFixture
-        ? {
-            local: formatLocalDateTime(firstFixture.kicksOffAt, game.timezone),
-            lifecycle: firstFixture.lifecycle,
-          }
-        : null,
+    renderJoinConfirmPage({
+      gameName: resolved.game.name,
+      venueName: resolved.game.venueName,
+      name: resolved.payload.name,
+      action: joinConfirmPath(c.req.param("jtoken")),
     }),
   );
+});
+
+join.post("/join/:jtoken", async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const resolved = await resolveJoinToken(c, db, now);
+  if (resolved === null) return c.text("Not found", 404);
+  const { game, payload } = resolved;
+
+  // BR-48: the same join `POST /j/:token` performs for a verified address,
+  // plus the verification stamp — the click on this link is the proof.
+  const outcome = await joinSquad({ db, gameId: game.id, name: payload.name, email: payload.email, now, emailVerifiedAt: now });
+
+  if (outcome.kind === "joined" || outcome.kind === "rejoined") {
+    const backfilledFixtureIds = await backfillOpenFixtureResponses(db, game.id, outcome.playerId);
+    c.executionCtx.waitUntil(notifyJoiner(c.env, game.id, outcome, now, backfilledFixtureIds));
+  }
+
+  return c.html(await renderJoinOutcomeFor(db, game, outcome, now));
 });
 
 /**

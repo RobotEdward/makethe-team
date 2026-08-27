@@ -226,6 +226,25 @@ export function renderInvitePage(params: InvitePageParams): string {
   return layout({ title: `Join ${gameName} — Make The Team`, body, pageStyles: [SQUAD_STYLES_CSS, FORM_CSS] });
 }
 
+export interface JoinConfirmPageParams { gameName: string; venueName: string; name: string; action: string }
+
+/**
+ * M39, BR-50. The `GET` behind a confirmation link: one sentence and one
+ * button. A `GET` that joined would let every mail scanner that follows
+ * links join squads on people's behalf.
+ */
+export function renderJoinConfirmPage({ gameName, venueName, name, action }: JoinConfirmPageParams): string {
+  const body = `
+    <h1>Join the squad as ${escapeHtml(name)}?</h1>
+    <p>${escapeHtml(gameName)} at ${escapeHtml(venueName)}.</p>
+    <form method="post" action="${escapeHtml(action)}">
+      <div class="actions"><button class="button primary" type="submit">Yes, join the squad</button></div>
+    </form>
+    <p>Not you? Just close this page — nothing happens unless you press the button.</p>
+  `;
+  return layout({ title: `Join ${gameName} — Make The Team`, body, pageStyles: [FORM_CSS] });
+}
+
 export interface CheckInboxPageParams {
   gameName: string;
   email: string;

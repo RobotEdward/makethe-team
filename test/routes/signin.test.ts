@@ -42,7 +42,7 @@ import {
   verification,
 } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { signCancelToken, signResponseToken } from "../../src/domain/token.js";
+import { joinTokenExpiry, signCancelToken, signJoinToken, signResponseToken } from "../../src/domain/token.js";
 import type { AppEnv } from "../../src/env.js";
 import { PRESENCE_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, SIGN_IN_SUBMIT_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
@@ -1019,6 +1019,21 @@ describe("no password field anywhere (TR-16)", () => {
       const [invited] = await db.select().from(games).where(eq(games.id, gameId));
       await capture("invite", /Join the squad/, new Request(`${ORIGIN}/j/${invited!.inviteToken}`));
 
+      // The confirmation link a BR-47 email carries (M39, Task 5) — the other
+      // page a stranger with no session reaches, this time via a signed join
+      // token rather than the invite token directly.
+      const jtoken = await signJoinToken(
+        {
+          gameId: invited!.id,
+          inviteToken: invited!.inviteToken,
+          email: "jack@example.com",
+          name: "Jack Hart",
+          expiresAt: joinTokenExpiry(CLOCK_NOW).getTime(),
+        },
+        env.RESPONSE_TOKEN_SECRET,
+      );
+      await capture("join confirm", /Join the squad as/, new Request(`${ORIGIN}/join/${jtoken}`));
+
       // `POST /j/:token` on its `already-member` branch — the signed-in
       // player above is already in this squad, so this renders
       // `renderJoinOutcomePage` (the template this route has of its own, and
@@ -1154,6 +1169,7 @@ describe("no password field anywhere (TR-16)", () => {
         "squad member",
         "invite",
         "join outcome",
+        "join confirm",
       ].sort(),
     );
 
@@ -1596,6 +1612,10 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "assertion lives in test/routes/leave.test.ts. Deliberately excluded " +
       "from the wrongOrigin check the other POSTs above carry — see the " +
       "handler's own doc comment in src/routes/respond.ts.",
+    "POST /join/:jtoken":
+      "renders the same renderJoinOutcomePage as POST /j/:token — no template " +
+      "of its own that could carry an un-enumerated script; its own coverage " +
+      "lives in test/routes/join-confirm.test.ts.",
     "GET /manifest.webmanifest":
       "never returns HTML on any branch — a JSON body served as " +
       "application/manifest+json only (src/routes/pwa.ts); no template of " +
@@ -1722,6 +1742,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/:id/f/:fixtureId/message": "message squad",
     "GET /j/:token": "invite",
     "POST /j/:token": "join outcome",
+    "GET /join/:jtoken": "join confirm",
   };
 
   const registered = new Set(

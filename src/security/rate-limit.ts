@@ -10,7 +10,7 @@ const LIMIT_PERIOD_SECONDS = 60;
 
 /**
  * A throttle for the unauthenticated link endpoints — `/r/:token`,
- * `/leave/:token`, `/cancel/:token` and `/j/:token` (TR-37).
+ * `/leave/:token`, `/cancel/:token`, `/j/:token` and `/join/:jtoken` (TR-37).
  *
  * **This is a supplement, never the control.** Everything these routes do must
  * still hold with the bindings absent, exactly as it must with the WAF rules

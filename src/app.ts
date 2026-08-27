@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { GAMES_PREFIX, SERVICE_WORKER_PATH } from "./auth/paths.js";
+import { GAMES_PREFIX, JOIN_CONFIRM_PREFIX, SERVICE_WORKER_PATH } from "./auth/paths.js";
 import { AUTHENTICATED_PREFIX, SIGN_IN_PREFIX, sessionMiddleware } from "./auth/session.js";
 import type { AppEnv } from "./env.js";
 import { account } from "./routes/account.js";
@@ -99,21 +99,24 @@ export function createApp(): Hono<AppEnv> {
   // Supplement, not control: `src/security/rate-limit.ts` fails open and the
   // bindings are optional, so every route below must still hold with the whole
   // thing switched off — exactly as it must with the WAF rules off.
-  for (const prefix of ["/r/*", "/leave/*", "/cancel/*", "/j/*"]) {
+  for (const prefix of ["/r/*", "/leave/*", "/cancel/*", "/j/*", JOIN_CONFIRM_PREFIX]) {
     app.use(prefix, tokenRateLimit());
   }
 
-  // The public invite page. No session, so this is not the "a signed-in
-  // player's own data" argument that scopes the two mounts above — it is
-  // *revocation*. Rotating the invite token and deactivating the game are an
-  // owner's only ways to kill a leaked link, and a shared cache holding a 200
-  // for the old URL silently defeats both for the length of its TTL. The 422
-  // branch also echoes the submitter's own address back into the form, which
-  // no shared cache should ever hold.
-  app.use("/j/*", async (c, next) => {
-    await next();
-    c.header("Cache-Control", "private, no-store");
-  });
+  // The public invite page, and (M39) its confirmation-link sibling
+  // `/join/:jtoken`. No session, so this is not the "a signed-in player's own
+  // data" argument that scopes the two mounts above — it is *revocation*.
+  // Rotating the invite token and deactivating the game are an owner's only
+  // ways to kill a leaked link, and a shared cache holding a 200 for the old
+  // URL silently defeats both for the length of its TTL. The 422 branch also
+  // echoes the submitter's own address back into the form, which no shared
+  // cache should ever hold.
+  for (const prefix of ["/j/*", JOIN_CONFIRM_PREFIX]) {
+    app.use(prefix, async (c, next) => {
+      await next();
+      c.header("Cache-Control", "private, no-store");
+    });
+  }
 
   // The response page. Confidentiality *and* staleness: it renders full names
   // and every player's current answer, and that state changes on every tap, so
