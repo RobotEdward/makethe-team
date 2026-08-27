@@ -100,6 +100,7 @@ const RESET_TABLES = [
   "invite_tiers",
   "fixtures",
   "game_notification_settings",
+  "join_confirmations",
   "games",
   "players",
   // Better Auth tables (M5). Children before parent: session, account and

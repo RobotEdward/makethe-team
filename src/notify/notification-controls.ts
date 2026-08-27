@@ -10,7 +10,7 @@ import type { Channel } from "./notifier.js";
  * construction, because a control that must never be used is better absent
  * than present-and-disabled (spec §2).
  *
- * A `Record` over the whole union, not a partial map: adding `n14` to
+ * A `Record` over the whole union, not a partial map: adding `n15` to
  * `NOTIFICATION_TYPES` is a typecheck error here until somebody says what it
  * is, the same discipline the `notification_type` column enum already buys.
  *
@@ -42,6 +42,7 @@ export const NOTIFICATION_CONTROLS: Record<NotificationType, Control> = {
   n11: { scope: "owner", channels: ["push"] },
   n12: { scope: "owner", channels: BOTH },
   n13: { scope: "owner", channels: BOTH },
+  n14: { scope: "admin", channels: ["email"] },
 };
 
 export interface ControlCell {

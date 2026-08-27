@@ -62,6 +62,7 @@ describe("the admin notifications screen", () => {
     expect(html).toContain("Owners can also switch these off per game");
     expect(html).toContain("Administrator only");
     expect(html).toContain("Never switched off");
+    expect(html).toContain("Join confirmation");
     for (const t of ["n2", "n3", "n5", "n8"]) {
       expect(html).toMatch(new RegExp(`data-notification="${t}"[^>]*>[\\s\\S]*?No control`));
     }

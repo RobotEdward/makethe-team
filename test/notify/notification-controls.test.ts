@@ -19,8 +19,12 @@ describe("NOTIFICATION_CONTROLS", () => {
     const byScope = (scope: "owner" | "admin" | "none") =>
       NOTIFICATION_TYPES.filter((t) => NOTIFICATION_CONTROLS[t].scope === scope);
     expect(byScope("owner")).toEqual(["n1", "n4", "n9", "n11", "n12", "n13"]);
-    expect(byScope("admin")).toEqual(["n6", "n7", "n10"]);
+    expect(byScope("admin")).toEqual(["n6", "n7", "n10", "n14"]);
     expect(byScope("none")).toEqual(["n2", "n3", "n5", "n8"]);
+  });
+
+  it("keeps n14 email-only: a confirmation goes to an address with no player behind it (M39)", () => {
+    expect(NOTIFICATION_CONTROLS.n14).toEqual({ scope: "admin", channels: ["email"] });
   });
 
   it("gives a never-switchable type no channels, so no control can be rendered for it", () => {

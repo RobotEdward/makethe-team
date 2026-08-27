@@ -63,13 +63,22 @@ const sampleContext = {
  */
 const LONG_GAME_NAME = "The Tuesday 6-a-side Massive";
 
+/**
+ * Every type with a push leg. N-14 (M39) has none: it is mailed to an
+ * address that may have no player, let alone a subscribed device, behind
+ * it — the same asymmetry N-11 has in the other direction (push only, no
+ * email leg; see `NOTIFICATION_CONTROLS.n11`'s comment).
+ */
+const PUSHABLE_TYPES = NOTIFICATION_TYPES.filter((t) => t !== "n14");
+
 describe("push copy", () => {
-  it("covers every notification type", () => {
+  it("covers every pushable notification type", () => {
     // The catalogue is the source of truth. A type added later without copy
     // would otherwise silently send nothing on the push channel.
-    for (const type of NOTIFICATION_TYPES) {
+    for (const type of PUSHABLE_TYPES) {
       expect(PUSH_COPY[type], `no push copy for ${type}`).toBeDefined();
     }
+    expect("n14" in PUSH_COPY).toBe(false);
   });
 
   it("keeps every title short enough to survive a notification tray", () => {
@@ -83,7 +92,7 @@ describe("push copy", () => {
     // concatenation right up until a realistic game name broke it in
     // production. The 28-character name exercises the boundary the copy is
     // actually meant to hold.
-    for (const type of NOTIFICATION_TYPES) {
+    for (const type of PUSHABLE_TYPES) {
       const { title } = PUSH_COPY[type]({ ...sampleContext, gameName: LONG_GAME_NAME });
       expect(title.length, `${type}: "${title}"`).toBeLessThanOrEqual(40);
     }
@@ -106,7 +115,7 @@ describe("push copy", () => {
     // against MAX_PAYLOAD_BYTES (the plaintext limit, imported from
     // web-push.ts) rather than a hardcoded 4096, which is the limit on the
     // encrypted wire body, not on this JSON.
-    for (const type of NOTIFICATION_TYPES) {
+    for (const type of PUSHABLE_TYPES) {
       const copy = PUSH_COPY[type]({ ...sampleContext, gameName: "x".repeat(200), venueName: "y".repeat(200) });
       const bytes = new TextEncoder().encode(JSON.stringify(copy)).length;
       expect(bytes, `${type}: ${bytes} bytes`).toBeLessThan(MAX_PAYLOAD_BYTES);
@@ -117,7 +126,7 @@ describe("push copy", () => {
     // Same banned list the email templates and views are held to
     // (test/notify/templates/reminder.test.ts, test/views/fixture.test.ts):
     // "fixture", never "event"; no "rsvp", "match" or "user" either.
-    for (const type of NOTIFICATION_TYPES) {
+    for (const type of PUSHABLE_TYPES) {
       const { title, body, tag } = PUSH_COPY[type]({ ...sampleContext });
       for (const rendition of [title.toLowerCase(), body.toLowerCase(), tag.toLowerCase()]) {
         for (const word of ["rsvp", "event", "match", "user", "team list"]) {

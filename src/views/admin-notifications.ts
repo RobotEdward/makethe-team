@@ -12,7 +12,7 @@ const NAMES: Record<NotificationType, string> = {
   n4: "Fixture short or uneven (to the owner)", n5: "Sign-in link", n6: "Welcome to the squad",
   n7: "Removed from a squad", n8: "Erasure scheduled", n9: "Teams published",
   n10: "Organiser broadcast", n11: "Group-chat nudge (to the owner)", n12: "How did it go?",
-  n13: "Team pick handed over",
+  n13: "Team pick handed over", n14: "Join confirmation",
 };
 
 const WHY_NEVER: Partial<Record<NotificationType, string>> = {

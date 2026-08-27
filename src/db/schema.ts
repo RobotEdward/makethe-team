@@ -269,6 +269,31 @@ export const gameNotificationSettings = sqliteTable(
 );
 
 /**
+ * One row per (game, address, UTC day) that an N-14 join confirmation was
+ * attempted for (M39, BR-53). Inserted *before* the send, so a primary-key
+ * conflict is the once-per-day guard — the only thing stopping a leaked
+ * invite link from making the form mail one victim eighty times a day.
+ *
+ * `email` is stranger-typed. Every insert also deletes rows older than
+ * yesterday (`send-join-confirmation.ts`), so the table never holds more
+ * than two days of addresses nobody has confirmed — the `signin_refusals`
+ * ring-buffer argument, bounded by time instead of by count.
+ */
+export const joinConfirmations = sqliteTable(
+  "join_confirmations",
+  {
+    gameId: text("game_id")
+      .notNull()
+      .references(() => games.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    /** UTC date, YYYY-MM-DD, as `email_quota.day`. */
+    day: text("day").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
+  },
+  (table) => [primaryKey({ columns: [table.gameId, table.email, table.day] })],
+);
+
+/**
  * One rung of a Game's invite order (BR-38, M34).
  *
  * **The index on (game_id, position) is deliberately not unique.** Reordering

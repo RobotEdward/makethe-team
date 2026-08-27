@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11", "n12", "n13"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11", "n12", "n13", "n14"] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -193,6 +193,14 @@ export function resultNudgeKey(fixtureId: string, playerId: string): string {
 export function pickerHandoverKey(fixtureId: string, playerId: string, setAt: string): string {
   return `n13:${fixtureId}:${playerId}:${setAt}`;
 }
+
+/**
+ * N-14 join confirmation (M39): **no `notification_log` row and no key
+ * builder.** `notification_log.player_id` is NOT NULL and there is no
+ * player yet — that is the whole point of the message. Once-per-day is
+ * kept by `join_confirmations` (`src/notify/send-join-confirmation.ts`),
+ * and the provider key is a fresh UUID exactly as N-5's is.
+ */
 
 export function pushKey(emailKey: string): string {
   return `push:${emailKey}`;
