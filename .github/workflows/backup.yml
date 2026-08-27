@@ -1,0 +1,43 @@
+name: Backup D1
+
+# D1 Time Travel already covers in-place restore for 30 days. This job is for
+# what it cannot reach: loss of the database or account, and anything older
+# than 30 days. One SQL dump a day into an R2 bucket.
+#
+# The dump holds every player's email address. Erasure (`erases_at`) promises
+# those disappear, so the bucket carries a 90-day expiry rule (set once, by
+# hand: `wrangler r2 bucket lifecycle add makethe-team-backups --expire-days 90`)
+# and dumps must never be committed to git, where they would live forever.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # daily, 03:17 UTC — off the hour, away from the app's own crons
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Export and upload
+        run: |
+          set -euo pipefail
+          stamp=$(date -u +%Y-%m-%dT%H%MZ)
+          npx wrangler d1 export makethe-team --remote --output=dump.sql
+          gzip -9 dump.sql
+          ls -l dump.sql.gz
+          npx wrangler r2 object put "makethe-team-backups/d1/makethe-team-${stamp}.sql.gz" \
+            --file=dump.sql.gz --content-type=application/gzip --remote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
