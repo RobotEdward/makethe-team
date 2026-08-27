@@ -325,6 +325,11 @@ The `makethe.team` route is declared in `wrangler.jsonc` as a custom domain, so
 `wrangler deploy` manages it. Do not also create a route by hand in the
 dashboard — the two will fight.
 
+## Database backup and restore
+
+See `database-backup.md`: Time Travel bookmarks (printed by every deploy) and
+the daily R2 dump.
+
 ## Cron triggers
 
 `wrangler deploy --dry-run` does **not** print cron triggers in wrangler
