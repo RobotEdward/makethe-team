@@ -133,15 +133,25 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       const guest = member.isGuest ? " (guest)" : "";
       const organiser = member.role === "owner" ? " — organiser" : "";
       const muted = member.muted ? ' <span class="member-muted">Auto-declining</span>' : "";
+      // (M39, BR-52) Both badges below go *inside* `.member`, not after it —
+      // the same reason `signals` does (see SQUAD_SIGNALS_CSS): `ul.squad >
+      // li` is a two-column grid, and neither `.member` nor `.member-actions`
+      // is placed explicitly — auto-placement happens to land exactly two
+      // siblings into row 1's two cells. A third sibling here does not wrap
+      // inline; it auto-flows into a *new grid row*, pushing "Manage" onto
+      // its own line only for rows that carry it. `muted` shipped exactly
+      // that way in M28 and nothing ever caught it, because no seeded squad
+      // has ever had a muted member; `test/browser/layout.spec.ts`'s "every
+      // squad row has the same shape" caught it the moment a seeded row
+      // carried `unconfirmed`, which is why `muted` is fixed here too rather
+      // than left as a class of bug with one instance patched.
       const unconfirmed = member.unconfirmed ? ' <span class="member-unconfirmed">Unconfirmed</span>' : "";
-      // Inside the member's own span, after the name: see SQUAD_SIGNALS_CSS
-      // on why these must not be a third child of the row's grid.
       const signals = renderSquadSignals(member.signals);
       const isOwner = member.role === "owner";
       const nextRole = isOwner ? "player" : "owner";
       const roleLabel = isOwner ? "Make an ordinary member" : "Make an organiser";
       return `<li>
-        <span class="member">${name}${organiser}${guest}${you}${signals}</span>${muted}${unconfirmed}
+        <span class="member">${name}${organiser}${guest}${you}${signals}${muted}${unconfirmed}</span>
         <details class="member-actions">
           <summary>Manage</summary>
           <p><a href="${escapeHtml(memberDetailPath(gameId, member.playerId))}">View details</a></p>

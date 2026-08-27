@@ -103,7 +103,17 @@ export interface World {
   cancelToken: string;
 }
 
-/** Read-only D1 access, via the supported path. See `sign-in.ts` for why. */
+/**
+ * D1 access via the supported path (see `sign-in.ts` for why this shells out
+ * rather than opening the database directly), used for both reads and
+ * direct writes (a legacy row `seedWorld` cannot produce through the app,
+ * `result.spec.ts` and `push.spec.ts`'s own fixture rows). Every value
+ * interpolated into a `sql` string here is a locally generated UUID or a
+ * hard-coded literal, never attacker- or user-supplied text — this is test
+ * setup, not a request handler, so there is nothing here for injection to
+ * exploit; `wrangler d1 execute --command` also has no bound-parameter form
+ * to use instead.
+ */
 async function query<T>(sql: string): Promise<T[]> {
   const { stdout } = await run(
     "npx",
@@ -204,8 +214,17 @@ export async function seedWorld(
   // `email_verified_at` is left off entirely rather than passed as NULL, so
   // there is no doubt this is the column's true default and not this
   // harness's choice.
+  //
+  // The email is per-call, not a fixed literal: `players_email_unique` is a
+  // partial unique index on a non-null email, this D1 is reset once for the
+  // whole Playwright run (`workers: 1` in playwright.config.ts), and
+  // `seedWorld` is called once per spec file across dozens of specs — a
+  // fixed address collided on the second call and failed every spec after
+  // the first. Suffixed the same way `result.spec.ts`'s "Backer
+  // ${playerId.slice(0, 8)}" is.
   const legacyMemberId = randomUUID();
-  await query(`INSERT INTO players (id, name, email) VALUES ('${legacyMemberId}', 'Lauren Legacy', 'lauren-legacy@example.test')`);
+  const legacyEmail = `lauren-legacy+${legacyMemberId.slice(0, 8)}@example.test`;
+  await query(`INSERT INTO players (id, name, email) VALUES ('${legacyMemberId}', 'Lauren Legacy', '${legacyEmail}')`);
   await query(
     `INSERT INTO memberships (id, game_id, player_id, role, joined_at) VALUES ('${randomUUID()}', '${gameId}', '${legacyMemberId}', 'player', ${Date.now()})`,
   );
