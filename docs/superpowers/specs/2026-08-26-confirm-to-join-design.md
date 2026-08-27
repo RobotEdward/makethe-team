@@ -1,6 +1,6 @@
 # M39 — Confirm to join
 
-**Status:** approved 27 August 2026 (plan: docs/superpowers/plans/2026-08-27-m39-confirm-to-join.md). M39, not M38 — M38 is the invite-page viewer banner already in `src/routes/join.ts`.
+**Status:** implemented in M39 (plan: docs/superpowers/plans/2026-08-27-m39-confirm-to-join.md). M39, not M38 — M38 is the invite-page viewer banner already in `src/routes/join.ts`.
 Amends `docs/superpowers/specs/2026-08-10-make-the-team-design.md` §4 (the invite flow).
 
 ## The problem

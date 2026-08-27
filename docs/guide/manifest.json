@@ -49,6 +49,14 @@
       "shows": "The join page a player reaches from the link: a name and an email, nothing else."
     },
     {
+      "id": "join-confirm",
+      "chapter": "02-inviting-your-squad",
+      "title": "Confirming the join",
+      "route": "/join/:jtoken",
+      "image": "images/join-confirm.png",
+      "shows": "M39: the page the confirmation email's button opens — \"Join the squad as Name?\" with one button, and nothing written until it's pressed."
+    },
+    {
       "id": "respond-pending",
       "chapter": "03-answering-a-reminder",
       "title": "Arriving from the email",

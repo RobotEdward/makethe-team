@@ -94,6 +94,15 @@ export interface World {
   gameId: string;
   fixtureId: string;
   inviteToken: string;
+  /**
+   * M39 (BR-48/BR-50): a confirmation-link token for an address that has
+   * never joined anything, minted directly rather than mailed — there is no
+   * inbox to read it from — and never consumed by this harness. The
+   * "join-confirm" catalogue entry is a `GET`, which BR-50 requires to write
+   * nothing, so capturing it must not exercise the `POST` that would seat
+   * this address and leave nothing for a real click to do.
+   */
+  freshJoinToken: string;
   /** The joined member — the one the squad-management pages act on. */
   memberPlayerId: string;
   responseToken: string;
@@ -161,6 +170,21 @@ export async function seedWorld(
   const gameId = new URL(page.url()).pathname.split("/")[2]!;
   const inviteUrl = await page.inputValue("#invite-url");
   const inviteToken = inviteUrl.split("/j/")[1]!;
+
+  // M39: a confirmation-link token for the "join-confirm" catalogue entry, for
+  // an address that is not (and will not become) a member — minted the way
+  // `sendJoinConfirmation` would have, not by submitting the join form, since
+  // this harness has no inbox to read it from.
+  const freshJoinToken = await signJoinToken(
+    {
+      gameId,
+      inviteToken,
+      email: "unconfirmed-catalogue@example.test",
+      name: "Robin Catalogue",
+      expiresAt: joinTokenExpiry(new Date(Date.now())).getTime(),
+    },
+    RESPONSE_SECRET,
+  );
 
   // --- a second identity joins --------------------------------------------
   // Its own context, so the two identities never share a cookie jar: a joiner
@@ -302,6 +326,7 @@ export async function seedWorld(
     gameId,
     fixtureId: fixture.id,
     inviteToken,
+    freshJoinToken,
     memberPlayerId: member.id,
     responseToken,
     leaveToken,

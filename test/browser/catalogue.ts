@@ -216,6 +216,16 @@ export const CATALOGUE: CataloguePage[] = [
     note: "The public invite page. Reachable by anyone holding the link.",
   },
   {
+    id: "join-confirm",
+    title: "Confirm a join",
+    path: (w) => `/join/${w.freshJoinToken}`,
+    persona: "anonymous",
+    note:
+      "M39's confirmation-link landing page (BR-50): \"Join the squad as Name?\" with " +
+      "one button. GET only — a fresh, unconsumed token, since GET writes nothing and " +
+      "consuming it here would leave nothing for a real click to do.",
+  },
+  {
     id: "respond",
     title: "Respond to a fixture",
     path: (w) => `/r/${w.responseToken}`,

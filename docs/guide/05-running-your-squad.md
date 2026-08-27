@@ -11,6 +11,12 @@ on the game page, or one tap from it.
 Every person in the squad has a row with their name and a **Manage**
 disclosure. Open it and two things are inside: a button and a link.
 
+A row for somebody who was seated before the app started confirming new
+addresses, and whose address has still never answered a confirmation, carries
+an **Unconfirmed** tag beside their name. Nothing removes such a row on its
+own — **Remove**, in the same **Manage** disclosure, is how you tidy it by
+hand if you want to.
+
 **Make an organiser** gives that person the same powers you have: they can
 invite people, change the game's details and take people out. Handy when you're
 away and don't want the game to depend on you having signal.

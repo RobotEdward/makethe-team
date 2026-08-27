@@ -122,6 +122,17 @@ export const SHOTS: Shot[] = [
     persona: "anonymous",
   },
   {
+    id: "join-confirm",
+    chapter: "02-inviting-your-squad",
+    title: "Confirming the join",
+    route: "/join/:jtoken",
+    shows:
+      "M39: the page the confirmation email's button opens — \"Join the squad " +
+      "as Name?\" with one button, and nothing written until it's pressed.",
+    path: (w) => `/join/${w.freshJoinToken}`,
+    persona: "anonymous",
+  },
+  {
     id: "respond-pending",
     chapter: "03-answering-a-reminder",
     title: "Arriving from the email",

@@ -74,6 +74,7 @@ const ROUTE_TO_ID = new Map<string, string>([
   ["/g/:id/squad/:playerId/remove", "remove-member"],
   ["/g/:id/squad/:playerId", "squad-member"],
   ["/j/:token", "join"],
+  ["/join/:jtoken", "join-confirm"],
   ["/r/:token", "respond"],
   ["/leave/:token", "leave"],
   ["/cancel/:token", "cancel"],

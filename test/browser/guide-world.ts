@@ -1,7 +1,14 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
-import { leaveTokenExpiry, signCancelToken, signLeaveToken, signResponseToken } from "../../src/domain/token.js";
+import {
+  joinTokenExpiry,
+  leaveTokenExpiry,
+  signCancelToken,
+  signJoinToken,
+  signLeaveToken,
+  signResponseToken,
+} from "../../src/domain/token.js";
 import { toLocalParts } from "../../src/domain/time/zone.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn } from "./sign-in.js";
@@ -120,6 +127,14 @@ export interface GuideWorld {
   gameId: string;
   fixtureId: string;
   inviteToken: string;
+  /**
+   * M39: a confirmation-link token (BR-48) for an address that has never
+   * joined anything, minted the way `sendJoinConfirmation` would have — not
+   * consumed by anything in this world, since `GET /join/:jtoken` (the
+   * "join-confirm" shot) writes nothing (BR-50) and there is nothing here to
+   * exercise the `POST`.
+   */
+  freshJoinToken: string;
   cancelToken: string;
   /** A response token for a player who is `in`. */
   inToken: string;
@@ -232,6 +247,21 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   const gameId = new URL(page.url()).pathname.split("/")[2]!;
   const inviteToken = (await page.inputValue("#invite-url")).split("/j/")[1]!;
 
+  // M39's confirm-to-join shot needs a token for an address that has never
+  // joined anything — minted directly, the way the email would carry it,
+  // rather than by driving the form: this address is never submitted to
+  // `/j/:token` by this harness, so there is no inbox to read it from.
+  const freshJoinToken = await signJoinToken(
+    {
+      gameId,
+      inviteToken,
+      email: "unconfirmed-demo@example.test",
+      name: "Alex Doyle",
+      expiresAt: joinTokenExpiry(new Date(Date.now())).getTime(),
+    },
+    RESPONSE_SECRET,
+  );
+
   // Each joiner in its own context: a joiner carrying the organiser's session
   // would exercise a path no real visitor takes.
   for (const person of SQUAD) {
@@ -325,6 +355,7 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     gameId,
     fixtureId: fixture.id,
     inviteToken,
+    freshJoinToken,
     inToken: await tokenFor(GUIDE_ORGANISER),
     waitlistedToken: await tokenFor(SQUAD[10]!.email),
     outToken,

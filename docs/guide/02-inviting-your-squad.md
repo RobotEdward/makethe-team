@@ -48,4 +48,29 @@ read while deciding, not something to scroll past on the way to joining.
 Once they've joined, their name appears in your squad and they'll get the
 reminder for the next fixture along with everyone else.
 
+## Confirming a new address
+
+<!-- Screenshot pending: docs/guide/images/join-confirm.png. guide:capture is
+     still broken by TR-37's rate limiter (see docs/known-issues.md); the
+     manifest entry for it is in place for when that's fixed. The "Check your
+     inbox" page itself has no screenshot and no manifest entry at all — it's
+     only reachable by submitting the join form, and the catalogue and guide
+     captures are both GET-driven. -->
+
+The first time somebody types an address the app has never seen, tapping the
+button doesn't seat them straight away. Instead they land on **Check your
+inbox**: an email is on its way to the address they typed, naming the game and
+the name they typed and nothing else — no fixture details, no squad list, no
+other link — because it's the one message the app will send to an address
+before it knows it reaches anyone.
+
+Tapping the button in that email opens **Join the squad as *Name*?**, with one
+button of its own. Pressing it is what actually seats them, and from there
+they land on the same page anyone joining directly sees.
+
+This only happens once per address. Anyone who has confirmed a join before —
+for this game or any other — or who has ever signed in, skips the inbox step
+entirely: the invite page's button seats them straight away, exactly as it
+always has.
+
 Next: [answering a reminder](03-answering-a-reminder.md).
