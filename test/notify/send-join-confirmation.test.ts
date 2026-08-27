@@ -119,7 +119,7 @@ describe("sendJoinConfirmation (N-14)", () => {
     expect(await db.select().from(joinConfirmations)).toHaveLength(0);
   });
 
-  it("reports a provider failure and keeps the day (it may have been delivered)", async () => {
+  it("reports a provider failure and releases the day, so a retry can send", async () => {
     const gameId = await seed();
     const notifier = new RecordingNotifier();
     notifier.failFor.add("jack@example.com");
@@ -127,7 +127,11 @@ describe("sendJoinConfirmation (N-14)", () => {
       kind: "failed",
       reason: "simulated-provider-failure",
     });
-    expect(await db.select().from(joinConfirmations)).toHaveLength(1);
+    expect(await db.select().from(joinConfirmations)).toHaveLength(0);
+
+    notifier.failFor.delete("jack@example.com");
+    expect(await sendJoinConfirmation(params(gameId, notifier))).toEqual({ kind: "sent" });
+    expect(notifier.all).toHaveLength(2);
   });
 });
 

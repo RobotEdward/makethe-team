@@ -433,19 +433,4 @@ describe("the unconfirmed badge (M39, BR-52)", () => {
     expect(samRow).toContain('<span class="member-unconfirmed">Unconfirmed</span>');
     expect(freyaRow).not.toContain('<span class="member-unconfirmed">Unconfirmed</span>');
   });
-
-  // The route (`squadForOverview` in src/routes/games.ts) is what refuses to
-  // set `unconfirmed` on a guest — "a guest has no address to confirm" is a
-  // route-level fact, not a rendering rule, so the view is exercised here
-  // with the value the route would actually hand it (`false`) rather than
-  // re-deriving `isGuest` itself. `test/routes/games.test.ts` pins the
-  // route's refusal at the layer that decides it.
-  it("renders a guest's row with no badge when the route says unconfirmed: false", () => {
-    const html = render({
-      squad: [
-        { playerId: "p-guest", name: "Guest Player", role: "player", isGuest: true, muted: false, unconfirmed: false, signals: REACHABLE },
-      ],
-    });
-    expect(html).not.toContain('<span class="member-unconfirmed">Unconfirmed</span>');
-  });
 });

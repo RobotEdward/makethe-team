@@ -74,6 +74,34 @@ describe("GET /join/:jtoken", () => {
     expect((await post(jtoken)).status).toBe(404);
   });
 
+  it("404s a forged pairing: a token naming a different existing game's id", async () => {
+    const { db, jtoken: seedJtoken } = await seed();
+    // A second, real game, whose id is valid on its own — but this token
+    // carries the first game's invite token, minted with `gameId` swapped to
+    // point at the second game.
+    const otherGameId = await insertGame(db, { inviteToken: "inv-other" });
+    const forged = await signJoinToken(
+      { gameId: otherGameId, inviteToken: "inv-1", email: "jack@example.com", name: "Jack Hart", expiresAt: joinTokenExpiry(NOW).getTime() },
+      SECRET,
+    );
+    expect((await get(forged)).status).toBe(404);
+    expect((await post(forged)).status).toBe(404);
+    expect(await db.select().from(players)).toHaveLength(0);
+    expect(await db.select().from(memberships)).toHaveLength(0);
+    // The seed token, from the same signing key, still works — the forgery
+    // is in the payload, not a broken signature.
+    expect((await get(seedJtoken)).status).toBe(200);
+  });
+
+  it("404s a deactivated game", async () => {
+    const { db, gameId, jtoken } = await seed();
+    await db.update(games).set({ active: false }).where(eq(games.id, gameId));
+    expect((await get(jtoken)).status).toBe(404);
+    expect((await post(jtoken)).status).toBe(404);
+    expect(await db.select().from(players)).toHaveLength(0);
+    expect(await db.select().from(memberships)).toHaveLength(0);
+  });
+
   it("404s garbage, an expired token and a leave token", async () => {
     const { gameId } = await seed();
     expect((await get("not-a-token")).status).toBe(404);

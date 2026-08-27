@@ -13,11 +13,6 @@ export interface JoinConfirmationEmailPayload {
   confirmUrl: string;
 }
 
-/** Absolute-URL-safe: escapes for use inside a double-quoted HTML attribute. */
-function href(url: string): string {
-  return escapeHtml(url);
-}
-
 export function renderJoinConfirmationEmail(payload: JoinConfirmationEmailPayload): { subject: string; html: string; text: string } {
   const { name, gameName, confirmUrl } = payload;
   const subject = `Confirm you want to join ${gameName}`;
@@ -57,7 +52,7 @@ ${escapeHtml(lead)}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
 <td>
-<a href="${href(confirmUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">Yes, join the squad</a>
+<a href="${escapeHtml(confirmUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">Yes, join the squad</a>
 </td>
 </tr>
 </table>

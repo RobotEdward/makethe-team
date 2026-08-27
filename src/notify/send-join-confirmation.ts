@@ -49,9 +49,14 @@ function dayBefore(day: string): string {
  * submissions cannot both mail the same address — one of them hits the
  * conflict and reports `already-sent-today`.
  *
- * The day is released on a ceiling refusal (the message never left) and kept
- * on a provider failure (it may have), matching how `notification_log` rows
- * are treated by every other sender.
+ * The day is released on a ceiling refusal (the message never left) **and on
+ * a provider failure**, even though the message may have gone out in that
+ * second case. Keeping the claim on a provider failure would make the
+ * caller's own "please try again in a little while" retry hit
+ * `already-sent-today` and show "Check your inbox" with no email ever sent —
+ * a real lockout, not a hypothetical one. A possible duplicate confirmation
+ * is cheaper than a day's lockout on someone's first contact with the
+ * product.
  */
 export async function sendJoinConfirmation(params: SendJoinConfirmationParams): Promise<JoinConfirmationOutcome> {
   const { db, notifier, gameId, gameName, inviteToken, email, name, now, responseTokenSecret } = params;
@@ -71,6 +76,9 @@ export async function sendJoinConfirmation(params: SendJoinConfirmationParams): 
     .returning({ day: joinConfirmations.day });
   if (claimed.length === 0) return { kind: "already-sent-today" };
 
+  const releaseClaim = () =>
+    db.delete(joinConfirmations).where(and(eq(joinConfirmations.gameId, gameId), eq(joinConfirmations.email, email), eq(joinConfirmations.day, day)));
+
   const jtoken = await signJoinToken(
     { gameId, inviteToken, email, name, expiresAt: joinTokenExpiry(now).getTime() },
     responseTokenSecret,
@@ -82,11 +90,15 @@ export async function sendJoinConfirmation(params: SendJoinConfirmationParams): 
     // keying on the token would write a live credential into provider logs.
     { channel: "email", to: email, subject: rendered.subject, html: rendered.html, text: rendered.text, dedupeKey: `n14:${crypto.randomUUID()}` },
   ]);
-  if (result === undefined) return { kind: "failed", reason: "notifier-contract-violation" };
+  if (result === undefined) {
+    await releaseClaim();
+    return { kind: "failed", reason: "notifier-contract-violation" };
+  }
   if (result.ok) return { kind: "sent" };
   if (result.error === DAILY_CEILING_REASON) {
-    await db.delete(joinConfirmations).where(and(eq(joinConfirmations.gameId, gameId), eq(joinConfirmations.email, email), eq(joinConfirmations.day, day)));
+    await releaseClaim();
     return { kind: "deferred" };
   }
+  await releaseClaim();
   return { kind: "failed", reason: result.error };
 }

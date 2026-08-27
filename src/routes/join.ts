@@ -50,7 +50,7 @@ function field(form: Record<string, unknown>, name: string): string {
 }
 
 /** BR-47: only a row with `email_verified_at` counts. Guests and erased rows have null email and never match. */
-export async function isVerifiedAddress(db: Db, email: string): Promise<boolean> {
+async function isVerifiedAddress(db: Db, email: string): Promise<boolean> {
   const [row] = await db.select({ verified: players.emailVerifiedAt }).from(players).where(eq(players.email, email)).limit(1);
   return row?.verified != null;
 }
@@ -203,6 +203,13 @@ join.post("/j/:token", async (c) => {
     if (outcome.kind === "failed" || outcome.kind === "deferred") {
       console.error(`join confirmation (N-14) not sent for game ${game.id}: ${outcome.kind}${outcome.kind === "failed" ? ` ${outcome.reason}` : ""}`);
       return c.html(await invitePageFor({ db, game, now, values: { name, email }, error: "We couldn't send the confirmation email just now. Please try again in a little while." }), 503);
+    }
+    if (outcome.kind === "sent") {
+      console.log(`join confirmation (N-14) sent for game ${game.id}`);
+    } else if (outcome.kind === "already-sent-today") {
+      console.log(`join confirmation (N-14) already-sent-today for game ${game.id}`);
+    } else {
+      console.log(`join confirmation (N-14) switched-off for game ${game.id}`);
     }
     // `sent`, `already-sent-today` and `switched-off` all show the same page:
     // the first two so a resubmit does not reveal the guard, the third so an
