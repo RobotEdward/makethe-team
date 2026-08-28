@@ -25,6 +25,7 @@ const BASE = {
   maxPlayers: 14,
   prefersEvenNumbers: true,
   inviteToken: "invite-token",
+  archivedOn: null,
   squad: [] as Array<{
     playerId: string;
     name: string;

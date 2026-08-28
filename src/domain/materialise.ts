@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import type { Db } from "../db/client.js";
 import { fixtures, games } from "../db/schema.js";
@@ -104,7 +104,12 @@ export async function materialiseFixtures(
   now: Date,
   horizonDays: number = MATERIALISATION_HORIZON_DAYS,
 ): Promise<MaterialisationResult> {
-  const activeGames = await db.select().from(games).where(eq(games.active, true));
+  // Archived games (M41) get no new fixtures; their existing ones were
+  // cancelled when they were archived.
+  const activeGames = await db
+    .select()
+    .from(games)
+    .where(and(eq(games.active, true), isNull(games.archivedAt)));
 
   const result: MaterialisationResult = {
     gamesProcessed: activeGames.length,

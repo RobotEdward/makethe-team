@@ -32,6 +32,7 @@ const page = (signals: SquadSignals) =>
     maxPlayers: 14,
     prefersEvenNumbers: true,
     inviteToken: "invite-token",
+    archivedOn: null,
     squad: [member(signals)],
     upcoming: [],
     lastResult: null,

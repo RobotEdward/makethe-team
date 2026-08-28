@@ -177,6 +177,19 @@ export function gameEditPath(gameId: string): string {
 }
 
 /**
+ * Archiving a game (M41): `GET` is the confirmation, `POST` does it.
+ * Unarchive is `POST`-only from the game page's banner. Both are exempt from
+ * the archived-game guard by name — see `src/routes/archived-guard.ts`.
+ */
+export function gameArchivePath(gameId: string): string {
+  return `/g/${gameId}/archive`;
+}
+
+export function gameUnarchivePath(gameId: string): string {
+  return `/g/${gameId}/unarchive`;
+}
+
+/**
  * The owner's invite-order editor and its two mutating routes (M34, BR-38).
  *
  * Under `/g/:id` like the rest of game management, so the same session mount

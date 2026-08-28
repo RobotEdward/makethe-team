@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { isMuted } from "../domain/mute.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
@@ -259,9 +259,9 @@ export async function findGameForMember(
 export async function listMemberGames(
   db: Db,
   playerId: string,
-): Promise<{ id: string; name: string; owned: boolean }[]> {
+): Promise<{ id: string; name: string; owned: boolean; archivedAt: Date | null }[]> {
   const rows = await db
-    .select({ id: games.id, name: games.name, role: memberships.role })
+    .select({ id: games.id, name: games.name, role: memberships.role, archivedAt: games.archivedAt })
     .from(games)
     .innerJoin(memberships, eq(memberships.gameId, games.id))
     .where(
@@ -272,7 +272,10 @@ export async function listMemberGames(
       ),
     )
     .orderBy(games.name);
-  return rows.map((r) => ({ id: r.id, name: r.name, owned: r.role === "owner" }));
+  // Archived games are returned, not filtered: the dashboard lists them under
+  // their own heading (M41), since the whole point of archiving over deleting
+  // is that the history stays reachable.
+  return rows.map((r) => ({ id: r.id, name: r.name, owned: r.role === "owner", archivedAt: r.archivedAt }));
 }
 
 /**
@@ -359,7 +362,9 @@ export async function findGameByInviteToken(
   const [game] = await db
     .select()
     .from(games)
-    .where(and(eq(games.inviteToken, token), eq(games.active, true)))
+    // An archived game's link is dead (M41): the owner has said nobody new
+    // joins, and a joiner backfilled onto no fixtures would hear nothing ever.
+    .where(and(eq(games.inviteToken, token), eq(games.active, true), isNull(games.archivedAt)))
     .limit(1);
   return game ?? null;
 }
@@ -682,6 +687,7 @@ export async function listOtherActiveGames(
         eq(memberships.playerId, playerId),
         eq(memberships.active, true),
         eq(games.active, true),
+        isNull(games.archivedAt),
         ne(memberships.gameId, excludeGameId),
       ),
     )

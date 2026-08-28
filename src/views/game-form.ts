@@ -1,4 +1,4 @@
-import { inviteOrderPath } from "../auth/paths.js";
+import { inviteOrderPath, gameArchivePath } from "../auth/paths.js";
 import type { FieldError } from "../domain/game-form.js";
 import {
   cellFieldName,
@@ -455,6 +455,7 @@ export function renderGameFormPage(params: GameFormPageParams): string {
         <button class="button primary" type="submit">${escapeHtml(submitLabel)}</button>
       </div>
     </form>
+    ${gameId === undefined ? "" : `<p class="archive-link"><a class="danger-link" href="${escapeHtml(gameArchivePath(gameId))}">Archive this game</a></p>`}
   `;
 
   return layout({ nav: params.nav, title: `${heading} — Make The Team`, body, pageStyles: [FORM_CSS, NOTIFY_MATRIX_CSS] });

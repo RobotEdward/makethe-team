@@ -1,6 +1,7 @@
 import {
   gameEditPath,
   gamePastFixturesPath,
+  gameUnarchivePath,
   gameMessagePath,
   gamePath,
   joinPath,
@@ -43,6 +44,12 @@ export interface GameOverviewParams {
   maxPlayers: number;
   prefersEvenNumbers: boolean;
   inviteToken: string;
+  /**
+   * When the game is archived (M41): the date, already formatted for the
+   * game's zone. Null for a live game. Drives the banner, the unarchive form
+   * and the absence of the edit link and invite panel.
+   */
+  archivedOn: string | null;
   squad: ReadonlyArray<{
     playerId: string;
     name: string;
@@ -152,7 +159,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       const roleLabel = isOwner ? "Make an ordinary member" : "Make an organiser";
       return `<li>
         <span class="member">${name}${organiser}${guest}${you}${signals}${muted}${unconfirmed}</span>
-        <details class="member-actions">
+        ${params.archivedOn !== null ? "" : `<details class="member-actions">
           <summary>Manage</summary>
           <p><a href="${escapeHtml(memberDetailPath(gameId, member.playerId))}">View details</a></p>
           <form method="post" action="${escapeHtml(memberRolePath(gameId, member.playerId))}">
@@ -160,7 +167,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
             <button class="button" type="submit">${roleLabel}</button>
           </form>
           <a class="danger-link" href="${escapeHtml(memberRemovePath(gameId, member.playerId))}">Remove</a>
-        </details>
+        </details>`}
       </li>`;
     })
     .join("");
@@ -194,7 +201,8 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}
     ${oddMax}
-    <p><a href="${escapeHtml(gameEditPath(gameId))}">Edit this game</a></p>
+    ${archivedBanner(gameId, params.archivedOn)}
+    ${params.archivedOn === null ? `<p><a href="${escapeHtml(gameEditPath(gameId))}">Edit this game</a></p>` : ""}
     ${lastResultLine}
 
     <h2>Coming up</h2>
@@ -205,7 +213,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     <h2>Squad (${squad.length})</h2>
     <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>
 
-    <div class="card">
+    ${params.archivedOn !== null ? "" : `<div class="card">
       <h2>Invite people</h2>
       <p>Share this link in your group chat, or let people scan the code.</p>
       <div class="invite-link">
@@ -224,7 +232,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     <!-- Outside the invite card, and outside the rotate form: messaging the
          squad has nothing to do with replacing the invite link, and nesting it
          in that form read as one of its controls. -->
-    <p class="actions"><a class="button" href="${escapeHtml(gameMessagePath(gameId))}">Message everyone</a></p>
+    <p class="actions"><a class="button" href="${escapeHtml(gameMessagePath(gameId))}">Message everyone</a></p>`}
 
     ${renderFreshness(gamePath(gameId))}
 
@@ -272,4 +280,20 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     ],
     pageScripts: [COPY_BUTTON_JS, FRESHNESS_JS],
   });
+}
+
+/**
+ * The archived state, said once at the top (M41). The unarchive control is a
+ * form, not a link: it changes the game, and the guard in `src/app.ts` is
+ * exactly why a `GET` cannot be allowed to.
+ */
+function archivedBanner(gameId: string, archivedOn: string | null): string {
+  if (archivedOn === null) return "";
+  return `
+    <div class="nudge archived-banner">
+      <p>Archived on ${escapeHtml(archivedOn)}. No fixtures will be scheduled, the invite link is off and nothing here can be changed.</p>
+      <form method="post" action="${escapeHtml(gameUnarchivePath(gameId))}">
+        <button class="button" type="submit">Unarchive this game</button>
+      </form>
+    </div>`;
 }

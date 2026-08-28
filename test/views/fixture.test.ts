@@ -1175,6 +1175,7 @@ describe("the capacity bar", () => {
       venueName: "Oxford Sports Park",
       venueAddress: null,
       timezone: "Europe/London",
+      archivedOn: null,
       openFixture: {
         kicksOffAtLocal: "Thursday 13 August, 19:00",
         view: fixtureView(

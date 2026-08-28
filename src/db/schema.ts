@@ -236,6 +236,18 @@ export const games = sqliteTable("games", {
   gatedFallbackHoursBefore: integer("gated_fallback_hours_before"),
   inviteToken: text("invite_token").notNull(),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
+  /**
+   * M41. Non-null means the owner has archived the game: no fixtures are
+   * materialised, the invite link is dead and every `POST` under `/g/:id/*`
+   * except unarchive is refused (`src/app.ts`). The game itself stays
+   * readable to its members as history.
+   *
+   * Distinct from `active` above, which hides the game from *everyone* —
+   * `findGameForOwner`/`findGameForMember` treat it as "no such game". Nothing
+   * sets `active` false today; it is the shape a future *delete* wants, and
+   * folding archive into it would have made archived history unreachable.
+   */
+  archivedAt: integer("archived_at", { mode: "timestamp_ms" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
 }, (t) => [uniqueIndex("games_invite_token_unique").on(t.inviteToken)]);
 

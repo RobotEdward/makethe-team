@@ -69,6 +69,8 @@ export interface SquadListEntry {
   id: string;
   name: string;
   owned: boolean;
+  /** Non-null for an archived game (M41), which lists under its own heading. */
+  archivedAt: Date | null;
 }
 
 /**
@@ -248,18 +250,35 @@ function renderRow(row: DashboardRow): string {
  */
 function renderYourSquadsSection(squads: readonly SquadListEntry[]): string {
   const link = `<p><a href="${NEW_GAME_PATH}">Set up a game</a></p>`;
-  if (squads.length === 0) return link;
-  const items = squads
-    .map(
-      (g) =>
-        `<li><a href="${escapeHtml(gamePath(g.id))}">${escapeHtml(g.name)}</a>${
-          g.owned ? `<span class="detail"> · you own this</span>` : ""
-        }</li>`,
-    )
-    .join("");
+  const live = squads.filter((g) => g.archivedAt === null);
+  const archived = squads.filter((g) => g.archivedAt !== null);
+  const items = (list: readonly SquadListEntry[]) =>
+    list
+      .map(
+        (g) =>
+          `<li><a href="${escapeHtml(gamePath(g.id))}">${escapeHtml(g.name)}</a>${
+            g.owned ? `<span class="detail"> · you own this</span>` : ""
+          }</li>`,
+      )
+      .join("");
+  // Archived games (M41) sit folded under the live list: still reachable —
+  // that is what archive means — but not in the way of the game the viewer
+  // is actually going to this week. No live games and only archived ones is
+  // still a real state, so the fold renders without the "Your squads" heading
+  // rather than the heading over nothing that the empty case avoids.
+  const fold =
+    archived.length === 0
+      ? ""
+      : `
+    <details class="archived-games">
+      <summary>Archived ${archived.length === 1 ? "game" : "games"} (${archived.length})</summary>
+      <ul class="owned-games">${items(archived)}</ul>
+    </details>`;
+  if (live.length === 0) return `${fold}${link}`;
   return `
     <h2>Your squads</h2>
-    <ul class="owned-games">${items}</ul>
+    <ul class="owned-games">${items(live)}</ul>
+    ${fold}
     ${link}`;
 }
 

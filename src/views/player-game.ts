@@ -31,6 +31,8 @@ export interface PlayerGameParams {
   mute: MuteControlsOptions;
   /** Only so the freshness bar can link back at this page (M24). */
   gameId: string;
+  /** Formatted for the game's zone when archived (M41); null for a live game. */
+  archivedOn: string | null;
   gameName: string;
   venueName: string;
   venueAddress: string | null;
@@ -139,11 +141,12 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     <h1>${escapeHtml(gameName)}</h1>
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}
+    ${params.archivedOn === null ? "" : `<div class="nudge archived-banner"><p>This game was archived on ${escapeHtml(params.archivedOn)}. No more fixtures will be scheduled; what's here is its history.</p></div>`}
     ${lastResultLine}
 
-    ${fixtureSection}
+    ${params.archivedOn === null ? fixtureSection : ""}
 
-    ${renderMuteControls(params.mute)}
+    ${params.archivedOn === null ? renderMuteControls(params.mute) : ""}
 
     <h2>Coming up</h2>
     <ul class="fixtures">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>

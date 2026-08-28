@@ -306,4 +306,23 @@ channel, a stranger's phone — **Replace this link**, at the bottom of the
 share the new one with anybody still waiting to join. People already in the
 squad aren't affected.
 
+## Archiving a game
+
+When a game has run its course — or was only ever a trial — **Archive this
+game**, at the bottom of the **Edit this game** form, closes its book. The
+page that follows tells you exactly what that means before you press anything:
+how many upcoming fixtures will be called off, and how many people who'd said
+they were in will be emailed to say so.
+
+An archived game doesn't disappear. Everyone in the squad can still open it and
+see its past fixtures and results; it just sits folded under **Archived games**
+at the bottom of their list instead of among the games they're playing this
+week. Nothing new gets scheduled, the invite link stops working, and none of
+the settings can be changed.
+
+If it turns out the game isn't over after all, **Unarchive this game** on its
+page brings it back: fixtures start being scheduled again from now, and the
+link works again. The fixtures that were called off stay called off — people
+were told, and un-telling them isn't something the app does.
+
 Next: [calling a fixture off](06-calling-a-fixture-off.md).

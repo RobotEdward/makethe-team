@@ -96,6 +96,12 @@ export const AUDIT_ACTIONS = [
   "game.created",
   "game.updated",
   "game.invite_rotated",
+  // M41. An owner closing a game's book and reopening it. `game.archived`
+  // carries `{ fixturesCancelled }` — the fixtures it called off are each
+  // audited as `fixture.cancelled` in their own right, so this is the count,
+  // not the list.
+  "game.archived",
+  "game.unarchived",
   // A join through the public invite link. `actor_player_id` is **null**: the
   // actor is whoever was holding the link, and they are unidentified. It was
   // originally the joining player, on the reasoning that "nobody else acted" —

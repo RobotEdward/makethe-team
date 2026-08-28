@@ -1,4 +1,4 @@
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, notInArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { PageNav } from "../views/layout.js";
 import type { Context } from "hono";
@@ -53,6 +53,11 @@ import type { InviteProgressParams } from "../views/invite-order.js";
 import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
+import { archiveGame, unarchiveGame } from "../domain/archive-game.js";
+import { cancellationRecipients } from "../domain/cancel-fixture.js";
+import { TERMINAL_LIFECYCLES } from "../domain/lifecycle.js";
+import { sendCancellationEmails } from "../notify/send-cancellation.js";
+import { renderArchiveGamePage } from "../views/archive-game.js";
 import { isMuted, parseMuteDuration } from "../domain/mute.js";
 import { squadSignals } from "../domain/presence.js";
 import { effectiveMode, isPickerMode, mayPick, mayPublish } from "../domain/picker.js";
@@ -70,7 +75,7 @@ import {
   type TeamAssignment,
   type TeamId,
 } from "../domain/teams.js";
-import { formatLocalDate, formatLocalDateTime } from "../domain/time/zone.js";
+import { formatLocalDate, formatLocalDateTime, formatLocalShortDate } from "../domain/time/zone.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv } from "../env.js";
@@ -299,6 +304,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       maxPlayers: game.maxPlayers,
       prefersEvenNumbers: game.prefersEvenNumbers,
       inviteToken: game.inviteToken,
+      archivedOn: archivedOn(game),
       squad,
       upcoming,
       viewerPlayerId: player.id,
@@ -487,6 +493,7 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
       venueName: game.venueName,
       venueAddress: game.venueAddress,
       timezone: game.timezone,
+      archivedOn: archivedOn(game),
       openFixture,
       upcoming,
       lastResult,
@@ -820,11 +827,102 @@ gamesRoutes.post("/g/:id/invites/tier/:tierId/delete", requirePlayer, async (c) 
   return c.redirect(inviteOrderPath(game.id), 303);
 });
 
+/** "28 Aug 2026", in the game's own zone, or null for a live game (M41). */
+function archivedOn(game: { archivedAt: Date | null; timezone: string }): string | null {
+  return game.archivedAt === null ? null : formatLocalShortDate(game.archivedAt, game.timezone);
+}
+
+/**
+ * `GET /g/:id/archive` (M41): the confirmation. Counts what archiving will
+ * call off and who will be told, so the owner is agreeing to a specific
+ * consequence rather than a verb. Owner-only and a 404 otherwise (TR-18).
+ * An already-archived game 404s too: there is nothing left to confirm.
+ */
+gamesRoutes.get("/g/:id/archive", requirePlayer, async (c) => {
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
+  if (game === null || game.archivedAt !== null) return c.html(renderNotFoundPage(), 404);
+
+  const pending = await db
+    .select({ id: fixtures.id })
+    .from(fixtures)
+    .where(and(eq(fixtures.gameId, game.id), notInArray(fixtures.lifecycle, [...TERMINAL_LIFECYCLES])));
+  const players = new Set<string>();
+  for (const fixture of pending) {
+    for (const recipient of await cancellationRecipients(db, fixture.id)) players.add(recipient.playerId);
+  }
+
+  return c.html(
+    renderArchiveGamePage({
+      nav: pageNav(c, "games"),
+      gameId: game.id,
+      gameName: game.name,
+      upcomingCount: pending.length,
+      playerCount: players.size,
+    }),
+  );
+});
+
+/**
+ * `POST /g/:id/archive` (M41). The domain call does the cancelling and the
+ * stamp; this sends N-3 for each fixture it called off, the same way
+ * `/cancel` does for one — after the archive is durable, and wrapped, so a
+ * mail failure cannot turn a completed archive into a 500. The N-3 dedupe
+ * key is per (fixture, player), so a retry cannot double-mail.
+ */
+gamesRoutes.post("/g/:id/archive", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const player = c.get("player")!;
+
+  const game = await findGameForOwner(db, c.req.param("id"), player.id);
+  if (game === null) return c.html(renderNotFoundPage(), 404);
+
+  const result = await archiveGame(db, { gameId: game.id, actorPlayerId: player.id, now });
+  if (!result.archived) return c.html(renderNotFoundPage(), 404);
+
+  for (const { fixture, recipients } of result.cancelled) {
+    if (recipients.length === 0) continue;
+    try {
+      await sendCancellationEmails({
+        db,
+        notifier: createNotifier(c.env, db, now),
+        fixture,
+        game,
+        recipients,
+        reason: "",
+        now,
+        responseTokenSecret: c.env.RESPONSE_TOKEN_SECRET,
+      });
+    } catch (error) {
+      console.error(`archive ${game.id}: N-3 for fixture ${fixture.id} failed`, error);
+    }
+  }
+
+  return c.redirect(gamePath(game.id), 303);
+});
+
+/** `POST /g/:id/unarchive` (M41). Exempt from the archived-game guard by name. */
+gamesRoutes.post("/g/:id/unarchive", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+  const now = new Date(Date.now());
+  const db = getDb(c.env.DB);
+  const player = c.get("player")!;
+
+  const result = await unarchiveGame(db, { gameId: c.req.param("id"), actorPlayerId: player.id, now });
+  if (!result.unarchived) return c.html(renderNotFoundPage(), 404);
+  return c.redirect(gamePath(c.req.param("id")), 303);
+});
+
 gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
   const now = new Date(Date.now());
   const db = getDb(c.env.DB);
   const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
-  if (game === null) return c.text("Not found", 404);
+  // An archived game has nothing to edit (M41); its POST is refused by the
+  // guard in `src/app.ts`, and a form whose submit will 404 is worse than
+  // the 404 itself.
+  if (game === null || game.archivedAt !== null) return c.text("Not found", 404);
 
   const counts = await countFixturesByPropagation(db, game.id, now);
   const rule = parseRecurrenceRule(game.recurrenceRule);
@@ -2436,6 +2534,7 @@ async function renderSquadRefusal(
       maxPlayers: game.maxPlayers,
       prefersEvenNumbers: game.prefersEvenNumbers,
       inviteToken: game.inviteToken,
+      archivedOn: archivedOn(game),
       squad,
       upcoming,
       lastResult,

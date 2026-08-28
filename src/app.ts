@@ -8,6 +8,7 @@ import { broadcast } from "./routes/broadcast.js";
 import { cancel } from "./routes/cancel.js";
 import { dashboard } from "./routes/dashboard.js";
 import { gamesRoutes } from "./routes/games.js";
+import { archivedGameGuard } from "./routes/archived-guard.js";
 import { home } from "./routes/home.js";
 import { privacy } from "./routes/privacy.js";
 import { join } from "./routes/join.js";
@@ -146,6 +147,12 @@ export function createApp(): Hono<AppEnv> {
     await next();
     c.header("Cache-Control", "private, no-store");
   });
+
+  // M41. Every `POST` under a game is refused while the game is archived,
+  // whichever router owns it — mounted once here, ahead of all of them, so
+  // `broadcast` and `results` are covered as well as `games`. Enumerated by
+  // `test/routes/archived-guard.test.ts`.
+  app.use("/g/:id/*", archivedGameGuard);
 
   app.route("/", robots);
   // The manifest, the icons and (from Task 3) the service worker. Public and

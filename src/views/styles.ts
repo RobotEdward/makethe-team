@@ -293,6 +293,11 @@ export const DASHBOARD_STYLES_CSS = `
     padding: 0.4rem 0.1rem; font-size: var(--t-body);
   }
   ul.owned-games > li > .detail { white-space: nowrap; padding: 0 0.1rem; }
+  /* The archived fold (M41). FORM_CSS's details rule is not on this page, so
+     without these the summary sits flush against "Set up a game". */
+  .archived-games { margin: 1.25rem 0; }
+  .archived-games > summary { cursor: pointer; font-weight: 600; color: var(--mut); }
+  .archived-games > ul.owned-games { margin-top: 0.5rem; }
 
   /* The onboarding card (M19). Its own idiom, not .fixture-card: a card up
      there is a fixture with buttons, and this is a short list of links with a
@@ -495,6 +500,9 @@ export const FORM_CSS = `
   details { margin: 1.5rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
   summary { cursor: pointer; font-weight: 600; }
   .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
+  /* The archive link under the edit form (M41): apart from Save, so a hand
+     reaching for the primary action does not land on the irreversible one. */
+  .archive-link { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
   .qr { margin: 1rem 0; max-width: 240px; }
   .invite-link { display: flex; gap: 0.5rem; align-items: center; }
   .invite-link input {

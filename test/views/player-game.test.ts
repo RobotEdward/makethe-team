@@ -14,6 +14,7 @@ const BASE: PlayerGameParams = {
   venueName: "Venue Name",
   venueAddress: null,
   timezone: "Europe/London",
+  archivedOn: null,
   openFixture: null,
   upcoming: [],
   lastResult: null,

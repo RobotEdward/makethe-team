@@ -195,6 +195,16 @@ export const CATALOGUE: CataloguePage[] = [
     note: "M15's fixture-scoped quick message: the four response-derived audiences, and both channel checkboxes.",
   },
   {
+    id: "archive-game",
+    title: "Archive this game?",
+    path: (w) => `/g/${w.gameId}/archive`,
+    persona: "owner",
+    note:
+      "The owner's confirmation before archiving (M41): says how many " +
+      "upcoming fixtures will be called off and how many players told. A " +
+      "GET that writes nothing, so capturing it leaves the world live.",
+  },
+  {
     id: "remove-member",
     title: "Remove a member",
     path: (w) => `/g/${w.gameId}/squad/${w.memberPlayerId}/remove`,

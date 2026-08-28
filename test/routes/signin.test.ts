@@ -1004,6 +1004,15 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}/squad/${removableId}/remove`, { headers: { cookie } }),
       );
 
+      // The archive confirmation (M41): the owner's read-only preview of what
+      // archiving will call off. A GET that writes nothing, so the game
+      // stays live for every capture after it.
+      await capture(
+        "archive game confirm",
+        /Archive .*\?/,
+        new Request(`${ORIGIN}/g/${gameId}/archive`, { headers: { cookie } }),
+      );
+
       // The squad member page (M11 Task 6), the same removable member as
       // above — an organiser's read-only view of one squad member.
       await capture(
@@ -1166,6 +1175,7 @@ describe("no password field anywhere (TR-16)", () => {
         "message everyone",
         "message squad",
         "squad remove confirm",
+        "archive game confirm",
         "squad member",
         "invite",
         "join outcome",
@@ -1369,6 +1379,7 @@ describe("no password field anywhere (TR-16)", () => {
       "message everyone",
       "message squad",
       "squad remove confirm",
+      "archive game confirm",
       "squad member",
       "invite order",
     ]);
@@ -1554,6 +1565,14 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "branches are a plain-text 403 (wrong origin), a plain-text 404 " +
       "(entitlement failure) or a 303 redirect (src/routes/games.ts); its own " +
       "script/password assertion lives in test/routes/games.test.ts.",
+    "POST /g/:id/archive":
+      "never renders a page of its own: a plain-text 403 (wrong origin), the " +
+      "shared renderNotFoundPage 404 (entitlement failure, already archived) " +
+      "or a 303 redirect (src/routes/games.ts); its status codes are pinned " +
+      "in test/routes/archive-game.test.ts.",
+    "POST /g/:id/unarchive":
+      "same shape as POST /g/:id/archive above — 403, the shared 404, or a " +
+      "303 — and pinned by the same test file.",
     "POST /g/:id/squad/:playerId/remove":
       "on its one HTML-returning branch (the last-organiser refusal) it renders " +
       "through the same renderGameOverviewPage as GET /g/:id — no template of " +
@@ -1735,6 +1754,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/:id/invites": "invite order",
     "GET /g/:id/fixtures": "past fixtures",
     "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
+    "GET /g/:id/archive": "archive game confirm",
     "GET /g/:id/squad/:playerId": "squad member",
     "GET /g/:id/f/:fixtureId": "owner fixture",
     "GET /g/:id/f/:fixtureId/teams": "team picker",
