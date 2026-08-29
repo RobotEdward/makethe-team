@@ -2,6 +2,7 @@ import { env } from "cloudflare:test";
 import { getDb, type Db } from "../../src/db/client.js";
 import {
   appSettings,
+  emailQuota,
   fixtureResultClaims,
   fixtures,
   gameNotificationSettings,
@@ -347,4 +348,31 @@ export async function insertResultClaim(
     ...overrides,
   });
   return id;
+}
+
+/**
+ * Fills a day's email quota to the configured ceiling, so the next send is
+ * refused with `DAILY_CEILING_REASON`.
+ *
+ * Reads `MAX_EMAILS_PER_DAY` rather than taking a literal. Six tests used to
+ * write `sentCount: 80` with a comment restating wrangler.jsonc's value, and
+ * every one of them silently stopped testing anything the moment M42 raised
+ * that ceiling to 95 — a filled quota that is no longer full does not fail
+ * loudly, it just lets the send through and asserts on an audit row that was
+ * never written.
+ *
+ * Upserted, not inserted: a test that has already signed someone in has a
+ * row for today, and `email_quota` is keyed on `(day, provider)` since M42.
+ * Only the `resend` leg is filled — that is the primary, and the spill leg
+ * is off in this config.
+ */
+export async function fillEmailQuota(db: Db, day: string): Promise<void> {
+  const ceiling = Number.parseInt(env.MAX_EMAILS_PER_DAY, 10);
+  await db
+    .insert(emailQuota)
+    .values({ day, provider: "resend", sentCount: ceiling })
+    .onConflictDoUpdate({
+      target: [emailQuota.day, emailQuota.provider],
+      set: { sentCount: ceiling },
+    });
 }

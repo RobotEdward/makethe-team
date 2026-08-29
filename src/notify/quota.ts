@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { emailQuota } from "../db/schema.js";
+import { type EmailProvider, emailQuota } from "../db/schema.js";
 import type { Message, Notifier, SendResult } from "./notifier.js";
 
 /**
@@ -82,6 +82,13 @@ export class QuotaNotifier implements Notifier {
     private readonly db: Db,
     private readonly maxPerDay: number,
     private readonly now: Date,
+    /**
+     * Which sender's allowance this instance spends (M42). Two instances
+     * over the same `db` with different providers keep independent daily
+     * counters, which is what lets `SpilloverNotifier` offer a refused
+     * message to a second provider that still has room.
+     */
+    private readonly provider: EmailProvider = "resend",
   ) {}
 
   async send(messages: readonly Message[]): Promise<SendResult[]> {
@@ -153,13 +160,17 @@ export class QuotaNotifier implements Notifier {
     const limit = this.maxPerDay;
     if (limit <= 0 || requested <= 0) return 0;
 
+    const provider = this.provider;
     const [selectResult] = await this.db.batch([
-      this.db.select({ sentCount: emailQuota.sentCount }).from(emailQuota).where(eq(emailQuota.day, day)),
+      this.db
+        .select({ sentCount: emailQuota.sentCount })
+        .from(emailQuota)
+        .where(and(eq(emailQuota.day, day), eq(emailQuota.provider, provider))),
       this.db
         .insert(emailQuota)
-        .values({ day, sentCount: Math.min(requested, limit) })
+        .values({ day, provider, sentCount: Math.min(requested, limit) })
         .onConflictDoUpdate({
-          target: emailQuota.day,
+          target: [emailQuota.day, emailQuota.provider],
           set: {
             sentCount: sql`${emailQuota.sentCount} + min(${requested}, max(${limit} - ${emailQuota.sentCount}, 0))`,
           },

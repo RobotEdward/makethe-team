@@ -152,7 +152,9 @@ describe("magic link issuance", () => {
       // access, not sequential reads after commit), so this also pins that
       // the write actually landed rather than merely "did not throw".
       const rows = await getDb(env.DB).select().from(emailQuota);
-      expect(rows).toEqual([{ day: "2026-08-11", sentCount: 1 }]);
+      // `provider` since M42: the counter is keyed on `(day, provider)`, and
+      // the primary leg spends the `resend` row.
+      expect(rows).toEqual([{ day: "2026-08-11", provider: "resend", sentCount: 1 }]);
     } finally {
       logSpy.mockRestore();
     }

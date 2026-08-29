@@ -1,11 +1,13 @@
 import type { Db } from "../db/client.js";
 import type { Bindings } from "../env.js";
+import { CloudflareEmailNotifier } from "./cloudflare-notifier.js";
 import { ConsoleNotifier } from "./console-notifier.js";
 import { NullNotifier } from "./null-notifier.js";
 import type { Notifier } from "./notifier.js";
 import { PushNotifier } from "./push-notifier.js";
 import { QuotaNotifier } from "./quota.js";
 import { ResendNotifier } from "./resend-notifier.js";
+import { SpilloverNotifier } from "./spillover-notifier.js";
 import { RouterNotifier } from "./router-notifier.js";
 import { assertVapidKeysMatch, importVapidKeys, type VapidKeys } from "./web-push.js";
 
@@ -49,10 +51,83 @@ import { assertVapidKeysMatch, importVapidKeys, type VapidKeys } from "./web-pus
  * trivially true because it still only ever sees a dense array of email.
  */
 export function createNotifier(env: Bindings, db: Db, now: Date): Notifier {
-  const inner = selectNotifier(env);
-  const maxPerDay = parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY);
-  const email = new QuotaNotifier(inner, db, maxPerDay, now);
-  return new RouterNotifier(email, selectPushNotifier(env, db, now));
+  return new RouterNotifier(selectEmailLeg(env, db, now), selectPushNotifier(env, db, now));
+}
+
+/**
+ * Builds the email leg: the primary provider under its own daily ceiling,
+ * plus — when `EMAIL_SPILLOVER` asks for one — a second provider under a
+ * separate ceiling, behind a `SpilloverNotifier` (M42).
+ *
+ * **Every provider is wrapped in its own `QuotaNotifier` here, and that is
+ * the invariant this function exists to hold.** The daily ceiling is the
+ * project's only real cost control, and Cloudflare Email Service bills at
+ * $0.35/1,000 beyond its included 3,000 a month — so the spill leg is a
+ * second sender that can spend money, and it must no more be able to bypass
+ * the ceiling than Resend can. `SpilloverNotifier` is given already-wrapped
+ * legs rather than raw providers so that no future leg can be added
+ * unwrapped without changing this line.
+ *
+ * With `EMAIL_SPILLOVER: "none"` the result is a `SpilloverNotifier` around
+ * a single leg, which behaves identically to the bare `QuotaNotifier` this
+ * replaced: one leg means nothing to spill to, so a ceiling refusal is
+ * returned unchanged.
+ */
+function selectEmailLeg(env: Bindings, db: Db, now: Date): Notifier {
+  const primary = new QuotaNotifier(
+    selectNotifier(env),
+    db,
+    parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY),
+    now,
+    "resend",
+  );
+
+  switch (env.EMAIL_SPILLOVER) {
+    // Absent as well as "none": `EMAIL_SPILLOVER` was added after the
+    // binding set was already deployed, and an env that predates it (a
+    // test harness, a preview) must keep working rather than throwing.
+    // This is the one unrecognised-value tolerance in this module, and it
+    // is safe for the same reason the others are not: the fallback is
+    // "send exactly as before", which cannot cost money or lose mail.
+    case undefined:
+    case "":
+    case "none":
+      return new SpilloverNotifier([primary]);
+    case "cloudflare":
+      return new SpilloverNotifier([
+        primary,
+        new QuotaNotifier(
+          new CloudflareEmailNotifier(
+            requireBinding(
+              env.CLOUDFLARE_ACCOUNT_ID,
+              "CLOUDFLARE_ACCOUNT_ID",
+              'the "vars" block in wrangler.jsonc',
+              'EMAIL_SPILLOVER is "cloudflare"',
+            ),
+            requireBinding(
+              env.CLOUDFLARE_EMAIL_API_TOKEN,
+              "CLOUDFLARE_EMAIL_API_TOKEN",
+              "wrangler secret put CLOUDFLARE_EMAIL_API_TOKEN",
+              'EMAIL_SPILLOVER is "cloudflare"',
+            ),
+            requireBinding(
+              env.EMAIL_FROM,
+              "EMAIL_FROM",
+              'the "vars" block in wrangler.jsonc',
+              'EMAIL_SPILLOVER is "cloudflare"',
+            ),
+          ),
+          db,
+          parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY_CLOUDFLARE, "MAX_EMAILS_PER_DAY_CLOUDFLARE"),
+          now,
+          "cloudflare",
+        ),
+      ]);
+    default:
+      throw new Error(
+        `unrecognised EMAIL_SPILLOVER binding: ${JSON.stringify(env.EMAIL_SPILLOVER)} (expected "none" or "cloudflare")`,
+      );
+  }
 }
 
 /**
@@ -244,7 +319,32 @@ function requireBinding(value: string | undefined, name: string, howToSet: strin
 }
 
 /**
- * Parses `MAX_EMAILS_PER_DAY` (a `wrangler.jsonc` var, so always a string).
+ * The whole day's email capacity across every configured provider (M42) —
+ * what the admin pages mean by "ceiling" and what `handleScheduled` checks
+ * for zero.
+ *
+ * Mirrors `selectEmailLeg`'s switch deliberately rather than asking a built
+ * notifier for its own total: the pages that show this number run on
+ * requests that never construct a notifier, and giving `Notifier` a
+ * capacity method would put a reporting concern into the one interface the
+ * whole product sends through. The cost is that a new leg must be added in
+ * both places; the test in `test/notify/factory.test.ts` pins them together.
+ *
+ * An unrecognised `EMAIL_SPILLOVER` reports the primary's ceiling alone.
+ * `selectEmailLeg` throws on that value, so no send is ever attempted under
+ * it — this function only has to avoid inventing capacity that does not
+ * exist.
+ */
+export function emailCeilingTotal(env: Bindings): number {
+  const primary = parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY);
+  if (env.EMAIL_SPILLOVER !== "cloudflare") return primary;
+  return primary + parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY_CLOUDFLARE, "MAX_EMAILS_PER_DAY_CLOUDFLARE");
+}
+
+/**
+ * Parses a daily email ceiling var (a `wrangler.jsonc` var, so always a
+ * string). `name` appears in the failure lines so the Cloudflare leg's
+ * ceiling (M42) reports against its own binding rather than Resend's.
  *
  * Missing or unparseable fails *closed* to 0 — refusing every send for the
  * day — rather than falling back to "no limit". For a cost guard whose
@@ -254,15 +354,15 @@ function requireBinding(value: string | undefined, name: string, howToSet: strin
  * `daily-ceiling-reached`, which is easy to notice and impossible to
  * mistake for a working system) and never costs money or reputation.
  */
-export function parseMaxEmailsPerDay(raw: string | undefined): number {
+export function parseMaxEmailsPerDay(raw: string | undefined, name = "MAX_EMAILS_PER_DAY"): number {
   if (raw === undefined) {
-    console.error("MAX_EMAILS_PER_DAY is not set; failing closed to a daily ceiling of 0");
+    console.error(`${name} is not set; failing closed to a daily ceiling of 0`);
     return 0;
   }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed < 0 || String(parsed) !== raw.trim()) {
     console.error(
-      `MAX_EMAILS_PER_DAY (${JSON.stringify(raw)}) is not a non-negative integer; failing closed to a daily ceiling of 0`,
+      `${name} (${JSON.stringify(raw)}) is not a non-negative integer; failing closed to a daily ceiling of 0`,
     );
     return 0;
   }

@@ -70,7 +70,33 @@
   },
   "vars": {
     "NOTIFIER": "resend",
-    "MAX_EMAILS_PER_DAY": "80",
+    // Resend's free tier allows 100 a day and 3,000 a month. 95 leaves a
+    // little room under the hard daily cap for anything sent outside the
+    // quota's own accounting, and lands at ~2,900 a month, inside the
+    // monthly allowance. Raised from 80 in M42.
+    "MAX_EMAILS_PER_DAY": "95",
+    // M42 spill-over, shipped dark. Switching this to "cloudflare" adds a
+    // second daily ceiling on top of the one above — see `selectEmailLeg`
+    // in src/notify/factory.ts.
+    //
+    // It must NOT be switched on until makethe.team is onboarded as a
+    // Cloudflare Email Service sending domain and its DKIM record is live,
+    // and until SPF authorises both senders for the one EMAIL_FROM address
+    // below. Turning it on first means every spilled message is sent
+    // unauthenticated from a domain that already publishes SPF for Resend —
+    // i.e. straight to spam, damaging the reputation of the address the
+    // primary provider depends on.
+    //
+    // CLOUDFLARE_ACCOUNT_ID belongs in this block when that happens;
+    // CLOUDFLARE_EMAIL_API_TOKEN is a secret (`wrangler secret put`),
+    // never here.
+    "EMAIL_SPILLOVER": "none",
+    // Cloudflare includes 3,000 sends a month, then $0.35/1,000. 100 a day
+    // lands at 3,000–3,100 a month, so this cap is also the cost guard —
+    // see the binding's comment in src/env.ts. Unverified: Cloudflare's own
+    // daily limit is a reputation ramp with no published starting figure,
+    // so the real first-day allowance may be lower than this.
+    "MAX_EMAILS_PER_DAY_CLOUDFLARE": "100",
     "EMAIL_FROM": "Make The Team <no-reply@makethe.team>",
     // Not secret — Better Auth's public base URL for issuing links against.
     // BETTER_AUTH_SECRET is a Worker secret (`wrangler secret put`), never here.

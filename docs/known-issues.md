@@ -376,3 +376,34 @@ per-address confirmation token — minted the way `test/browser/world.ts` and th
 cause exists, alongside the first, so the next attempt to fix TR-37's pacing does not stop at
 "the 429s are gone" and ship a `guide:capture` that still throws on `squadSize`. The trigger to
 revisit is the next time `guide:capture` is meant to run for real.
+
+## Cloudflare's monthly email allowance is guarded by a daily cap, not a monthly counter (M42, 29 August 2026)
+
+`MAX_EMAILS_PER_DAY_CLOUDFLARE` is set to 100. Cloudflare Email Service includes 3,000 sends a
+month and bills $0.35/1,000 beyond that, so 100 a day lands at 3,000 in a 30-day month and 3,100
+in a 31-day one. The spill leg can therefore run about 100 emails past the free allowance in
+seven months of the year, costing roughly 3.5p each time.
+
+A second counter keyed on `(month, provider)` would close it exactly. It is not worth having:
+it doubles the reserve path's write, adds a second failure mode to the one control that stands
+between a bug and a bill, and buys back an amount of money that rounds to nothing. The daily cap
+already bounds the worst case to a known, tiny figure, which is the property that matters.
+
+Revisit if `MAX_EMAILS_PER_DAY_CLOUDFLARE` is ever raised much above 100 — the overshoot scales
+with the cap, and at, say, 500 a day the same gap is £5-ish a year rather than pennies.
+
+## The Cloudflare spill leg has no idempotency key (M42, 29 August 2026)
+
+`ResendNotifier` derives an `Idempotency-Key` from each batch's `dedupeKey`s, so a retried
+request is recognised by Resend rather than resent. Cloudflare Email Service documents no
+equivalent, so `CloudflareEmailNotifier` sends without one.
+
+This is not closed because it cannot be, and it is survivable because it is not the layer the
+at-most-once guarantee rests on: `notification_log`'s UNIQUE constraint is (§2.8), and
+`applySendResult` already declines to retry an ambiguous provider error. What is lost is
+Resend's second, independent layer beneath that.
+
+Two decisions follow from it and should not be quietly reversed. Cloudflare is the *spill* leg
+rather than the primary, so it carries the smaller share of traffic; and `SpilloverNotifier`
+spills only on an exact `DAILY_CEILING_REASON` match, never on a provider error — spilling an
+ambiguous failure would be this codebase's first mechanism able to double-send.

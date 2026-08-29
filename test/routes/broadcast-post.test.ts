@@ -1,10 +1,11 @@
 import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { auditLog, emailQuota, notificationLog, players } from "../../src/db/schema.js";
+import { auditLog, notificationLog, players } from "../../src/db/schema.js";
 import { MAX_BROADCASTS_PER_GAME_PER_DAY } from "../../src/domain/broadcast-limit.js";
 import { MAX_MESSAGE_LENGTH } from "../../src/domain/broadcast-form.js";
 import {
+  fillEmailQuota,
   insertFixture,
   insertGame,
   insertMembership,
@@ -525,10 +526,7 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     // on the one channel asked for, entirely independently of whether the
     // audit row (this game's rate-limit counter) was written.
     const today = new Date(Date.now()).toISOString().slice(0, 10);
-    await db
-      .insert(emailQuota)
-      .values({ day: today, sentCount: 80 })
-      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 80 } });
+    await fillEmailQuota(db, today);
 
     const response = await appPost(
       `/g/${gameId}/f/${fixtureId}/message`,
@@ -564,10 +562,7 @@ describe("POST /g/:id/f/:fixtureId/message", () => {
     const { gameId, fixtureId, inPlayerId } = await seedFixture(viewerId);
     const db = testDb();
     const today = new Date(Date.now()).toISOString().slice(0, 10);
-    await db
-      .insert(emailQuota)
-      .values({ day: today, sentCount: 80 })
-      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 80 } });
+    await fillEmailQuota(db, today);
 
     await appPost(
       `/g/${gameId}/f/${fixtureId}/message`,

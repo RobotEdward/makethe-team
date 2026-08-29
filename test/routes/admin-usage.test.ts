@@ -1,6 +1,7 @@
 import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { emailCeilingTotal } from "../../src/notify/factory.js";
 import { createApp } from "../../src/app.js";
 import { ADMIN_PATH, ADMIN_USAGE_PATH, SIGN_IN_PATH } from "../../src/auth/paths.js";
 import { getDb } from "../../src/db/client.js";
@@ -79,8 +80,12 @@ describe("the admin usage screen", () => {
 
   it("shows today's sends against the configured ceiling", async () => {
     const cookie = await signInAs({ admin: true });
-    const response = await createApp().fetch(usageRequest(cookie), bindings());
-    expect(await response.text()).toContain("of 80");
+    const testEnv = bindings();
+    const response = await createApp().fetch(usageRequest(cookie), testEnv);
+    // Read from the binding, not written as a literal: this assertion said
+    // "of 80" until M42 raised the ceiling, at which point it failed for a
+    // reason that had nothing to do with the page being wrong.
+    expect(await response.text()).toContain(`of ${emailCeilingTotal(testEnv)}`);
   });
 
   it("is linked from the admin index", async () => {

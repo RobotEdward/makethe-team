@@ -1,10 +1,11 @@
 import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditLog, emailQuota, fixtures, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, fixtures, notificationLog, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import {
+  fillEmailQuota,
   insertGame,
   insertMembership,
   insertNotificationSetting,
@@ -328,13 +329,7 @@ describe("POST /g/:id/f/:fixtureId/teams/publish", () => {
     const seed = await seedPublishableFixture(viewerId);
     await savePick(seed, cookie, completePick(seed));
     const db = testDb();
-    // Upserted, not inserted: signing in above already sent a magic link, so
-    // today's quota row exists by the time this test gets here.
-    const today = new Date(Date.now()).toISOString().slice(0, 10);
-    await db
-      .insert(emailQuota)
-      .values({ day: today, sentCount: 80 })
-      .onConflictDoUpdate({ target: emailQuota.day, set: { sentCount: 80 } });
+    await fillEmailQuota(db, new Date(Date.now()).toISOString().slice(0, 10));
 
     const response = await publish(seed, cookie);
     const deferrals = await settleDeferrals(1);

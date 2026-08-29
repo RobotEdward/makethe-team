@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Db } from "../../src/db/client.js";
-import { emailQuota, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import {
   CRON_DAILY_MATERIALISE,
   CRON_SWEEP,
@@ -14,6 +14,7 @@ import { createNotifier } from "../../src/notify/factory.js";
 import { openAndRemind } from "../../src/sweep/open-and-remind.js";
 import { retirePastFixtures } from "../../src/sweep/retire.js";
 import {
+  fillEmailQuota,
   insertFixture,
   insertGame,
   insertMembership,
@@ -225,11 +226,11 @@ describe("handleScheduled: the sweep", () => {
     const kicksOffAt = new Date("2026-08-13T18:00:00Z");
     const remindNow = new Date("2026-08-12T09:00:00Z");
 
-    // MAX_EMAILS_PER_DAY is "80" (wrangler.jsonc); pre-filling today's quota
-    // to that ceiling makes QuotaNotifier refuse every send this run with
+    // Pre-filling today's quota to the configured ceiling makes
+    // QuotaNotifier refuse every send this run with
     // DAILY_CEILING_REASON, which openAndRemind reports as `deferred`, not a
     // failure (src/sweep/open-and-remind.ts, `applyReminderResult`).
-    await db.insert(emailQuota).values({ day: remindNow.toISOString().slice(0, 10), sentCount: 80 });
+    await fillEmailQuota(db, remindNow.toISOString().slice(0, 10));
 
     const fixtureId = await insertOpenFixture("game-1", { kicksOffAt });
     await addRespondent(fixtureId, "player@example.com");

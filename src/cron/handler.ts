@@ -1,7 +1,7 @@
 import { getDb, type Db } from "../db/client.js";
 import { materialiseFixtures } from "../domain/materialise.js";
 import type { Bindings } from "../env.js";
-import { createNotifier, parseMaxEmailsPerDay } from "../notify/factory.js";
+import { createNotifier, emailCeilingTotal } from "../notify/factory.js";
 import type { Notifier } from "../notify/notifier.js";
 import { sendResultNudges, type ResultNudgeResult } from "../notify/send-result-nudge.js";
 import { notifyPromotedPlayer } from "../routes/respond.js";
@@ -108,7 +108,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
         notifier,
         now,
         env.CANCEL_TOKEN_SECRET,
-        remindResult.remindersDeferred > 0 || parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY) === 0,
+        remindResult.remindersDeferred > 0 || emailCeilingTotal(env) === 0,
       );
 
       // Runs regardless of the outcome above: a reminder or attention failure

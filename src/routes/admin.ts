@@ -30,7 +30,7 @@ import {
   listGameUsage,
 } from "../db/usage-queries.js";
 import { dayKey } from "../notify/quota.js";
-import { parseMaxEmailsPerDay } from "../notify/factory.js";
+import { emailCeilingTotal } from "../notify/factory.js";
 import { isChannel, isNotificationType, NOTIFICATION_CONTROLS } from "../notify/notification-controls.js";
 import { renderAdminAllowlistPage } from "../views/admin-allowlist.js";
 import { renderAdminDeliveryPage } from "../views/admin-delivery.js";
@@ -207,11 +207,16 @@ admin.get(ADMIN_DELIVERY_PATH, requireSession, async (c) => {
   // `new Date()` downstream); `dayKey` is the quota's own key function, so
   // this page reads the same row `QuotaNotifier` writes.
   const now = new Date(Date.now());
-  const [quotaRow] = await db
+  // No `.limit(1)` and no `[0]` since M42: `email_quota` is keyed on
+  // `(day, provider)`, so a day has one row per sending provider and the
+  // number this page reports is their sum. Reading a single row would
+  // under-report the total the moment a message spilled over, and the page
+  // would look correct while doing it.
+  const quotaRows = await db
     .select({ sentCount: emailQuota.sentCount })
     .from(emailQuota)
-    .where(eq(emailQuota.day, dayKey(now)))
-    .limit(1);
+    .where(eq(emailQuota.day, dayKey(now)));
+  const sentToday = quotaRows.reduce((total, row) => total + row.sentCount, 0);
 
   const rows = await db
     .select({
@@ -228,8 +233,8 @@ admin.get(ADMIN_DELIVERY_PATH, requireSession, async (c) => {
   return c.html(
     renderAdminDeliveryPage({
       nav: pageNav(c, "admin"),
-      sentToday: quotaRow?.sentCount ?? 0,
-      ceiling: parseMaxEmailsPerDay(c.env.MAX_EMAILS_PER_DAY),
+      sentToday,
+      ceiling: emailCeilingTotal(c.env),
       notifierName: c.env.NOTIFIER,
       rows,
     }),
@@ -329,7 +334,7 @@ admin.get(ADMIN_USAGE_PATH, requireSession, async (c) => {
       extended,
       outcomes,
       limits,
-      emailCeiling: parseMaxEmailsPerDay(c.env.MAX_EMAILS_PER_DAY),
+      emailCeiling: emailCeilingTotal(c.env),
       games,
       gamesShown: GAMES_SHOWN,
     }),

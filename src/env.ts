@@ -52,6 +52,36 @@ export interface Bindings {
   TOKEN_IP_LIMITER?: RateLimitBinding;
   NOTIFIER: string;
   MAX_EMAILS_PER_DAY: string;
+  /**
+   * Whether a second email provider picks up messages the primary's daily
+   * ceiling refused (M42): `"none"` (or absent) or `"cloudflare"`.
+   *
+   * A separate switch from `NOTIFIER` for the same reason `PUSH_NOTIFIER`
+   * is: the primary sender and the spill leg are independent choices, and
+   * folding them into one value (`"resend+cloudflare"`) would multiply the
+   * cases `selectNotifier` has to enumerate every time either side gains an
+   * option.
+   *
+   * Optional, unlike `NOTIFIER` — see the `case undefined` branch in
+   * `selectEmailLeg` for why an env that predates this binding must keep
+   * working rather than throw.
+   */
+  EMAIL_SPILLOVER?: string;
+  /**
+   * The Cloudflare leg's own daily ceiling, counted separately from
+   * `MAX_EMAILS_PER_DAY` against `email_quota`'s `"cloudflare"` rows.
+   *
+   * This doubles as the monthly cost guard. Cloudflare Email Service
+   * includes 3,000 sends a month and bills $0.35/1,000 beyond that, so a
+   * daily cap of 100 lands at 3,000–3,100 a month — a 31-day month
+   * overshoots by about 3p, which is not worth a second counter to prevent.
+   * Raising this above 100 means accepting a real monthly bill.
+   *
+   * Required only when `EMAIL_SPILLOVER` is `"cloudflare"`, and parsed
+   * fail-closed to 0 like `MAX_EMAILS_PER_DAY` — a broken value disables
+   * the spill leg rather than uncapping it.
+   */
+  MAX_EMAILS_PER_DAY_CLOUDFLARE?: string;
   /** HMAC key for response tokens (TR-13). Set with `wrangler secret put`. */
   RESPONSE_TOKEN_SECRET: string;
   /**
@@ -96,6 +126,22 @@ export interface Bindings {
    * `vars`. Same requirement and same by-name failure as `RESEND_API_KEY`.
    */
   EMAIL_FROM: string;
+  /**
+   * The Cloudflare account the email API sends on behalf of, in
+   * `wrangler.jsonc`'s `vars`. Not a secret — it appears in dashboard URLs
+   * and authorises nothing on its own; `CLOUDFLARE_EMAIL_API_TOKEN` is the
+   * credential.
+   *
+   * Required only when `EMAIL_SPILLOVER` is `"cloudflare"`, with the same
+   * by-name failure as `RESEND_API_KEY`.
+   */
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  /**
+   * API token for Cloudflare Email Service, scoped to email sending only.
+   * Set with `wrangler secret put`. Required only when `EMAIL_SPILLOVER` is
+   * `"cloudflare"`.
+   */
+  CLOUDFLARE_EMAIL_API_TOKEN?: string;
   /**
    * Signing key for Better Auth's own sessions/tokens. Set with
    * `wrangler secret put`, same as `RESPONSE_TOKEN_SECRET` — never committed,

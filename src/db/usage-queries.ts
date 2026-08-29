@@ -224,7 +224,13 @@ export async function getLimitCounts(db: Db, now: Date): Promise<LimitCounts> {
   const failuresSince = new Date(now.getTime() - FAILURE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const [quotaRows, failureRows, unopenedRows, sizes] = await Promise.all([
     // `dayKey` rather than a date computed here, so this page reads the same
-    // row `QuotaNotifier` writes rather than a neighbouring one.
+    // rows `QuotaNotifier` writes rather than neighbouring ones.
+    //
+    // Plural since M42: `email_quota` is keyed on `(day, provider)`, so a
+    // day has one row per sending provider and the figure the operator
+    // wants is their sum. Taking `[0]` — which this did while the key was
+    // `day` alone — would under-report the total as soon as a message
+    // spilled over, and would do it silently.
     db.select({ n: emailQuota.sentCount }).from(emailQuota).where(eq(emailQuota.day, dayKey(now))),
     db
       .select({ n: count() })
@@ -245,7 +251,7 @@ export async function getLimitCounts(db: Db, now: Date): Promise<LimitCounts> {
   ]);
 
   return {
-    emailsToday: quotaRows[0]?.n ?? 0,
+    emailsToday: quotaRows.reduce((total, row) => total + row.n, 0),
     notificationFailures: failureRows[0]?.n ?? 0,
     unopenedPastFixtures: unopenedRows[0]?.n ?? 0,
     tableRows: sizes,

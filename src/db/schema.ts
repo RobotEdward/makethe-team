@@ -672,11 +672,36 @@ export const pushSubscriptions = sqliteTable(
   ],
 );
 
-export const emailQuota = sqliteTable("email_quota", {
-  // UTC date, YYYY-MM-DD (§2.8).
-  day: text("day").primaryKey(),
-  sentCount: integer("sent_count").notNull().default(0),
-});
+/**
+ * The email senders the daily ceiling counts separately (M42).
+ *
+ * Not a CHECK constraint and not an enum in the database — `provider` is
+ * `text NOT NULL` like every other stored lookup here, so a row can hold a
+ * string this build has never heard of. Readers must tolerate that; see
+ * `test/stored-lookups.test.ts`.
+ */
+export const EMAIL_PROVIDERS = ["resend", "cloudflare"] as const;
+export type EmailProvider = (typeof EMAIL_PROVIDERS)[number];
+
+export const emailQuota = sqliteTable(
+  "email_quota",
+  {
+    // UTC date, YYYY-MM-DD (§2.8).
+    day: text("day").notNull(),
+    /**
+     * Which sender this row counts (M42). Each provider has its own free
+     * allowance and its own daily ceiling, so one counter per day would
+     * make the two indistinguishable and let a spill-over send be refused
+     * by capacity it was never going to use.
+     *
+     * Rows predating M42 are backfilled to `"resend"` by migration 0027,
+     * which is what the whole ceiling counted before the column existed.
+     */
+    provider: text("provider").notNull().default("resend"),
+    sentCount: integer("sent_count").notNull().default(0),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.provider] })],
+);
 
 export const auditLog = sqliteTable(
   "audit_log",

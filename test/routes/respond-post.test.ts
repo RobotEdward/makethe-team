@@ -2,10 +2,11 @@ import { SELF, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { auditLog, emailQuota, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, fixtures, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import {
+  fillEmailQuota, insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW } from "../support/clock.js";
 import { PUSH_KEY_ATTRIBUTE, PUSH_TOKEN_ATTRIBUTE } from "../../src/views/scripts.js";
 
@@ -603,7 +604,7 @@ describe("POST /r/:token — the promoted player is told (N-2, BR-7, J4)", () =>
     // Task 4's review accepted the delete on the condition that this row
     // exists; this is that row.
     const { fixtureId, holderId, waiterId } = await seedPromotionReady();
-    await db.insert(emailQuota).values({ day: new Date(Date.now()).toISOString().slice(0, 10), sentCount: 80 });
+    await fillEmailQuota(db, new Date(Date.now()).toISOString().slice(0, 10));
 
     const token = await tokenFor(fixtureId, holderId);
     expect((await postIntent(token, "out")).status).toBe(200);
