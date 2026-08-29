@@ -28,7 +28,8 @@ links) and is not affected by this rotation.
 
 ## `MAX_EMAILS_PER_DAY`
 
-Currently **50**. This is the account-wide daily send ceiling (TR-31),
+Currently **95** (50 → 80 → 95; raised in M42 to sit just under Resend's free
+tier's hard 100/day). This is the Resend leg's daily send ceiling (TR-31),
 enforced by `QuotaNotifier` regardless of which `Notifier` it wraps —
 it applies to `console` and `null` too, just against a limit that never
 matters because nothing at those two is "real" delivery.
@@ -42,6 +43,11 @@ the only ceiling that exists — see `src/notify/quota.ts`. Raise it
 deliberately as the player count grows; there is no owner-facing UI for
 it yet (planned for M4), so a change means editing `wrangler.jsonc`'s
 `vars.MAX_EMAILS_PER_DAY` and redeploying.
+
+Since M42 this is no longer the whole ceiling. A second provider can pick up
+what this one refuses, under its own separate counter — see
+`docs/runbooks/email-cloudflare-spillover.md`. The total the admin pages report
+is `emailCeilingTotal` in `src/notify/factory.ts`, not this var alone.
 
 ## Reading `notification_log`
 
