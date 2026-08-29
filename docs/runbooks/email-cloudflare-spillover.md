@@ -20,15 +20,26 @@ zone is on Cloudflare. Verify, do not hand-write them.
 | TXT | `send.makethe.team` | `v=spf1 include:amazonses.com ~all` | Resend | **present, leave alone** |
 | MX | `send.makethe.team` | `10 feedback-smtp.eu-west-1.amazonses.com` | Resend | **present, leave alone** |
 | TXT | `resend._domainkey.makethe.team` | `p=MIGfMA0GCSqG…` | Resend | **present, leave alone** |
-| TXT | `_dmarc.makethe.team` | `v=DMARC1; p=none; rua=mailto:<your-inbox>` | **shared** | absent |
+| TXT | `_dmarc.makethe.team` | `v=DMARC1; p=reject; rua=mailto:<your-inbox>` | **shared** | `p=reject`, no `rua` |
 
 The two senders do not collide. Each uses its own return-path subdomain, so
 each has its own SPF, and each DKIM-signs under its own selector.
 
-`_dmarc` is the one shared record and the only real risk here. It is absent
-today, which means no DMARC policy is being enforced against either sender.
-Start at `p=none`. Do not go to `p=reject` in the same change as onboarding —
-that is how you break the working Resend path while debugging a new one.
+`_dmarc` is the one shared record. Cloudflare's onboarding created it at
+`p=reject` on 29 August 2026.
+
+An earlier version of this runbook said to start at `p=none` and tighten later.
+That was over-cautious and is withdrawn: `p=reject` was verified against a real
+Resend delivery and does not affect it. Resend signs `d=makethe.team`, an exact
+match for the From domain, so DKIM aligns; and `send.makethe.team`'s
+organisational domain is `makethe.team`, so SPF aligns under relaxed matching
+too. The record sets neither `aspf` nor `adkim`, so relaxed is what applies.
+Cloudflare's leg aligns the same way, via `cf-bounce.makethe.team`.
+
+What the record is missing is `rua=`. Without it there are no aggregate
+reports, so a misaligned sender is *silently rejected* with nothing to tell you
+— which is the failure mode `p=reject` makes worse than a weaker policy would.
+Add a reporting address before enabling the spill leg.
 
 ### Cloudflare dashboard
 
@@ -68,8 +79,12 @@ Resulting ceiling: 195/day. Today it is 95.
    ```
    Expect the SES include and the `p=MIGf…` key. If either is gone, stop and
    restore before doing anything else — Resend is the live sender.
-5. Add DMARC at `p=none` if onboarding did not, or downgrade it to `p=none` if
-   it created something stricter.
+5. Add `rua=mailto:<your-inbox>` to `_dmarc.makethe.team`, keeping `p=reject`.
+   If the record is not editable under **DNS → Records** it is a managed
+   record: edit it under **Email Security → DMARC Management**, or wherever the
+   onboarding flow that created it exposes it, rather than adding a second
+   `_dmarc` TXT — two DMARC records on one name is a config error, and
+   resolvers treat it as no policy at all.
 6. Record the account's current **daily send limit** from the dashboard.
 
 ### 2. Create the token
@@ -154,8 +169,10 @@ the DNS records are harmless when unused. Leave the token in place.
 
 ## Afterwards
 
-- Raise DMARC to `p=quarantine`, then `p=reject`, once you have a week of `rua`
-  reports showing both senders passing. Not before.
+- Read the first week of `rua` reports and confirm both senders pass. `p=reject`
+  is already in force, so this is verification after the fact rather than a
+  gate before tightening — which is the one respect in which the onboarding
+  default is worse than doing it by hand.
 - Re-read the actual Cloudflare daily limit after a fortnight of real sending;
   `MAX_EMAILS_PER_DAY_CLOUDFLARE: "100"` is an assumption, and the ramp moves.
 - `docs/known-issues.md` records the two deliberate gaps: no monthly counter,
