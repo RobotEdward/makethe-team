@@ -61,7 +61,20 @@ export interface FixturePageOptions {
    */
   waitlistCount: number;
   /** The player this page is being rendered for, identified by their token. */
-  viewer: { playerId: string; status: ResponseStatus; waitlistRank?: number | null };
+  viewer: {
+    playerId: string;
+    status: ResponseStatus;
+    waitlistRank?: number | null;
+    /**
+     * True when this viewer is waiting on the *invite order* rather than on a
+     * full fixture (BR-40a) — see `inviteGateApplies`, which decides it.
+     *
+     * It changes what they are told and nothing else. A rank is suppressed
+     * with it: "third in line" is a claim about a queue for a full fixture,
+     * and saying it to somebody looking at four empty slots is simply untrue.
+     */
+    heldByInviteOrder?: boolean;
+  };
   /** Echoed into the form action so the POST carries the same token. */
   token: string;
   /**
@@ -202,11 +215,20 @@ function viewerHeadline(
  * which never has another player's id and has no reason to echo the
  * viewer's own) has nothing to fabricate a dummy value for.
  */
-export function viewerHeadlineOpen(viewer: Pick<FixturePageOptions["viewer"], "status" | "waitlistRank">): string {
+export function viewerHeadlineOpen(
+  viewer: Pick<FixturePageOptions["viewer"], "status" | "waitlistRank" | "heldByInviteOrder">,
+): string {
   switch (viewer.status) {
     case "in":
       return "You're in.";
     case "waitlisted": {
+      // BR-40a first, because the two waits have different causes and only one
+      // of them is about a queue. A caller that cannot tell them apart (the
+      // dashboard) leaves the flag off and gets the unnumbered wording, which
+      // is true of both.
+      if (viewer.heldByInviteOrder === true) {
+        return "You're in as soon as the core group has been asked.";
+      }
       const rank = viewer.waitlistRank ?? null;
       return rank === null
         ? "You're on the waitlist."

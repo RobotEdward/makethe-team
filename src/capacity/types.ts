@@ -163,7 +163,24 @@ export interface ClaimInviteReleasesInput {
  * to release.
  */
 export type ClaimInviteReleasesOutcome =
-  | { kind: "claimed"; playerIds: string[] }
+  | {
+      kind: "claimed";
+      /**
+       * Newly stamped players who are owed the N-1 invitation — **excluding
+       * anyone in `promoted`**, who is owed the N-2 instead. The two lists are
+       * disjoint so that a caller cannot send one player both.
+       */
+      playerIds: string[];
+      /**
+       * Players this call moved off the waitlist into a free slot, because the
+       * tier holding them back opened (BR-40a). Each is owed the N-2, exactly
+       * as a BR-7 promotion is, and for the same reason the object does not
+       * send it — see `WaitlistPromotion`.
+       *
+       * Empty on almost every call, like `playerIds`.
+       */
+      promoted: WaitlistPromotion[];
+    }
   | {
       kind: "skipped";
       reason: "not-gated" | "fixture-not-open" | "fixture-not-found" | "already-invited";

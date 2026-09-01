@@ -383,6 +383,28 @@ describe("the player's not-yet-asked state (BR-40)", () => {
 
     expect(html).not.toContain("been asked yet");
   });
+
+  it("changes the sentence once the unasked sub has volunteered (BR-40a)", async () => {
+    const { cookie, gameId, fixtureId } = await asUnaskedSub();
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId: viewer!.id,
+      intent: "in",
+      actorPlayerId: null,
+      source: "web",
+      now: NOW.getTime(),
+      whenFull: "waitlist",
+    });
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })
+    ).text();
+
+    // "You haven't been asked yet" would read as though their answer had gone
+    // nowhere. It went somewhere: they hold a place in the queue.
+    expect(html).toContain("You're in as soon as the core group has been asked");
+    expect(html).not.toContain("You haven't been asked yet");
+  });
 });
 
 describe("a fixture whose invitations went out before gating was switched on", () => {

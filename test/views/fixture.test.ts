@@ -4,6 +4,7 @@ import {
   renderFixturePage,
   renderPublishedTeamsSection,
   renderStatusLine,
+  viewerHeadlineOpen,
   type FixturePageOptions,
 } from "../../src/views/fixture.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
@@ -1366,5 +1367,36 @@ describe("the answer block (M20 B7)", () => {
         expect(html.split('<p class="status-badge').length - 1).toBe(1);
       }
     }
+  });
+});
+
+describe("a player held by the invite order reads a different reason (BR-40a)", () => {
+  it("explains the gate instead of quoting a place in the queue", () => {
+    const headline = viewerHeadlineOpen({
+      status: "waitlisted",
+      waitlistRank: 3,
+      heldByInviteOrder: true,
+    });
+
+    expect(headline).toBe("You're in as soon as the core group has been asked.");
+    // The rank is suppressed, not merely unmentioned: "third in line" is a
+    // claim about a queue for a full fixture, and this player may well be
+    // looking at four empty slots.
+    expect(headline).not.toMatch(/third|3rd/i);
+  });
+
+  it("still quotes the queue for an ordinary waitlisted player", () => {
+    // The control. Same status, same rank, and only the cause differs — so a
+    // failure here means the gate wording has swallowed BR-5's.
+    expect(viewerHeadlineOpen({ status: "waitlisted", waitlistRank: 3, heldByInviteOrder: false })).toBe(
+      "You're on the waitlist — 3rd in line.",
+    );
+  });
+
+  it("falls back to the unnumbered wording for a caller that cannot tell", () => {
+    // The dashboard passes neither field. Both waits are true of it.
+    expect(viewerHeadlineOpen({ status: "waitlisted", waitlistRank: null })).toBe(
+      "You're on the waitlist.",
+    );
   });
 });

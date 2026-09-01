@@ -1,9 +1,9 @@
 import { DurableObject } from "cloudflare:workers";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb, type Db } from "../db/client.js";
-import { loadInviteState, stampInvited, type InviteState } from "../db/invite-queries.js";
+import { inviteGateApplies, loadInviteState, stampInvited } from "../db/invite-queries.js";
 import { planReleases } from "../domain/invite-tiers.js";
-import { fixtures, notificationLog, players, responses } from "../db/schema.js";
+import { fixtures, games, players, responses } from "../db/schema.js";
 import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
 import type {
@@ -83,7 +83,10 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // stamped**, not merely mailed: a properly gated fixture also holds `n1`
     // rows the moment its core goes out, and keying on those alone would stop
     // it ever releasing a second tier.
-    if (await this.#invitedBeforeGating(db, fixtureId, state)) {
+    const anyStamped = state.tiers.some((tier) =>
+      tier.members.some((member) => member.invitedAt !== null),
+    );
+    if (!(await this.#gateApplies(db, fixtureId, state.gated, anyStamped))) {
       return { kind: "skipped", reason: "already-invited" };
     }
 
@@ -96,41 +99,126 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       force: input.force ?? false,
     });
 
-    const playerIds = await stampInvited(db, fixtureId, plan.toInvite, now);
-    return { kind: "claimed", playerIds };
+    const stamped = await stampInvited(db, fixtureId, plan.toInvite, now);
+    const promoted = await this.#fillFreeSlotsFromWaitlist(db, fixtureId, fixture.maxPlayers, input.now);
+
+    // Disjoint, deliberately. A player promoted by this call is told they are
+    // in (N-2); sending them the N-1 invitation as well would ask them a
+    // question they have just been given the answer to. Subtracted here rather
+    // than left to the caller, because there are two callers and a rule split
+    // across both is a rule one of them will eventually get wrong.
+    const promotedIds = new Set(promoted.map((row) => row.playerId));
+    return { kind: "claimed", playerIds: stamped.filter((id) => !promotedIds.has(id)), promoted };
   }
 
   /**
-   * Whether this fixture's N-1 went out before gating ever applied to it.
+   * Move players off the waitlist into whatever slots are free, in arrival
+   * order (BR-40a, BR-7).
    *
-   * Read as one question, not two: `invited_at` is what gating writes and the
-   * `n1` log is what the ungated sweep wrote, so "log rows exist and no stamp
-   * does" is precisely "the squad was invited without gating".
+   * This is the other half of the gate. A player held back by BR-40a said yes
+   * long ago; releasing their tier without this would stamp `invited_at`, mail
+   * them an invitation to a fixture they had already accepted, and leave them
+   * waitlisted behind an empty slot until somebody else's dropout happened to
+   * trigger a promotion.
+   *
+   * **Level-based, exactly as `planReleases` is, and for the same reason.** It
+   * promotes from the *whole* promotable waitlist rather than only the players
+   * this call stamped. `stampInvited` and this pass are separate writes — D1
+   * has no interactive transaction spanning them — so a failure in between
+   * would otherwise leave a player invited, waitlisted, and permanently
+   * unpromotable: the next tick would find them already stamped, stamp
+   * nothing, and never look at them again. Reconciling the current state
+   * instead means any later tick repairs it, and a call with nothing to do
+   * writes nothing.
    */
-  async #invitedBeforeGating(db: Db, fixtureId: string, state: InviteState): Promise<boolean> {
-    const anyStamped = state.tiers.some((tier) =>
-      tier.members.some((member) => member.invitedAt !== null),
-    );
-    if (anyStamped) return false;
+  async #fillFreeSlotsFromWaitlist(
+    db: Db,
+    fixtureId: string,
+    maxPlayers: number,
+    now: number,
+  ): Promise<WaitlistPromotion[]> {
+    const all = await db
+      .select({
+        id: responses.id,
+        playerId: responses.playerId,
+        status: responses.status,
+        waitlistPosition: responses.waitlistPosition,
+        invitedAt: responses.invitedAt,
+      })
+      .from(responses)
+      .where(eq(responses.fixtureId, fixtureId));
 
-    const [mailed] = await db
-      .select({ id: notificationLog.id })
-      .from(notificationLog)
-      .where(
-        and(
-          eq(notificationLog.fixtureId, fixtureId),
-          eq(notificationLog.notificationType, "n1"),
-          eq(notificationLog.channel, "email"),
-        ),
-      )
-      .limit(1);
+    const inCount = all.filter((row) => row.status === "in").length;
+    const freeSlots = maxPlayers - inCount;
+    if (freeSlots <= 0) return [];
 
-    return mailed !== undefined;
+    const waitlisted = all.filter((row) => row.status === "waitlisted");
+    // `gateApplies` is true throughout: the caller has already established
+    // that this fixture is gated and not BR-46-exempt, which is that
+    // predicate's entire content.
+    const candidates = [...this.#promotable(waitlisted, true)]
+      .filter((row): row is typeof row & { waitlistPosition: number } => row.waitlistPosition !== null)
+      .sort((a, b) => a.waitlistPosition - b.waitlistPosition)
+      .slice(0, freeSlots);
+    if (candidates.length === 0) return [];
+
+    // One batch, so every promotion and the counts that describe them commit
+    // together — the same reasoning `setResponse` gives at length. The cached
+    // counts lead only because `db.batch` types its first element separately
+    // and a spread cannot be that element; a batch is a transaction, so the
+    // order of independent statements within it decides nothing.
+    await db.batch([
+      db
+        .update(fixtures)
+        .set({
+          inCount: inCount + candidates.length,
+          waitlistCount: waitlisted.length - candidates.length,
+        })
+        .where(eq(fixtures.id, fixtureId)),
+      ...candidates.map((row) =>
+        db
+          .update(responses)
+          .set({ status: "in", waitlistPosition: null, source: "system" })
+          .where(eq(responses.id, row.id)),
+      ),
+    ]);
+
+    return candidates.map((row) => ({
+      playerId: row.playerId,
+      previousWaitlistPosition: row.waitlistPosition,
+      promotedAt: now,
+    }));
+  }
+
+  /**
+   * Whether this fixture's invite order gates who may *take* a slot (BR-40a).
+   *
+   * The one place the question is asked, because `setResponse` and
+   * `withdrawMember` must not be able to disagree about it: one decides
+   * whether an answer is held, the other decides who a freed slot may go to,
+   * and a fixture where those two read the gate differently would hold a
+   * player back while handing their slot to nobody.
+   *
+   * The rule itself lives in `inviteGateApplies`, which the fixture pages also
+   * read, so that what holds a player back and what the page tells them about
+   * it cannot come apart. This wrapper exists only to feed it the row state
+   * this object already has.
+   */
+  async #gateApplies(
+    db: Db,
+    fixtureId: string,
+    gatedInvitesEnabled: boolean,
+    anyStamped: boolean,
+  ): Promise<boolean> {
+    // `anyStamped` is passed rather than queried: this runs inside the lock,
+    // where every response row is already in memory and a further read of them
+    // would be a round trip bought for nothing.
+    return inviteGateApplies(db, { fixtureId, gatedInvitesEnabled, anyStamped });
   }
 
   /**
    * Record a player's response, deciding `in` versus `waitlisted` against the
-   * fixture's capacity (BR-4, BR-5, BR-9).
+   * fixture's capacity (BR-4, BR-5, BR-9) and the invite order (BR-40a).
    *
    * **`blockConcurrencyWhile` is load-bearing and must not be removed.** A
    * Durable Object does not automatically serialise across every `await`:
@@ -178,6 +266,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
         playerId: responses.playerId,
         status: responses.status,
         waitlistPosition: responses.waitlistPosition,
+        invitedAt: responses.invitedAt,
       })
       .from(responses)
       .where(eq(responses.fixtureId, fixtureId));
@@ -199,6 +288,33 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     const inCountWithoutThisPlayer = others.filter((r) => r.status === "in").length;
     const waitlistedWithoutThisPlayer = others.filter((r) => r.status === "waitlisted");
 
+    const [game] = await db
+      .select({ gatedInvitesEnabled: games.gatedInvitesEnabled })
+      .from(games)
+      .where(eq(games.id, fixture.gameId));
+    const gateApplies = await this.#gateApplies(
+      db,
+      fixtureId,
+      game?.gatedInvitesEnabled ?? false,
+      all.some((r) => r.invitedAt !== null),
+    );
+
+    /**
+     * BR-40a: the invite order holds this answer back from taking a slot.
+     *
+     * **Only when the player is answering for themselves.** `actorPlayerId`
+     * is the BR-27 record of an override, so a null one is precisely "nobody
+     * decided this but them" — an owner marking someone in has the whole
+     * picture in front of them and overrules their own order, exactly as
+     * BR-8 lets them overrule capacity.
+     */
+    const heldByGate =
+      gateApplies && input.intent === "in" && input.actorPlayerId === null && existing.invitedAt === null;
+
+    /** The back of the waitlist: highest live position plus one (BR-6). */
+    const nextWaitlistPosition = (): number =>
+      waitlistedWithoutThisPlayer.reduce((max, r) => Math.max(max, r.waitlistPosition ?? 0), 0) + 1;
+
     // Decide the new state.
     let status: "in" | "out" | "waitlisted";
     let waitlistPosition: number | null = null;
@@ -209,6 +325,28 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       // Already in. Report current state without a pointless write.
       const inCount = inCountWithoutThisPlayer + 1;
       return { kind: "recorded", status: "in", inCount, spotsLeft: Math.max(0, fixture.maxPlayers - inCount) };
+    } else if (heldByGate) {
+      // BR-40a. Ahead of every capacity branch below, deliberately: the gate
+      // binds whether or not there is room, and that is the whole point of it
+      // — a sub who has not been asked does not take a free slot ahead of the
+      // core group merely because one happens to be free.
+      //
+      // They are not refused and nothing is lost. They hold a real waitlist
+      // place from the moment they tap, so when their tier opens they are
+      // ahead of anyone who volunteered later, and `claimInviteReleases` puts
+      // them straight in without asking them twice.
+      if (existing.status === "waitlisted") {
+        // Already waiting on the gate. Keep the original position — BR-6 fixes
+        // order by arrival, so re-tapping must not send them to the back — and
+        // write nothing, exactly as the full-fixture shortcut below does.
+        return {
+          kind: "waitlisted",
+          waitlistPosition: existing.waitlistPosition ?? 1,
+          inCount: inCountWithoutThisPlayer,
+        };
+      }
+      status = "waitlisted";
+      waitlistPosition = nextWaitlistPosition();
     } else if (existing.status === "waitlisted") {
       // Already waitlisted and still full. Keep the original position — BR-6
       // fixes order by arrival, so re-tapping must not move them to the back.
@@ -243,12 +381,8 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       } else {
         // BR-4/BR-5/BR-6: appended to the end of the waitlist and told so
         // explicitly, never silently.
-        const highest = waitlistedWithoutThisPlayer.reduce(
-          (max, r) => Math.max(max, r.waitlistPosition ?? 0),
-          0,
-        );
         status = "waitlisted";
-        waitlistPosition = highest + 1;
+        waitlistPosition = nextWaitlistPosition();
       }
     } else {
       status = "in";
@@ -278,6 +412,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       inCountWithoutThisPlayer,
       maxPlayers: fixture.maxPlayers,
       waitlisted: waitlistedWithoutThisPlayer,
+      gateApplies,
     });
 
     // Exactly one player can be promoted here: this response releases at most
@@ -382,6 +517,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
         playerId: responses.playerId,
         status: responses.status,
         waitlistPosition: responses.waitlistPosition,
+        invitedAt: responses.invitedAt,
       })
       .from(responses)
       .where(eq(responses.fixtureId, fixtureId));
@@ -403,11 +539,24 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // same capacity gate `setResponse` does — removing someone an organiser
     // squeezed in past the limit puts the fixture back at its limit rather
     // than passing the extra place to the waitlist.
+    const [game] = await db
+      .select({ gatedInvitesEnabled: games.gatedInvitesEnabled })
+      .from(games)
+      .where(eq(games.id, fixture.gameId));
     const promotedRow = this.#slotTakenBy({
       freesASlot: occupiesSlot(previousStatus),
       inCountWithoutThisPlayer,
       maxPlayers: fixture.maxPlayers,
       waitlisted: waitlistedWithoutThisPlayer,
+      // A removal frees a slot exactly as a decline does, so it must offer it
+      // to exactly the same people (BR-40a) — the gate cannot bind on one path
+      // and not the other.
+      gateApplies: await this.#gateApplies(
+        db,
+        fixtureId,
+        game?.gatedInvitesEnabled ?? false,
+        all.some((row) => row.invitedAt !== null),
+      ),
     });
 
     const inCount = inCountWithoutThisPlayer + (promotedRow ? 1 : 0);
@@ -547,15 +696,39 @@ export class FixtureCapacity extends DurableObject<Bindings> {
    * be put in over capacity by the system, off another player's tap, with no
    * organiser deciding anything.
    */
-  #slotTakenBy<T extends { waitlistPosition: number | null }>(args: {
+  #slotTakenBy<T extends { waitlistPosition: number | null; invitedAt: Date | null }>(args: {
     freesASlot: boolean;
     inCountWithoutThisPlayer: number;
     maxPlayers: number;
     waitlisted: readonly T[];
+    gateApplies: boolean;
   }): (T & { waitlistPosition: number }) | null {
     if (!args.freesASlot) return null;
     if (args.inCountWithoutThisPlayer >= args.maxPlayers) return null;
-    return this.#longestWaitingCandidate(args.waitlisted);
+    return this.#longestWaitingCandidate(this.#promotable(args.waitlisted, args.gateApplies));
+  }
+
+  /**
+   * The waitlisted rows a freed slot may actually go to (BR-40a).
+   *
+   * On a gated fixture an unstamped row is somebody the order has not asked
+   * yet, and handing them a slot the moment one frees is precisely what the
+   * order exists to prevent — the fixture's own overflow, who *have* been
+   * asked, would lose their place to a sub nobody invited. They are not
+   * skipped for good: `claimInviteReleases` promotes them as soon as their
+   * tier opens, and their waitlist position holds their arrival order in the
+   * meantime.
+   *
+   * A filter, never a re-sort: BR-6's arrival order still decides among
+   * whoever is left, so a released player who volunteered later does not
+   * overtake a released player who volunteered first.
+   */
+  #promotable<T extends { invitedAt: Date | null }>(
+    waitlisted: readonly T[],
+    gateApplies: boolean,
+  ): readonly T[] {
+    if (!gateApplies) return waitlisted;
+    return waitlisted.filter((row) => row.invitedAt !== null);
   }
 
   /**

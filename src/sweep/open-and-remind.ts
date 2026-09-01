@@ -10,6 +10,7 @@ import type { FixtureCapacity } from "../capacity/fixture-capacity.js";
 import type { Notifier } from "../notify/notifier.js";
 import { CEILING_DEFERRAL_COLLAPSE_WINDOW_MS, recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { applySendResult, insertQueuedLogRows, markOrphanedRowsFailed } from "../notify/delivery.js";
+import { sendPromotionEmail } from "../notify/send-promotion.js";
 
 /** One fixture (or game) the sweep could not fully process, and why. */
 export interface SweepFailure {
@@ -117,7 +118,7 @@ export async function openAndRemind(
   // stamped before step 2 selects its candidates, so its invitations go out on
   // this tick rather than the next one — which for a fixture that is tomorrow
   // is the difference between a sub playing and a sub finding out too late.
-  const claimed = await claimDueInvites(db, capacity, now);
+  const claimed = await claimDueInvites(db, capacity, notifier, now, responseTokenSecret);
   const reminderResult = await sendDueReminders(db, notifier, now, responseTokenSecret);
 
   return {
@@ -145,7 +146,9 @@ export async function openAndRemind(
 async function claimDueInvites(
   db: Db,
   capacity: DurableObjectNamespace<FixtureCapacity>,
+  notifier: Notifier,
   now: Date,
+  responseTokenSecret: string,
 ): Promise<{ tiersClaimed: number; invitationsClaimed: number; failures: SweepFailure[] }> {
   const rows = await db
     .select({ id: fixtures.id, gameId: fixtures.gameId })
@@ -160,9 +163,39 @@ async function claimDueInvites(
   for (const row of rows) {
     try {
       const outcome = await capacity.getByName(row.id).claimInviteReleases({ now: now.getTime() });
-      if (outcome.kind === "claimed" && outcome.playerIds.length > 0) {
+      if (outcome.kind !== "claimed") continue;
+      if (outcome.playerIds.length > 0) {
         tiersClaimed += 1;
         invitationsClaimed += outcome.playerIds.length;
+      }
+
+      // Players the release put straight into a free slot (BR-40a). Step 2
+      // cannot do this for us: it sends the N-1 to whoever is invited and has
+      // no `n1` row, and these players are `in` with the question already
+      // answered — what they are owed is the N-2 that says so.
+      //
+      // Sent here rather than returned to the caller so that the send sits in
+      // the same try/catch as the claim that caused it: a fixture whose
+      // promotion email throws is one fixture recorded as failed, not a thrown
+      // exception out of the middle of the sweep.
+      for (const promotion of outcome.promoted) {
+        const sent = await sendPromotionEmail({
+          db,
+          notifier,
+          fixtureId: row.id,
+          promoted: promotion,
+          now,
+          responseTokenSecret,
+        });
+        // Reported, never thrown, matching `notifyPromotedPlayer`: the player
+        // is already `in` and that write is not in question here. A `deferred`
+        // is the daily ceiling and nothing retries it, which is why it is
+        // logged as loudly as an outright failure.
+        if (sent.kind === "failed" || sent.kind === "deferred") {
+          console.error(
+            `promotion email (N-2) not delivered after an invite release (${sent.kind}): fixture ${row.id}, player ${promotion.playerId}`,
+          );
+        }
       }
     } catch (error) {
       failures.push({

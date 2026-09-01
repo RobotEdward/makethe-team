@@ -7,6 +7,7 @@ import {
   listOtherActiveGames,
   muteStateFor,
 } from "../db/queries.js";
+import { isHeldByInviteOrder } from "../db/invite-queries.js";
 import { tokenMutePath, tokenUnmutePath } from "../auth/paths.js";
 import { parseMuteDuration } from "../domain/mute.js";
 import { clearMute, setMute } from "../domain/set-mute.js";
@@ -123,6 +124,17 @@ async function renderFixtureForViewer(params: {
     playerId,
     status: viewerMember?.status ?? ("pending" as const),
     waitlistRank: viewerMember?.waitlistRank ?? null,
+    // BR-40a. Asked only of a waitlisted viewer, because it is only a
+    // waitlisted viewer whose page would otherwise give them the wrong reason
+    // for waiting — and it costs two reads, which a page that will not use the
+    // answer should not pay.
+    heldByInviteOrder:
+      viewerMember?.status === "waitlisted" &&
+      (await isHeldByInviteOrder(db, {
+        fixtureId,
+        playerId,
+        gatedInvitesEnabled: game.gatedInvitesEnabled,
+      })),
   };
 
   // An organiser who also plays gets a response row like everyone else when a
@@ -421,7 +433,17 @@ export async function notifyReleasedSubs(
       now: now.getTime(),
       force: options.force ?? false,
     });
-    if (outcome.kind !== "claimed" || outcome.playerIds.length === 0) return;
+    if (outcome.kind !== "claimed") return;
+
+    // Anyone the release let straight off the waitlist (BR-40a) is told they
+    // are in, not invited: they answered this question long ago. Sequential
+    // rather than concurrent, because each send passes through the same daily
+    // ceiling and firing them in parallel is how a batch races itself past it.
+    for (const promotion of outcome.promoted) {
+      await notifyPromotedPlayer(env, fixtureId, promotion, now);
+    }
+
+    if (outcome.playerIds.length === 0) return;
 
     const db = getDb(env.DB);
     const [row] = await db

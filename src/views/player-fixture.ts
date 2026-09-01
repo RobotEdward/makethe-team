@@ -114,23 +114,44 @@ export interface PlayerFixtureParams {
    * True when this Game asks in priority order (M34) and this viewer's tier
    * has not been released yet.
    *
-   * Sets copy and nothing else. BR-40 is explicit that gating governs who is
-   * *notified*, never who may respond — so no control is disabled anywhere on
-   * the strength of this flag, and a keen sub who says yes takes the slot.
+   * Sets copy and nothing else — no control is disabled anywhere on the
+   * strength of it. They may still answer, and are still told they may:
+   * BR-40a holds an uninvited "I'm in" on the waitlist, it does not refuse it.
+   * What the flag changes is the promise made to them, which since M43 is a
+   * place in the queue rather than a slot.
    */
   notYetInvited?: boolean;
+  /**
+   * True when this viewer has already said they are in and is waitlisted by
+   * the invite order rather than by a full fixture (BR-40a).
+   *
+   * A flag from the route rather than something read off `squad`, which is
+   * null on a Game whose roster is hidden — deriving it there would give the
+   * wrong sentence on exactly the pages that show the reader least.
+   */
+  heldByInviteOrder?: boolean;
 }
 
 /**
- * "The core group is being asked first" (M34, BR-40).
+ * "The core group is being asked first" (M34, BR-40a).
+ *
+ * Two sentences, because by M43 there are two states behind this flag and
+ * telling a player who has already volunteered that they "haven't been asked"
+ * reads as though their answer went nowhere.
  *
  * Only on a fixture still taking answers: on a played or cancelled one there
- * is no spot left to open up, and the sentence would be a promise about a game
- * that is over.
+ * is no spot left to open up, and either sentence would be a promise about a
+ * game that is over.
  */
 function renderNotYetInvited(params: PlayerFixtureParams): string {
   if (params.notYetInvited !== true) return "";
   if (params.lifecycle !== "open" && params.lifecycle !== "scheduled") return "";
+
+  if (params.heldByInviteOrder === true) {
+    return `
+      <p class="nudge">You're in as soon as the core group has been asked. They get first
+      refusal — if a spot is still going when that's done, it's yours.</p>`;
+  }
   return `
     <p class="nudge">You haven't been asked yet. The core group is being asked first —
     we'll let you know if a spot opens up.</p>`;

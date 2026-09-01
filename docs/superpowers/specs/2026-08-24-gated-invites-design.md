@@ -37,11 +37,32 @@ Optional, per Game, **off by default**. When on:
 - **BR-39.** When `games.gated_invites_enabled` is off, every active member is
   invited at the reminder instant, exactly as before this milestone. This is the
   default and the behaviour of every Game that existed before it.
-- **BR-40.** Gating governs **who is notified, and when**. It never governs who
-  may respond. A member whose Tier has not been released may still open the
-  Fixture and say they are in, taking a slot immediately (BR-4/BR-5 apply
-  unchanged). The eligible set is still fixed at open by BR-1, with BR-2′'s
-  single sanctioned late addition.
+- **BR-40. ~~Amended 1 September 2026 by BR-40a (M43).~~** As written, gating
+  governed **who is notified, and when**, and never who may take a slot: a
+  member whose Tier had not been released could say they were in and be `in`
+  immediately. That is the behaviour BR-40a replaces. The number is retained
+  rather than reused so the sequence stays stable.
+- **BR-40a.** Gating governs who is notified, when, **and who may take a
+  slot**. It never governs who may *respond*: a member whose Tier has not been
+  released may still open the Fixture and say they are in, and their answer is
+  recorded — as `waitlisted`, at the back of the waitlist, whether or not the
+  Fixture is full. They keep that place in arrival order, and when their Tier
+  is released they are moved to `in` if a slot is free, without being asked
+  again. An `out` is never gated: a player may always decline.
+  - The gate binds a player **answering for themselves** only. An Owner's
+    mark-in overrules the invite order, exactly as BR-8 lets them overrule
+    `max_players`.
+  - A freed slot goes to the longest-waiting **released** player (BR-7), never
+    to a gate-held one. Arrival order still decides among the released.
+  - A gate-held player counts toward **neither** `potential` nor `shortfall` in
+    BR-43. Counting them in `potential` would make their own answer veto the
+    release they are waiting for; counting them in `shortfall` would release a
+    Tier on their own behalf.
+  - The gate applies while the Game is gated and the Fixture is not one BR-46
+    exempts. Turning gating off releases every held player to ordinary
+    capacity rules.
+  - The eligible set is still fixed at open by BR-1, with BR-2′'s single
+    sanctioned late addition.
 - **BR-41.** A Tier is released by stamping `responses.invited_at` on the live
   Response rows of its members. Nothing ever clears the stamp: releasing is
   one-way, and `invited_at` is the durable record of what has gone out.
@@ -157,14 +178,22 @@ finally: stamp invited_at on every uninvited live response row
 ```
 
 The two quantities are defined separately on purpose. `potential` has to count
-an early volunteer (BR-40) and an owner-added guest, because both really do take
-a slot; `shortfall` must not, because neither is a released member who went
-missing. Folding the two into one number — `expected - potential` — gets the
-volunteer case wrong in both directions at once.
+an `in` member and an owner-added guest, because both really do take a slot;
+`shortfall` must not, because neither is a released member who went missing.
+Folding the two into one number — `expected - potential` — gets the volunteer
+case wrong in both directions at once.
 
-A `waitlisted` member counts towards `potential` and never towards `shortfall`,
-for a related reason: they want the next free slot and BR-7 will hand it to them,
-so treating them as missing would release a tier on behalf of somebody keen.
+A **released** `waitlisted` member counts towards `potential` and never towards
+`shortfall`, for a related reason: they want the next free slot and BR-7 will
+hand it to them, so treating them as missing would release a tier on behalf of
+somebody keen.
+
+An **unreleased** `waitlisted` member — the gate-held volunteer of BR-40a —
+counts towards neither. This is the one accounting rule M43 could not get wrong
+and still ship: counting them in `potential` makes their own answer the thing
+that vetoes the release they are waiting for, and the Fixture then kicks off
+short with a willing player on the bench. `test/domain/invite-tiers.test.ts`
+enumerates every status on both sides of the release line to pin it.
 
 `shortfall` counts from the **membership** side, not by counting declines. That
 matters: `withdrawMember` *deletes* the row of a `pending`, `out` or `waitlisted`
@@ -329,8 +358,18 @@ The core group is being asked first. We'll let you know if a spot opens up.
 [ I'm in anyway ]   [ No thanks ]
 ```
 
-BR-40: the controls are live. The copy sets the expectation; it does not gate the
-button.
+BR-40a: the controls are live. The copy sets the expectation; it does not gate
+the button — the *answer* is gated, not the asking. A player who taps "I'm in
+anyway" is recorded `waitlisted` and told so:
+
+```
+You're in as soon as the core group has been asked.
+
+[ I'm in · waiting ]   [ Can't make it ]
+```
+
+The waitlist rank is suppressed in that headline. "3rd in line" is a claim about
+a queue for a full Fixture, and this reader may be looking at ten empty slots.
 
 ### Views and CSS
 

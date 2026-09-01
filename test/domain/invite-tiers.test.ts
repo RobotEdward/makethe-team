@@ -161,6 +161,86 @@ describe("planReleases — potential counts everyone holding a slot", () => {
   });
 });
 
+/**
+ * The invariant this milestone turns on. A gate-waitlisted player — one who
+ * volunteered from a tier that has not been released — is waiting *on the
+ * gate*, not holding a slot. Counting them in `potential` makes their own
+ * answer the thing that vetoes the release they are waiting for, and the
+ * fixture then kicks off short with a willing player stuck on the bench.
+ *
+ * Enumerating rather than spot-checking: every status a member can hold is
+ * asserted on both sides of the release line, so a future edit to `measure`
+ * cannot quietly restore the deadlock for one of them.
+ */
+describe("planReleases — an unreleased waitlisted member never vetoes their own tier", () => {
+  it("does not count a gate-waitlisted volunteer toward potential", () => {
+    const plan = planReleases(
+      input([tier("core", "*out", "*pending"), tier("subs", "waitlisted", "pending")], { maxPlayers: 2 }),
+    );
+
+    // The decline owes a tier. potential is the one remaining core `pending`
+    // and nothing from the unreleased sub, so 1 < 2 and the subs tier opens —
+    // which is what promotes the volunteer waiting on it.
+    //
+    // `maxPlayers` is 2 to make this discriminate: counting the volunteer, as
+    // the rule did before BR-40a, puts potential at exactly 2, vetoing the
+    // release they are themselves waiting for. That is the deadlock.
+    expect(plan.releasedCount).toBe(2);
+    expect(plan.toInvite).toEqual(["subs-0", "subs-1"]);
+  });
+
+  it("still counts a waitlisted member once their own tier is released", () => {
+    const plan = planReleases(
+      input([tier("core", "*in", "*pending"), tier("subs", "*waitlisted", "*pending")], { maxPlayers: 3 }),
+    );
+
+    // The same two people, now invited: they hold their places and the
+    // implicit tier behind them stays shut.
+    expect(plan.releasedCount).toBe(2);
+  });
+
+  it("counts an owner's override of an unreleased player, who really does hold a slot", () => {
+    const plan = planReleases(
+      input([tier("core", "*in", "*pending"), tier("subs", "in", "pending")], { maxPlayers: 3 }),
+    );
+
+    // BR-40a exempts the owner, so an unreleased `in` is a real occupant and
+    // must veto exactly as before. Contrast the first case: same shape, and
+    // only the status differs.
+    expect(plan.releasedCount).toBe(1);
+  });
+
+  it("stops the cascade at the volunteer's own tier once it is open", () => {
+    // The mirror of the first case. Releasing the subs tier makes the
+    // volunteer count, and that is what must hold the implicit tier shut:
+    // the decline is answered by the person already waiting for it, so the
+    // whole squad does not get dragged in behind them.
+    const plan = planReleases(
+      input([tier("core", "*out", "*pending"), tier("subs", "waitlisted"), tier(null, "pending")], {
+        maxPlayers: 10,
+      }),
+    );
+
+    expect(plan.releasedCount).toBe(2);
+    expect(plan.toInvite).toEqual(["subs-0"]);
+  });
+
+  it("does not let a gate-waitlisted volunteer hold back the BR-44 fallback", () => {
+    const plan = planReleases(
+      input([tier("core", "*pending", "*pending"), tier("subs", "waitlisted", "pending")], {
+        maxPlayers: 10,
+        minPlayers: 3,
+        fallbackDue: true,
+      }),
+    );
+
+    // potential = 2 released pendings, one short of the 3 the fallback needs,
+    // so it must walk on. Counting the volunteer as the third body is exactly
+    // what would stop it here at 1 — which is what this pins.
+    expect(plan.releasedCount).toBe(2);
+  });
+});
+
 describe("planReleases — shortfall counts from the membership side", () => {
   it("treats a member with no live row as missing, as withdrawMember deletes it", () => {
     const plan = planReleases(input([tier("core", "*pending", "*pending", "-"), tier("subs", "pending")]));

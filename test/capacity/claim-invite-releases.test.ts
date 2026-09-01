@@ -1,8 +1,8 @@
 import { env } from "cloudflare:test";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { notificationLog, responses } from "../../src/db/schema.js";
+import { fixtures, notificationLog, responses } from "../../src/db/schema.js";
 import {
   insertFixture,
   insertGame,
@@ -48,7 +48,7 @@ describe("claimInviteReleases", () => {
 
     const outcome = await claim(fixtureId);
 
-    expect(outcome).toEqual({ kind: "claimed", playerIds: ["p-0", "p-1", "p-2"] });
+    expect(outcome).toEqual({ kind: "claimed", playerIds: ["p-0", "p-1", "p-2"], promoted: [] });
     const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
     expect(rows.filter((row) => row.invitedAt !== null)).toHaveLength(3);
   });
@@ -59,7 +59,7 @@ describe("claimInviteReleases", () => {
 
     const outcome = await claim(fixtureId);
 
-    expect(outcome).toEqual({ kind: "claimed", playerIds: [] });
+    expect(outcome).toEqual({ kind: "claimed", playerIds: [], promoted: [] });
   });
 
   it("releases the next tier after a decline", async () => {
@@ -72,7 +72,7 @@ describe("claimInviteReleases", () => {
 
     const outcome = await claim(fixtureId);
 
-    expect(outcome).toEqual({ kind: "claimed", playerIds: ["p-3", "p-4"] });
+    expect(outcome).toEqual({ kind: "claimed", playerIds: ["p-3", "p-4"], promoted: [] });
   });
 
   it("releases one tier, not two, when two declines are claimed concurrently", async () => {
@@ -127,8 +127,8 @@ describe("claimInviteReleases", () => {
       .set({ status: "in", respondedAt: NOW })
       .where(eq(responses.playerId, "p-1"));
 
-    expect(await claim(fixtureId)).toEqual({ kind: "claimed", playerIds: [] });
-    expect(await claim(fixtureId, true)).toEqual({ kind: "claimed", playerIds: ["p-2", "p-3"] });
+    expect(await claim(fixtureId)).toEqual({ kind: "claimed", playerIds: [], promoted: [] });
+    expect(await claim(fixtureId, true)).toEqual({ kind: "claimed", playerIds: ["p-2", "p-3"], promoted: [] });
   });
 });
 
@@ -176,6 +176,117 @@ describe("gating switched on after the invitations already went out", () => {
 
     const outcome = await claim(fixtureId);
 
-    expect(outcome).toEqual({ kind: "claimed", playerIds: ["p-2", "p-3"] });
+    expect(outcome).toEqual({ kind: "claimed", playerIds: ["p-2", "p-3"], promoted: [] });
+  });
+});
+
+/**
+ * BR-40a's second half. Holding an uninvited player on the waitlist is only
+ * half a rule: something has to let them in when their tier finally opens, or
+ * the gate is just a way of losing volunteers.
+ */
+describe("releasing a tier promotes the players it was holding", () => {
+  /** What `setResponse` does for a player answering for themselves. */
+  const say = (fixtureId: string, playerId: string, intent: "in" | "out") =>
+    env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId,
+      intent,
+      actorPlayerId: null,
+      source: "token",
+      now: NOW.getTime(),
+      whenFull: "waitlist",
+    });
+
+  const statusOf = async (fixtureId: string, playerId: string) => {
+    const [row] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, playerId)));
+    return row;
+  };
+
+  it("puts a gate-waitlisted volunteer straight in, and does not also invite them", async () => {
+    const { fixtureId } = await gatedFixture({ core: 2, subs: 2, maxPlayers: 4 });
+    await claim(fixtureId);
+
+    // A sub volunteers before being asked, and is held.
+    expect(await say(fixtureId, "p-2", "in")).toMatchObject({ kind: "waitlisted" });
+
+    // A core member drops out, which owes the subs tier.
+    await say(fixtureId, "p-0", "out");
+    const outcome = await claim(fixtureId);
+
+    expect(outcome).toMatchObject({
+      kind: "claimed",
+      // p-2 is promoted, so they are owed the N-2 and must NOT appear in the
+      // N-1 list as well — the two lists are disjoint by contract.
+      playerIds: ["p-3"],
+      promoted: [{ playerId: "p-2", previousWaitlistPosition: 1 }],
+    });
+    expect((await statusOf(fixtureId, "p-2"))?.status).toBe("in");
+    // Stamped all the same: `invited_at` is the durable record of the tier
+    // having been released (BR-41), independently of what it did to them.
+    expect((await statusOf(fixtureId, "p-2"))?.invitedAt).not.toBeNull();
+  });
+
+  it("promotes in arrival order and only as far as there are slots", async () => {
+    // Two of two slots taken, so the single decline below opens exactly one —
+    // which is what makes this test able to tell "the first volunteer" from
+    // "every volunteer".
+    const { fixtureId } = await gatedFixture({ core: 2, subs: 3, maxPlayers: 2 });
+    await claim(fixtureId);
+    await say(fixtureId, "p-0", "in");
+    await say(fixtureId, "p-1", "in");
+
+    // Three subs volunteer, in this order.
+    await say(fixtureId, "p-4", "in");
+    await say(fixtureId, "p-2", "in");
+    await say(fixtureId, "p-3", "in");
+
+    await say(fixtureId, "p-0", "out");
+    const outcome = await claim(fixtureId);
+
+    // p-4 tapped first, so p-4 takes the one slot — arrival order, never row
+    // order and never tier-member order, both of which would say p-2 here.
+    // The other two stay waiting, invited but with nowhere to go.
+    expect(outcome).toMatchObject({ promoted: [{ playerId: "p-4" }] });
+    expect((await statusOf(fixtureId, "p-4"))?.status).toBe("in");
+    expect((await statusOf(fixtureId, "p-2"))?.status).toBe("waitlisted");
+    expect((await statusOf(fixtureId, "p-3"))?.status).toBe("waitlisted");
+  });
+
+  it("repairs a player left invited but waitlisted by an earlier half-failure", async () => {
+    // The claim writes the stamp and the promotion as two statements, so a
+    // crash between them is possible. A pass that only promoted players it
+    // had *just* stamped would never look at this player again; this one
+    // reconciles the state it finds.
+    const { fixtureId } = await gatedFixture({ core: 1, subs: 1, maxPlayers: 4 });
+    await claim(fixtureId);
+    await say(fixtureId, "p-1", "in");
+    await db
+      .update(responses)
+      .set({ invitedAt: NOW })
+      .where(eq(responses.playerId, "p-1"));
+
+    // Nothing new to stamp — and the promotion still happens.
+    expect(await claim(fixtureId)).toMatchObject({
+      playerIds: [],
+      promoted: [{ playerId: "p-1" }],
+    });
+    expect((await statusOf(fixtureId, "p-1"))?.status).toBe("in");
+  });
+
+  it("leaves the counts on the fixture agreeing with the rows", async () => {
+    const { fixtureId } = await gatedFixture({ core: 1, subs: 2, maxPlayers: 4 });
+    await claim(fixtureId);
+    await say(fixtureId, "p-1", "in");
+    await say(fixtureId, "p-2", "in");
+    await say(fixtureId, "p-0", "out");
+    await claim(fixtureId);
+
+    const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    expect(fixture?.inCount).toBe(rows.filter((row) => row.status === "in").length);
+    expect(fixture?.waitlistCount).toBe(rows.filter((row) => row.status === "waitlisted").length);
   });
 });

@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
+import { fixtures, games, inviteTiers, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 // The Durable Object's own source, as text. Read at build time by Vite's
 // `?raw` loader so the "no network call inside the object" assertion below
@@ -775,5 +775,171 @@ describe("a withdrawn player", () => {
 
     expect(await decline(fixtureId, "p-0")).toEqual({ kind: "rejected", reason: "not-eligible" });
     expect(await statusOf(fixtureId, "p-0")).toBe("withdrawn");
+  });
+});
+
+/**
+ * BR-40a. Gating used to govern only who was *notified*; it now also governs
+ * who may take a slot. A player whose tier is unreleased still answers, and
+ * still holds their place in arrival order — they simply wait on the gate
+ * rather than walking past it.
+ */
+describe("the invite order gates who takes a slot (BR-40a)", () => {
+  async function gatedOpenFixture(opts: { core: number; subs: number; maxPlayers?: number }) {
+    const gameId = await insertGame(db, {
+      gatedInvitesEnabled: true,
+      maxPlayers: opts.maxPlayers ?? 14,
+    });
+    const fixtureId = crypto.randomUUID();
+    await db.insert(fixtures).values({
+      id: fixtureId, gameId, kicksOffAt: KICKOFF, minPlayers: 2,
+      maxPlayers: opts.maxPlayers ?? 14, prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12, durationMinutes: 60,
+    });
+    const coreTier = crypto.randomUUID();
+    const subTier = crypto.randomUUID();
+    await db.insert(inviteTiers).values([
+      { id: coreTier, gameId, name: "Core", position: 1 },
+      { id: subTier, gameId, name: "Subs", position: 2 },
+    ]);
+    for (let i = 0; i < opts.core + opts.subs; i++) {
+      await db.insert(players).values({ id: `g-${i}`, name: `Player ${i}`, email: `g${i}@example.com` });
+      await db.insert(memberships).values({
+        id: `gm-${i}`, gameId, playerId: `g-${i}`, active: true,
+        inviteTierId: i < opts.core ? coreTier : subTier,
+      });
+    }
+    await openFixture(db, fixtureId, NOW);
+    // Release the core, which is what puts the order into effect.
+    await stubFor(fixtureId).claimInviteReleases({ now: NOW.getTime() });
+    return fixtureId;
+  }
+
+  const rowFor = async (fixtureId: string, playerId: string) => {
+    const [row] = await db.select().from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, playerId)));
+    return row;
+  };
+
+  it("waitlists an uninvited player even with the fixture nearly empty", async () => {
+    const fixtureId = await gatedOpenFixture({ core: 2, subs: 2 });
+
+    // Thirteen slots free, and they still do not get one.
+    expect(await accept(fixtureId, "g-2")).toMatchObject({ kind: "waitlisted", waitlistPosition: 1 });
+    expect((await rowFor(fixtureId, "g-2"))?.status).toBe("waitlisted");
+    expect(await counts(fixtureId)).toEqual({ inCount: 0, cached: 0 });
+  });
+
+  it("lets an invited player straight in on the same fixture", async () => {
+    // The control. Same fixture, same call, and the only difference is that
+    // the order has reached this player — so a failure here means the gate is
+    // catching everybody, not that it is catching the right people.
+    const fixtureId = await gatedOpenFixture({ core: 2, subs: 2 });
+
+    expect(await accept(fixtureId, "g-0")).toMatchObject({ kind: "recorded", status: "in" });
+  });
+
+  it("keeps their arrival position when they tap again", async () => {
+    const fixtureId = await gatedOpenFixture({ core: 2, subs: 2 });
+    await accept(fixtureId, "g-2");
+    await accept(fixtureId, "g-3");
+
+    // BR-6 fixes order by arrival, so re-tapping must not send them to the
+    // back of a queue they were already at the front of.
+    expect(await accept(fixtureId, "g-2")).toMatchObject({ waitlistPosition: 1 });
+    expect((await rowFor(fixtureId, "g-3"))?.waitlistPosition).toBe(2);
+  });
+
+  it("still lets them decline — the gate holds nobody to a game", async () => {
+    const fixtureId = await gatedOpenFixture({ core: 2, subs: 2 });
+
+    expect(await decline(fixtureId, "g-2")).toMatchObject({ kind: "recorded", status: "out" });
+  });
+
+  it("does not gate an owner marking someone in", async () => {
+    const fixtureId = await gatedOpenFixture({ core: 2, subs: 2 });
+
+    const outcome = await stubFor(fixtureId).setResponse({
+      playerId: "g-2", intent: "in", actorPlayerId: "g-0", source: "owner",
+      whenFull: "refuse", now: NOW.getTime(),
+    });
+
+    // The owner has the whole picture and overrules their own order, exactly
+    // as BR-8 lets them overrule capacity.
+    expect(outcome).toMatchObject({ kind: "recorded", status: "in" });
+  });
+
+  it("does not hand a freed slot to an uninvited player", async () => {
+    const fixtureId = await gatedOpenFixture({ core: 2, subs: 2, maxPlayers: 2 });
+    await accept(fixtureId, "g-0");
+    await accept(fixtureId, "g-1");
+    await accept(fixtureId, "g-2"); // gate-waitlisted, and the fixture is full too
+
+    await decline(fixtureId, "g-1");
+
+    // BR-7 would have promoted them. The order outranks it: the slot stays
+    // open for the tier that is actually being asked.
+    expect((await rowFor(fixtureId, "g-2"))?.status).toBe("waitlisted");
+    expect(await counts(fixtureId)).toEqual({ inCount: 1, cached: 1 });
+  });
+
+  it("hands a freed slot to an invited player waiting behind a full fixture", async () => {
+    // The pair to the test above. An invited player who waitlisted on
+    // capacity is promoted as they always were — the gate filters the
+    // waitlist, it does not switch BR-7 off.
+    const fixtureId = await gatedOpenFixture({ core: 3, subs: 1, maxPlayers: 2 });
+    await accept(fixtureId, "g-0");
+    await accept(fixtureId, "g-1");
+    await accept(fixtureId, "g-2");
+
+    await decline(fixtureId, "g-1");
+
+    expect((await rowFor(fixtureId, "g-2"))?.status).toBe("in");
+  });
+
+  it("promotes the invited player over an uninvited one who volunteered first", async () => {
+    // The ordering question this milestone had to answer: arrival order still
+    // decides, but only among people the order has actually asked.
+    const fixtureId = await gatedOpenFixture({ core: 3, subs: 1, maxPlayers: 2 });
+    await accept(fixtureId, "g-0");
+    await accept(fixtureId, "g-1");
+    await accept(fixtureId, "g-3", NOW.getTime() + 1_000); // uninvited sub, first to wait
+    await accept(fixtureId, "g-2", NOW.getTime() + 2_000); // invited core, second
+
+    await decline(fixtureId, "g-1");
+
+    expect((await rowFor(fixtureId, "g-2"))?.status).toBe("in");
+    expect((await rowFor(fixtureId, "g-3"))?.status).toBe("waitlisted");
+  });
+
+  it("gates nobody on a fixture whose squad was mailed before gating (BR-46)", async () => {
+    // No stamp anywhere and an n1 already sent means the whole squad holds the
+    // invitation. Gating on the stamp here would waitlist every one of them,
+    // permanently — nothing will ever release a tier on this fixture.
+    const gameId = await insertGame(db, { gatedInvitesEnabled: true });
+    const fixtureId = crypto.randomUUID();
+    await db.insert(fixtures).values({
+      id: fixtureId, gameId, kicksOffAt: KICKOFF, minPlayers: 2, maxPlayers: 14,
+      prefersEvenNumbers: true, shortWarningOffsetHours: 12, durationMinutes: 60,
+    });
+    await db.insert(players).values({ id: "b-0", name: "Player", email: "b0@example.com" });
+    await db.insert(memberships).values({ id: "bm-0", gameId, playerId: "b-0", active: true });
+    await openFixture(db, fixtureId, NOW);
+    await db.insert(notificationLog).values({
+      id: crypto.randomUUID(), dedupeKey: `n1:${fixtureId}:b-0`, notificationType: "n1",
+      fixtureId, playerId: "b-0", channel: "email", status: "sent",
+    });
+
+    expect(await accept(fixtureId, "b-0")).toMatchObject({ kind: "recorded", status: "in" });
+  });
+
+  it("gates nobody once the owner switches gating back off", async () => {
+    // The stamps stay behind on the fixture. Reading those alone would strand
+    // every unstamped player behind an order nothing will release again.
+    const fixtureId = await gatedOpenFixture({ core: 2, subs: 2 });
+    const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
+    await db.update(games).set({ gatedInvitesEnabled: false }).where(eq(games.id, fixture!.gameId));
+
+    expect(await accept(fixtureId, "g-2")).toMatchObject({ kind: "recorded", status: "in" });
   });
 });

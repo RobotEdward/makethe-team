@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import type { TierState } from "../domain/invite-tiers.js";
 import { chunk, INSERT_CHUNK_SIZE } from "./chunk.js";
 import type { Db } from "./client.js";
-import { fixtures, games, inviteTiers, memberships, players, responses } from "./schema.js";
+import { fixtures, games, inviteTiers, memberships, notificationLog, players, responses } from "./schema.js";
 
 const HOUR_MS = 3_600_000;
 
@@ -235,4 +235,91 @@ export async function loadInviteOrder(
   }
 
   return [...tierRows.map((tier) => byTier.get(tier.id)!), byTier.get(null)!];
+}
+
+/**
+ * Whether an invite order governs who may *take* a slot on this fixture
+ * (BR-40a).
+ *
+ * **The one definition of the gate.** The capacity object decides who is held
+ * back by it; the fixture pages explain to a player why they are waiting. Two
+ * predicates would eventually disagree, and the disagreement is silent in both
+ * directions — a player waitlisted with no explanation, or told the order is
+ * holding them when what is holding them is a full fixture.
+ *
+ * Two conditions. The Game must still be gated *now*: an owner who turns
+ * gating off mid-fixture leaves the old stamps behind, and reading those alone
+ * would strand every unstamped player behind an order nothing will release
+ * again. And the fixture must not be one BR-46 exempts, whose whole squad was
+ * mailed before gating ever applied to it — there nobody is stamped and nobody
+ * ever will be, so keying on the stamp would hold the entire squad back
+ * indefinitely.
+ *
+ * Read as one question, not two: `invited_at` is what gating writes and the
+ * `n1` log is what the ungated sweep wrote, so "log rows exist and no stamp
+ * does" is precisely "this squad was invited without gating".
+ */
+export async function inviteGateApplies(
+  db: Db,
+  params: {
+    fixtureId: string;
+    gatedInvitesEnabled: boolean;
+    /**
+     * Whether any row on the fixture carries `invited_at`. Passed in by the
+     * capacity object, which already holds every row in memory inside its
+     * lock; omitted by the page routes, which have no reason to read them all.
+     */
+    anyStamped?: boolean;
+  },
+): Promise<boolean> {
+  if (!params.gatedInvitesEnabled) return false;
+
+  const anyStamped =
+    params.anyStamped ??
+    (
+      await db
+        .select({ id: responses.id })
+        .from(responses)
+        .where(and(eq(responses.fixtureId, params.fixtureId), isNotNull(responses.invitedAt)))
+        .limit(1)
+    ).length > 0;
+  if (anyStamped) return true;
+
+  const [mailed] = await db
+    .select({ id: notificationLog.id })
+    .from(notificationLog)
+    .where(
+      and(
+        eq(notificationLog.fixtureId, params.fixtureId),
+        eq(notificationLog.notificationType, "n1"),
+        eq(notificationLog.channel, "email"),
+      ),
+    )
+    .limit(1);
+
+  return mailed === undefined;
+}
+
+/**
+ * Whether this player's own answer is being held by the invite order rather
+ * than by a full fixture (BR-40a).
+ *
+ * The display-side companion to `inviteGateApplies`, and deliberately built on
+ * it rather than beside it: the caller has already established that the player
+ * is `waitlisted`, and what remains is *why*. An unstamped row on a gated
+ * fixture is the order holding them; a stamped one waiting behind a full
+ * fixture is ordinary BR-5.
+ */
+export async function isHeldByInviteOrder(
+  db: Db,
+  params: { fixtureId: string; playerId: string; gatedInvitesEnabled: boolean },
+): Promise<boolean> {
+  if (!(await inviteGateApplies(db, params))) return false;
+
+  const [row] = await db
+    .select({ invitedAt: responses.invitedAt })
+    .from(responses)
+    .where(and(eq(responses.fixtureId, params.fixtureId), eq(responses.playerId, params.playerId)));
+
+  return row !== undefined && row.invitedAt === null;
 }

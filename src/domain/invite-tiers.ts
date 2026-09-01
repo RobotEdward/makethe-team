@@ -43,12 +43,15 @@ export interface ReleasePlan {
   toInvite: string[];
 }
 
-/** Whether this player is holding, or waiting to hold, one of the fixture's slots. */
-function holdsASlot(status: ResponseStatus | null): boolean {
-  // `waitlisted` belongs here and not in the shortfall: BR-7 hands the next
-  // free slot to the waitlist, so counting a keen player as missing would
-  // release a whole tier on their behalf.
-  return status === "in" || status === "waitlisted";
+/**
+ * Whether this player occupies one of the fixture's slots outright.
+ *
+ * Only `in`. A released `waitlisted` player is counted too, but by the caller
+ * and only once their tier is open — see `measure` for why the two cases
+ * cannot share a predicate.
+ */
+function occupiesASlot(status: ResponseStatus | null): boolean {
+  return status === "in";
 }
 
 /**
@@ -84,10 +87,24 @@ export function planReleases(input: ReleaseInput): ReleasePlan {
     tiers.forEach((tier, index) => {
       const released = index < count;
       for (const member of tier.members) {
-        // An early volunteer (BR-40) counts wherever they sit: released or
-        // not, they really are holding a slot.
-        if (holdsASlot(member.status)) potential += 1;
+        // An `in` counts wherever it sits. Under BR-40a a player answering for
+        // themselves from an unreleased tier is waitlisted rather than let in,
+        // so an unreleased `in` is an owner's override or a row predating this
+        // rule — either way they really are occupying a slot.
+        if (occupiesASlot(member.status)) potential += 1;
+        // A released `waitlisted` is BR-43's original reading: BR-7 hands them
+        // the next free slot, so counting them as missing would release a
+        // whole tier on their behalf.
+        else if (released && member.status === "waitlisted") potential += 1;
         else if (released && member.status === "pending") potential += 1;
+        // Everything else on a *released* tier is a member who went missing.
+        // The `released` guard is also what keeps the gate-held volunteer of
+        // BR-40a out of both totals: they reach neither the `waitlisted`
+        // branch above (which requires release) nor this one, which is the
+        // intent. Counting them in `potential` would make their own answer
+        // veto the release they are waiting for, and the fixture would kick
+        // off short with a willing player on the bench; counting them here
+        // would release a tier on their behalf, the same error inverted.
         else if (released) shortfall += 1;
       }
     });

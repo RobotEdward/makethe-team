@@ -45,7 +45,7 @@ import { createGame } from "../domain/create-game.js";
 import { displayName } from "../domain/display-name.js";
 import { fixtureView, takingChanges } from "../domain/fixture-view.js";
 import { GATED_FALLBACK_NEVER, parseGameForm, parseNotificationCells } from "../domain/game-form.js";
-import { loadInviteOrder } from "../db/invite-queries.js";
+import { inviteGateApplies, loadInviteOrder } from "../db/invite-queries.js";
 import { inviteTiers, memberships } from "../db/schema.js";
 import { inviteOrderPath } from "../auth/paths.js";
 import { renderInviteOrderPage } from "../views/invite-order.js";
@@ -1583,7 +1583,16 @@ export async function renderPlayerFixture(
         .from(responses)
         .where(eq(responses.fixtureId, fixtureId))
     : [];
-  const orderIsRunning = inviteRows.some((row) => row.invitedAt !== null);
+  // `inviteGateApplies` rather than a bare "is anything stamped": since M43
+  // the order governs who may take a slot, and it does so from the moment the
+  // fixture opens — including the window before the first tier is released,
+  // when nothing is stamped yet and a player would otherwise be waitlisted
+  // with no explanation on the page.
+  const orderIsRunning = await inviteGateApplies(db, {
+    fixtureId,
+    gatedInvitesEnabled: game.gatedInvitesEnabled,
+    anyStamped: inviteRows.some((row) => row.invitedAt !== null),
+  });
   const viewerInvited =
     inviteRows.find((row) => row.playerId === viewerPlayerId)?.invitedAt != null;
 
@@ -1624,6 +1633,14 @@ export async function renderPlayerFixture(
       // M34, BR-40. Copy only — the viewer may still answer, and nothing on
       // this page is disabled on the strength of it.
       notYetInvited: orderIsRunning && !viewerInvited,
+      // BR-40a: they answered, and the order is what they are waiting on.
+      // Read off the squad row the page is already rendering rather than
+      // queried again, so the paragraph and the roster beside it cannot
+      // disagree about what this reader answered.
+      heldByInviteOrder:
+        orderIsRunning &&
+        !viewerInvited &&
+        withSquad.squad.find((member) => member.playerId === viewerPlayerId)?.status === "waitlisted",
     }),
     status,
   );
