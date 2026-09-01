@@ -682,6 +682,41 @@ gamesRoutes.get("/g/:id/invites", requirePlayer, async (c) => {
 });
 
 /**
+ * Re-run every open fixture's invite order after the order itself changed.
+ *
+ * Moving a member into a released tier releases them, and BR-40a means that is
+ * no longer only a question of who gets mailed: since M43 an unreleased member
+ * who volunteered is sitting on the waitlist, and releasing them is what puts
+ * them in a free slot. `notifyReleasedSubs` already does the whole job —
+ * claim, stamp, N-1 to the newly invited, N-2 to whoever the claim promoted —
+ * so this is the same call a decline makes, over a different trigger.
+ *
+ * **The hourly sweep already did this, up to an hour later.** That is precisely
+ * the problem: an owner who fixes somebody's group sees nothing happen, and an
+ * organiser sorting out tomorrow's game does not have an hour. This closes the
+ * gap; it does not replace the sweep, which remains the guarantee if the
+ * background task here is dropped.
+ *
+ * `waitUntil` rather than `await`: the redirect owes nothing to the outcome,
+ * and an owner reordering their squad must not wait on a mail provider.
+ */
+async function reconcileInviteOrder(
+  c: Context<AppEnv>,
+  db: Db,
+  gameId: string,
+  now: Date,
+): Promise<void> {
+  const open = await db
+    .select({ id: fixtures.id })
+    .from(fixtures)
+    .where(and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "open")));
+
+  for (const fixture of open) {
+    c.executionCtx.waitUntil(notifyReleasedSubs(c.env, fixture.id, now));
+  }
+}
+
+/**
  * Save the whole order and every member's tier in one submission.
  *
  * **Every tier id in the form is checked against this Game's own tiers**, and
@@ -741,6 +776,10 @@ gamesRoutes.post("/g/:id/invites", requirePlayer, async (c) => {
   // tuple, and the length check above is what actually guarantees it.
   if (statements.length > 0) {
     await db.batch(statements as [typeof statements[number], ...typeof statements]);
+    // Only when something actually moved. A save that changed nothing owes no
+    // reconcile, and firing one anyway would put a background task and its
+    // reads behind every idle press of the button.
+    await reconcileInviteOrder(c, db, game.id, new Date(Date.now()));
   }
 
   return c.redirect(inviteOrderPath(game.id), 303);
@@ -823,6 +862,14 @@ gamesRoutes.post("/g/:id/invites/tier/:tierId/delete", requirePlayer, async (c) 
       .where(and(eq(memberships.gameId, game.id), eq(memberships.inviteTierId, tier.id))),
     db.delete(inviteTiers).where(eq(inviteTiers.id, tier.id)),
   ]);
+
+  // Deleting a group drops its members into the implicit final tier, which on
+  // a fixture whose order has fully run is already released — so this can
+  // release people, and must reconcile for the same reason the save above
+  // does. Adding a group cannot: a new tier is created empty at the end,
+  // carries no stamps, and `releaseNext` steps over an empty tier, so there is
+  // deliberately no such call on that route.
+  await reconcileInviteOrder(c, db, game.id, new Date(Date.now()));
 
   return c.redirect(inviteOrderPath(game.id), 303);
 });

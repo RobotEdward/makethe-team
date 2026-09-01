@@ -478,3 +478,156 @@ describe("a fixture whose invitations went out before gating was switched on", (
     expect(html).not.toContain("Invite progress");
   });
 });
+
+/**
+ * M44. Saving the order releases people, and since BR-40a releasing somebody
+ * is what takes them off the waitlist — so the save has to reconcile, not
+ * leave an owner watching a page that appears to have done nothing for an
+ * hour until the sweep catches up.
+ */
+describe("saving the invite order promotes whoever it releases", () => {
+  /**
+   * A gated game whose order has fully run, plus one late joiner sitting in
+   * the implicit tier, unstamped and waitlisted — the shape a returning
+   * regular lands in when they rejoin an open fixture (BR-2′).
+   */
+  async function withAWaitingLateJoiner(
+    opts: { maxPlayers?: number; implicitAlreadyAsked?: boolean } = {},
+  ) {
+    const { cookie, ownerId, gameId } = await ownedGatedGame();
+    const regulars = await insertInviteTier(db, gameId, { name: "Regulars", position: 1 });
+    await db.update(memberships).set({ inviteTierId: regulars })
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, ownerId)));
+
+    // A stamped member left in the implicit final tier, which is what makes
+    // that tier *released* — without one it holds only the unstamped joiner
+    // and reads as never asked, so dropping somebody into it releases nobody.
+    if (opts.implicitAlreadyAsked === true) {
+      const asked = await insertPlayer(db, { name: "Asked Already", email: "asked@example.com" });
+      await insertMembership(db, gameId, asked, { role: "player" });
+    }
+
+    const joinerId = await insertPlayer(db, { name: "Dave Field", email: "dave@example.com" });
+    await insertMembership(db, gameId, joinerId, { role: "player" });
+
+    const fixtureId = await insertFixture(db, gameId, {
+      kicksOffAt: kickoffIn(30),
+      minPlayers: 1,
+      maxPlayers: opts.maxPlayers ?? 16,
+    });
+    await openFixture(db, fixtureId, NOW);
+    // The order has run: everyone present at the time was stamped.
+    await db.update(responses).set({ invitedAt: NOW }).where(eq(responses.fixtureId, fixtureId));
+    // The joiner arrives afterwards, unstamped, and volunteers — BR-40a puts
+    // them on the waitlist even though the fixture is nearly empty.
+    await db.update(responses).set({ invitedAt: null })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, joinerId)));
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId: joinerId, intent: "in", actorPlayerId: null,
+      source: "web", now: NOW.getTime(), whenFull: "waitlist",
+    });
+
+    return { cookie, gameId, fixtureId, joinerId, regulars };
+  }
+
+  const rowFor = async (fixtureId: string, playerId: string) => {
+    const [row] = await db.select().from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, playerId)));
+    return row;
+  };
+
+  /**
+   * The reconcile is handed to `waitUntil`, so it is not done when the
+   * redirect arrives — the same polling this file's manual-release test uses,
+   * and for the same reason.
+   */
+  async function settle(check: () => Promise<boolean>, timeoutMs = 3000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!(await check()) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  /** Drain the sends so none lands after the next test's reset. */
+  async function drainSends(timeoutMs = 3000): Promise<void> {
+    await settle(async () => {
+      const log = await db.select().from(notificationLog);
+      return !log.some((entry) => entry.status === "queued");
+    }, timeoutMs);
+  }
+
+  it("puts a released member into a free slot on save, without a sweep", async () => {
+    const { cookie, gameId, fixtureId, joinerId, regulars } = await withAWaitingLateJoiner();
+    expect((await rowFor(fixtureId, joinerId))?.status).toBe("waitlisted");
+
+    const response = await appPost(`/g/${gameId}/invites`, { [`tier-${joinerId}`]: regulars }, cookie);
+
+    expect(response.status).toBe(303);
+    await settle(async () => (await rowFor(fixtureId, joinerId))?.status === "in");
+
+    const row = await rowFor(fixtureId, joinerId);
+    expect(row?.status).toBe("in");
+    expect(row?.invitedAt).not.toBeNull();
+    expect(row?.waitlistPosition).toBeNull();
+    await drainSends();
+  });
+
+  it("leaves them waiting when the fixture has no room", async () => {
+    // Released, so stamped — but a full fixture has nothing to promote them
+    // into, and BR-8 says only an owner may push a fixture past its limit.
+    const { cookie, gameId, fixtureId, joinerId, regulars } = await withAWaitingLateJoiner({
+      maxPlayers: 1,
+    });
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId: (await db.select().from(memberships)
+        .where(and(eq(memberships.gameId, gameId), eq(memberships.role, "owner"))))[0]!.playerId,
+      intent: "in", actorPlayerId: null, source: "web", now: NOW.getTime(), whenFull: "waitlist",
+    });
+
+    await appPost(`/g/${gameId}/invites`, { [`tier-${joinerId}`]: regulars }, cookie);
+    // The release still happens — it is only the promotion that cannot. Waiting
+    // on the stamp is what makes the status assertion below meaningful rather
+    // than a race the reconcile simply had not reached yet.
+    await settle(async () => (await rowFor(fixtureId, joinerId))?.invitedAt !== null);
+
+    const row = await rowFor(fixtureId, joinerId);
+    expect(row?.invitedAt).not.toBeNull();
+    expect(row?.status).toBe("waitlisted");
+    await drainSends();
+  });
+
+  it("reconciles when a group is deleted and its members drop to the implicit tier", async () => {
+    const { cookie, gameId, fixtureId, joinerId } = await withAWaitingLateJoiner({
+      implicitAlreadyAsked: true,
+    });
+    // Park the joiner in a group of their own, then delete it.
+    const standby = await insertInviteTier(db, gameId, { name: "Standby", position: 2 });
+    await appPost(`/g/${gameId}/invites`, { [`tier-${joinerId}`]: standby }, cookie);
+
+    await appPost(`/g/${gameId}/invites/tier/${standby}/delete`, {}, cookie);
+    await settle(async () => (await rowFor(fixtureId, joinerId))?.status === "in");
+
+    expect((await rowFor(fixtureId, joinerId))?.status).toBe("in");
+    await drainSends();
+  });
+
+  it("does nothing of the sort in an ungated game (BR-39)", async () => {
+    // No order, nothing to release, and the member was never gated in the
+    // first place — a reconcile here must not invent a promotion.
+    const { cookie } = await signIn();
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    const gameId = await insertGame(db, { gatedInvitesEnabled: false });
+    await insertMembership(db, gameId, viewer!.id, { role: "owner" });
+    const tier = await insertInviteTier(db, gameId, { name: "Regulars", position: 1 });
+    const fixtureId = await insertFixture(db, gameId, { kicksOffAt: kickoffIn(30), minPlayers: 1 });
+    await openFixture(db, fixtureId, NOW);
+
+    const response = await appPost(`/g/${gameId}/invites`, { [`tier-${viewer!.id}`]: tier }, cookie);
+
+    expect(response.status).toBe(303);
+    // Nothing to wait for, which is the assertion: drain whatever the request
+    // did start, and the stamp must still be absent afterwards.
+    await drainSends();
+    expect((await rowFor(fixtureId, viewer!.id))?.invitedAt).toBeNull();
+  });
+});
