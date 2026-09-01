@@ -197,3 +197,87 @@ describe("switching gating on after a fixture has already been mailed", () => {
     expect((await emailedN1(fixtureId)).sort()).toEqual(["q-0", "q-1"]);
   });
 });
+
+/**
+ * The production defect of 1 September 2026, reproduced.
+ *
+ * A returning regular rejoined an open gated fixture, volunteered, and BR-40a
+ * put him on the waitlist. The next sweep tick released his tier, promoted him
+ * into a free slot and mailed him "You're in." — and then, four seconds later,
+ * mailed him "Can you play?".
+ *
+ * M43 made `claimInviteReleases` return the promoted and the newly invited as
+ * disjoint lists so this could not happen. It closed the defect on one path
+ * only: `sendDueReminders` runs next in the same tick and re-derives its own
+ * audience from `invited_at`, where it found a player it had just promoted and
+ * had no `n1` row for.
+ */
+describe("a player promoted by a release is never then asked to play", () => {
+  async function emailedOfType(fixtureId: string, type: "n1" | "n2"): Promise<string[]> {
+    const rows = await db.select().from(notificationLog).where(eq(notificationLog.fixtureId, fixtureId));
+    return rows.filter((row) => row.notificationType === type).map((row) => row.playerId);
+  }
+
+  it("sends the N-2 and not the N-1 on the tick that promotes them", async () => {
+    const { fixtureId } = await dueGatedGame(3, 1);
+    await openAndRemind(db, notifier, NOW, SECRET, env.FIXTURE_CAPACITY);
+
+    // The sub volunteers before being asked — held on the waitlist by BR-40a.
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId: "p-3", intent: "in", actorPlayerId: null,
+      source: "web", now: NOW.getTime(), whenFull: "waitlist",
+    });
+    expect(
+      (await db.select().from(responses).where(eq(responses.playerId, "p-3")))[0]?.status,
+    ).toBe("waitlisted");
+
+    // A core member drops out, so the next tick owes the subs tier.
+    await db.update(responses).set({ status: "out", respondedAt: NOW })
+      .where(eq(responses.playerId, "p-0"));
+
+    await openAndRemind(db, notifier, new Date("2026-08-24T10:30:00Z"), SECRET, env.FIXTURE_CAPACITY);
+
+    const row = (await db.select().from(responses).where(eq(responses.playerId, "p-3")))[0];
+    expect(row?.status).toBe("in");
+    expect(await emailedOfType(fixtureId, "n2")).toContain("p-3");
+    // The whole point. Before this fix p-3 appeared in both lists.
+    expect(await emailedOfType(fixtureId, "n1")).not.toContain("p-3");
+  });
+
+  it("still asks a released player who was not promoted", async () => {
+    // The control: same release, same tick, but this sub never volunteered,
+    // so there is nothing they have been told and the N-1 is exactly right.
+    const { fixtureId } = await dueGatedGame(3, 1);
+    await openAndRemind(db, notifier, NOW, SECRET, env.FIXTURE_CAPACITY);
+    await db.update(responses).set({ status: "out", respondedAt: NOW })
+      .where(eq(responses.playerId, "p-0"));
+
+    await openAndRemind(db, notifier, new Date("2026-08-24T10:30:00Z"), SECRET, env.FIXTURE_CAPACITY);
+
+    expect(await emailedOfType(fixtureId, "n1")).toContain("p-3");
+    expect(await emailedOfType(fixtureId, "n2")).not.toContain("p-3");
+  });
+
+  it("asks a promoted player whose N-2 the daily ceiling refused", async () => {
+    // A ceiling refusal deletes the N-2's log row, so nobody ever told them
+    // they were in. Keying the guard on the row rather than on `status`
+    // is what keeps the N-1 flowing to them — a status check would silence
+    // both messages and leave the player hearing nothing at all.
+    const { fixtureId } = await dueGatedGame(3, 1);
+    await openAndRemind(db, notifier, NOW, SECRET, env.FIXTURE_CAPACITY);
+    await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+      playerId: "p-3", intent: "in", actorPlayerId: null,
+      source: "web", now: NOW.getTime(), whenFull: "waitlist",
+    });
+    await db.update(responses).set({ status: "out", respondedAt: NOW })
+      .where(eq(responses.playerId, "p-0"));
+    await openAndRemind(db, notifier, new Date("2026-08-24T10:30:00Z"), SECRET, env.FIXTURE_CAPACITY);
+
+    // Exactly what `applySendResult` does to a ceiling-refused N-2.
+    await db.delete(notificationLog).where(eq(notificationLog.notificationType, "n2"));
+
+    await openAndRemind(db, notifier, new Date("2026-08-24T11:30:00Z"), SECRET, env.FIXTURE_CAPACITY);
+
+    expect(await emailedOfType(fixtureId, "n1")).toContain("p-3");
+  });
+});

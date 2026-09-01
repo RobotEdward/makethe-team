@@ -1,5 +1,6 @@
+import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import type { fixtures, games } from "../db/schema.js";
+import { notificationLog, type fixtures, type games } from "../db/schema.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
 import { pushKey, reminderKey } from "./dedupe-key.js";
@@ -64,9 +65,33 @@ export async function buildReminderMessages(params: {
     candidates.map((candidate) => candidate.playerId),
   );
 
+  const alreadyIn = await playersAlreadyToldTheyAreIn(db, fixture.id);
+
   const pending: PendingNotification[] = [];
   const skippedPlayerIds: string[] = [];
   for (const candidate of candidates) {
+    // The N-1 asks "can you play?". A player who has been told they are in
+    // has already been given the answer, and asking anyway contradicts the
+    // message they are still looking at.
+    //
+    // **Here, rather than in the sweep that found this.** Two senders build
+    // the N-1 and each picks its own audience, so a guard at one call site is
+    // a guard the other does not have — which is exactly how this arrived:
+    // M43 made `claimInviteReleases` return the promoted and the newly
+    // invited as disjoint lists, and the sweep then re-derived its audience
+    // from `invited_at` and mailed a player it had promoted four seconds
+    // earlier.
+    //
+    // Keyed on the log row, not on `status === "in"`, and that distinction is
+    // load-bearing in two directions. A ceiling refusal *deletes* the N-2's
+    // row (`applySendResult`), so a player who was promoted but never
+    // actually told has no row here and still gets the N-1 — which is the
+    // right outcome, and the one a status check would get wrong. And an early
+    // volunteer who is `in` without ever having been promoted keeps receiving
+    // the reminder exactly as they always have, in gated and ungated Games
+    // alike; narrowing that is a separate product question, not this fix.
+    if (alreadyIn.has(candidate.playerId)) continue;
+
     const token = await signResponseToken(
       { playerId: candidate.playerId, fixtureId: fixture.id, expiresAt },
       responseTokenSecret,
@@ -153,4 +178,22 @@ export async function buildReminderMessages(params: {
     if (!builtSomething) skippedPlayerIds.push(candidate.playerId);
   }
   return { pending, skippedPlayerIds };
+}
+
+/**
+ * Players already told they hold a slot on this fixture — anyone with an `n2`
+ * row for it (BR-7's promotion, or BR-40a's release off the waitlist).
+ *
+ * Any channel, unlike `existingReminderLog`'s deliberate `email` filter. The
+ * question here is "have they been told they are in", and a push that told
+ * them counts; there is no retry to mask, because nothing re-sends an N-2.
+ */
+async function playersAlreadyToldTheyAreIn(db: Db, fixtureId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ playerId: notificationLog.playerId })
+    .from(notificationLog)
+    .where(
+      and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n2")),
+    );
+  return new Set(rows.map((row) => row.playerId));
 }
