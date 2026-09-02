@@ -1177,6 +1177,8 @@ describe("the capacity bar", () => {
     expect(ownerHtml).toContain(".capacity .track");
 
     const playerHtml = renderPlayerGamePage({
+      // No played fixtures here, so no standings (M49).
+      standings: [],
       nav: { isAdmin: false, current: "games" } as const,
       mute: {
         muteAction: "/g/g-1/mute",

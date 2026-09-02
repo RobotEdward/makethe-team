@@ -18,7 +18,9 @@ import { SITE_ORIGIN } from "../notify/delivery.js";
 import { fixtureStatusWords } from "./fixture.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { qrSvg } from "./qr.js";
+import type { LeagueRow } from "../domain/league-table.js";
 import { renderFreshness } from "./freshness.js";
+import { renderStandingsSection } from "./league-table.js";
 import { renderSquadSignals } from "./squad-signals.js";
 import { COPY_BUTTON_JS, FRESHNESS_JS } from "./scripts.js";
 import {
@@ -26,6 +28,7 @@ import {
   FORM_CSS,
   FRESHNESS_CSS,
   INVITE_CSS,
+  LEAGUE_CSS,
   MUTE_CSS,
   RESULT_CSS,
   SQUAD_SIGNALS_CSS,
@@ -33,6 +36,12 @@ import {
 } from "./styles.js";
 
 export interface GameOverviewParams {
+  /**
+   * The squad's league table (M49). Never `null` for this page — an organiser
+   * always sees their own squad — but typed as `standingsForViewer` returns so
+   * the two game pages hand the same shape to the same renderer.
+   */
+  standings: readonly LeagueRow[] | null;
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
   gameId: string;
@@ -213,6 +222,8 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     <h2>Squad (${squad.length})</h2>
     <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>
 
+    ${renderStandingsSection(params.standings, params.viewerPlayerId)}
+
     ${params.archivedOn !== null ? "" : `<div class="card">
       <h2>Invite people</h2>
       <p>Share this link in your group chat, or let people scan the code.</p>
@@ -277,6 +288,9 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       FRESHNESS_CSS,
       MUTE_CSS,
       SQUAD_SIGNALS_CSS,
+      // All-new selectors namespaced under `.league` (M49), so its position
+      // at the end of this list changes nothing already on the page.
+      LEAGUE_CSS,
     ],
     pageScripts: [COPY_BUTTON_JS, FRESHNESS_JS],
   });

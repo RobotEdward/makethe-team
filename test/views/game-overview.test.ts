@@ -16,6 +16,8 @@ const REACHABLE: SquadSignals = {
 };
 
 const BASE = {
+  // No played fixtures in these fixtures, so no standings (M49).
+  standings: [],
   nav: { isAdmin: false, current: "games" } as const,
   gameId: "g-1",
   gameName: "Thursday 7-a-side",

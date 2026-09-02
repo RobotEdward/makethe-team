@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { squadForViewer } from "../../src/domain/squad-visibility.js";
+import { squadForViewer, standingsForViewer } from "../../src/domain/squad-visibility.js";
 import type { SquadMember } from "../../src/db/queries.js";
 
 const SQUAD: SquadMember[] = [
@@ -31,5 +31,28 @@ describe("squadForViewer", () => {
 
   it("gives an owner an empty squad as an empty list, not null", () => {
     expect(squadForViewer({ squadVisibleToPlayers: true }, [], { isOwner: false })).toEqual([]);
+  });
+});
+
+describe("standingsForViewer", () => {
+  const table = [{ playerId: "p-1" }];
+
+  it("shows the organiser the standings whatever the setting says", () => {
+    expect(
+      standingsForViewer({ squadVisibleToPlayers: false }, table, { isOwner: true }),
+    ).toBe(table);
+  });
+
+  it("shows a player the standings when their game shows them the squad", () => {
+    expect(
+      standingsForViewer({ squadVisibleToPlayers: true }, table, { isOwner: false }),
+    ).toBe(table);
+  });
+
+  it("shows a player nothing when the squad is hidden from them", () => {
+    // Null, not an empty table: an empty one renders as "nobody has played".
+    expect(
+      standingsForViewer({ squadVisibleToPlayers: false }, table, { isOwner: false }),
+    ).toBeNull();
   });
 });

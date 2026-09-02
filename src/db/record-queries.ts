@@ -1,7 +1,8 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "./client.js";
+import type { LeagueTally } from "../domain/league-table.js";
 import type { PlayerRecord } from "../domain/record.js";
-import { fixtureResults, fixtures, games, responses } from "./schema.js";
+import { fixtureResults, fixtures, games, memberships, players, responses } from "./schema.js";
 
 /** One game's line of the viewer's playing record (M48). */
 export interface GameRecord extends PlayerRecord {
@@ -87,4 +88,72 @@ export async function playerRecordByGame(db: Db, playerId: string): Promise<Game
     // SQLite is free to order equal counts however it likes and a table whose
     // rows swapped places between reloads would read as a bug.
     .orderBy(sql`count(*) desc, ${games.name} asc, ${games.id} asc`);
+}
+
+/**
+ * Every current squad member's raw playing counts in one game, ungrouped by
+ * anything but the player (M49) — the standings before they are standings.
+ *
+ * Reads `fixture_results` for the reasons `playerRecordByGame` gives above,
+ * which apply harder here: this aggregates a whole squad's history at once, so
+ * deriving from claims would mean every claim on every fixture the game has
+ * ever played, not just one viewer's.
+ *
+ * Who gets a row is decided entirely by the joins, so no caller can widen it:
+ * `memberships.active` keeps it to the current squad, `players.is_guest`
+ * excludes the one-off guests who occupy a slot but are not part of the
+ * standing squad, and grouping over `played` fixtures the player was `in` for
+ * means a member who has never turned out simply has no rows — no zero line to
+ * filter out afterwards, and no way to accidentally keep one.
+ *
+ * **Goals come from the player's own side of the scoreline**, which is why
+ * this cannot be `scoreA`/`scoreB` summed directly: a 3-1 is three for and one
+ * against to the side that won it, and the reverse to the other. Both are
+ * `null` unless a score was actually agreed, so a result recorded as "outcome
+ * agreed, score not" contributes to `won` and to neither goal column — the
+ * asymmetry `LeagueTally` documents and the page captions.
+ *
+ * Returns the counts and the erasure date, never a display name: what to call
+ * an erased player is §4's business and belongs to `displayName`, reached
+ * through `buildLeagueTable`. A query that returned a ready-made name would be
+ * a second place that decides, which is what §4 forbids.
+ *
+ * One statement, one row per member, whatever the length of the history.
+ */
+export async function squadLeagueTally(db: Db, gameId: string): Promise<LeagueTally[]> {
+  // Both `null` unless a score was agreed, so `coalesce` outside is what keeps
+  // an outcome-only result from turning the whole sum null.
+  const goalsFor = sql`case when ${responses.team} = 'a' then ${fixtureResults.scoreA} when ${responses.team} = 'b' then ${fixtureResults.scoreB} end`;
+  const goalsAgainst = sql`case when ${responses.team} = 'a' then ${fixtureResults.scoreB} when ${responses.team} = 'b' then ${fixtureResults.scoreA} end`;
+
+  return db
+    .select({
+      playerId: players.id,
+      name: players.name,
+      erasedAt: players.erasedAt,
+      played: sql<number>`count(*)`,
+      won: sql<number>`coalesce(sum(case when ${fixtureResults.outcome} = ${responses.team} then 1 else 0 end), 0)`,
+      lost: sql<number>`coalesce(sum(case when ${responses.team} is not null and ${fixtureResults.outcome} in ('a', 'b') and ${fixtureResults.outcome} <> ${responses.team} then 1 else 0 end), 0)`,
+      drawn: sql<number>`coalesce(sum(case when ${responses.team} is not null and ${fixtureResults.outcome} = 'draw' then 1 else 0 end), 0)`,
+      goalsFor: sql<number>`coalesce(sum(coalesce(${goalsFor}, 0)), 0)`,
+      goalsAgainst: sql<number>`coalesce(sum(coalesce(${goalsAgainst}, 0)), 0)`,
+    })
+    .from(responses)
+    .innerJoin(fixtures, eq(fixtures.id, responses.fixtureId))
+    .innerJoin(players, eq(players.id, responses.playerId))
+    .innerJoin(
+      memberships,
+      and(eq(memberships.gameId, fixtures.gameId), eq(memberships.playerId, responses.playerId)),
+    )
+    .leftJoin(fixtureResults, eq(fixtureResults.fixtureId, fixtures.id))
+    .where(
+      and(
+        eq(fixtures.gameId, gameId),
+        eq(fixtures.lifecycle, "played"),
+        eq(responses.status, "in"),
+        eq(memberships.active, true),
+        eq(players.isGuest, false),
+      ),
+    )
+    .groupBy(players.id);
 }

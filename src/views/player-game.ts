@@ -5,7 +5,9 @@ import type { FixtureView } from "../domain/fixture-view.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
+import type { LeagueRow } from "../domain/league-table.js";
 import { renderFreshness } from "./freshness.js";
+import { renderStandingsSection } from "./league-table.js";
 import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
@@ -14,6 +16,7 @@ import {
   FORM_CSS,
   FRESHNESS_CSS,
   INVITE_CSS,
+  LEAGUE_CSS,
   MUTE_CSS,
   RESULT_CSS,
   SQUAD_STYLES_CSS,
@@ -21,6 +24,11 @@ import {
 } from "./styles.js";
 
 export interface PlayerGameParams {
+  /**
+   * The squad's league table, or `null` when this game hides its squad from
+   * players (M49) — `standingsForViewer` decides, never this page.
+   */
+  standings: readonly LeagueRow[] | null;
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
   /**
@@ -151,6 +159,8 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     <h2>Coming up</h2>
     <ul class="fixtures">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>
 
+    ${renderStandingsSection(params.standings, viewerPlayerId)}
+
     <p><a href="${escapeHtml(gamePastFixturesPath(gameId))}">Games you've played</a></p>
 
     ${renderFreshness(gamePath(gameId))}
@@ -194,6 +204,8 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
       // All-new selectors (see the block's own comment), so its position at
       // the end of this list changes nothing already on the page.
       MUTE_CSS,
+      // Likewise: every selector namespaced under `.league` (M49).
+      LEAGUE_CSS,
     ],
     pageScripts: [FRESHNESS_JS],
   });

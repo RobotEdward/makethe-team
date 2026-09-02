@@ -1403,6 +1403,53 @@ export const RECORD_CSS = `
   .record-note { color: var(--mut); font-size: var(--t-support); margin: -0.75rem 0 1.25rem; }
 `;
 
+/**
+ * The squad's "Standings" league table (M49), on both game pages.
+ *
+ * Eight columns is wider than `RECORD_CSS`'s six, and a player's name is
+ * unbounded, so this one really can outgrow 390px — hence `.league-scroll`.
+ * The scroll happens inside that wrapper and never on `body`, which is the
+ * only property that matters: a page that slides sideways under a thumb is
+ * broken, a table that does is a table.
+ *
+ * `position: sticky` on the player column keeps the name beside the numbers
+ * when it does scroll. Without it, scrolling to Pts leaves eight anonymous
+ * figures.
+ *
+ * Every selector is namespaced under `.league`, so this block collides with
+ * nothing and its position in `PAGE_STYLE_BLOCKS` is not load-bearing.
+ */
+export const LEAGUE_CSS = `
+  .league-scroll { overflow-x: auto; margin-bottom: 0.75rem; }
+  table.league { border-collapse: collapse; width: 100%; font-size: var(--t-body); }
+  table.league th, table.league td {
+    padding: 0.5rem 0.25rem;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+    white-space: nowrap;
+  }
+  table.league thead th { color: var(--mut); font-weight: normal; }
+  table.league thead abbr { text-decoration: none; cursor: help; }
+  table.league .league-player {
+    text-align: left;
+    position: sticky;
+    left: 0;
+    background: var(--bg);
+    padding-left: 0;
+  }
+  .league-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The cap is only for screens that need it. Uncapped at 390px, one long name
+     pushed Points off the right edge behind a scroll nobody would think to
+     try; capped everywhere, a name was clipped on a desktop with 300px going
+     spare. The title attribute on the span carries the whole name either way. */
+  @media (max-width: 40rem) {
+    .league-name { max-width: 8.5rem; }
+  }
+  table.league tbody tr.you { font-weight: 600; }
+  table.league tbody tr.you .league-player { background: var(--bg); }
+  .league-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -1429,6 +1476,7 @@ export const PAGE_STYLE_BLOCKS = [
   ADMIN_NOTIFICATIONS_CSS,
   TIMELINE_CSS,
   RECORD_CSS,
+  LEAGUE_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

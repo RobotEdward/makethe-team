@@ -79,7 +79,7 @@ import {
   type TeamId,
 } from "../domain/teams.js";
 import { formatLocalDate, formatLocalDateTime, formatLocalShortDate } from "../domain/time/zone.js";
-import { squadForViewer } from "../domain/squad-visibility.js";
+import { squadForViewer, standingsForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
@@ -91,6 +91,8 @@ import { sendRemovedEmail } from "../notify/send-removed.js";
 import { sendTeamsEmails } from "../notify/send-teams.js";
 import { ownerNotificationRows, renderGameFormPage } from "../views/game-form.js";
 import { renderNotFoundPage } from "../views/not-found.js";
+import { buildLeagueTable } from "../domain/league-table.js";
+import { squadLeagueTally } from "../db/record-queries.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
 import { renderPickerPage } from "../views/picker-page.js";
@@ -291,10 +293,11 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
 
 
 
-  const [squad, upcoming, lastResult] = await Promise.all([
+  const [squad, upcoming, lastResult, tally] = await Promise.all([
     squadForOverview(db, game.id, now),
     listUpcomingFixtures(db, game.id, now),
     lastResultFor(db, game, now),
+    squadLeagueTally(db, game.id),
   ]);
 
   return c.html(
@@ -313,6 +316,10 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
       upcoming,
       viewerPlayerId: player.id,
       lastResult,
+      // Through `standingsForViewer` even here, where an organiser always
+      // passes it: the gate belongs to that module (M49), and a page that
+      // handed the table straight through would be a second place deciding.
+      standings: standingsForViewer(game, buildLeagueTable(tally), { isOwner: true }),
       broadcastNotice: broadcastNoticeFrom(c),
     }),
   );
@@ -444,11 +451,12 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
   // `listOpenFixtureIds` returns them kickoff-ordered; a game has at most one
   // open fixture at a time in practice, but the first is the right answer
   // either way.
-  const [openFixtureIds, upcoming, lastResult, mute] = await Promise.all([
+  const [openFixtureIds, upcoming, lastResult, mute, tally] = await Promise.all([
     listOpenFixtureIds(db, game.id),
     listUpcomingFixtures(db, game.id, now),
     lastResultFor(db, game, now),
     muteStateFor(db, game.id, viewerPlayerId, now),
+    squadLeagueTally(db, game.id),
   ]);
 
   let openFixture: NonNullable<Parameters<typeof renderPlayerGamePage>[0]["openFixture"]> | null = null;
@@ -503,6 +511,9 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
       lastResult,
       viewerPlayerId,
       mute: muteControlsFor(game, mute),
+      // The league table names every squad member, so it is gated exactly as
+      // the squad list above is (M49, BR-33) — same module, same question.
+      standings: standingsForViewer(game, buildLeagueTable(tally), { isOwner: false }),
     }),
   );
 }
@@ -2797,13 +2808,17 @@ async function renderSquadRefusal(
   const db = getDb(c.env.DB);
   const game = await findGameForOwner(db, gameId, c.get("player")!.id);
   if (game === null) return c.text("Not found", 404);
-  const [squad, upcoming, lastResult] = await Promise.all([
+  const [squad, upcoming, lastResult, tally] = await Promise.all([
     squadForOverview(db, game.id, now),
     listUpcomingFixtures(db, game.id, now),
     lastResultFor(db, game, now),
+    squadLeagueTally(db, game.id),
   ]);
   return c.html(
     renderGameOverviewPage({
+      // A refusal must show the page a normal load would, standings included
+      // — an owner who hit J6a's invariant should not also lose their table.
+      standings: standingsForViewer(game, buildLeagueTable(tally), { isOwner: true }),
       nav: pageNav(c, "games"),
       gameId: game.id,
       gameName: game.name,

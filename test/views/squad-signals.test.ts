@@ -23,6 +23,8 @@ const member = (signals: SquadSignals) => ({
 
 const page = (signals: SquadSignals) =>
   renderGameOverviewPage({
+      // No played fixtures here, so no standings (M49).
+      standings: [],
     nav: { isAdmin: false, current: "games" },
     gameId: "g-1",
     gameName: "Thursday 7-a-side",

@@ -164,7 +164,13 @@ export const STYLES = `
      browser cannot use it. This makes the attribute mean what it says. */
   [hidden] { display: none !important; }
   body {
-    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    /* An explicit minmax(0, 1fr) column, not the implicit auto track. An auto
+       track sizes to its item max-content, so a child that cannot shrink — a
+       nowrap table, M49 standings — grew main past the viewport and scrolled
+       the whole page sideways instead of scrolling inside its own wrapper. The
+       floor of 0 is what lets an overflowing child be clipped rather than
+       obeyed; nothing that already fits changes width. */
+    margin: 0; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center;
     padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
     font: var(--t-body)/1.6 "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
