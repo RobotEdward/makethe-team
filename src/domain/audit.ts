@@ -144,6 +144,12 @@ export const AUDIT_ACTIONS = [
   "fixture.response_overridden",
   // J6b. A one-off guest, added to and removed from a single fixture. Both
   // carry a real actor: only an owner can do either.
+  // M46. The owner inviting one player out of the invite order's turn. `after`
+  // carries `{ playerId }`. Distinct from a tier release, which invites a
+  // group and is derivable from the stamps; this one is not derivable from
+  // anything afterwards, because `responses.invited_individually` says a
+  // hand-invite happened but not who sent it or when.
+  "fixture.invited_individually",
   "fixture.guest_added",
   "fixture.guest_removed",
   // M7b (BR-34). The subject and the actor are always the same player: these

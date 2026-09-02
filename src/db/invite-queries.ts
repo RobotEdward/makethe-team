@@ -68,6 +68,7 @@ export async function loadInviteState(
       inviteTierId: memberships.inviteTierId,
       status: responses.status,
       invitedAt: responses.invitedAt,
+      invitedIndividually: responses.invitedIndividually,
     })
     .from(memberships)
     .leftJoin(
@@ -106,6 +107,10 @@ export async function loadInviteState(
       playerId: member.playerId,
       status: member.status ?? null,
       invitedAt: member.invitedAt ?? null,
+      // `?? false` covers the left join finding no row at all, where every
+      // column arrives null — a member with no stamp is not an individually
+      // invited one.
+      invitedIndividually: member.invitedIndividually ?? false,
     });
   }
 
@@ -150,6 +155,40 @@ export async function stampInvited(
     stamped.push(...updated.map((update) => update.playerId));
   }
   return stamped;
+}
+
+/**
+ * Stamp one player as invited by hand (M46, BR-41), returning whether this
+ * call is what stamped them.
+ *
+ * `isNull(responses.invitedAt)` is the same load-bearing guard `stampInvited`
+ * carries, for the same reason: the caller mails whoever this says it stamped,
+ * so a second press must come back false rather than send a real person a
+ * second invitation.
+ *
+ * `invited_individually` is set in the same statement as `invited_at`, never
+ * after it. D1 has no transaction spanning two writes, and a stamp that landed
+ * without its flag would read as a tier release — opening that tier and every
+ * tier above it on the next reconcile.
+ */
+export async function stampInvitedIndividually(
+  db: Db,
+  fixtureId: string,
+  playerId: string,
+  now: Date,
+): Promise<boolean> {
+  const updated = await db
+    .update(responses)
+    .set({ invitedAt: now, invitedIndividually: true })
+    .where(
+      and(
+        eq(responses.fixtureId, fixtureId),
+        eq(responses.playerId, playerId),
+        isNull(responses.invitedAt),
+      ),
+    )
+    .returning({ playerId: responses.playerId });
+  return updated.length > 0;
 }
 
 /** One member of a tier as the owner's two M34 screens list them. */

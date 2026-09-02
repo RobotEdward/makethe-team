@@ -218,6 +218,16 @@ export function openFixturePath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}/open`;
 }
 
+/**
+ * The owner's "invite now" button on one player's squad row (M46).
+ *
+ * Distinct from `inviteNextPath`, which releases a whole tier: this stamps
+ * exactly the named player and leaves their tier held.
+ */
+export function inviteMemberPath(gameId: string, fixtureId: string, playerId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/invite/player/${playerId}`;
+}
+
 /** The owner's "invite the next group now" button on a fixture (M34, BR-43). */
 export function inviteNextPath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}/invite/next`;

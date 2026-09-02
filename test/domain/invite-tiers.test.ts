@@ -6,18 +6,22 @@ const INVITED = new Date("2026-08-24T09:00:00Z");
 
 /**
  * A tier of members, written compactly: each string is a response status, `-`
- * for a member holding no live row, and a leading `*` for one already invited.
+ * for a member holding no live row, a leading `*` for one already invited by
+ * a tier release, and a leading `~` for one the owner invited on their own
+ * (M46) — invited either way, but only `*` releases the tier they sit in.
  */
 function tier(id: string | null, ...members: string[]): TierState {
   return {
     tierId: id,
     members: members.map((member, index) => {
-      const invited = member.startsWith("*");
+      const individually = member.startsWith("~");
+      const invited = individually || member.startsWith("*");
       const raw = invited ? member.slice(1) : member;
       return {
         playerId: `${id ?? "implicit"}-${index}`,
         status: raw === "-" ? null : (raw as ResponseStatus),
         invitedAt: invited ? INVITED : null,
+        invitedIndividually: individually,
       };
     }),
   };
@@ -333,5 +337,51 @@ describe("planReleases — degenerate shapes", () => {
     const plan = planReleases(input([tier(null)]));
 
     expect(plan).toEqual({ releasedCount: 1, toInvite: [] });
+  });
+});
+
+describe("an owner's one-off invite does not release the tier it lands in (M46)", () => {
+  it("leaves a tier held when its only stamp is an individual one", () => {
+    // A sub invited by hand is genuinely invited — they can answer, and the
+    // gate lets them in. But the release count is derived from the stamps,
+    // so counting this one would read tiers 1 and 2 as released and hand the
+    // next decline tier 3.
+    const plan = planReleases(
+      input([
+        tier("core", "*in", "*in"),
+        tier("subs", "~pending", "pending"),
+        tier(null),
+      ]),
+    );
+
+    expect(plan.releasedCount).toBe(1);
+    // And nobody else in that tier is invited on the back of it.
+    expect(plan.toInvite).toEqual([]);
+  });
+
+  it("still releases the tier when a real release stamp joins the individual one", () => {
+    // A full fixture, so nothing beyond the derivation moves the count.
+    const plan = planReleases(
+      input(
+        [tier("core", "*in", "*in"), tier("subs", "~pending", "*pending"), tier(null)],
+        { maxPlayers: 2 },
+      ),
+    );
+
+    expect(plan.releasedCount).toBe(2);
+  });
+
+  it("does not re-stamp the player the owner already invited", () => {
+    // Their tier releases for everyone else; `toInvite` naming them again
+    // would be a second invitation to somebody already holding one.
+    const plan = planReleases(
+      input(
+        [tier("core", "*out", "*out", "*out"), tier("subs", "~pending", "pending", "pending"), tier(null)],
+        { maxPlayers: 2 },
+      ),
+    );
+
+    expect(plan.releasedCount).toBe(2);
+    expect(plan.toInvite).toEqual(["subs-1", "subs-2"]);
   });
 });

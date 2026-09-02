@@ -12,6 +12,18 @@ export interface TierMember {
   status: ResponseStatus | null;
   /** Null until this player has been invited (BR-41). */
   invitedAt: Date | null;
+  /**
+   * True when that stamp came from the owner inviting this one player by hand
+   * (M46) rather than from their tier being released.
+   *
+   * The distinction exists because the release count is *derived* from the
+   * stamps: a tier reads as released once one of its members carries one.
+   * Without this flag, inviting a single sub out of order would read their
+   * whole tier — and every tier above it — as released, and the next decline
+   * would invite the tier below. The player is invited either way; what this
+   * says is that nobody else in their tier was.
+   */
+  invitedIndividually: boolean;
 }
 
 /** One rung of the invite order. `tierId` is null for the implicit final tier (BR-38). */
@@ -72,13 +84,20 @@ function occupiesASlot(status: ResponseStatus | null): boolean {
 export function planReleases(input: ReleaseInput): ReleasePlan {
   const { tiers, maxPlayers, minPlayers, guestInCount, fallbackDue, force } = input;
 
-  // A tier is released once any of its members carries a stamp. Derived from
-  // the *last* such tier rather than from the first gap, so an empty tier —
-  // one whose members have all left the squad — does not read as a break in
-  // the sequence and stall every tier behind it.
+  // A tier is released once any of its members carries a stamp *that a release
+  // put there*. Derived from the *last* such tier rather than from the first
+  // gap, so an empty tier — one whose members have all left the squad — does
+  // not read as a break in the sequence and stall every tier behind it.
+  //
+  // `invitedIndividually` is excluded deliberately (M46): the owner inviting
+  // one sub by hand invites exactly that person, and reading it as a release
+  // would open their whole tier and every tier above it.
   let releasedCount = 0;
   tiers.forEach((tier, index) => {
-    if (tier.members.some((member) => member.invitedAt !== null)) releasedCount = index + 1;
+    const released = tier.members.some(
+      (member) => member.invitedAt !== null && !member.invitedIndividually,
+    );
+    if (released) releasedCount = index + 1;
   });
 
   const measure = (count: number): { potential: number; shortfall: number } => {

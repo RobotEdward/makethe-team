@@ -1,0 +1,1 @@
+ALTER TABLE `responses` ADD `invited_individually` integer DEFAULT false NOT NULL;

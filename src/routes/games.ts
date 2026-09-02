@@ -82,6 +82,7 @@ import { countFixturesByPropagation, updateGame } from "../domain/update-game.js
 import type { AppEnv } from "../env.js";
 import { recordCeilingDeferral } from "../notify/ceiling-audit.js";
 import { createNotifier } from "../notify/factory.js";
+import { sendLateInvitations } from "../notify/send-late-invitations.js";
 import { loadNotificationSettings, saveOwnerNotificationSettings } from "../notify/notification-settings.js";
 import { sendPickerHandover } from "../notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
@@ -1855,6 +1856,79 @@ gamesRoutes.post("/g/:id/f/:fixtureId/invite/next", requirePlayer, async (c) => 
 
   const now = new Date(Date.now());
   c.executionCtx.waitUntil(notifyReleasedSubs(c.env, target.fixture.id, now, { force: true }));
+
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+});
+
+/**
+ * The owner's "invite now" button on one player's row (M46).
+ *
+ * The single-player counterpart to `invite/next`, and deliberately not built
+ * on it: releasing a tier to reach one sub asks everybody else in that tier
+ * too, and the case this exists for is the organiser who wants one specific
+ * person and not the four behind them.
+ *
+ * Registered **before** `/invite/next` cannot matter — the paths differ past
+ * the third segment — but the two must stay distinguishable to a reader, so
+ * the player id sits under `/invite/player/` rather than directly under
+ * `/invite/`.
+ *
+ * The send mirrors the release path: an `n1` on the same dedupe key through
+ * `sendLateInvitations`, so the sweep's own reminder later skips this player
+ * rather than mailing them twice (BR-18). A player the stamp *promoted* off
+ * the gate waitlist gets the N-2 instead — they answered this question days
+ * ago and an N-1 would contradict the answer.
+ */
+gamesRoutes.post("/g/:id/f/:fixtureId/invite/player/:playerId", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const playerId = c.req.param("playerId");
+  const now = new Date(Date.now());
+
+  const outcome = await c.env.FIXTURE_CAPACITY.getByName(target.fixture.id).inviteIndividually({
+    playerId,
+    now: now.getTime(),
+  });
+
+  if (outcome.kind === "invited" && outcome.stamped) {
+    await recordAudit(target.db, {
+      actorPlayerId: c.get("player")!.id,
+      entityType: "fixture",
+      entityId: target.fixture.id,
+      action: "fixture.invited_individually",
+      after: { playerId },
+      now,
+    });
+  }
+
+  if (outcome.kind === "invited") {
+    const env = c.env;
+    const promoted = outcome.promoted;
+    const owed = outcome.owedInvitation;
+    c.executionCtx.waitUntil(
+      (async () => {
+        // Sequential, not concurrent: every send passes through the same daily
+        // ceiling (TR-31), and firing them together is how a batch races
+        // itself past it.
+        for (const promotion of promoted) {
+          await notifyPromotedPlayer(env, target.fixture.id, promotion, now);
+        }
+        if (!owed) return;
+        const db = getDb(env.DB);
+        await sendLateInvitations({
+          db,
+          notifier: createNotifier(env, db, now),
+          playerId,
+          fixtureIds: [target.fixture.id],
+          responseTokenSecret: env.RESPONSE_TOKEN_SECRET,
+          now,
+        });
+      })(),
+    );
+  }
 
   return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });

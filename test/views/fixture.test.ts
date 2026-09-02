@@ -28,6 +28,7 @@ const BASE = {
       erasedAt: null,
       status: "in" as const,
       team: null, waitlistRank: null,
+      invitedAt: null,
       setBy: null,
       source: "token" as const,
       isGuest: false,
@@ -38,6 +39,7 @@ const BASE = {
       erasedAt: null,
       status: "pending" as const,
       team: null, waitlistRank: null,
+      invitedAt: null,
       setBy: null,
       source: "token" as const,
       isGuest: false,
@@ -72,6 +74,7 @@ function member(
     erasedAt: null,
     team: null,
     waitlistRank: null,
+    invitedAt: null,
     setBy: null,
     source: "token",
     isGuest: false,
@@ -143,6 +146,7 @@ describe("fixture page", () => {
       squad: [
         {
           playerId: "x",
+          invitedAt: null,
           name: '<script>alert("x")</script>',
           erasedAt: null,
           status: "in",
@@ -363,6 +367,7 @@ describe("fixture page", () => {
       squad: [
         {
           playerId: "p-1",
+          invitedAt: null,
           name: "Priya Raman",
           erasedAt: null,
           status: "in",
@@ -394,6 +399,7 @@ describe("fixture page", () => {
       squad: [
         {
           playerId: "p-1",
+          invitedAt: null,
           name: "[erased player]",
           erasedAt,
           status: "in",
@@ -404,6 +410,7 @@ describe("fixture page", () => {
         },
         {
           playerId: "p-2",
+          invitedAt: null,
           name: "Priya Raman",
           erasedAt: null,
           status: "in",
@@ -426,6 +433,7 @@ describe("fixture page", () => {
       squad: [
         {
           playerId: "p-1",
+          invitedAt: null,
           name: "Priya Raman",
           erasedAt: null,
           status: "in",
@@ -446,6 +454,7 @@ describe("fixture page", () => {
       squad: [
         {
           playerId: "p-1",
+          invitedAt: null,
           name: "Priya Raman",
           erasedAt: null,
           status: "waitlisted",
@@ -467,6 +476,7 @@ describe("fixture page", () => {
       squad: [
         {
           playerId: "p-1",
+          invitedAt: null,
           name: "Priya Raman",
           erasedAt: null,
           status: "out",
@@ -487,6 +497,7 @@ describe("fixture page", () => {
       squad: [
         {
           playerId: "p-1",
+          invitedAt: null,
           name: "Priya Raman",
           erasedAt: null,
           status: "in",
@@ -514,7 +525,7 @@ describe("fixture page", () => {
   it("lists the squad when the game allows it", () => {
     const html = renderFixturePage(optionsWith({
       squad: [{ playerId: "p-1", name: "Priya Raman", erasedAt: null, status: "in", team: null, waitlistRank: null,
-                setBy: null, source: "token", isGuest: false }],
+                setBy: null, source: "token", isGuest: false, invitedAt: null }],
       inCount: 1,
     }));
 
@@ -733,7 +744,7 @@ describe("fixture page", () => {
         view: { status: "open", flags: [], inCount: 9, minPlayers: 10, maxPlayers: 14, spotsLeft: 5, needsOwnerAttention: false },
         squad: [
           { playerId: "p-1", name: "Ada", erasedAt: null, status: "in", team: null, waitlistRank: null,
-            setBy: null, source: "token", isGuest: false },
+            setBy: null, source: "token", isGuest: false, invitedAt: null },
         ],
         viewerPlayerId: "p-1",
         teamNames: { a: "Reds", b: "Blues" },
@@ -837,9 +848,9 @@ describe("fixture page — published teams (BR-35 §5)", () => {
 
   const PICKED = [
     { playerId: "p1", name: "Edward Cooper", erasedAt: null, status: "in" as const, team: "a" as const,
-      waitlistRank: null, setBy: null, source: "token" as const, isGuest: false },
+      waitlistRank: null, setBy: null, source: "token" as const, isGuest: false, invitedAt: null },
     { playerId: "p2", name: "Sam Okonjo", erasedAt: null, status: "in" as const, team: "b" as const,
-      waitlistRank: null, setBy: null, source: "token" as const, isGuest: false },
+      waitlistRank: null, setBy: null, source: "token" as const, isGuest: false, invitedAt: null },
   ];
 
   it("says nothing about teams when nothing has been published", () => {
@@ -1150,7 +1161,7 @@ describe("the capacity bar", () => {
       ),
       squad: [
         { playerId: "p-1", name: "Ada", erasedAt: null, status: "in", team: null, waitlistRank: null,
-          setBy: null, source: "token", isGuest: false },
+          setBy: null, source: "token", isGuest: false, invitedAt: null },
       ],
       viewerPlayerId: "p-1",
       teamNames: { a: "Reds", b: "Blues" },

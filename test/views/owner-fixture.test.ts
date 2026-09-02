@@ -40,6 +40,7 @@ const BASE: OwnerFixtureParams = {
       setBy: null,
       source: "token",
       isGuest: false,
+      invitedAt: null,
     },
     {
       playerId: "p-2",
@@ -51,6 +52,7 @@ const BASE: OwnerFixtureParams = {
       setBy: null,
       source: "token",
       isGuest: false,
+      invitedAt: null,
     },
   ],
   viewerPlayerId: "p-1",
@@ -303,5 +305,70 @@ describe("owner fixture page — result panel position (M27)", () => {
     expect(html).toContain("<h2>Result</h2>");
     expect(html).toContain("<h2>Squad</h2>");
     expect(html.indexOf("<h2>Result</h2>")).toBeLessThan(html.indexOf("<h2>Squad</h2>"));
+  });
+});
+
+/**
+ * The overlap this milestone found, as a rule rather than as one fixed row.
+ *
+ * `FORM_CSS` pins every *direct child* form of a squad row to one grid cell —
+ * column 2, row 1. A row carrying two controls therefore does not lay them out
+ * side by side: it stacks them in the same cell, and the later one is painted
+ * over the earlier. The markup contains both buttons, the page renders, and
+ * one of them is simply invisible, so nothing that reads the HTML can see it
+ * (M46 found it by measuring the rendered row in a browser).
+ *
+ * What keeps it fixed is the wrapper, not the fix to any one row: every
+ * control on a squad row goes inside `.row-controls`, so the row always has
+ * exactly one form-bearing child whatever controls it happens to carry.
+ */
+describe("a squad row's controls all live in one grid cell (M46)", () => {
+  function rowsOf(html: string): string[] {
+    const list = html.slice(html.indexOf('<ul class="squad">'));
+    return list
+      .slice(0, list.indexOf("</ul>"))
+      .split("<li>")
+      .slice(1)
+      .map((row) => row.slice(0, row.indexOf("</li>")));
+  }
+
+  const gated = params({
+    gatedInvites: true,
+    squad: [
+      { ...BASE.squad[0]!, invitedAt: null },
+      { ...BASE.squad[1]!, invitedAt: new Date("2026-08-12T09:00:00Z") },
+      { ...BASE.squad[0]!, playerId: "g-1", name: "A Guest", isGuest: true, status: "in" },
+      { ...BASE.squad[0]!, playerId: "p-3", name: "Waiting", status: "waitlisted", waitlistRank: 1 },
+    ],
+  });
+
+  it("puts no form outside the wrapper, on any row shape", () => {
+    const rows = rowsOf(renderOwnerFixturePage(gated));
+    expect(rows).toHaveLength(4);
+
+    for (const row of rows) {
+      // A form before the wrapper opens is a second direct child of the grid
+      // cell, which is exactly the overlap.
+      const wrapper = row.indexOf('<span class="row-controls">');
+      expect(wrapper).toBeGreaterThan(-1);
+      expect(row.slice(0, wrapper)).not.toContain("<form");
+    }
+  });
+
+  it("keeps both controls on the row that carries two", () => {
+    const [unasked] = rowsOf(renderOwnerFixturePage(gated));
+
+    expect(unasked).toContain("Invite now");
+    expect(unasked).toContain('class="segment"');
+    // Both inside the one wrapper: the count of wrappers, not of forms, is
+    // what the grid cares about.
+    expect(unasked!.match(/row-controls/g)).toHaveLength(1);
+  });
+
+  it("gives the wrapper its own cell, so the pinned-form rule cannot reach it", () => {
+    // Without this rule the wrapper auto-places into whatever cell is free and
+    // the row's shape depends on how many pieces of text it carries — the
+    // defect the explicit placement above it was written to end.
+    expect(FORM_CSS).toContain("ul.squad > li > .row-controls {");
   });
 });

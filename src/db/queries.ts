@@ -35,6 +35,16 @@ export interface SquadMember {
    *  Computed here, never the stored column — see spec amendment 5. */
   waitlistRank: number | null;
   /**
+   * When this player was invited to this fixture (BR-41), or null if they have
+   * not been. Null forever on an ungated Game, where nothing stamps it.
+   *
+   * Carried so the organiser's page can offer "invite now" on exactly the rows
+   * that have not been asked (M46). The renderer must not read it as "gated":
+   * a whole squad is unstamped on an ungated fixture too, and every row would
+   * sprout a button that stamps a column nothing else reads.
+   */
+  invitedAt: Date | null;
+  /**
    * Who set this response, when it was not the player themselves (BR-27).
    * Null for every self-response, which is the overwhelming majority.
    */
@@ -113,6 +123,7 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
       status: responses.status,
       team: responses.team,
       waitlistPosition: responses.waitlistPosition,
+      invitedAt: responses.invitedAt,
       source: responses.source,
       isGuest: players.isGuest,
       setByPlayerId: setter.id,
@@ -145,6 +156,7 @@ export async function getFixtureWithSquad(db: Db, fixtureId: string): Promise<Fi
     status: r.status,
     team: r.team,
     waitlistRank: waitlistRanks.get(r.playerId) ?? null,
+    invitedAt: r.invitedAt,
     setBy:
       r.setByPlayerId === null || r.setByName === null
         ? null

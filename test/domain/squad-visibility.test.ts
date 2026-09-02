@@ -4,7 +4,7 @@ import type { SquadMember } from "../../src/db/queries.js";
 
 const SQUAD: SquadMember[] = [
   { playerId: "p-1", name: "Priya Raman", erasedAt: null, status: "in", team: null, waitlistRank: null,
-    setBy: null, source: "token", isGuest: false },
+    setBy: null, source: "token", isGuest: false, invitedAt: null },
 ];
 
 describe("squadForViewer", () => {

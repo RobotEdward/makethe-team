@@ -500,6 +500,25 @@ export const responses = sqliteTable(
      * makes a second reconcile a no-op.
      */
     invitedAt: integer("invited_at", { mode: "timestamp_ms" }),
+    /**
+     * Whether that `invited_at` was the owner inviting this one player by hand
+     * (M46) rather than their tier being released.
+     *
+     * Exists because the release count is derived from the stamps rather than
+     * stored: `planReleases` reads a tier as released once one of its members
+     * carries one. Without this column, inviting a single sub out of order
+     * would read their whole tier — and every tier above it — as released, and
+     * the next decline would invite the tier below them. The gate itself
+     * (`inviteGateApplies`) still reads `invited_at` alone: an individually
+     * invited player really is invited and may answer, which is the point.
+     *
+     * Never cleared, exactly as `invited_at` is never cleared: it describes
+     * what went out, and a later tier release does not make the hand-sent
+     * invitation retrospectively part of that release.
+     */
+    invitedIndividually: integer("invited_individually", { mode: "boolean" })
+      .notNull()
+      .default(false),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [

@@ -1487,6 +1487,12 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "never returns HTML on any branch — a plain-text 403, a plain-text 404 (a " +
       "tier of another game, TR-18) or a 303 redirect only " +
       "(src/routes/games.ts, M34).",
+    "POST /g/:id/f/:fixtureId/invite/player/:playerId":
+      "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
+      "plain-text 404 (not the owner) or a 303 redirect back to the fixture page, " +
+      "which the \"owner fixture\" capture already covers " +
+      "(src/routes/games.ts, M46); its own coverage lives in " +
+      "test/routes/invite-player.test.ts.",
     "POST /g/:id/f/:fixtureId/open":
       "never returns HTML on any branch — a plain-text 403 (wrong origin), a " +
       "plain-text 404 (not the owner) or a 303 redirect back to the fixture page, " +

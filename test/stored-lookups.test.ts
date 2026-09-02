@@ -86,6 +86,7 @@ function member(overrides: Partial<SquadMember> = {}): SquadMember {
     setBy: null,
     source: "token",
     isGuest: false,
+    invitedAt: null,
     ...overrides,
   };
 }

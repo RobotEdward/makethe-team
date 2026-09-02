@@ -579,6 +579,22 @@ export const FORM_CSS = `
      control pinned to column 2 the only cell left for it is column 1. */
   ul.squad > li > .name, ul.squad > li > .status, ul.squad > li > .set-by { grid-column: 1; }
   ul.squad > li > form { grid-column: 2; grid-row: 1; }
+  /* A row with *two* controls (M46: "invite now" beside the mark-in segment)
+     wraps them in one element, and this is why. The rule above pins every
+     direct-child form to the same single cell — column 2, row 1 — so a second
+     form does not sit beside the first, it sits **on top of it**: same cell,
+     same track, the later one painted over the earlier. The page renders, the
+     markup contains both buttons, and one of them is simply invisible. No
+     string assertion can see that; it was found by measuring the rendered row.
+     One wrapper in the cell, laying its own children out, is the fix.
+     Wrapping is allowed because two controls plus a long name do not fit on one line
+     at 390px, and a row that overflows sideways is worse than one two lines
+     tall — the same trade the grid above already makes. */
+  ul.squad > li > .row-controls {
+    grid-column: 2; grid-row: 1;
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 0.4rem; flex-wrap: wrap;
+  }
   ul.squad > li form { margin: 0; }
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */

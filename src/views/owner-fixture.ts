@@ -8,6 +8,7 @@ import {
   ownerGuestRemovePath,
   ownerResponsePath,
   openFixturePath,
+  inviteMemberPath,
 } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { RESPONSE_STATUSES } from "../domain/response-status.js";
@@ -166,9 +167,20 @@ function renderOverCapacity(view: FixtureView, inCount: number, maxPlayers: numb
  * `aria-pressed` carries the same fact the fill does, so the state is not
  * stated in colour alone.
  */
-function renderMemberControls(gameId: string, fixtureId: string, member: SquadMember): string {
+function renderMemberControls(
+  gameId: string,
+  fixtureId: string,
+  member: SquadMember,
+  canInvite: boolean,
+): string {
+  // Every branch returns its controls inside one `.row-controls` element, a
+  // guest's single Remove form included. The row's grid pins each *direct
+  // child* form to one cell, so two forms there overlap and the first is
+  // invisible (see FORM_CSS); wrapping only the two-control case would leave
+  // the rule that prevents it depending on how many controls a row happens to
+  // have, which is how it would come back.
   if (member.isGuest) {
-    return `<form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form>`;
+    return `<span class="row-controls"><form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form></span>`;
   }
   // A waitlisted member is neither in nor out, and the first half of the
   // segment says so rather than offering a pressed "In" (M46). It used to:
@@ -181,10 +193,17 @@ function renderMemberControls(gameId: string, fixtureId: string, member: SquadMe
   const waiting = member.status === "waitlisted";
   const isIn = member.status === "in";
   const isOut = member.status === "out";
-  return `<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}" class="segment">
+  // Only on a row the invite order has not reached (M46). Rendered before the
+  // segment rather than inside it: the segment's two halves are one question
+  // with two answers, and a third button that does something else entirely
+  // would read as a third answer to it.
+  const invite = canInvite
+    ? `<form method="post" action="${escapeHtml(inviteMemberPath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Invite now</button></form>`
+    : "";
+  return `<span class="row-controls">${invite}<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}" class="segment">
              <button class="seg${isIn ? " on" : ""}" type="submit" name="intent" value="in" aria-pressed="${isIn}">${waiting ? "Promote" : "In"}</button>
              <button class="seg${isOut ? " out" : ""}" type="submit" name="intent" value="out" aria-pressed="${isOut}">Out</button>
-           </form>`;
+           </form></span>`;
 }
 
 /**
@@ -227,6 +246,12 @@ function renderSquadList(
   fixtureId: string,
   squad: readonly SquadMember[],
   showControls: boolean,
+  /**
+   * Whether this Game runs an invite order (BR-39). Without it every row on an
+   * ungated fixture would sprout an "invite now" button — the whole squad is
+   * unstamped there, because nothing ever stamps them.
+   */
+  gatedInvites: boolean,
 ): string {
   if (squad.length === 0) return `<p class="muted">No players yet.</p>`;
 
@@ -235,7 +260,8 @@ function renderSquadList(
       const guest = member.isGuest ? " (guest)" : "";
       // The squad and everyone's state still render on a fixture that has
       // closed — only the controls go, because there is nothing left to change.
-      const controls = showControls ? renderMemberControls(gameId, fixtureId, member) : "";
+      const canInvite = gatedInvites && !member.isGuest && member.invitedAt === null;
+      const controls = showControls ? renderMemberControls(gameId, fixtureId, member, canInvite) : "";
       const status = renderStatusSpan(member, showControls);
       // `displayName`, never `member.name` — see `src/views/fixture.ts` and §4.
       return `<li><span class="name">${escapeHtml(displayName(member.name, member.erasedAt))}${guest}</span>${status}${attribution(member)}${controls}</li>`;
@@ -577,7 +603,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${resultPanel}
 
     <h2>Squad</h2>
-    ${renderSquadList(gameId, fixtureId, squad, takingChanges(view))}
+    ${renderSquadList(gameId, fixtureId, squad, takingChanges(view), params.gatedInvites)}
 
     ${params.inviteProgress === undefined ? "" : renderInviteProgress(params.inviteProgress)}
 

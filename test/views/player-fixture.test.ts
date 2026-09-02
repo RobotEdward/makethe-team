@@ -18,6 +18,7 @@ const PICKED: readonly SquadMember[] = [
     setBy: null,
     source: "token" as const,
     isGuest: false,
+    invitedAt: null,
   },
   {
     playerId: "p2",
@@ -29,6 +30,7 @@ const PICKED: readonly SquadMember[] = [
     setBy: null,
     source: "token" as const,
     isGuest: false,
+    invitedAt: null,
   },
 ];
 

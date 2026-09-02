@@ -185,3 +185,38 @@ export type ClaimInviteReleasesOutcome =
       kind: "skipped";
       reason: "not-gated" | "fixture-not-open" | "fixture-not-found" | "already-invited";
     };
+
+/** The owner inviting one player out of the invite order's turn (M46). */
+export interface InviteIndividuallyInput {
+  playerId: string;
+  /** Passed in rather than read from the clock — domain code stays testable. */
+  now: number;
+}
+
+/**
+ * The result of one hand-sent invitation (M46).
+ *
+ * Shaped like `ClaimInviteReleasesOutcome` on purpose, including the rule that
+ * the object stamps and returns but never sends: this runs inside
+ * `ctx.blockConcurrencyWhile`, and a mail provider call from in there would
+ * serialise every other tap on the fixture behind it.
+ *
+ * `invited` and `promoted` are disjoint for the same reason the release
+ * outcome's two lists are. A player who had already said yes and was being
+ * held by the gate (BR-40a) is *promoted* by this call — they are owed the N-2
+ * "you're in", not an N-1 asking a question they answered days ago.
+ */
+export type InviteIndividuallyOutcome =
+  | {
+      kind: "invited";
+      /** True when this call is what stamped them, false if they already held one. */
+      stamped: boolean;
+      /** Whether this player is owed the N-1 invitation — false when they were promoted instead. */
+      owedInvitation: boolean;
+      /** Anyone this call moved off the waitlist into a free slot (BR-7, BR-40a). */
+      promoted: WaitlistPromotion[];
+    }
+  | {
+      kind: "skipped";
+      reason: "not-gated" | "fixture-not-open" | "fixture-not-found" | "no-response-row";
+    };

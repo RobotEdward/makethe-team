@@ -1,7 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, type Db } from "../db/client.js";
-import { inviteGateApplies, loadInviteState, stampInvited } from "../db/invite-queries.js";
+import {
+  inviteGateApplies,
+  loadInviteState,
+  stampInvited,
+  stampInvitedIndividually,
+} from "../db/invite-queries.js";
 import { planReleases } from "../domain/invite-tiers.js";
 import { fixtures, games, players, responses } from "../db/schema.js";
 import { occupiesSlot } from "../domain/response-status.js";
@@ -11,6 +16,8 @@ import type {
   AddGuestOutcome,
   ClaimInviteReleasesInput,
   ClaimInviteReleasesOutcome,
+  InviteIndividuallyInput,
+  InviteIndividuallyOutcome,
   SetResponseInput,
   SetResponseOutcome,
   WaitlistPromotion,
@@ -109,6 +116,75 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // across both is a rule one of them will eventually get wrong.
     const promotedIds = new Set(promoted.map((row) => row.playerId));
     return { kind: "claimed", playerIds: stamped.filter((id) => !promotedIds.has(id)), promoted };
+  }
+
+  /**
+   * Invite one player now, out of the invite order's turn (M46).
+   *
+   * **Inside the critical section, and not merely for the stamp.** The stamp
+   * itself is a single guarded UPDATE, but the promotion pass that follows
+   * reads how many slots are free — exactly what a concurrent response
+   * changes. Stamping outside the lock and promoting inside it would let two
+   * presses each see the same free slot.
+   *
+   * Ungated Games are skipped rather than served: with no order to be out of
+   * turn with, every member is already invited, and stamping one would make
+   * `inviteGateApplies` read the fixture as gated and strand everybody else
+   * behind an order that will never release.
+   */
+  async inviteIndividually(input: InviteIndividuallyInput): Promise<InviteIndividuallyOutcome> {
+    return this.ctx.blockConcurrencyWhile(async () => this.#inviteIndividuallyLocked(input));
+  }
+
+  async #inviteIndividuallyLocked(input: InviteIndividuallyInput): Promise<InviteIndividuallyOutcome> {
+    // The fixture id comes from the object's own identity, never from an
+    // argument — see `#setResponseLocked` for what a mismatch would break.
+    const fixtureId = this.ctx.id.name;
+    if (fixtureId === undefined) {
+      throw new Error(
+        "FixtureCapacity was addressed by unique id, not by fixture id — every caller must use getByName(fixtureId)",
+      );
+    }
+
+    const db = getDb(this.env.DB);
+    const now = new Date(input.now);
+
+    const [row] = await db
+      .select({ fixture: fixtures, game: games })
+      .from(fixtures)
+      .innerJoin(games, eq(fixtures.gameId, games.id))
+      .where(eq(fixtures.id, fixtureId));
+    if (!row) return { kind: "skipped", reason: "fixture-not-found" };
+    if (row.fixture.lifecycle !== "open") return { kind: "skipped", reason: "fixture-not-open" };
+    if (!row.game.gatedInvitesEnabled) return { kind: "skipped", reason: "not-gated" };
+
+    // No row means this player is not in the fixture's eligible set (BR-1) —
+    // they joined after it opened and have not been backfilled, or an owner
+    // removed them. There is nothing to stamp, and inserting one here would
+    // put somebody into a fixture the eligible set deliberately excludes.
+    const [existing] = await db
+      .select({ status: responses.status, invitedAt: responses.invitedAt })
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, input.playerId)));
+    if (!existing) return { kind: "skipped", reason: "no-response-row" };
+
+    const stamped = await stampInvitedIndividually(db, fixtureId, input.playerId, now);
+
+    // Runs whether or not this call stamped. A player already invited but
+    // still sitting behind the gate with a free slot in front of them is
+    // exactly the state a second press is trying to fix, and this pass is
+    // level-based, so a call with nothing to do writes nothing.
+    const promoted = await this.#fillFreeSlotsFromWaitlist(db, fixtureId, row.fixture.maxPlayers, input.now);
+
+    return {
+      kind: "invited",
+      stamped,
+      // Disjoint from `promoted`, exactly as the release outcome's two lists
+      // are: a player this call moved into a slot has been told they are in,
+      // and an N-1 asking whether they can play would contradict it.
+      owedInvitation: stamped && !promoted.some((entry) => entry.playerId === input.playerId),
+      promoted,
+    };
   }
 
   /**
