@@ -205,6 +205,17 @@ export const CATALOGUE: CataloguePage[] = [
       "GET that writes nothing, so capturing it leaves the world live.",
   },
   {
+    id: "fixture-timeline",
+    title: "Fixture timeline",
+    path: (w) => `/g/${w.gameId}/f/${w.fixtureId}/timeline`,
+    persona: "owner",
+    note:
+      "M46's audit trail for one fixture: what happened and when, read from " +
+      "audit_log and notification_log and never written to. Organiser only — " +
+      "it names every player's answer, so a member reaching it would be a " +
+      "squad list nobody asked for.",
+  },
+  {
     id: "remove-member",
     title: "Remove a member",
     path: (w) => `/g/${w.gameId}/squad/${w.memberPlayerId}/remove`,

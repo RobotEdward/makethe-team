@@ -93,10 +93,37 @@ test("a registered passkey signs in on its own", async ({ page }) => {
   // the point: this must sign in without a magic link.
   await page.context().clearCookies();
 
+  // **Stop the authenticator answering anything it is not asked to.**
+  //
+  // The sign-in page starts a conditional-mediation request on load (M40,
+  // PASSKEY_SIGN_IN_JS), and a virtual authenticator built with
+  // `automaticPresenceSimulation` satisfies it with no interaction at all —
+  // so the page signs itself in and navigates to the dashboard while this
+  // test is still trying to click the button. That is a race, and it is the
+  // one this suite lost intermittently: the click retried against a page
+  // that had already left, and the failure screenshot showed `/app`.
+  //
+  // With presence simulation off, the conditional request stays pending and
+  // cannot resolve, so the only ceremony that can finish is the one the
+  // click below starts. That is exactly the thing under test — the button,
+  // whose inertness is what the connect-src regression looked like.
+  await cdp.send("WebAuthn.setAutomaticPresenceSimulation", {
+    authenticatorId,
+    enabled: false,
+  });
+
   const seen = observe(page);
   await page.goto("/sign-in");
   await expect(page.locator("#passkey")).toBeVisible();
   await page.click("#passkey-button");
+
+  // Only now, after the click has aborted the conditional request and started
+  // a modal one of its own, is the authenticator allowed to answer. Enabling
+  // this before the click would reopen the race it exists to close.
+  await cdp.send("WebAuthn.setAutomaticPresenceSimulation", {
+    authenticatorId,
+    enabled: true,
+  });
 
   // The ceremony ends by navigating away from the sign-in page. If the button
   // is inert — which is exactly how the connect-src bug presented — this

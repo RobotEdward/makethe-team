@@ -71,6 +71,12 @@ const ROUTE_TO_ID = new Map<string, string>([
   ["/g/:id/f/:fixtureId", "owner-fixture"],
   ["/g/:id/f/:fixtureId/teams", "team-picker"],
   ["/g/:id/f/:fixtureId/message", "fixture-message"],
+  // Both of these had a route and no line here. `/g/:id/archive` even had a
+  // CATALOGUE entry (M41) — so the page was being captured and CSP-checked
+  // while this guard still counted it uncovered, which is the opposite of the
+  // usual failure and just as quiet. The timeline (M46) had neither.
+  ["/g/:id/archive", "archive-game"],
+  ["/g/:id/f/:fixtureId/timeline", "fixture-timeline"],
   ["/g/:id/squad/:playerId/remove", "remove-member"],
   ["/g/:id/squad/:playerId", "squad-member"],
   ["/j/:token", "join"],
