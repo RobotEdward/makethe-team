@@ -170,6 +170,10 @@ describe("getFixtureWithSquad against openFixture output", () => {
         setBy: null,
         source: "system",
         isGuest: false,
+        // M46: carried so the organiser's page can offer "invite now" on the
+        // rows the invite order has not reached. Null here, and forever on an
+        // ungated Game, where nothing stamps it.
+        invitedAt: null,
       },
     ]);
   });

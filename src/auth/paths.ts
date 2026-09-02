@@ -213,6 +213,11 @@ export function inviteTierDeletePath(gameId: string, tierId: string): string {
   return `/g/${gameId}/invites/tier/${tierId}/delete`;
 }
 
+/** One fixture's history, for its organiser (M46). */
+export function fixtureTimelinePath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/timeline`;
+}
+
 /** The owner's "open it now" button on a scheduled fixture (M46, BR-11). */
 export function openFixturePath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}/open`;

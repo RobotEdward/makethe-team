@@ -609,15 +609,19 @@ describe("POST /r/:token — the promoted player is told (N-2, BR-7, J4)", () =>
     const token = await tokenFor(fixtureId, holderId);
     expect((await postIntent(token, "out")).status).toBe(200);
 
+    // Filtered to the deferral: since M46 the holder's own decline writes a
+    // `fixture.response_recorded` row of its own, and this test is about the
+    // one the ceiling produces.
     const deadline = Date.now() + 3000;
-    let rows = await db.select().from(auditLog);
+    const deferrals = async () =>
+      (await db.select().from(auditLog)).filter((row) => row.action === "fixture.promotion_email_deferred");
+    let rows = await deferrals();
     while (rows.length === 0 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 10));
-      rows = await db.select().from(auditLog);
+      rows = await deferrals();
     }
 
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.action).toBe("fixture.promotion_email_deferred");
     expect(rows[0]?.entityId).toBe(fixtureId);
     expect(rows[0]?.actorPlayerId).toBeNull();
     expect(JSON.parse(rows[0]?.afterJson ?? "{}")).toEqual({ notificationType: "n2", playerIds: [waiterId] });

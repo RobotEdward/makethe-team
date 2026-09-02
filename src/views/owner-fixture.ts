@@ -9,6 +9,7 @@ import {
   ownerResponsePath,
   openFixturePath,
   inviteMemberPath,
+  fixtureTimelinePath,
 } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { RESPONSE_STATUSES } from "../domain/response-status.js";
@@ -617,6 +618,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     <div class="actions">
       <a class="button" href="${escapeHtml(fixtureMessagePath(gameId, fixtureId))}">Message players</a>
+      <a class="button" href="${escapeHtml(fixtureTimelinePath(gameId, fixtureId))}">What has happened</a>
     </div>
 
     <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>

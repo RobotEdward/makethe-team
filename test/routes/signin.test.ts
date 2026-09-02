@@ -901,6 +901,16 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } }),
       );
 
+      // The fixture's history (M46), same owner and fixture. It renders no
+      // form of any kind, which is exactly why it belongs in this enumeration
+      // rather than outside it: "no password field anywhere" is a claim about
+      // every reachable page, not only the ones that ask for something.
+      await capture(
+        "fixture timeline",
+        /What has happened/,
+        new Request(`${ORIGIN}/g/${gameId}/f/${fixtureId}/timeline`, { headers: { cookie } }),
+      );
+
       // The standalone team picker (M29), same owner and fixture as the
       // capture above, and taken here for the same reason it is: after the
       // `cancel done` POST the fixture stops taking changes and this page
@@ -1165,6 +1175,7 @@ describe("no password field anywhere (TR-16)", () => {
         "create-raced (503)",
         "cancel confirm",
         "cancel done",
+        "fixture timeline",
         "game form",
         "game overview",
         "invite order",
@@ -1376,6 +1387,7 @@ describe("no password field anywhere (TR-16)", () => {
       "past fixtures",
       "owner fixture",
       "team picker",
+      "fixture timeline",
       "message everyone",
       "message squad",
       "squad remove confirm",
@@ -1770,6 +1782,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/:id/squad/:playerId": "squad member",
     "GET /g/:id/f/:fixtureId": "owner fixture",
     "GET /g/:id/f/:fixtureId/teams": "team picker",
+    "GET /g/:id/f/:fixtureId/timeline": "fixture timeline",
     "GET /g/:id/message": "message everyone",
     "GET /g/:id/f/:fixtureId/message": "message squad",
     "GET /j/:token": "invite",

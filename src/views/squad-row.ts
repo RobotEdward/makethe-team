@@ -20,20 +20,11 @@ import { escapeHtml } from "./layout.js";
  * for the words.
  */
 
-export function ordinal(n: number): string {
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
+// Re-exported rather than moved outright: `src/views/fixture.ts` imports it
+// from here, and the reason the shared implementation exists (see above) is
+// unchanged by where it lives.
+export { ordinal } from "../domain/ordinal.js";
+import { ordinal } from "../domain/ordinal.js";
 
 export function squadStatusLabel(member: SquadMember): string {
   switch (member.status) {

@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { and, eq } from "drizzle-orm";
 import { getDb, type Db } from "../db/client.js";
+import { buildAuditInsert } from "../db/audit.js";
 import {
   inviteGateApplies,
   loadInviteState,
@@ -531,6 +532,25 @@ export class FixtureCapacity extends DurableObject<Bindings> {
         .where(eq(responses.id, existing.id)),
       ...this.#promotionWrite(db, promotedRow),
       db.update(fixtures).set({ inCount, waitlistCount }).where(eq(fixtures.id, fixtureId)),
+      // In the batch, so the trail cannot record an answer the batch did not
+      // keep. Only for an answer the player gave themselves: an owner's
+      // override is audited by its route as `fixture.response_overridden`,
+      // which carries the over-capacity flag and the waitlist rank this row
+      // has no way to know about, and two rows for one act would read as two
+      // acts.
+      ...(input.source === "owner"
+        ? []
+        : [
+            buildAuditInsert(db, {
+              actorPlayerId: input.playerId,
+              entityType: "fixture" as const,
+              entityId: fixtureId,
+              action: "fixture.response_recorded" as const,
+              before: { status: existing.status },
+              after: { status },
+              now,
+            }),
+          ]),
     ]);
 
     if (status === "waitlisted") {

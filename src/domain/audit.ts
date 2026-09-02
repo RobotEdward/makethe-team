@@ -142,6 +142,33 @@ export const AUDIT_ACTIONS = [
   // rather than an ordinary mark-in, because the two are indistinguishable
   // from the resulting row alone.
   "fixture.response_overridden",
+  // M46. A player's own answer — the first one and every change after it.
+  // `before`/`after` carry `{ status }`, and the actor is always the player
+  // themselves; an owner answering for somebody keeps the
+  // `fixture.response_overridden` row above, so the trail distinguishes the
+  // two rather than flattening them.
+  //
+  // Written inside `FixtureCapacity#setResponse`'s own batch rather than by
+  // each route, because there are four ways into that method and a rule split
+  // across four callers is a rule one of them eventually gets wrong. Being in
+  // the batch also means the row and the response change commit together: an
+  // audit trail that can record an answer D1 did not keep is worse than none.
+  //
+  // Nothing writes one for a no-op. `setResponse` returns early when the
+  // answer does not change (re-tapping "in", re-tapping a held waitlist
+  // place), so a player refreshing their response page does not fill the
+  // timeline with rows saying nothing happened.
+  "fixture.response_recorded",
+  // M46. One tier of the invite order opening (BR-41 to BR-44), with a null
+  // actor for the sweep and the owner's id for a forced release. `after`
+  // carries `{ invited }` — how many players it newly asked.
+  //
+  // Not derivable after the fact, which is why it is recorded. `invited_at`
+  // says a player was asked and when, but not whether a release or a
+  // hand-invite did it, and not *who* decided; the release count itself is
+  // derived from those same stamps, so the history collapses into whatever
+  // the current state happens to imply.
+  "fixture.tier_released",
   // J6b. A one-off guest, added to and removed from a single fixture. Both
   // carry a real actor: only an owner can do either.
   // M46. The owner inviting one player out of the invite order's turn. `after`

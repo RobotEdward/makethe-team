@@ -1,4 +1,4 @@
-import { and, eq, ne, notInArray } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { PageNav } from "../views/layout.js";
 import type { Context } from "hono";
@@ -17,6 +17,8 @@ import {
 } from "../auth/paths.js";
 import { requirePlayer, pageNav } from "../auth/session.js";
 import { buildAuditInsert, recordAudit } from "../db/audit.js";
+import { buildTimeline } from "../domain/timeline.js";
+import { renderTimelinePage, toRenderable } from "../views/timeline.js";
 import { openFixture } from "../domain/open-fixture.js";
 import { getDb, type Db } from "../db/client.js";
 import {
@@ -40,7 +42,7 @@ import { listPlayerPastFixturesInGame } from "../db/dashboard-queries.js";
 import { getSquadPresence } from "../db/presence-queries.js";
 import { listResultClaims, resultElectorate } from "../db/result-queries.js";
 import { resultWordsForLockedRows } from "../db/result-summary.js";
-import { fixtures, games, responses } from "../db/schema.js";
+import { auditLog, fixtures, games, notificationLog, players, responses } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
 import { displayName } from "../domain/display-name.js";
@@ -1800,6 +1802,91 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
  * held "maybe" for someone with no login and no address helps nobody.
  */
 /**
+ * One fixture's history, for its organiser (M46).
+ *
+ * Read-only, and built from `audit_log` and `notification_log` alone — the two
+ * records that already exist and already decide nothing about this page. A
+ * timeline with writes of its own would be a third record of the same events,
+ * free to drift from the two that matter.
+ *
+ * Owner-only, and a refusal is a 404 (TR-18): the trail names who answered
+ * what and when, which is more than a squad member is entitled to read about
+ * everybody else.
+ */
+gamesRoutes.get("/g/:id/f/:fixtureId/timeline", requirePlayer, async (c) => {
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const { db, game, fixture } = target;
+
+  const auditRows = await db
+    .select()
+    .from(auditLog)
+    .where(and(eq(auditLog.entityType, "fixture"), eq(auditLog.entityId, fixture.id)))
+    .orderBy(desc(auditLog.createdAt));
+
+  const notificationRows = await db
+    .select()
+    .from(notificationLog)
+    .where(eq(notificationLog.fixtureId, fixture.id));
+
+  // One lookup for every id either record mentions, rather than a join on each
+  // — an actor is not always in this fixture's squad (an organiser who never
+  // answered, a player since removed), so the squad query cannot serve as the
+  // name source.
+  const ids = [
+    ...new Set([
+      ...auditRows.flatMap((row) => (row.actorPlayerId === null ? [] : [row.actorPlayerId])),
+      ...auditRows.flatMap((row) => {
+        const after = row.afterJson === null ? null : (JSON.parse(row.afterJson) as { playerId?: unknown });
+        return typeof after?.playerId === "string" ? [after.playerId] : [];
+      }),
+      ...notificationRows.map((row) => row.playerId),
+    ]),
+  ];
+  const nameRows =
+    ids.length === 0
+      ? []
+      : await db
+          .select({ id: players.id, name: players.name, erasedAt: players.erasedAt })
+          .from(players)
+          .where(inArray(players.id, ids));
+  const byId = new Map(nameRows.map((row) => [row.id, displayName(row.name, row.erasedAt)]));
+
+  const entries = buildTimeline({
+    audit: auditRows.map((row) => ({
+      action: row.action,
+      actorPlayerId: row.actorPlayerId,
+      before: row.beforeJson === null ? null : JSON.parse(row.beforeJson),
+      after: row.afterJson === null ? null : JSON.parse(row.afterJson),
+      createdAt: row.createdAt,
+    })),
+    notifications: notificationRows.map((row) => ({
+      notificationType: row.notificationType,
+      playerId: row.playerId,
+      channel: row.channel,
+      status: row.status,
+      sentAt: row.sentAt,
+      createdAt: row.createdAt,
+    })),
+    names: (playerId) => byId.get(playerId) ?? null,
+  });
+
+  return c.html(
+    renderTimelinePage({
+      nav: pageNav(c, "games"),
+      gameId: game.id,
+      fixtureId: fixture.id,
+      gameName: game.name,
+      kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
+      entries: entries.map((entry) =>
+        toRenderable(entry, formatLocalDateTime(entry.at, game.timezone)),
+      ),
+    }),
+  );
+});
+
+/**
  * The owner's "open it now" button on a scheduled fixture (M46, BR-11).
  *
  * Opening fixes the eligible set at this instant (BR-1), so pressing this a
@@ -1855,7 +1942,12 @@ gamesRoutes.post("/g/:id/f/:fixtureId/invite/next", requirePlayer, async (c) => 
   if (target === null) return c.text("Not found", 404);
 
   const now = new Date(Date.now());
-  c.executionCtx.waitUntil(notifyReleasedSubs(c.env, target.fixture.id, now, { force: true }));
+  c.executionCtx.waitUntil(
+    notifyReleasedSubs(c.env, target.fixture.id, now, {
+      force: true,
+      actorPlayerId: c.get("player")!.id,
+    }),
+  );
 
   return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });

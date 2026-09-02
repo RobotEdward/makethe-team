@@ -1342,6 +1342,33 @@ export const ADMIN_NOTIFICATIONS_CSS = `
   table.admin-notify td.notify-none { color: var(--mut); }
 `;
 
+/**
+ * The fixture timeline (M46) — one fixture's story as a list of moments.
+ *
+ * Every selector is `timeline-` prefixed, so this block collides with nothing
+ * and its position in a page's `pageStyles` decides nothing. That is not tidy
+ * naming for its own sake: `test/views/style-cascade.test.ts` can only see two
+ * blocks declaring the *same* selector, so a block that reaches for a shared
+ * one (`.name`, `.status`) buys a collision the enumeration cannot report.
+ *
+ * The time sits above its line rather than beside it. Beside it, the column a
+ * timestamp needs at 390px ("Wednesday 2 September at 08:25") left the
+ * sentence about four words wide, and every entry wrapped to four lines.
+ */
+export const TIMELINE_CSS = `
+  .timeline-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
+  ol.timeline { list-style: none; margin: 0; padding: 0; }
+  ol.timeline > li {
+    padding: 0.7rem 0 0.7rem 0.9rem;
+    border-left: 2px solid var(--line);
+  }
+  ol.timeline > li:last-child { padding-bottom: 0; }
+  .timeline-when { display: block; font-size: var(--t-support); color: var(--mut); }
+  .timeline-what { display: block; color: var(--fg); }
+  .timeline-who { display: block; font-size: var(--t-support); color: var(--mut); }
+  .timeline-empty { color: var(--mut); }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -1366,6 +1393,7 @@ export const PAGE_STYLE_BLOCKS = [
   INVITE_ORDER_CSS,
   NOTIFY_MATRIX_CSS,
   ADMIN_NOTIFICATIONS_CSS,
+  TIMELINE_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

@@ -344,7 +344,11 @@ describe("BR-7 — promotion from the waitlist", () => {
 
       expect(outcome).toMatchObject({ promoted: { playerId: "p-2" } });
       expect(batchSpy).toHaveBeenCalledTimes(1);
-      expect(batchSpy.mock.calls[0]?.[0]).toHaveLength(3);
+      // Four since M46: the response, the promotion, the cached counts, and
+      // the `fixture.response_recorded` audit row. The row is in the batch
+      // deliberately — a trail that can record an answer the batch did not
+      // keep is worse than no trail — so it counts here too.
+      expect(batchSpy.mock.calls[0]?.[0]).toHaveLength(4);
     } finally {
       batchSpy.mockRestore();
     }

@@ -13,6 +13,7 @@ import { parseMuteDuration } from "../domain/mute.js";
 import { clearMute, setMute } from "../domain/set-mute.js";
 import type { MuteControlsOptions } from "../views/mute-controls.js";
 import { fixtures, games, players } from "../db/schema.js";
+import { recordAudit } from "../db/audit.js";
 import { getDb, type Db } from "../db/client.js";
 import { resolveSessionPlayer } from "../auth/session.js";
 import { fixtureView } from "../domain/fixture-view.js";
@@ -421,7 +422,15 @@ export async function notifyReleasedSubs(
   env: AppEnv["Bindings"],
   fixtureId: string,
   now: Date,
-  options: { force?: boolean } = {},
+  options: {
+    force?: boolean;
+    /**
+     * The owner who pressed the release button (M46), or absent for the sweep
+     * and for a release a decline paid for — both of which are the system
+     * acting, and both of which must read as such in the trail.
+     */
+    actorPlayerId?: string;
+  } = {},
 ): Promise<void> {
   try {
     // The claim happens *here*, not at the call site, and the owner's forced
@@ -434,6 +443,24 @@ export async function notifyReleasedSubs(
       force: options.force ?? false,
     });
     if (outcome.kind !== "claimed") return;
+
+    // A `claimed` outcome is not by itself a release: every sweep tick claims
+    // for every open gated fixture and almost all of them stamp nobody. The
+    // row is written only when somebody was newly asked, counting the players
+    // the release promoted as well as those it invited — a tier that opened
+    // for one gate-held volunteer released just as much as one that mailed
+    // four subs.
+    const invited = outcome.playerIds.length + outcome.promoted.length;
+    if (invited > 0) {
+      await recordAudit(getDb(env.DB), {
+        actorPlayerId: options.actorPlayerId ?? null,
+        entityType: "fixture",
+        entityId: fixtureId,
+        action: "fixture.tier_released",
+        after: { invited },
+        now,
+      });
+    }
 
     // Anyone the release let straight off the waitlist (BR-40a) is told they
     // are in, not invited: they answered this question long ago. Sequential
