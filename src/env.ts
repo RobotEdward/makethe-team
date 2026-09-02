@@ -49,6 +49,23 @@ export interface Bindings {
    * IP limit or nothing. Loose is right: a false positive here breaks the one
    * journey the product depends on.
    */
+  /**
+   * Per-token throttle for the families whose token is *shared* — `/j/:token`
+   * and `/join/:jtoken` (TR-37).
+   *
+   * A separate binding from `TOKEN_LIMITER` rather than a looser value on it,
+   * because the two are counting different things. A reminder link belongs to
+   * one player, so 10 a minute is roughly 3x their busiest honest use. An
+   * invite link is handed to a whole squad at once — the game page tells the
+   * organiser to share it in their group chat — so the same budget counts
+   * thirteen people into one bucket, and at two requests a join the sixth
+   * person to tap it inside a minute was refused. Folding both into one number
+   * means choosing which of the two to size wrongly.
+   *
+   * Optional on the same terms as `TOKEN_LIMITER`, and every caller must hold
+   * with it absent.
+   */
+  SHARED_TOKEN_LIMITER?: RateLimitBinding;
   TOKEN_IP_LIMITER?: RateLimitBinding;
   NOTIFIER: string;
   MAX_EMAILS_PER_DAY: string;

@@ -26,7 +26,13 @@ const IMAGES = "docs/guide/images";
 const MANIFEST = "docs/guide/manifest.json";
 
 test("@guide capture every screen the guide shows", async ({ page, browser }) => {
-  test.setTimeout(300_000);
+  // 300_000 until M51. Seeding got slower for a correct reason: since M39 a
+  // join is two round trips, not one — the form submission, then the
+  // confirmation link that actually seats the member (BR-48) — across four
+  // worlds and about twenty joiners, each in its own browser context. At five
+  // minutes the run died part-way through the third world, and a timeout in
+  // the middle of seeding reads like a hang rather than a budget.
+  test.setTimeout(900_000);
   mkdirSync(IMAGES, { recursive: true });
 
   await page.setViewportSize({ width: 390, height: 844 });

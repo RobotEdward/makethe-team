@@ -353,29 +353,36 @@ are never read or written. A follow-up migration drops them once the M37 worker 
 live everywhere. Not deferred as an oversight; deferred because the two-step deploy pipeline
 makes doing it in the same release actively dangerous.
 
-## `guide:capture` is broken for two independent reasons (M39, 27 August 2026)
+## `guide:capture` was broken for four reasons, not two — FIXED (M51, 2 September 2026)
 
-Running `npm run guide:capture` today fails before it produces anything usable, and has done
-since before M39 for an unrelated reason:
+Kept as a record because the shape of it matters more than the fix. This row previously said
+`guide:capture` was broken for two independent reasons and named both. It was broken for four,
+and each one was invisible until the one in front of it was cleared:
 
-1. **TR-37's `TOKEN_LIMITER`.** `buildGuideWorld` (`test/browser/guide-world.ts`) joins
-   thirteen squad members through `/j/:token` in a tight loop; the limiter admits ten requests
-   per 60 seconds per token, so the run 429s partway through — the sixth guide joiner since 23
-   August, per the standing memory note on this.
-2. **M39's confirm-to-join gate.** Independently of the rate limit, every one of those thirteen
-   addresses is now a first-time address, so each submission to `/j/:token` gets "Check your
-   inbox" instead of a seat (BR-47) — nobody in `SQUAD` is actually joined, and the
-   `squadSize !== SQUAD.length + 1` assertion right after the loop (`guide-world.ts`) would
-   throw even if the limiter allowed every request through.
+1. **A production defect, not a test one.** `/j/:token` sat behind `TOKEN_LIMITER`'s 10-per-60s
+   per-token budget, sized for a link belonging to one player. An invite link belongs to a whole
+   squad — the game page says "share this link in your group chat" — so at two requests a join the
+   sixth person to tap it inside a minute got the too-many-requests page. Real organisers, not
+   just the harness. Fixed by `SHARED_TOKEN_LIMITER` (200/60), a separate budget for `/j/*` and
+   `/join/*`.
+2. **M39's confirm-to-join gate**, as this row already described: a first-time address gets
+   "Check your inbox" and no seat (BR-47). Fixed by one `joinSquadMember` helper that does the
+   real two-step join. All four guide worlds had their own copy of the one-step loop, which is
+   why M39 broke four things at once; there is now one copy.
+3. **A shot selector made ambiguous by a later feature.** `.notify-group` matched one fieldset
+   when the shot was written and two once M44 added "Invites", and Playwright's strict mode
+   refuses that.
+4. **The per-IP limiter, which this codebase believed was inert locally.** `src/security/rate-limit.ts`
+   stated that `CF-Connecting-IP` "is absent under `wrangler dev`". It is not: `wrangler dev`
+   passes the client's header straight through, so the entire harness shared one 60-per-minute
+   bucket. Measured 2 September 2026 — 60 requests on one value, then 429s, while 40 distinct
+   values all passed against that same exhausted bucket. Each joiner context now carries its own
+   address, the way thirteen people on thirteen phones would.
 
-Both need fixing before `guide:capture` runs again: the pacing fix for TR-37 (`docs/runbooks/cloudflare.md`), and rewriting the
-loop in `test/browser/guide-world.ts` to join each guide member through `/join/:jtoken` with a
-per-address confirmation token — minted the way `test/browser/world.ts` and this file's own
-`freshJoinToken` already do for the catalogue and the "join-confirm" shot — rather than a single
-`/j/:token` submission per person. Neither is done here; this row is the record that the second
-cause exists, alongside the first, so the next attempt to fix TR-37's pacing does not stop at
-"the 429s are gone" and ship a `guide:capture` that still throws on `squadSize`. The trigger to
-revisit is the next time `guide:capture` is meant to run for real.
+The lesson worth keeping: this run is not in CI (`npm test` only), so four defects — one of them
+customer-facing — accumulated behind a command nobody ran for ten days. The first fix made the
+second visible, and so on. Anything that only breaks when a rarely-run command runs will be found
+in a batch, and the batch will contain something real.
 
 ## Cloudflare's monthly email allowance is guarded by a daily cap, not a monthly counter (M42, 29 August 2026)
 

@@ -50,6 +50,14 @@
     // reminder taps two or three times at most, so this is roughly 3x the
     // busiest honest use of a single link.
     { "name": "TOKEN_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    // Per shared token: 200 a minute against one invite link. `/j/:token` and
+    // `/join/:jtoken` carry one token for an entire squad — the game page tells
+    // the organiser to share it in their group chat or hold up the QR code — so
+    // the honest burst is a whole squad joining at once, at two requests each,
+    // not one player tapping twice. At TOKEN_LIMITER's 10 the sixth person to
+    // tap inside a minute got the too-many-requests page. Still a brake on
+    // hammering one link; see SHARED_TOKEN_LIMITER in src/env.ts.
+    { "name": "SHARED_TOKEN_LIMITER", "namespace_id": "1003", "simple": { "limit": 200, "period": 60 } },
     // Per IP: 60 a minute, deliberately loose. A whole office or mobile
     // network shares one address, and a false positive here breaks the one
     // journey the product depends on — see `TOKEN_IP_LIMITER` in src/env.ts.

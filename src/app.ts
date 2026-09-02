@@ -86,7 +86,7 @@ export function createApp(): Hono<AppEnv> {
     c.header("Cache-Control", "private, no-store");
   });
 
-  // The throttle on the four unauthenticated token families (TR-37). Scoped to
+  // The throttle on the unauthenticated token families (TR-37). Scoped to
   // exactly the prefixes whose callers have no session, for the same
   // blast-radius reason `sessionMiddleware` is scoped: a `*` mount would spend
   // limiter budget on `/robots.txt`, the icons and the service worker, and
@@ -100,8 +100,16 @@ export function createApp(): Hono<AppEnv> {
   // Supplement, not control: `src/security/rate-limit.ts` fails open and the
   // bindings are optional, so every route below must still hold with the whole
   // thing switched off — exactly as it must with the WAF rules off.
-  for (const prefix of ["/r/*", "/leave/*", "/cancel/*", "/j/*", JOIN_CONFIRM_PREFIX]) {
-    app.use(prefix, tokenRateLimit());
+  // Two scopes, because a personal link and a squad's invite link cannot share
+  // a per-token budget: the invite link is one token for the whole squad (the
+  // game page says to share it in a group chat), so a budget sized for one
+  // player counts thirteen people into one bucket and refuses the sixth to tap
+  // it inside a minute. See `SHARED_TOKEN_LIMITER` in `src/env.ts`.
+  for (const prefix of ["/r/*", "/leave/*", "/cancel/*"]) {
+    app.use(prefix, tokenRateLimit("personal"));
+  }
+  for (const prefix of ["/j/*", JOIN_CONFIRM_PREFIX]) {
+    app.use(prefix, tokenRateLimit("shared"));
   }
 
   // The public invite page, and (M39) its confirmation-link sibling

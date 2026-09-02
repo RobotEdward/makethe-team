@@ -12,6 +12,11 @@ const LIMIT_PERIOD_SECONDS = 60;
  * A throttle for the unauthenticated link endpoints — `/r/:token`,
  * `/leave/:token`, `/cancel/:token`, `/j/:token` and `/join/:jtoken` (TR-37).
  *
+ * The per-token dimension splits by `TokenScope`: a personal link and a squad's
+ * invite link get different budgets, because one token per player and one token
+ * per squad cannot be sized by the same number. The per-IP dimension is common
+ * to both.
+ *
  * **This is a supplement, never the control.** Everything these routes do must
  * still hold with the bindings absent, exactly as it must with the WAF rules
  * switched off: what actually bounds the cost of an unauthenticated endpoint
@@ -36,23 +41,45 @@ const LIMIT_PERIOD_SECONDS = 60;
  * second window — see `infra/cloudflare/`. This gives a 60 second window and a
  * key that is not an IP address.
  */
-export function tokenRateLimit(): MiddlewareHandler<AppEnv> {
+/**
+ * Which kind of token the mounted family carries, and so which per-token
+ * budget applies.
+ *
+ * `"personal"` — `/r/:token`, `/leave/:token`, `/cancel/:token` — is one token
+ * for one player. `"shared"` — `/j/:token`, `/join/:jtoken` — is one token for
+ * a whole squad; see `SHARED_TOKEN_LIMITER` in `src/env.ts` for why the two
+ * cannot share a budget.
+ */
+export type TokenScope = "personal" | "shared";
+
+export function tokenRateLimit(scope: TokenScope = "personal"): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
     const [family, token] = c.req.path.split("/").filter(Boolean);
 
     // Per-token first, and short-circuiting: it is the dimension that fires on
     // ordinary hammering of one link, so spending the IP budget on a request
     // already refused would make the looser limit the tighter one in practice.
-    if (token !== undefined && !(await withinLimit(c.env.TOKEN_LIMITER, `${family}:${token}`))) {
+    //
+    // The key keeps the family in it for both scopes, so `j:abc` and `r:abc`
+    // stay distinct even though they are now counted by different bindings.
+    const perToken = scope === "shared" ? c.env.SHARED_TOKEN_LIMITER : c.env.TOKEN_LIMITER;
+    if (token !== undefined && !(await withinLimit(perToken, `${family}:${token}`))) {
       return refuse(c);
     }
 
     // `CF-Connecting-IP` is set by Cloudflare on every request that reaches a
     // Worker through the edge and cannot be spoofed by the client there. It is
-    // absent under `wrangler dev`, in `vitest`, and in any direct invocation —
-    // all of which skip this dimension rather than inventing a key, because
-    // one shared fallback key would put every such request in one bucket and
-    // throttle the whole test suite against itself.
+    // absent in `vitest` and in any direct invocation, which skip this
+    // dimension rather than inventing a key: one shared fallback key would put
+    // every such request in one bucket and throttle the whole test suite
+    // against itself.
+    //
+    // Under `wrangler dev` it is NOT absent — this comment claimed it was
+    // until M51, and the browser harness paid for that. `wrangler dev` passes
+    // the client's own header through, so every request from the machine
+    // running the suite lands in one bucket unless the harness varies it (as
+    // `joinSquadMember` in `test/browser/guide-world.ts` now does). Measured
+    // 2 September 2026: 60 requests on one value, then 429s.
     const ip = c.req.header("CF-Connecting-IP");
     if (ip !== undefined && !(await withinLimit(c.env.TOKEN_IP_LIMITER, `ip:${ip}`))) {
       return refuse(c);

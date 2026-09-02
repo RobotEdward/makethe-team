@@ -50,10 +50,7 @@ reminder for the next fixture along with everyone else.
 
 ## Confirming a new address
 
-<!-- Screenshot pending: docs/guide/images/join-confirm.png. guide:capture is
-     still broken by TR-37's rate limiter (see docs/known-issues.md); the
-     manifest entry for it is in place for when that's fixed. The "Check your
-     inbox" page itself has no screenshot and no manifest entry at all — it's
+<!-- The "Check your inbox" page has no screenshot and no manifest entry: it is
      only reachable by submitting the join form, and the catalogue and guide
      captures are both GET-driven. -->
 
@@ -67,6 +64,8 @@ before it knows it reaches anyone.
 Tapping the button in that email opens **Join the squad as *Name*?**, with one
 button of its own. Pressing it is what actually seats them, and from there
 they land on the same page anyone joining directly sees.
+
+![The confirmation page: "Join the squad as Alex Doyle?", the game and its venue underneath, one button reading "Yes, join the squad", and a line saying nothing happens unless it's pressed](images/join-confirm.png)
 
 This only happens once per address. Anyone who has confirmed a join before —
 for this game or any other — or who has ever signed in, skips the inbox step

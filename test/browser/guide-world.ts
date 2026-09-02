@@ -206,6 +206,82 @@ export interface GuideWorld {
   resultDemoPlayerEmail: string;
 }
 
+/**
+ * A stable, unique 198.51.100.x address per joiner — TEST-NET-2, reserved for
+ * documentation, so it can never collide with anything real. Derived from the
+ * address rather than a counter so a rerun gives the same person the same
+ * bucket, and two people never share one.
+ */
+function joinerAddress(email: string): string {
+  let hash = 0;
+  for (const char of email) hash = (hash * 31 + char.charCodeAt(0)) % 254;
+  return `198.51.100.${hash + 1}`;
+}
+
+/**
+ * Seat one person in a squad through the real two-step join, in their own
+ * browser context.
+ *
+ * Both steps are needed and neither is optional. The form submission is what a
+ * person actually does with an invite link, and since M39 (BR-47/BR-48) it
+ * seats nobody for an address the app has never seen: it sends N-14 and shows
+ * "Check your inbox". The membership is created by the confirmation link, which
+ * also stamps `email_verified_at`. This harness has no inbox, so it mints the
+ * token `sendJoinConfirmation` would have mailed — same secret, same payload
+ * shape — and follows it, exactly as `test/browser/world.ts` does.
+ *
+ * Every guide world had its own copy of the one-step loop, so M39 broke all
+ * four at once and each would have had to be found separately. One helper is
+ * the guard: the next change to the join flow lands here, once.
+ *
+ * The context is per person because a joiner carrying the organiser's session
+ * would exercise a path no real visitor takes.
+ *
+ * It also carries its own `CF-Connecting-IP`, for the same reason: thirteen
+ * people join from thirteen phones. Without it the whole squad shares one
+ * bucket in `TOKEN_IP_LIMITER`, whose budget is 60 a minute — and at four
+ * requests a join this harness spends that inside two worlds, so a later
+ * joiner is refused for a crowding that exists only here. `wrangler dev`
+ * honours the header (measured 2 September 2026: 60 requests then 429s on one
+ * value, while 40 distinct values all passed against the same exhausted
+ * bucket); Cloudflare overwrites it at the edge, so this is a local-harness
+ * detail and not a header any real client controls.
+ */
+async function joinSquadMember(
+  browser: Browser,
+  gameId: string,
+  inviteToken: string,
+  person: { readonly name: string; readonly email: string },
+): Promise<void> {
+  const context = await browser.newContext({
+    extraHTTPHeaders: { "CF-Connecting-IP": joinerAddress(person.email) },
+  });
+  const joinerPage = await context.newPage();
+
+  await joinerPage.goto(`/j/${inviteToken}`);
+  await joinerPage.fill('input[name="name"]', person.name);
+  await joinerPage.fill('input[name="email"]', person.email);
+  await joinerPage.click('button[type="submit"]');
+  await joinerPage.waitForLoadState("networkidle");
+
+  const jtoken = await signJoinToken(
+    {
+      gameId,
+      inviteToken,
+      email: person.email,
+      name: person.name,
+      expiresAt: joinTokenExpiry(new Date(Date.now())).getTime(),
+    },
+    RESPONSE_SECRET,
+  );
+  await joinerPage.goto(`/join/${jtoken}`);
+  await joinerPage.click('button[type="submit"]');
+  await joinerPage.waitForLoadState("networkidle");
+
+  await context.close();
+}
+
+
 export async function buildGuideWorld(page: Page, browser: Browser): Promise<GuideWorld> {
   await signIn(page, GUIDE_ORGANISER);
 
@@ -262,25 +338,8 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     RESPONSE_SECRET,
   );
 
-  // Each joiner in its own context: a joiner carrying the organiser's session
-  // would exercise a path no real visitor takes.
-  //
-  // BROKEN since M39 (docs/known-issues.md, "`guide:capture` is broken for
-  // two independent reasons"): every address here is first-time, so each
-  // submission now gets "Check your inbox" and seats nobody (BR-47) — the
-  // squadSize assertion below throws even once TR-37's TOKEN_LIMITER pacing
-  // is fixed. The fix is to join each member through `/join/:jtoken` with a
-  // per-address confirmation token, the way `freshJoinToken` above and
-  // `test/browser/world.ts` already do, not a single `/j/:token` submission.
   for (const person of SQUAD) {
-    const context = await browser.newContext();
-    const joinerPage = await context.newPage();
-    await joinerPage.goto(`/j/${inviteToken}`);
-    await joinerPage.fill('input[name="name"]', person.name);
-    await joinerPage.fill('input[name="email"]', person.email);
-    await joinerPage.click('button[type="submit"]');
-    await joinerPage.waitForLoadState("networkidle");
-    await context.close();
+    await joinSquadMember(browser, gameId, inviteToken, person);
   }
 
   await page.goto(`/g/${gameId}`);
@@ -438,14 +497,7 @@ async function buildOverrideDemo(
   const inviteToken = (await page.inputValue("#invite-url")).split("/j/")[1]!;
 
   for (const person of DEMO_SQUAD) {
-    const context = await browser.newContext();
-    const joinerPage = await context.newPage();
-    await joinerPage.goto(`/j/${inviteToken}`);
-    await joinerPage.fill('input[name="name"]', person.name);
-    await joinerPage.fill('input[name="email"]', person.email);
-    await joinerPage.click('button[type="submit"]');
-    await joinerPage.waitForLoadState("networkidle");
-    await context.close();
+    await joinSquadMember(browser, gameId, inviteToken, person);
   }
 
   // The same two sweeps `buildGuideWorld` already ran for the main game:
@@ -558,14 +610,7 @@ async function buildVisibilityDemo(
   const inviteToken = (await page.inputValue("#invite-url")).split("/j/")[1]!;
 
   for (const person of HIDDEN_SQUAD) {
-    const context = await browser.newContext();
-    const joinerPage = await context.newPage();
-    await joinerPage.goto(`/j/${inviteToken}`);
-    await joinerPage.fill('input[name="name"]', person.name);
-    await joinerPage.fill('input[name="email"]', person.email);
-    await joinerPage.click('button[type="submit"]');
-    await joinerPage.waitForLoadState("networkidle");
-    await context.close();
+    await joinSquadMember(browser, gameId, inviteToken, person);
   }
 
   await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=15+3+*+*+*`);
@@ -658,14 +703,7 @@ async function buildResultDemo(
   const inviteToken = (await page.inputValue("#invite-url")).split("/j/")[1]!;
 
   for (const person of RESULT_SQUAD) {
-    const context = await browser.newContext();
-    const joinerPage = await context.newPage();
-    await joinerPage.goto(`/j/${inviteToken}`);
-    await joinerPage.fill('input[name="name"]', person.name);
-    await joinerPage.fill('input[name="email"]', person.email);
-    await joinerPage.click('button[type="submit"]');
-    await joinerPage.waitForLoadState("networkidle");
-    await context.close();
+    await joinSquadMember(browser, gameId, inviteToken, person);
   }
 
   await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=15+3+*+*+*`);

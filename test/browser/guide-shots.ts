@@ -265,7 +265,11 @@ export const SHOTS: Shot[] = [
       "each with the timing it governs, all on by default.",
     path: (w) => `/g/${w.gameId}/edit`,
     persona: "organiser",
-    element: ".notify-group",
+    // Not a bare `.notify-group`: M44's "Invites" fieldset carries the same
+    // class, so that selector matches two elements and Playwright's strict
+    // mode refuses it. The matrix table is what makes this the Notifications
+    // one.
+    element: ".notify-group:has(.notify-matrix)",
   },
   {
     id: "squad-member",
