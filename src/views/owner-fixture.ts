@@ -170,12 +170,19 @@ function renderMemberControls(gameId: string, fixtureId: string, member: SquadMe
   if (member.isGuest) {
     return `<form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form>`;
   }
-  // `waitlisted` counts as in: the organiser marked them in and capacity put
-  // them on the waitlist. The row's own status label says which.
-  const isIn = member.status === "in" || member.status === "waitlisted";
+  // A waitlisted member is neither in nor out, and the first half of the
+  // segment says so rather than offering a pressed "In" (M46). It used to:
+  // the reading was "the organiser marked them in and capacity queued them",
+  // which is true of how the row got there and useless as a control — the
+  // owner's actual question is "can I move this person up?", and a button
+  // already showing as pressed answers "you have". Neither half is pressed
+  // here, because neither is the state they are in; `renderStatusSpan` keeps
+  // the rank beside the name, which is the fact the label cannot carry.
+  const waiting = member.status === "waitlisted";
+  const isIn = member.status === "in";
   const isOut = member.status === "out";
   return `<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}" class="segment">
-             <button class="seg${isIn ? " on" : ""}" type="submit" name="intent" value="in" aria-pressed="${isIn}">In</button>
+             <button class="seg${isIn ? " on" : ""}" type="submit" name="intent" value="in" aria-pressed="${isIn}">${waiting ? "Promote" : "In"}</button>
              <button class="seg${isOut ? " out" : ""}" type="submit" name="intent" value="out" aria-pressed="${isOut}">Out</button>
            </form>`;
 }
@@ -187,10 +194,10 @@ function renderMemberControls(gameId: string, fixtureId: string, member: SquadMe
  *
  * Three deliberate exceptions keep the span alive rather than dropping it for
  * everyone:
- *  - `waitlisted`: the segment shows In as pressed (correctly — the organiser
- *    marked them in and capacity queued them), but "In, pressed" and "In, but
- *    2nd on the waitlist" are different facts, and only this label carries
- *    the rank. Not an oversight — leave it.
+ *  - `waitlisted`: since M46 the segment's first half reads "Promote" and
+ *    neither half is pressed, so the segment now states what the owner can
+ *    *do* and nothing at all about where in the queue this player is. Only
+ *    this label carries the rank. Not an oversight — leave it.
  *  - a guest: `renderMemberControls` gives a guest a Remove button, never a
  *    segment, so nothing else on the row ever states a guest's status.
  *  - a closed fixture (`!showControls`): no control of any kind renders —

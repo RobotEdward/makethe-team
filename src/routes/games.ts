@@ -1764,6 +1764,15 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
       playerId,
       status: outcome.kind === "waitlisted" ? "waitlisted" : outcome.status,
       overCapacity: override,
+      // M46. A promotion by hand jumps BR-6's strict arrival order, and
+      // nothing else on this row would say so: an owner marking a pending
+      // player in and an owner moving somebody past four people who have been
+      // waiting longer produce the same `status: "in"`, and `before.status`
+      // alone does not carry the rank that was skipped. Read from the
+      // pre-write squad, because after the Durable Object returns the rank is
+      // gone with the row.
+      fromWaitlist: previous?.status === "waitlisted",
+      waitlistRank: previous?.status === "waitlisted" ? (previous.waitlistRank ?? null) : null,
     },
     now,
   });

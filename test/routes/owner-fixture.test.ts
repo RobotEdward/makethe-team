@@ -551,7 +551,15 @@ describe("POST /g/:id/f/:fixtureId/response/:playerId", () => {
     const [row] = await db.select().from(auditLog).where(eq(auditLog.action, "fixture.response_overridden"));
     expect(row).toMatchObject({ actorPlayerId: viewerId, entityType: "fixture", entityId: fixtureId });
     expect(JSON.parse(row!.beforeJson!)).toEqual({ playerId: "p-0", status: "pending" });
-    expect(JSON.parse(row!.afterJson!)).toEqual({ playerId: "p-0", status: "in", overCapacity: false });
+    expect(JSON.parse(row!.afterJson!)).toEqual({
+      playerId: "p-0",
+      status: "in",
+      overCapacity: false,
+      // M46: false here, not absent — a pending player marked in jumped
+      // nobody's queue.
+      fromWaitlist: false,
+      waitlistRank: null,
+    });
   });
 
   it("asks before going over capacity, and writes nothing", async () => {
