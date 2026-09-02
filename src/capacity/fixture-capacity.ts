@@ -538,7 +538,14 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       // which carries the over-capacity flag and the waitlist rank this row
       // has no way to know about, and two rows for one act would read as two
       // acts.
-      ...(input.source === "owner"
+      // Only when the answer actually moved. `intent: "out"` has no
+      // already-out shortcut above — a re-tap still refreshes `responded_at`
+      // and `source`, which is deliberate — so without this guard one player
+      // tapping "out" ten times wrote ten audit rows, nine of them recording
+      // a change that did not happen. Guarded here rather than by making the
+      // decline branch return early, because that would change what
+      // `setResponse` stores and this is only about what the trail claims.
+      ...(input.source === "owner" || existing.status === status
         ? []
         : [
             buildAuditInsert(db, {

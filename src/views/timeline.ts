@@ -46,11 +46,15 @@ export function renderTimelinePage(params: TimelinePageParams): string {
       // "Automatically" rather than a name, and never "somebody": the sweep
       // opening a fixture and an organiser opening it early are otherwise the
       // same row, and that difference is what this page is for.
+      //
+      // A subject with no actor is prefixed "to". Without it a send read
+      // "Ed · by email", which is a sentence about Ed having sent something —
+      // exactly backwards, since Ed is who it went to and nobody sent it.
       const who =
         entry.actor === null
           ? entry.subject === null
             ? "Automatically"
-            : escapeHtml(entry.subject)
+            : `to ${escapeHtml(entry.subject)}`
           : entry.subject === null
             ? `by ${escapeHtml(entry.actor)}`
             : `${escapeHtml(entry.subject)} — by ${escapeHtml(entry.actor)}`;

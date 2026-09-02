@@ -164,7 +164,124 @@ describe("buildTimeline", () => {
 
     expect(entries).toHaveLength(2);
     expect(entries[0]?.title).toBe("n99 sent");
-    expect(entries[0]?.subject).toBeNull();
+    // A count, not null: a recipient nobody can name still happened, and an
+    // empty subject renders as a bare separator with nothing either side.
+    expect(entries[0]?.subject).toBe("1 player");
     expect(entries[1]?.detail).toBeNull();
+  });
+});
+
+describe("what the page leaves out, and what it folds together", () => {
+  it("drops an answer that changed nothing", () => {
+    // Ten taps of "out" on an already-out row wrote ten audit rows in
+    // production. Nine of them record no change, and an entry saying nothing
+    // happened is not history. The guard is here as well as at the write, so
+    // the rows already stored stop being presented as ten events.
+    const entries = buildTimeline({
+      audit: [
+        audit({ action: "fixture.response_recorded", createdAt: at(1), actorPlayerId: "p-1", before: { status: "out" }, after: { status: "out" } }),
+        audit({ action: "fixture.response_recorded", createdAt: at(0), actorPlayerId: "p-1", before: { status: "in" }, after: { status: "out" } }),
+      ],
+      notifications: [],
+      names,
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.detail).toBe("was in");
+  });
+
+  it("keeps a first answer, which changes pending into a real one", () => {
+    const entries = buildTimeline({
+      audit: [audit({ action: "fixture.response_recorded", createdAt: at(0), actorPlayerId: "p-1", before: { status: "pending" }, after: { status: "in" } })],
+      notifications: [],
+      names,
+    });
+
+    expect(entries).toHaveLength(1);
+  });
+
+  it("folds one send to many people into one line", () => {
+    const many = ["p-1", "p-2", "p-3", "p-4"].map((playerId) => ({
+      notificationType: "n1" as const,
+      playerId,
+      channel: "email" as const,
+      status: "sent",
+      sentAt: at(0),
+      createdAt: at(0),
+    }));
+
+    const entries = buildTimeline({ audit: [], notifications: many, names });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.title).toBe("Invitation sent");
+    expect(entries[0]?.subject).toBe("4 players");
+  });
+
+  it("still names the recipients while there are few enough to be useful", () => {
+    const two = ["p-1", "p-2"].map((playerId) => ({
+      notificationType: "n1" as const,
+      playerId,
+      channel: "email" as const,
+      status: "sent",
+      sentAt: at(0),
+      createdAt: at(0),
+    }));
+
+    const [entry] = buildTimeline({ audit: [], notifications: two, names });
+
+    expect(entry?.subject).toBe("Ada Okafor and Bo Chen");
+  });
+
+  it("does not fold two different messages, channels or outcomes together", () => {
+    const entries = buildTimeline({
+      audit: [],
+      notifications: [
+        { notificationType: "n1", playerId: "p-1", channel: "email", status: "sent", sentAt: at(0), createdAt: at(0) },
+        { notificationType: "n1", playerId: "p-2", channel: "push", status: "sent", sentAt: at(0), createdAt: at(0) },
+        { notificationType: "n2", playerId: "p-1", channel: "email", status: "sent", sentAt: at(0), createdAt: at(0) },
+        { notificationType: "n1", playerId: "p-2", channel: "email", status: "failed", sentAt: null, createdAt: at(0) },
+      ],
+      names,
+    });
+
+    // A failure folded in with the successes is the one case where grouping
+    // would hide the thing an organiser came to the page to find.
+    expect(entries).toHaveLength(4);
+  });
+
+  it("does not fold sends that happened at different times", () => {
+    const entries = buildTimeline({
+      audit: [],
+      notifications: [
+        { notificationType: "n1", playerId: "p-1", channel: "email", status: "sent", sentAt: at(0), createdAt: at(0) },
+        { notificationType: "n1", playerId: "p-2", channel: "email", status: "sent", sentAt: at(9), createdAt: at(9) },
+      ],
+      names,
+    });
+
+    expect(entries).toHaveLength(2);
+  });
+
+  it("reads every message name as a thing that was sent", () => {
+    const entries = buildTimeline({
+      audit: [],
+      notifications: (["n2", "n3", "n9"] as const).map((notificationType, index) => ({
+        notificationType,
+        playerId: "p-1",
+        channel: "email" as const,
+        status: "sent",
+        sentAt: at(index),
+        createdAt: at(index),
+      })),
+      names,
+    });
+
+    // "Told they are in sent" was the shape before: the label has to be a
+    // noun for the sentence to survive the word after it.
+    expect(entries.map((entry) => entry.title)).toEqual([
+      "Teams announcement sent",
+      "Cancellation notice sent",
+      "Promotion notice sent",
+    ]);
   });
 });

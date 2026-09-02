@@ -53,22 +53,50 @@ export interface TimelineEntry {
 /** Names by player id, for whatever ids the rows mention. */
 export type NameLookup = (playerId: string) => string | null;
 
+/**
+ * Every name is a **noun**, because the row reads "<name> sent". A verb phrase
+ * here produces "Told they are in sent", which is what shipped and what this
+ * comment exists to stop coming back.
+ */
 const NOTIFICATION_NAMES: Record<NotificationType, string> = {
   n1: "Invitation",
-  n2: "Told they are in",
-  n3: "Told the game is off",
+  n2: "Promotion notice",
+  n3: "Cancellation notice",
   n4: "Short-numbers warning",
   n5: "Sign-in link",
   n6: "Welcome",
-  n7: "Told they were removed",
+  n7: "Removal notice",
   n8: "Erasure confirmation",
-  n9: "Teams",
+  n9: "Teams announcement",
   n10: "Message from the organiser",
   n11: "Group-chat nudge",
   n12: "Result prompt",
-  n13: "Team pick handed over",
+  n13: "Team-pick handover",
   n14: "Join confirmation",
 };
+
+/** How many recipients a send names before it starts counting them instead. */
+const NAMES_BEFORE_COUNTING = 3;
+
+/**
+ * "Ada", "Ada and Bo", "Ada, Bo and Cy" — or a count once the list stops being
+ * something a reader takes in at a glance.
+ *
+ * The threshold is a judgement, not a measurement: a fixture's opening send
+ * names every member of the squad, and seventeen rows of one name each is what
+ * this replaces.
+ */
+function describeRecipients(playerIds: readonly string[], names: NameLookup): string {
+  if (playerIds.length > NAMES_BEFORE_COUNTING) {
+    return `${playerIds.length} players`;
+  }
+  const resolved = playerIds.map((id) => names(id)).filter((name): name is string => name !== null);
+  // Every name unknown (an erased player, a row pointing at nobody) leaves a
+  // count rather than an empty string, which would render as a bare separator.
+  if (resolved.length === 0) return `${playerIds.length} ${playerIds.length === 1 ? "player" : "players"}`;
+  if (resolved.length === 1) return resolved[0]!;
+  return `${resolved.slice(0, -1).join(", ")} and ${resolved[resolved.length - 1]}`;
+}
 
 /**
  * A stored value indexing a lookup table can be absent from it: neither
@@ -137,12 +165,18 @@ function describeAudit(row: AuditRow, names: NameLookup): { title: string; detai
     case "fixture.response_recorded": {
       const to = readStatus(after);
       const from = readStatus(before);
+      // An answer that changed nothing is not history, and the rows exist:
+      // re-tapping "out" on an already-out row wrote one each time, so one
+      // player's ten taps filled the page with ten identical entries. The
+      // write is guarded too (`FixtureCapacity#setResponse`), but the rows
+      // already stored can only be dealt with here.
+      if (from !== null && from === to) return null;
       return {
         title: to === null ? "Answered" : `Answered: ${to}`,
         subject: null,
         // Only when it is a *change*. "was pending" on a first answer is noise
         // on every row of a fourteen-person squad.
-        detail: from === null || from === to || from === "pending" ? null : `was ${from}`,
+        detail: from === null || from === "pending" ? null : `was ${from}`,
       };
     }
     case "fixture.response_overridden": {
@@ -222,24 +256,47 @@ export function buildTimeline(input: {
     });
   }
 
+  // One send to a whole squad is one thing that happened, not seventeen. Keyed
+  // on the minute rather than the exact instant because a fan-out writes its
+  // rows over several hundred milliseconds, and on status as well as type and
+  // channel because a send that *failed* for one player is the thing an
+  // organiser came to this page to find — folding it in with the successes
+  // would hide it.
+  const groups = new Map<string, { at: Date; row: NotificationRow; playerIds: string[] }>();
   for (const row of input.notifications) {
     // `sent_at` when there is one, and the row's own creation otherwise: a
     // queued or failed message still belongs in the story at the moment it was
     // owed, and leaving it out would make a send failure invisible on the one
     // page an organiser would look for it.
     const at = row.sentAt ?? row.createdAt;
-    const name = input.names(row.playerId);
+    const minute = Math.floor(at.getTime() / 60_000);
+    const key = `${row.notificationType}|${row.channel}|${row.status}|${minute}`;
+    const found = groups.get(key);
+    if (found === undefined) {
+      groups.set(key, { at, row, playerIds: [row.playerId] });
+      continue;
+    }
+    found.playerIds.push(row.playerId);
+    // The earliest instant in the group, so the line sits where the send
+    // started rather than wherever the last write happened to land.
+    if (at < found.at) found.at = at;
+  }
+
+  for (const group of groups.values()) {
     entries.push({
-      at,
+      at: group.at,
+      // Null on every send, always. A notification is the system acting, and
+      // the recipient is not the actor — rendering their name in the actor's
+      // place read as "Ed sent this", which is the opposite of what happened.
       actor: null,
-      subject: name,
-      title: `${notificationName(row.notificationType)} sent`,
+      subject: describeRecipients(group.playerIds, input.names),
+      title: `${notificationName(group.row.notificationType)} sent`,
       detail:
-        row.status === "sent"
-          ? row.channel === "push"
+        group.row.status === "sent"
+          ? group.row.channel === "push"
             ? "by push"
             : "by email"
-          : `${row.channel} — ${row.status}`,
+          : `${group.row.channel} — ${group.row.status}`,
     });
   }
 

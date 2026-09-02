@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { fixtures, games, inviteTiers, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { auditLog, fixtures, games, inviteTiers, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 // The Durable Object's own source, as text. Read at build time by Vite's
 // `?raw` loader so the "no network call inside the object" assertion below
@@ -945,5 +945,59 @@ describe("the invite order gates who takes a slot (BR-40a)", () => {
     await db.update(games).set({ gatedInvitesEnabled: false }).where(eq(games.id, fixture!.gameId));
 
     expect(await accept(fixtureId, "g-2")).toMatchObject({ kind: "recorded", status: "in" });
+  });
+});
+
+describe("the audit trail records changes, not taps", () => {
+  it("writes one row for a decline, however many times it is tapped", async () => {
+    const fixtureId = await seedOpenFixture(6);
+
+    await decline(fixtureId, "p-0");
+    await decline(fixtureId, "p-0");
+    await decline(fixtureId, "p-0");
+
+    // `intent: "out"` has no already-out shortcut — a re-tap still refreshes
+    // `responded_at` and `source`, deliberately — so without the guard this
+    // is three rows, two of which record a change that did not happen. One
+    // player's ten taps filled a production timeline with ten identical
+    // entries.
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "fixture.response_recorded"));
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]?.beforeJson ?? "{}")).toEqual({ status: "pending" });
+    expect(JSON.parse(rows[0]?.afterJson ?? "{}")).toEqual({ status: "out" });
+  });
+
+  it("still records a real change of mind", async () => {
+    const fixtureId = await seedOpenFixture(6);
+
+    await accept(fixtureId, "p-0");
+    await decline(fixtureId, "p-0");
+    await accept(fixtureId, "p-0");
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.action, "fixture.response_recorded"));
+    expect(rows).toHaveLength(3);
+  });
+
+  it("does not stop the response itself being re-written", async () => {
+    const fixtureId = await seedOpenFixture(6);
+
+    await decline(fixtureId, "p-0", NOW.getTime());
+    const later = NOW.getTime() + 60_000;
+    await decline(fixtureId, "p-0", later);
+
+    // The guard is about what the trail claims, not about what is stored: a
+    // re-tap still moves `responded_at`, and an early return in the decline
+    // branch would have changed that too.
+    const [row] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-0")));
+    expect(row?.respondedAt?.getTime()).toBe(later);
   });
 });
