@@ -24,6 +24,20 @@ const THURSDAY: RecordRow = {
 };
 
 describe("the dashboard's record section", () => {
+  it("heads the number columns with the league-table abbreviations", () => {
+    const html = page([THURSDAY]);
+
+    // Abbreviated because the spelled-out words are what pushed a long game
+    // name into four wrapped lines at 390px.
+    expect(html).toContain(`<abbr title="Played">P</abbr>`);
+    expect(html).toContain(`<abbr title="Won">W</abbr>`);
+    expect(html).toContain(`<abbr title="Lost">L</abbr>`);
+    expect(html).toContain(`<abbr title="Drawn">D</abbr>`);
+    // The whole word must not survive anywhere in the header row, or the
+    // column is no narrower than it was.
+    expect(html).not.toContain("<th scope=\"col\" class=\"count\">Played</th>");
+  });
+
   it("shows one row per game, with the four numbers", () => {
     const html = page([THURSDAY]);
 
@@ -61,7 +75,7 @@ describe("the dashboard's record section", () => {
   it("accounts for played fixtures that never settled, and says what they are", () => {
     const html = page([{ ...THURSDAY, played: 12 }]);
 
-    expect(html).toContain("No result");
+    expect(html).toContain(`<abbr title="No result">NR</abbr>`);
     expect(html).toContain(`<td class="count">3</td>`);
     expect(html).toContain("nobody agreed a result");
   });

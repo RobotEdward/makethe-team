@@ -1392,6 +1392,9 @@ export const RECORD_CSS = `
     white-space: nowrap;
   }
   table.record thead th { color: var(--mut); font-weight: normal; }
+  /* No dotted underline: five of them across a header of single letters reads
+     as damage rather than as an affordance. The title attribute still works. */
+  table.record thead abbr { text-decoration: none; cursor: help; }
   table.record .count { text-align: right; font-variant-numeric: tabular-nums; }
   /* The game name is the only cell allowed to wrap: it is the one that can be
      long, and letting it wrap is what keeps the number columns on screen. */

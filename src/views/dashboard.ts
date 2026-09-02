@@ -502,6 +502,13 @@ function renderRecentlyPlayedSection(row: RecentlyPlayedRow | null): string {
  *
  * No total row for a single game, which would be that game's row printed
  * twice under a different label.
+ *
+ * The number columns are headed P/W/L/D/NR rather than the words. Spelled out,
+ * the five headers set the column widths wide enough that a long game name had
+ * only a few characters of the first column left and wrapped to four lines at
+ * 390px. `<abbr title>` rather than a bare letter so the word is still there
+ * for a screen reader and on hover; P/W/L/D needs no explaining on a table of
+ * football results, and NR gets the caption below.
  */
 function renderRecordSection(record: readonly RecordRow[]): string {
   if (record.length === 0) return "";
@@ -541,7 +548,7 @@ function renderRecordSection(record: readonly RecordRow[]): string {
     </tfoot>`;
 
   const note = showUnrecorded
-    ? `<p class="record-note">"No result" counts the games you played where nobody agreed a result, or where sides were never picked — so there is no won, lost or drawn to record.</p>`
+    ? `<p class="record-note">NR counts the games you played where nobody agreed a result, or where sides were never picked — so there is no won, lost or drawn to record.</p>`
     : "";
 
   return `
@@ -551,11 +558,11 @@ function renderRecordSection(record: readonly RecordRow[]): string {
         <thead>
           <tr>
             <th scope="col" class="record-game">Game</th>
-            <th scope="col" class="count">Played</th>
-            <th scope="col" class="count">Won</th>
-            <th scope="col" class="count">Lost</th>
-            <th scope="col" class="count">Drawn</th>
-            ${showUnrecorded ? `<th scope="col" class="count">No result</th>` : ""}
+            <th scope="col" class="count"><abbr title="Played">P</abbr></th>
+            <th scope="col" class="count"><abbr title="Won">W</abbr></th>
+            <th scope="col" class="count"><abbr title="Lost">L</abbr></th>
+            <th scope="col" class="count"><abbr title="Drawn">D</abbr></th>
+            ${showUnrecorded ? `<th scope="col" class="count"><abbr title="No result">NR</abbr></th>` : ""}
           </tr>
         </thead>
         <tbody>${rows}</tbody>
