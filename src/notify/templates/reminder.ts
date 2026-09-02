@@ -35,6 +35,21 @@ export interface ReminderEmailPayload {
   /** As `respondInUrl`, but opens with "Can't make it" emphasised. */
   respondOutUrl: string;
   /**
+   * True when this Player already holds a slot (`status === "in"`) at send
+   * time, so the email confirms rather than asks (M45).
+   *
+   * **The "Can't make it" link stays either way, and must.** Every tier
+   * release and every waitlist promotion in the product is driven by somebody
+   * dropping out early; an email that tells a Player their game is tomorrow
+   * and offers them no way to say they cannot make it after all sends them
+   * hunting for the app, and the ones who do not bother are the no-shows the
+   * organiser finds out about at kick-off.
+   *
+   * Optional, defaulting to the asking copy: every existing caller and test
+   * predates this and means "ask them".
+   */
+  confirmed?: boolean;
+  /**
    * A working leave-game/unsubscribe link (BR-22).
    *
    * The sweep builds this as `/leave/:token` (`src/sweep/open-and-remind.ts`),
@@ -79,10 +94,21 @@ function spotsLine(spotsLeft: number, inCount: number): string {
 export function renderReminderEmail(payload: ReminderEmailPayload): ReminderEmail {
   const { playerName, gameName, venueName, kicksOffAtLocal, inCount, spotsLeft, respondInUrl, respondOutUrl, leaveUrl } =
     payload;
+  const confirmed = payload.confirmed === true;
 
+  // Unchanged for both. It is accurate either way, and it is what makes the
+  // message findable in an inbox the next morning — the one job a subject
+  // line has here.
   const subject = `${gameName} — tomorrow`;
 
   const spots = spotsLine(spotsLeft, inCount);
+
+  /**
+   * The one line that differs, and the reason this variant exists: asking
+   * "can you play?" of somebody who answered weeks ago reads as though their
+   * answer went missing.
+   */
+  const standing = confirmed ? "You're in." : null;
 
   const html = `<!doctype html>
 <html lang="en">
@@ -110,14 +136,19 @@ ${escapeHtml(spots)}
 <p style="margin:0 0 2px; font-size:15px; line-height:1.5; color:#645c50;">${escapeHtml(venueName)}</p>
 <p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#645c50;">${escapeHtml(kicksOffAtLocal)}</p>
 
+${standing === null ? "" : `<p style="margin:0 0 12px; font-size:17px; line-height:1.4; font-weight:700; color:#201e1d;">${escapeHtml(standing)}</p>`}
 <p style="margin:0 0 20px; font-size:14px; line-height:1.5; color:#645c50;">${escapeHtml(spots)}</p>
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-<tr>
+${
+  confirmed
+    ? ""
+    : `<tr>
 <td style="padding:0 0 12px;">
 <a href="${href(respondInUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">I'm in</a>
 </td>
-</tr>
+</tr>`
+}
 <tr>
 <td>
 <a href="${href(respondOutUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#ebddc5; color:#201e1d; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #ebddc5;">Can't make it</a>
@@ -125,7 +156,7 @@ ${escapeHtml(spots)}
 </tr>
 </table>
 
-<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#645c50;">Either one opens a page where you'll tap once more to confirm — nothing is recorded until then.</p>
+<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#645c50;">${confirmed ? "That opens a page where you'll tap once more to confirm — nothing is recorded until then." : "Either one opens a page where you'll tap once more to confirm — nothing is recorded until then."}</p>
 
 <hr style="margin:24px 0; border:none; border-top:1px solid #d6c9b3;">
 
@@ -153,15 +184,16 @@ Not playing any more? <a href="${href(leaveUrl)}" style="color:#645c50;">Leave t
     venueName,
     kicksOffAtLocal,
     "",
+    ...(standing === null ? [] : [standing, ""]),
     spots,
     "",
-    "I'm in:",
-    respondInUrl,
-    "",
+    ...(confirmed ? [] : ["I'm in:", respondInUrl, ""]),
     "Can't make it:",
     respondOutUrl,
     "",
-    "Either link opens a page where you'll tap once more to confirm — nothing is recorded until then.",
+    confirmed
+      ? "That link opens a page where you'll tap once more to confirm — nothing is recorded until then."
+      : "Either link opens a page where you'll tap once more to confirm — nothing is recorded until then.",
     "",
     "---",
     "Make The Team — organising this Game for your squad.",

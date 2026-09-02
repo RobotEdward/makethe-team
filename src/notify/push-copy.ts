@@ -118,10 +118,18 @@ function gameNameTitle(before: string, gameName: string, after: string): string 
  *
  * What happened: it's tomorrow. When/where: kick-off and the venue.
  */
-function reminder({ gameName, venueName, kicksOffAtLocal }: ReminderEmailPayload): PushCopy {
+function reminder(payload: ReminderEmailPayload): PushCopy {
+  const { gameName, venueName, kicksOffAtLocal } = payload;
   return {
     title: gameNameTitle("", gameName, " — tomorrow"),
-    body: `${kicksOffAtLocal} at ${venueName}.`,
+    // "You're in." leads for a player who already holds a slot (M45): the
+    // notification is a heads-up rather than a question, and the standing is
+    // the one thing a glance at the lock screen should carry. Same `tag` as
+    // the asking copy deliberately — it is still the one N-1 for this
+    // fixture, so it must collapse with itself, never sit alongside.
+    body: payload.confirmed === true
+      ? `You're in. ${kicksOffAtLocal} at ${venueName}.`
+      : `${kicksOffAtLocal} at ${venueName}.`,
     tag: `n1:${gameName}:${kicksOffAtLocal}`,
   };
 }

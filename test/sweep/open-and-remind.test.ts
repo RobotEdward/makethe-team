@@ -849,3 +849,69 @@ describe("openAndRemind and the auto-decline switch (M28)", () => {
     expect(notifier.sent.flat()).toHaveLength(2);
   });
 });
+
+/**
+ * M45. The day-before email is the only message a player gets about tomorrow's
+ * game, so an `in` player still receives it — worded as a confirmation rather
+ * than a question they answered weeks ago.
+ */
+describe("the day-before email for a player who has already accepted", () => {
+  const KICKS_OFF = new Date("2026-08-13T18:00:00Z");
+  const REMINDER_TIME = new Date("2026-08-12T09:00:00Z");
+
+  async function remindWith(statusFor: Record<string, "in" | "out" | "pending">) {
+    const roster = Object.keys(statusFor).map((id) => ({
+      id, name: `Player ${id}`, email: `${id}@example.com`,
+    }));
+    const { fixtureId } = await seedFixture({ kicksOffAt: KICKS_OFF, squad: roster });
+
+    for (const [playerId, status] of Object.entries(statusFor)) {
+      if (status === "pending") continue;
+      await env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
+        playerId, intent: status === "in" ? "in" : "out", actorPlayerId: null,
+        source: "web", now: REMINDER_TIME.getTime(), whenFull: "waitlist",
+      });
+    }
+
+    const notifier = new RecordingNotifier();
+    await openAndRemind(db, notifier, REMINDER_TIME, SECRET, env.FIXTURE_CAPACITY);
+    return notifier.sent.flat();
+  }
+
+  it("confirms to the accepted player and asks the undecided one, in the same run", async () => {
+    const sent = await remindWith({ accepted: "in", undecided: "pending" });
+
+    const accepted = requireEmailMessage(sent.find((m) => m.to === "accepted@example.com")!);
+    const undecided = requireEmailMessage(sent.find((m) => m.to === "undecided@example.com")!);
+
+    expect(accepted.text).toContain("You're in.");
+    expect(accepted.text).not.toContain("I'm in:");
+    // The same tick, the same fixture, the same code path — only the reader's
+    // own answer differs. A failure here means the flag is being read once for
+    // the batch rather than per player.
+    expect(undecided.text).not.toContain("You're in.");
+    expect(undecided.text).toContain("I'm in:");
+  });
+
+  it("still gives the accepted player a way out", async () => {
+    const sent = await remindWith({ accepted: "in" });
+    const accepted = requireEmailMessage(sent[0]!);
+
+    expect(accepted.text).toContain("Can't make it:");
+    expect(accepted.html).toContain("intent=out");
+  });
+
+  it("asks a player who declined, exactly as before", async () => {
+    // Only `in` counts as answered for this purpose: a decline is the one
+    // prompt that lets somebody whose plans changed get back in.
+    const sent = await remindWith({ declined: "out" });
+
+    expect(requireEmailMessage(sent[0]!).text).toContain("I'm in:");
+  });
+
+  it("sends exactly one email to the accepted player, not two (BR-18)", async () => {
+    const sent = await remindWith({ accepted: "in" });
+
+    expect(sent.filter((m) => m.to === "accepted@example.com")).toHaveLength(1);
+  });
+});

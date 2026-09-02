@@ -98,3 +98,57 @@ describe("renderReminderEmail", () => {
     expect(html).not.toContain("<script");
   });
 });
+
+/**
+ * M45. Asking "can you play?" of somebody who accepted weeks ago reads as
+ * though their answer went missing, so the day-before email confirms instead.
+ */
+describe("renderReminderEmail, for a player who already holds a slot", () => {
+  const CONFIRMED: ReminderEmailPayload = { ...BASE, confirmed: true };
+
+  it("says they are in, and asks nothing", () => {
+    const { html, text } = renderReminderEmail(CONFIRMED);
+
+    expect(html).toContain("You&#39;re in.");
+    expect(text).toContain("You're in.");
+    expect(html).not.toContain(">I'm in<");
+    expect(text).not.toContain("I'm in:");
+  });
+
+  it("keeps the way out", () => {
+    // Load-bearing, not decoration. Every tier release and every promotion in
+    // the product is driven by an early dropout, so the one day-before email
+    // must carry a way to say "actually, I can't" — a player sent hunting for
+    // the app is a player who becomes a no-show instead.
+    const { html, text } = renderReminderEmail(CONFIRMED);
+
+    expect(html).toContain(BASE.respondOutUrl);
+    expect(html).toContain("Can't make it");
+    expect(text).toContain("Can't make it:");
+    expect(text).toContain(BASE.respondOutUrl);
+  });
+
+  it("keeps the same subject, so it is still findable in an inbox", () => {
+    expect(renderReminderEmail(CONFIRMED).subject).toBe(renderReminderEmail(BASE).subject);
+  });
+
+  it("still says nothing is recorded until the second tap", () => {
+    // The out link behaves exactly as it always did, and the honesty about
+    // link-prefetching that the asking copy carries applies to it unchanged.
+    const { html, text } = renderReminderEmail(CONFIRMED);
+
+    expect(html).toContain("nothing is recorded until then");
+    expect(text).toContain("nothing is recorded until then");
+    // Singular now: there is only one link left to describe.
+    expect(text).not.toContain("Either link");
+  });
+
+  it("leaves the asking copy alone when the flag is absent", () => {
+    // The default matters: every caller and test predating M45 means "ask".
+    const { html, text } = renderReminderEmail(BASE);
+
+    expect(html).toContain(">I'm in<");
+    expect(text).toContain("I'm in:");
+    expect(html).not.toContain("You&#39;re in.");
+  });
+});

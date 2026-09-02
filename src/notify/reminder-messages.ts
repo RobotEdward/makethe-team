@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { notificationLog, type fixtures, type games } from "../db/schema.js";
+import { notificationLog, responses, type fixtures, type games } from "../db/schema.js";
+import { occupiesSlot } from "../domain/response-status.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import { leaveTokenExpiry, responseTokenExpiry, signLeaveToken, signResponseToken } from "../domain/token.js";
 import { pushKey, reminderKey } from "./dedupe-key.js";
@@ -66,6 +67,7 @@ export async function buildReminderMessages(params: {
   );
 
   const alreadyIn = await playersAlreadyToldTheyAreIn(db, fixture.id);
+  const holdingASlot = await playersHoldingASlot(db, fixture.id);
 
   const pending: PendingNotification[] = [];
   const skippedPlayerIds: string[] = [];
@@ -119,6 +121,11 @@ export async function buildReminderMessages(params: {
       respondInUrl,
       respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
       leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
+      // M45. Read here rather than carried on `ReminderCandidate`: two senders
+      // build this message and pick their own candidates, so a field they each
+      // had to populate is a field one of them would eventually populate
+      // wrongly — which is exactly how the N-1 came to contradict the N-2.
+      confirmed: holdingASlot.has(candidate.playerId),
     };
 
     const dedupeKey = reminderKey(fixture.id, candidate.playerId);
@@ -196,4 +203,22 @@ async function playersAlreadyToldTheyAreIn(db: Db, fixtureId: string): Promise<S
       and(eq(notificationLog.fixtureId, fixtureId), eq(notificationLog.notificationType, "n2")),
     );
   return new Set(rows.map((row) => row.playerId));
+}
+
+/**
+ * Players who already hold a slot on this fixture — `status === "in"` (M45).
+ *
+ * `occupiesSlot` rather than a literal comparison, so this and the capacity
+ * object cannot come to disagree about what holding a slot means. A
+ * `waitlisted` player is deliberately not here: they said they were in but do
+ * not have a place, so "You're in." would be false for them and the asking
+ * copy is the honest one.
+ */
+async function playersHoldingASlot(db: Db, fixtureId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ playerId: responses.playerId, status: responses.status })
+    .from(responses)
+    .where(eq(responses.fixtureId, fixtureId));
+
+  return new Set(rows.filter((row) => occupiesSlot(row.status)).map((row) => row.playerId));
 }
