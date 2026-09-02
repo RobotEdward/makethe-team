@@ -146,6 +146,54 @@ second in the queue"; and a guest has no In/Out control at all — they were
 added for this fixture only, so their row shows their status in words beside
 a **Remove** button instead. Guests are covered in their own section below.
 
+## Opening a fixture early
+
+A fixture opens for answers on its own a few days before, and most weeks you
+never think about it. When you want it open now — the pitch got moved, or
+you're organising round a bank holiday — **Open it now** on the fixture's page
+does it immediately.
+
+The page tells you what pressing it will do, and that depends on your game. If
+you ask everybody at once, nobody is emailed yet: the day-before reminder still
+goes at its usual time, and the fixture is simply open for anyone who looks. If
+you ask in priority order, your first group is invited straight away and the
+rest wait their turn as usual.
+
+## Asking someone out of turn
+
+If you ask in priority order, each group is invited as places come free, and
+the fixture page shows an **Invite now** button beside anybody the order hasn't
+reached yet. Pressing it asks that one person now, without disturbing the order
+for everyone else — for the friend who always plays and happens to be low down
+the list, or the goalkeeper you'd rather not be short of.
+
+## Moving someone off the waitlist
+
+Where a waitlisted player's row would say **In**, it says **Promote** instead.
+It does what it says: moves them off the waitlist and into the game, and emails
+them. It reads as its own act rather than as answering for them, because it is
+one — they already said yes, and nothing is going to ask them again.
+
+## What has happened
+
+![One fixture's history: what happened to it, newest first, with who did each thing](images/fixture-timeline.png)
+
+**What has happened**, beside **Message players** at the bottom of a fixture's
+page, is that fixture's history in plain words, newest first: when it opened,
+who was invited and when, every answer as it came in, guests added or removed,
+teams saved and announced, whether it was called off, and any email that
+couldn't be sent.
+
+It is careful about *who*. Something the app did on its own says
+**Automatically**, so a fixture that opened on schedule and one you opened
+early don't read the same — that difference is most of why the page is worth
+having. Something somebody did carries their name.
+
+One caveat the page states itself: it only knows about things that happened
+since the feature was added. There is no way to fill in what came before,
+because those facts were never written down. An empty stretch means "nothing
+recorded", not "nothing happened".
+
 ## Answering for someone
 
 Not everyone answers an email. If somebody tells you in person, on the phone,

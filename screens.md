@@ -1,5 +1,9 @@
 # Make The Team — screen inventory for design review
 
+*Current to M51 (2 September 2026). Before this it had not been touched since M33 and was
+missing seventeen milestones' worth of screens; if it is stale again, `test/browser/catalogue.ts`
+is the machine-checked list of every page and is the right place to start.*
+
 A server-rendered web app (Cloudflare Workers + Hono, HTML forms, minimal JS) that runs a
 recurring casual sports fixture — a weekly kickabout. One organiser sets a game up once;
 fixtures generate themselves week after week; players answer a reminder email with two taps
@@ -50,6 +54,15 @@ games", "Back to the game").
 - **Success screen:** `Check your inbox` — "If that address can sign in, a link is on its
   way. It works once, and it expires after a few minutes." Plus a spam-folder / try-again line.
   Deliberately does not disclose whether the address exists.
+- **Inside the installed app the page reorders itself (M40).** An iOS home-screen app has its
+  own cookie jar, so an emailed magic link signs Safari in and leaves the app signed out —
+  nothing on the link's side can fix that. Where `display-mode: standalone` (or
+  `navigator.standalone`) holds, script moves the passkey block **above** the form, retitles the
+  intro to say the emailed link opens in the browser, and makes the passkey button primary. A
+  browser tab is untouched: there, the thing that always works comes first. Sessions also last
+  30 days with a daily sliding refresh (Better Auth's default was 7), so the wall is hit less
+  often. Conditional mediation (`autocomplete="email webauthn"` plus a background
+  `credentials.get`) offers a stored passkey without a click where the browser supports it.
 
 ### 1.3 Sign-in completion failure page — `GET /sign-in/complete`
 One page for all four dead ends (M20): `We can't sign you in` (h1), a per-case reason line
@@ -85,6 +98,30 @@ The public invite page. A stranger with the link needs no account.
   marker stands — they rejoin the squad but not that fixture). Re-joining an existing
   membership says "Nothing has changed".
 - **Logic:** Token is rotatable by the organiser; the old link dies immediately.
+- **Throttle (M51):** this is the one token deliberately handed to a whole squad, so it has its
+  own rate-limit budget (`SHARED_TOKEN_LIMITER`, 200/60) rather than the 10/60 sized for a
+  single player's personal link. Under the old shared budget the sixth person to tap the link
+  inside a minute got the too-many-requests page — exactly what a group-chat paste or a QR code
+  held up at training produces.
+
+### 1.4a Confirm a join — `GET/POST /join/:jtoken` (M39)
+Since M39 the invite form does **not** seat a first-time address (BR-47). Submitting it sends
+one email and shows **`Check your inbox`** — which names the game and the name typed and
+nothing else: no fixture details, no squad list, no second link, because it is the only
+message the app sends to an address before it knows the address reaches anyone. That page has
+no screenshot anywhere: it is reachable only by POST, and both capture harnesses are
+GET-driven.
+- **The link's page:** `Join the squad as <Name>?` (h1), the game and its venue on one line,
+  a single primary `Yes, join the squad` button, and "Not you? Just close this page — nothing
+  happens unless you press the button."
+- **Logic:** the GET writes nothing (BR-50); the POST is what creates the membership and
+  stamps `email_verified_at` — the click on the emailed link *is* the proof of address.
+- **Only once per address.** Anyone who has confirmed a join before — for this game or any
+  other — or who has ever signed in, skips the inbox step: the invite page seats them
+  immediately, as it always did.
+- **Design note:** the page centres its content vertically, so on a phone it is a short block
+  floating in a large empty field. Deliberate or not, it is the least conventional layout in
+  the product.
 
 ### 1.5 Respond to a fixture — `GET/POST /r/:token`
 **The single most-used screen in the product.** Reached by tapping either button in the
@@ -193,6 +230,17 @@ The signed-in home.
   owned games marked `· you own this`; then a `Set up a game` link. The section is omitted
   entire — heading included — when the player has no squads (the link stays). This gives a
   non-organiser a route to their game page that exists even when no fixture is open.
+- **`Your record` (h2, M48/M48a):** a table of the viewer's own playing record — one row per
+  game they have ever played in, linked to that game, plus an `All games` total row (omitted
+  for a single game, where it would be that row printed twice under a different label).
+  Columns are `P`/`W`/`L`/`D` as `<abbr>`s rather than words: spelled out, the five headers set
+  the columns wide enough that a long game name had only a few characters left and wrapped to
+  four lines at 390px. A fifth column `NR` appears **only when the number is non-zero anywhere
+  in the table** — a column that shows for some rows and not others is not a column — with the
+  caption "NR counts the games you played where nobody agreed a result, or where sides were
+  never picked". `played` is an upper bound on `won + lost + drawn`; NR is how the row is made
+  to add up rather than quietly failing to. The whole section is absent when nothing has been
+  played, matching the results-needed and squads sections.
 - **"Get set up" onboarding card:** shown for a player's first fortnight (from first
   sign-in) until dismissed. Up to three hints, each a plain link to a flow that exists
   elsewhere: `Add a passkey to sign in faster` → passkeys page; `Install the app on this
@@ -278,6 +326,21 @@ One page in four states, all under `Delete my data` (h1) + "You're signed in as 
   copy promises that in both states.
 - **`Games you've played` link (M27):** under `Coming up`, to this game's past-fixtures list
   (§2.7).
+- **`Standings` (h2, M49) — the squad's league table.** One row per player in the squad, with
+  `P`/`W`/`L`/`D`/`GD`/`Win%`/`Pts` as `<abbr>`s, three points for a win and one for a draw.
+  The viewer's own row is **marked, never moved** — "a league table whose fourth place is
+  printed at the top is no longer a league table". The player column is capped with an
+  ellipsis and carries a `title`, because uncapped one long name pushed `Pts` — the number the
+  table exists to report — off the right of a 390px screen behind a scroll nobody would think
+  to try; the cap is inside a mobile-only media query. Goal difference is written with a real
+  minus sign (U+2212), since at this size a hyphen beside a digit is close to invisible and
+  "5" for "−5" is a two-place error. A caption states the scoring and warns that GD counts
+  only games with an agreed score, so it covers fewer games than the rest of the row.
+  **Rendered not at all — no heading, no empty table — when the viewer may not see it or there
+  is nothing to show.** `standingsForViewer` decides; a heading over an empty table reads as a
+  broken page, and a heading over a table the viewer is not entitled to would advertise that
+  something is being kept from them. Both the player and organiser renderings call the one
+  shared function, so the two roles cannot rank one squad two different ways.
 - **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **No invite link, no QR, no controls, no edit link** — a separate renderer from the
   organiser's page so that capability cannot leak in by accident.
@@ -424,6 +487,32 @@ The organiser's home for one game.
 - **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **Logic:** A game always keeps at least one organiser; the last one cannot demote themselves.
 
+#### Standings, archived state and the invite card (M41, M49)
+- **`Standings` (h2, M49) — the squad's league table.** One row per player in the squad, with
+  `P`/`W`/`L`/`D`/`GD`/`Win%`/`Pts` as `<abbr>`s, three points for a win and one for a draw.
+  The viewer's own row is **marked, never moved** — "a league table whose fourth place is
+  printed at the top is no longer a league table". The player column is capped with an
+  ellipsis and carries a `title`, because uncapped one long name pushed `Pts` — the number the
+  table exists to report — off the right of a 390px screen behind a scroll nobody would think
+  to try; the cap is inside a mobile-only media query. Goal difference is written with a real
+  minus sign (U+2212), since at this size a hyphen beside a digit is close to invisible and
+  "5" for "−5" is a two-place error. A caption states the scoring and warns that GD counts
+  only games with an agreed score, so it covers fewer games than the rest of the row.
+  **Rendered not at all — no heading, no empty table — when the viewer may not see it or there
+  is nothing to show.** `standingsForViewer` decides; a heading over an empty table reads as a
+  broken page, and a heading over a table the viewer is not entitled to would advertise that
+  something is being kept from them. Both the player and organiser renderings call the one
+  shared function, so the two roles cannot rank one squad two different ways.
+- **Archived banner (M41):** an archived game says so once, at the top, with the date and an
+  unarchive form. While archived the edit link, the whole invite card and the `Message
+  everyone` button are gone from the page rather than disabled — "No fixtures will be
+  scheduled, the invite link is off and nothing here can be changed."
+- **Invite card:** `Invite people` (h2), "Share this link in your group chat, or let people
+  scan the code", a readonly input holding the URL, a `Copy` button revealed only by script, a
+  `Show the QR code` `<details>`, and a `Replace this link` form. `Message everyone` sits
+  *outside* that form on purpose — nested inside it, it read as one of the rotate control's
+  buttons.
+
 ### 3.3 Squad member detail — `GET /g/:id/squad/:playerId`
 - Member name (h1); "In <game>."; `What we have for them` (h2) → `Email` (or "No email
   address — a guest, added for one fixture"); `In this squad` → "Organiser/Player, since <date>".
@@ -470,6 +559,19 @@ The busiest organiser screen.
   Absent entirely for an `open`, `scheduled` or `cancelled` fixture — there is nothing yet to
   have a result about.
 - **Footer:** `Back to the game`.
+
+#### Owner controls added in M43/M46 (a section of 3.5)
+- **`Open it now`** on a fixture still `scheduled`: "This fixture opens for answers on its own
+  nearer the day", plus a consequence sentence that differs by game — an ungated game emails
+  nobody yet, a gated one invites the first group straight away. Promising one wording on both
+  would be a lie on half the fixtures this page renders.
+- **`Invite now`** beside a member the priority order has not reached yet (gated games only,
+  never a guest, only where `invitedAt` is null) — the owner asking one player out of turn.
+- **`Promote`** in place of `In` on a waitlisted member's segmented control, so the jump is a
+  labelled act rather than a re-answer, and it is recorded on the timeline as one.
+- **M43:** a player who was never invited may still say yes; they land on the waitlist rather
+  than being turned away. **M43a:** a promoted player is never asked again whether they can
+  play — they already said yes.
 
 ### 3.6 Team picker (a section of 3.5)
 - Two side columns headed with the team names (default `Team A` / `Team B`), each with a count.
@@ -557,6 +659,49 @@ One renderer, two scopes.
   update the button count until the server answers.
 
 ---
+
+### 3.8 Invite order — `GET/POST /g/:id/invites` (M34, BR-38; acted on immediately since M44)
+The owner's editor for *who gets asked when*, used only when `Ask in priority order` is on.
+- **Two controls, not one list.** "Who is asked when the game opens" and "in what order does
+  everybody else follow" are different questions; a single drag-everything list would make the
+  core group look like just another row, when it is the only rung most owners will ever set.
+- **Entirely scriptless** — assignment is a `<select>` per member, ordering a number per tier.
+  Drag-and-drop would need a scripted fallback for this same page anyway, and the page is
+  edited rarely and read never.
+- **The implicit final tier** ("everyone else", BR-38) is rendered last, dimmed, with its
+  members *named* and no remove control. Naming them is the point: an owner who cannot see who
+  is in "everyone else" cannot tell whether a new joiner landed somewhere sensible.
+- **M44:** saving the order acts on it immediately rather than at the next fixture.
+
+### 3.9 Archive a game — `GET/POST /g/:id/archive` (M41)
+Reached from a `danger-link` at the foot of the edit form, not from the game page.
+- A served page and a real form post, like removing a member — **not a `confirm()` dialog**,
+  because the consequence is counted and a dialog cannot state it.
+- **Contents:** `Archive <game>?` (h1); "No more fixtures will be scheduled, the invite link
+  stops working, and nothing about the game can be changed. Everyone in the squad can still
+  see its history."; then a consequence line that counts the actual damage in one of three
+  wordings — no upcoming fixtures ("so nobody needs telling"), fixtures but nobody in ("nobody
+  is emailed"), or "N upcoming fixtures will be called off, and M players who said they're in
+  or are waiting will be emailed". "You can unarchive it later from the game page."
+- **Actions:** `Archive <game>` (danger) and `No, keep it going` (a `keep-link`).
+
+### 3.10 What has happened — `GET /g/:id/f/:fixtureId/timeline` (M46, narrowed M47)
+One fixture's history, for its organiser, reached from a `What has happened` button beside
+`Message players` on the fixture page. Newest first.
+- **It reports what happened, not every write that happened (M47).** The vocabulary is a fixed
+  set of plain-English titles — `Opened for answers`, `Next group invited`, `Invited on their
+  own`, `Guest added`, `Guest removed`, `Teams saved`, `Teams announced`, `Who picks the teams
+  changed`, `Called off`, `An email could not be sent`.
+- **Attribution is exact, and that exactness is the feature.** An entry with no actor reads
+  `Automatically` — the sweep opening a fixture and an organiser opening it early are
+  otherwise the same row, and that difference is the reason the page exists. A subject with no
+  actor is prefixed `to`, because without it a send read "Ed · by email", a sentence about Ed
+  having sent something when Ed is who it went to.
+- **The "since" note is not a trimmable disclaimer.** The page is assembled from `audit_log`
+  and `notification_log`, which started recording these events when the feature shipped; no
+  backfill is possible because the facts were never stored. An organiser reading an empty week
+  and concluding nothing happened would be wrong in exactly the way this page exists to
+  prevent.
 
 ## 4. Admin
 

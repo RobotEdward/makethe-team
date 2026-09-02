@@ -384,6 +384,24 @@ customer-facing — accumulated behind a command nobody ran for ten days. The fi
 second visible, and so on. Anything that only breaks when a rarely-run command runs will be found
 in a batch, and the batch will contain something real.
 
+## The guide's demo world cannot illustrate standings or a playing record (M51, 2 September 2026)
+
+M48's "Your record" and M49's "Standings" have guide prose (chapter 07) and no screenshot. Both
+were captured and both were thrown away: every number in them was nought.
+
+`buildResultDemo` files a 3–1 result, but a fixture only contributes a won/lost/drawn to either
+table once the result has **settled** and the organiser has **picked sides** — without a side
+there is nothing to attribute the result to. No guide world picks teams at all (the
+`team-picker` shot deliberately photographs an unpicked picker), so the tables render honestly
+as P=1, W/L/D=0, NR=1, Win% "—". A screenshot has to illustrate the thing it sits under, and a
+grid of zeroes under prose about wins, points and goal difference does the opposite.
+
+Fixing it means teaching `buildResultDemo` to pick and announce sides before the fixture
+retires, and to have the second player agree the score so it settles. That is not free: it
+changes the world `result-panel` and `team-picker` are photographed in, and both would need
+re-reading. Worth doing the next time the guide is worked on properly; not worth bolting onto
+a capture fix.
+
 ## Cloudflare's monthly email allowance is guarded by a daily cap, not a monthly counter (M42, 29 August 2026)
 
 `MAX_EMAILS_PER_DAY_CLOUDFLARE` is set to 100. Cloudflare Email Service includes 3,000 sends a

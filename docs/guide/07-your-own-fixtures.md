@@ -86,6 +86,40 @@ Your organiser sees more on the same page. Theirs is called **Past fixtures**
 and holds every fixture the game has had, called-off ones included, so
 "what happened to that Thursday?" has an answer rather than a gap.
 
+## Your record
+
+Under your fixtures, **Your record** counts how you've actually got on: one row
+per game you've played in, with **P**, **W**, **L** and **D** — played, won,
+lost, drawn — and, if you play in more than one, an **All games** row adding
+them up. The game's name is a link to it.
+
+A game counts as played whenever you were in for it. It counts as won, lost or
+drawn only once a result settled *and* your organiser picked sides — without a
+side there's nothing to say about how *you* got on, only how the fixture ended.
+Where those two numbers differ you'll see a fifth column, **NR**, and a line
+underneath explaining it: the games you played where nobody agreed a result, or
+where sides were never picked. It appears only when there's something in it.
+
+If you haven't played yet there's no section at all, rather than a table of
+noughts.
+
+## The squad's league table
+
+On a game's page, **Standings** ranks everyone in the squad: **P**, **W**, **L**
+and **D** as above, then **GD** for goal difference, **Win%** and **Pts**. Three
+points for a win and one for a draw, the way a league table works. Your own row
+is highlighted where it falls — it isn't moved to the top, because a table with
+your name printed above people above you isn't a table any more.
+
+Two of the columns are narrower than they look. **Win%** is worked out over the
+games that settled, not everything played. **GD** counts only the games where a
+score was actually agreed, so it covers fewer games than the rest of the row —
+the note under the table says so.
+
+Whether you see the table at all follows the same setting as the squad list. If
+your organiser has chosen to keep the squad private, there are no standings on
+your page either — not an empty table, nothing at all.
+
 ## Signing in faster
 
 ![The passkeys page, offering to add a passkey](images/passkeys.png)

@@ -385,6 +385,18 @@ export const SHOTS: Shot[] = [
     signInAs: (w) => w.resultDemoPlayerEmail,
   },
   {
+    id: "fixture-timeline",
+    chapter: "05-running-your-squad",
+    title: "What has happened",
+    route: "/g/:id/f/:fixtureId/timeline",
+    shows:
+      "One fixture's history as its organiser sees it (M46, narrowed by M47): " +
+      "plain-English entries newest first, with 'Automatically' where the app " +
+      "acted on its own and a name where somebody did.",
+    path: (w) => `/g/${w.gameId}/f/${w.fixtureId}/timeline`,
+    persona: "organiser",
+  },
+  {
     id: "past-fixtures",
     chapter: "07-your-own-fixtures",
     title: "Games you've already played",
