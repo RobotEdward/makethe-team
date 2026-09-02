@@ -15,7 +15,11 @@ import { seedWorld, type World } from "./world.js";
  * Tagged `@capture` and skipped by default, because it is slow and produces
  * nothing CI can act on. Run it deliberately:
  *
- *     npx playwright test --grep @capture
+ *     CAPTURE=1 npx playwright test --grep @capture
+ *
+ * `CAPTURE=1` is not optional and the `--grep` alone does nothing: the tag is
+ * excluded by `grepInvert` in `playwright.config.ts`, which that variable is
+ * what switches off. Without it the run ends "No tests found".
  *
  * Output lands in `test/browser/screenshots/` (gitignored).
  */
