@@ -15,6 +15,7 @@ import {
 } from "../db/dashboard-queries.js";
 import type { DashboardFixture } from "../db/dashboard-queries.js";
 import { listMemberGames } from "../db/queries.js";
+import { playerRecordByGame } from "../db/record-queries.js";
 import { listClaimsForFixtures } from "../db/result-queries.js";
 import { resultWordsForLockedRows } from "../db/result-summary.js";
 import { blockingGamesFor } from "../domain/blocking-games.js";
@@ -64,11 +65,15 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
   const player = c.get("player")!;
   const db = getDb(c.env.DB);
 
-  const [rows, squads, onboarding, played] = await Promise.all([
+  const [rows, squads, onboarding, played, record] = await Promise.all([
     listDashboardFixtures(db, player.id),
     listMemberGames(db, player.id),
     onboardingHintsFor(db, player, c.get("session")!.user.id, now),
     playedFixtureSections(db, player.id, now),
+    // One grouped aggregate, whatever the size of the history — see
+    // `playerRecordByGame` for why this one read is scoped by the viewer's own
+    // response rows rather than by an active membership.
+    playerRecordByGame(db, player.id),
   ]);
 
   // §6's third clause: a blocked erasure "surfaces on the player's dashboard
@@ -94,6 +99,7 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
       squads,
       resultsNeeded: played.resultsNeeded,
       recentlyPlayed: played.recentlyPlayed,
+      record,
       problem,
       // `player` already carries `erasesAt` — `sessionMiddleware` selects the
       // whole row, so this is a field read, not a second query. Not scoped to

@@ -10,6 +10,7 @@ import {
   fixturePath,
 } from "../auth/paths.js";
 import type { FixtureView } from "../domain/fixture-view.js";
+import { totalRecord, unrecordedIn, type PlayerRecord } from "../domain/record.js";
 import type { ResponseStatus } from "../domain/response-status.js";
 import {
   answerStateOf,
@@ -21,7 +22,13 @@ import {
 import { renderFreshness } from "./freshness.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
-import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, FRESHNESS_CSS, RESULT_CSS } from "./styles.js";
+import {
+  DASHBOARD_STYLES_CSS,
+  FIXTURE_STYLES_CSS,
+  FRESHNESS_CSS,
+  RECORD_CSS,
+  RESULT_CSS,
+} from "./styles.js";
 
 /**
  * One fixture as the dashboard shows it: the game, when and where, the derived
@@ -114,6 +121,19 @@ export interface RecentlyPlayedRow {
   resultWords?: string;
 }
 
+/**
+ * One game's line of the "Your record" table (M48).
+ *
+ * Deliberately four numbers and a name: no opponent, no team-mate, no
+ * per-fixture list. The same rule `DashboardRow` states — this page is the
+ * viewer's own commitments and nobody else's — and the same enforcement, a
+ * type with nowhere to put a roster.
+ */
+export interface RecordRow extends PlayerRecord {
+  gameId: string;
+  gameName: string;
+}
+
 export interface DashboardPageOptions {
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
@@ -125,6 +145,8 @@ export interface DashboardPageOptions {
   resultsNeeded: readonly ResultsNeededRow[];
   /** The newest played fixture not already in `resultsNeeded`, or null (M27). */
   recentlyPlayed: RecentlyPlayedRow | null;
+  /** The viewer's playing record in every game they have played in (M48). */
+  record: readonly RecordRow[];
   /** The one refusal `POST /app/games/:gameId/leave` can produce (M7a Task 4). */
   problem?: string;
   /** Set when this player has an erasure pending — already formatted (M7b). */
@@ -461,6 +483,88 @@ function renderRecentlyPlayedSection(row: RecentlyPlayedRow | null): string {
     </ul>`;
 }
 
+/**
+ * "Your record" — played, won, lost and drawn in every game the viewer has
+ * ever played in, plus the total across them (M48).
+ *
+ * **`played` is an upper bound on `won + lost + drawn`, and the table says
+ * so.** A fixture counts as played whenever the viewer was in for it; it
+ * counts as won, lost or drawn only once a result has settled *and* the
+ * organiser picked sides, because a result with no side to attribute it to
+ * says nothing about how this player got on. Rather than let the row quietly
+ * fail to add up, the difference gets its own column — but only when there is
+ * one, so a squad that files every result sees four columns and no caption.
+ *
+ * No section at all when nothing has been played, matching
+ * `renderResultsNeededSection` and `renderYourSquadsSection`: a heading over a
+ * table of zeroes reads as a broken page rather than an honest empty state,
+ * and a player with no history is told nothing by "Played 0".
+ *
+ * No total row for a single game, which would be that game's row printed
+ * twice under a different label.
+ */
+function renderRecordSection(record: readonly RecordRow[]): string {
+  if (record.length === 0) return "";
+
+  const total = totalRecord(record);
+  const unrecorded = unrecordedIn(total);
+  // One decision for the whole table, not per row: a column that appeared for
+  // some rows and not others is not a column.
+  const showUnrecorded = unrecorded > 0;
+
+  const counts = (row: PlayerRecord) => `
+        <td class="count">${escapeHtml(String(row.played))}</td>
+        <td class="count">${escapeHtml(String(row.won))}</td>
+        <td class="count">${escapeHtml(String(row.lost))}</td>
+        <td class="count">${escapeHtml(String(row.drawn))}</td>
+        ${showUnrecorded ? `<td class="count">${escapeHtml(String(unrecordedIn(row)))}</td>` : ""}`;
+
+  const rows = record
+    .map(
+      (row) => `
+      <tr>
+        <td class="record-game"><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></td>
+        ${counts(row)}
+      </tr>`,
+    )
+    .join("");
+
+  const totalRow =
+    record.length < 2
+      ? ""
+      : `
+    <tfoot>
+      <tr>
+        <th scope="row" class="record-game">All games</th>
+        ${counts(total)}
+      </tr>
+    </tfoot>`;
+
+  const note = showUnrecorded
+    ? `<p class="record-note">"No result" counts the games you played where nobody agreed a result, or where sides were never picked — so there is no won, lost or drawn to record.</p>`
+    : "";
+
+  return `
+    <h2>Your record</h2>
+    <div class="record-scroll">
+      <table class="record">
+        <thead>
+          <tr>
+            <th scope="col" class="record-game">Game</th>
+            <th scope="col" class="count">Played</th>
+            <th scope="col" class="count">Won</th>
+            <th scope="col" class="count">Lost</th>
+            <th scope="col" class="count">Drawn</th>
+            ${showUnrecorded ? `<th scope="col" class="count">No result</th>` : ""}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+        ${totalRow}
+      </table>
+    </div>
+    ${note}`;
+}
+
 export function renderDashboardPage({
   nav,
   playerName,
@@ -468,6 +572,7 @@ export function renderDashboardPage({
   squads,
   resultsNeeded,
   recentlyPlayed,
+  record,
   problem,
   erasesAtLocal,
   erasureHeldUp,
@@ -498,6 +603,7 @@ export function renderDashboardPage({
     ${renderResultsNeededSection(resultsNeeded)}
     ${renderRecentlyPlayedSection(recentlyPlayed)}
     ${renderYourSquadsSection(squads)}
+    ${renderRecordSection(record)}
     ${renderFreshness(DASHBOARD_PATH)}
   `;
 
@@ -509,7 +615,7 @@ export function renderDashboardPage({
     // (M27) — the account page pulls it in for the same class on the same
     // kind of row. Namespaced `.result-*` and colliding with nothing, so its
     // position in this array is not load-bearing.
-    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, RESULT_CSS, FRESHNESS_CSS],
+    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, RESULT_CSS, RECORD_CSS, FRESHNESS_CSS],
     pageScripts: [FRESHNESS_JS],
   });
 }

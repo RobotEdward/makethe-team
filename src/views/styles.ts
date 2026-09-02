@@ -1369,6 +1369,37 @@ export const TIMELINE_CSS = `
   .timeline-empty { color: var(--mut); }
 `;
 
+/**
+ * The dashboard's "Your record" table (M48).
+ *
+ * A table rather than the `.fixture-card` idiom the rest of the page uses,
+ * because the point of this section is comparing four numbers down a column,
+ * which cards cannot do. That brings the one risk cards avoid: at 390px a
+ * five-column table with a game name in the first cell is exactly the thing
+ * that pushes a page sideways, so the table lives in an `overflow-x: auto`
+ * wrapper — the scroll happens inside `.record-scroll` and never on `body`.
+ *
+ * Every selector is namespaced under `.record`, so this block collides with
+ * nothing and its position in `PAGE_STYLE_BLOCKS` is not load-bearing.
+ */
+export const RECORD_CSS = `
+  .record-scroll { overflow-x: auto; margin-bottom: 1.25rem; }
+  table.record { border-collapse: collapse; width: 100%; font-size: var(--t-body); }
+  table.record th, table.record td {
+    padding: 0.5rem 0.4rem;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    white-space: nowrap;
+  }
+  table.record thead th { color: var(--mut); font-weight: normal; }
+  table.record .count { text-align: right; font-variant-numeric: tabular-nums; }
+  /* The game name is the only cell allowed to wrap: it is the one that can be
+     long, and letting it wrap is what keeps the number columns on screen. */
+  table.record .record-game { white-space: normal; width: 99%; }
+  table.record tfoot th, table.record tfoot td { font-weight: 600; border-bottom: none; }
+  .record-note { color: var(--mut); font-size: var(--t-support); margin: -0.75rem 0 1.25rem; }
+`;
+
 export const PAGE_STYLE_BLOCKS = [
   FIXTURE_STYLES_CSS,
   PRIVACY_STYLES_CSS,
@@ -1394,6 +1425,7 @@ export const PAGE_STYLE_BLOCKS = [
   NOTIFY_MATRIX_CSS,
   ADMIN_NOTIFICATIONS_CSS,
   TIMELINE_CSS,
+  RECORD_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

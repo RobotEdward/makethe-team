@@ -240,6 +240,10 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
         squads: [],
         resultsNeeded: [],
         recentlyPlayed: null,
+        // "Your record" reads no lookup column: `playerRecordByGame` buckets
+        // `fixture_results.outcome` in SQL, where an unrecognised value falls
+        // into no bucket, and the view renders only the resulting numbers.
+        record: [],
       }),
   },
   {

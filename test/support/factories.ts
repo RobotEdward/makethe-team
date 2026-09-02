@@ -4,6 +4,7 @@ import {
   appSettings,
   emailQuota,
   fixtureResultClaims,
+  fixtureResults,
   fixtures,
   gameNotificationSettings,
   games,
@@ -327,6 +328,36 @@ export async function insertResponse(
   const id = crypto.randomUUID();
   await db.insert(responses).values({ id, fixtureId, playerId, source: "system", ...overrides });
   return id;
+}
+
+/**
+ * The materialised result of a fixture — the row `src/sweep/result-cache.ts`
+ * writes once a window has locked.
+ *
+ * Everything but the outcome defaults to a plausible unanimous tally, because
+ * `playerRecordByGame` reads only `outcome`: a test that had to spell out
+ * eight backer counts to say "Bibs won" would be describing the tally rather
+ * than the fact under test.
+ */
+export async function insertFixtureResult(
+  db: Db,
+  fixtureId: string,
+  overrides: Partial<typeof fixtureResults.$inferInsert> = {},
+): Promise<void> {
+  await db.insert(fixtureResults).values({
+    fixtureId,
+    outcome: "a",
+    outcomeBackers: 1,
+    marginBackers: 0,
+    voterCount: 1,
+    eligibleCount: 1,
+    distinctOutcomes: 1,
+    distinctScores: 0,
+    rostered: true,
+    teamsAccurate: true,
+    lockedAt: NOW,
+    ...overrides,
+  });
 }
 
 export async function insertResultClaim(

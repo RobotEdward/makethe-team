@@ -17,7 +17,13 @@ import { fixtures, memberships, passkey, players, pushSubscriptions, responses }
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { FRESHNESS_JS, PRESENCE_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { DASHBOARD_STYLES_CSS, FIXTURE_STYLES_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
-import { insertGame, insertMembership, insertResultClaim, resetDatabase } from "../support/factories.js";
+import {
+  insertFixtureResult,
+  insertGame,
+  insertMembership,
+  insertResultClaim,
+  resetDatabase,
+} from "../support/factories.js";
 import { kickoffIn } from "../support/clock.js";
 import { ALLOWED, ORIGIN, bindings, signIn } from "../support/sign-in.js";
 
@@ -1492,5 +1498,68 @@ describe("GET /app — recently played", () => {
     expect(body).toContain("Coming Up Soon");
     expect(body).toContain("Recently played");
     expect(body.indexOf("Coming Up Soon")).toBeLessThan(body.indexOf("Recently played"));
+  });
+});
+
+/**
+ * "Your record" on the dashboard (M48).
+ *
+ * The counting rules themselves are `test/db/record-queries.test.ts`'s
+ * business and the layout is `test/views/dashboard-record.test.ts`'s; what is
+ * left for the route is that the section is wired up at all, and that it
+ * survives a player whose history spans a game they have since left — the one
+ * respect in which this query is deliberately wider than every other read on
+ * the page.
+ */
+describe("the dashboard's record section", () => {
+  beforeEach(resetDatabase);
+
+  it("counts the viewer's played fixtures, including in a game they have left", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+
+    const current = await seedFixtureFor(playerId, {
+      gameName: "Thursday 7-a-side",
+      lifecycle: "played",
+      kicksOffAt: new Date("2030-06-13T18:00:00Z"),
+    });
+    await db
+      .update(responses)
+      .set({ status: "in", team: "a" })
+      .where(eq(responses.fixtureId, current.fixtureId));
+    await insertFixtureResult(db, current.fixtureId, { outcome: "a" });
+
+    const gone = await seedFixtureFor(playerId, {
+      gameName: "Old Sunday League",
+      lifecycle: "played",
+      kicksOffAt: new Date("2030-05-05T18:00:00Z"),
+      memberActive: false,
+    });
+    await db
+      .update(responses)
+      .set({ status: "in", team: "a" })
+      .where(eq(responses.fixtureId, gone.fixtureId));
+    await insertFixtureResult(db, gone.fixtureId, { outcome: "b" });
+
+    const res = await SELF.fetch(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } });
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(html).toContain("Your record");
+    expect(html).toContain("Old Sunday League");
+    expect(html).toContain("All games");
+    // Two played, one won, one lost, none drawn — the total row.
+    expect(html).toContain(`<td class="count">2</td>`);
+  });
+
+  it("shows no record section to a player who has played nothing", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    await seedFixtureFor(playerId);
+
+    const html = await (await SELF.fetch(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } })).text();
+
+    expect(html).toContain("Your games");
+    expect(html).not.toContain("Your record");
   });
 });
