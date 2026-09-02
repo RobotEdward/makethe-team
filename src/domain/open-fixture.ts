@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { fixtures, memberships, responses } from "../db/schema.js";
 import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
+import { recordAudit } from "../db/audit.js";
 import { isTerminalLifecycle } from "./lifecycle.js";
 import { isMuted } from "./mute.js";
 
@@ -43,7 +44,22 @@ export interface OpenFixtureResult {
  * squad list, the reminder sweep, the broadcast audiences — needing no idea
  * that muting exists. `out` is a status they all already handle.
  */
-export async function openFixture(db: Db, fixtureId: string, now: Date): Promise<OpenFixtureResult> {
+export async function openFixture(
+  db: Db,
+  fixtureId: string,
+  now: Date,
+  /**
+   * The owner who opened it early (BR-11), or null when the sweep opened it at
+   * the reminder instant.
+   *
+   * The audit row is written **here** rather than by each caller, because the
+   * two ways a fixture opens leave identical rows behind — `lifecycle` and
+   * `opened_at` say nothing about who — and a caller that forgot would lose
+   * the only evidence, silently. Defaulted to null so the sweep reads as the
+   * system action it is without passing an argument to say so.
+   */
+  actorPlayerId: string | null = null,
+): Promise<OpenFixtureResult> {
   const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
   if (!fixture) return { opened: false, pendingCreated: 0, autoDeclined: 0, reason: "not-found" };
   if (isTerminalLifecycle(fixture.lifecycle)) {
@@ -92,6 +108,19 @@ export async function openFixture(db: Db, fixtureId: string, now: Date): Promise
     .update(fixtures)
     .set({ lifecycle: "open", openedAt: now })
     .where(eq(fixtures.id, fixtureId));
+
+  await recordAudit(db, {
+    actorPlayerId,
+    entityType: "fixture",
+    entityId: fixtureId,
+    action: "fixture.opened",
+    // The size of the eligible set fixed at this instant (BR-1). No later
+    // query can reconstruct it: people join and leave afterwards, and a muted
+    // member's row starts life as `out`, so counting rows later answers a
+    // different question.
+    after: { pendingCreated, autoDeclined },
+    now,
+  });
 
   return { opened: true, pendingCreated, autoDeclined };
 }

@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
+import { auditLog, fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 
@@ -161,6 +161,40 @@ describe("openFixture", () => {
     const rows = await db.select().from(responses).where(eq(responses.fixtureId, fixtureId));
     expect(rows).toHaveLength(25);
     expect(rows.every((r) => r.status === "out")).toBe(true);
+  });
+
+  it("records the open with a null actor when nobody asked for it", async () => {
+    const { fixtureId } = await seed(10);
+
+    await openFixture(db, fixtureId, NOW);
+
+    const [row] = await db.select().from(auditLog).where(eq(auditLog.entityId, fixtureId));
+    expect(row?.action).toBe("fixture.opened");
+    // Null, not the sweep's own id or the owner's: nobody acted. An actor here
+    // would read as somebody having opened it early, which is the one question
+    // this row exists to answer.
+    expect(row?.actorPlayerId).toBeNull();
+    expect(JSON.parse(row?.afterJson ?? "{}")).toEqual({ pendingCreated: 10, autoDeclined: 0 });
+  });
+
+  it("records the actor when an owner opened it early (BR-11)", async () => {
+    const { fixtureId } = await seed(10);
+
+    await openFixture(db, fixtureId, NOW, "p-0");
+
+    const [row] = await db.select().from(auditLog).where(eq(auditLog.entityId, fixtureId));
+    expect(row?.actorPlayerId).toBe("p-0");
+  });
+
+  it("writes no audit row for a call that opened nothing", async () => {
+    const { fixtureId } = await seed(10);
+    await openFixture(db, fixtureId, NOW);
+
+    await openFixture(db, fixtureId, NOW, "p-0");
+
+    // A second press must not leave a trail saying the owner opened a fixture
+    // that was open already.
+    expect(await db.select().from(auditLog).where(eq(auditLog.entityId, fixtureId))).toHaveLength(1);
   });
 
   it("does not retroactively invite someone who joins after opening (BR-2)", async () => {

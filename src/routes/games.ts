@@ -17,6 +17,7 @@ import {
 } from "../auth/paths.js";
 import { requirePlayer, pageNav } from "../auth/session.js";
 import { buildAuditInsert, recordAudit } from "../db/audit.js";
+import { openFixture } from "../domain/open-fixture.js";
 import { getDb, type Db } from "../db/client.js";
 import {
   countCommitments,
@@ -1420,6 +1421,7 @@ async function ownerFixtureParams(
     // M34. Only a gated Game, and only while the fixture is still taking
     // answers: a played or cancelled fixture releases nothing, so a panel
     // offering to invite the next group would be a control with no effect.
+    gatedInvites: game.gatedInvitesEnabled,
     inviteProgress:
       game.gatedInvitesEnabled && fixture.lifecycle === "open"
         ? await inviteProgressParams(db, game, fixture)
@@ -1787,6 +1789,44 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
  * waitlists — `whenFull` is `"refuse"` or `"exceed"` only — because a slot
  * held "maybe" for someone with no login and no address helps nobody.
  */
+/**
+ * The owner's "open it now" button on a scheduled fixture (M46, BR-11).
+ *
+ * Opening fixes the eligible set at this instant (BR-1), so pressing this a
+ * week early asks the squad as it stands a week early — that is the point of
+ * the button, and `openFixture` is the one place that rule lives.
+ *
+ * **It does not send the day-before reminder, and must not start.** N-1 is
+ * capped at one per player per fixture (BR-18) and step 2 of the sweep keys
+ * off the reminder instant rather than off `opened_at`; a route that sent it
+ * here would spend that one message days early and leave the fixture silent
+ * from now until kickoff (see `openAndRemind`). What it does do is run the
+ * gated release path, which for a gated Game invites the first tier at once —
+ * an existing message on an existing dedupe key, not a second N-1 — and for an
+ * ungated Game claims nothing and sends nobody anything.
+ *
+ * The lifecycle guard is `openFixture`'s own: a second press, or a press on a
+ * cancelled fixture, returns `opened: false` and this handler writes neither
+ * an audit row nor a send. So the redirect is unconditional and the button's
+ * absence on an already-open page is presentation, not enforcement.
+ */
+gamesRoutes.post("/g/:id/f/:fixtureId/open", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
+  // `openFixture` writes the `fixture.opened` audit row itself, taking the
+  // actor — so an early open and the sweep's are distinguishable without this
+  // handler having to remember.
+  const result = await openFixture(target.db, target.fixture.id, now, c.get("player")!.id);
+
+  if (result.opened) c.executionCtx.waitUntil(notifyReleasedSubs(c.env, target.fixture.id, now));
+
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+});
+
 /**
  * The owner's "invite the next group now" button (M34).
  *

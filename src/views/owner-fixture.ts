@@ -7,6 +7,7 @@ import {
   ownerGuestPath,
   ownerGuestRemovePath,
   ownerResponsePath,
+  openFixturePath,
 } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { RESPONSE_STATUSES } from "../domain/response-status.js";
@@ -47,6 +48,16 @@ export interface OwnerFixtureParams {
    * switched off.
    */
   inviteProgress?: InviteProgressParams;
+  /**
+   * Whether this Game runs an invite order (BR-39), for the "open it now"
+   * copy (M46).
+   *
+   * Carried separately rather than read off `inviteProgress`, which is built
+   * only for an *open* fixture: on the `scheduled` page the button lives on,
+   * that panel is always absent, so deriving gating from it would show every
+   * owner the ungated sentence.
+   */
+  gatedInvites: boolean;
   gameId: string;
   gameName: string;
   /**
@@ -483,6 +494,35 @@ function whatsappMessages(params: OwnerFixtureParams): WhatsAppMessage[] {
   return messages;
 }
 
+/**
+ * The owner's "open it now" control, on a `scheduled` fixture only (M46, BR-11).
+ *
+ * The copy says what the press actually does, because the two halves are easy
+ * to assume and wrong: it fixes the eligible set at this moment (BR-1), and it
+ * does **not** bring the day-before reminder forward — N-1 still goes at its
+ * scheduled instant, which is what stops an early open leaving the fixture
+ * silent until kickoff.
+ *
+ * `gated` changes only the sentence. An ungated Game's press mails nobody; a
+ * gated one's releases the first group, so promising that here would be a lie
+ * on half the fixtures this renders.
+ */
+function renderOpenNow(gameId: string, fixtureId: string, view: FixtureView, gated: boolean): string {
+  if (view.status !== "scheduled") return "";
+
+  const consequence = gated
+    ? "The first group is invited straight away; the rest wait their turn as usual."
+    : "Nobody is emailed yet — the day-before reminder still goes at its usual time.";
+
+  return `
+    <section class="open-now">
+      <p>${escapeHtml(`This fixture opens for answers on its own nearer the day. ${consequence}`)}</p>
+      <form method="post" action="${escapeHtml(openFixturePath(gameId, fixtureId))}">
+        <button class="button primary" type="submit">Open it now</button>
+      </form>
+    </section>`;
+}
+
 export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   const { gameId, fixtureId, gameName, kicksOffAtLocal, venueName, inCount, maxPlayers, view, squad } = params;
 
@@ -523,6 +563,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="venue">${escapeHtml(venueName)}</p>
     ${renderStatusLine(view, waitlistCount)}
+    ${renderOpenNow(gameId, fixtureId, view, params.gatedInvites)}
     ${renderOverCapacity(view, inCount, maxPlayers)}
     ${renderConfirm(gameId, fixtureId, params)}
 

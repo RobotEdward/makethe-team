@@ -188,6 +188,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
         teamsNeedAnotherLook: false,
         announcementOutstanding: false,
         teamsEmailEnabled: true,
+        gatedInvites: false,
         cancellationReason: null,
       }),
   },

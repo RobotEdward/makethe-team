@@ -213,6 +213,11 @@ export function inviteTierDeletePath(gameId: string, tierId: string): string {
   return `/g/${gameId}/invites/tier/${tierId}/delete`;
 }
 
+/** The owner's "open it now" button on a scheduled fixture (M46, BR-11). */
+export function openFixturePath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/open`;
+}
+
 /** The owner's "invite the next group now" button on a fixture (M34, BR-43). */
 export function inviteNextPath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}/invite/next`;

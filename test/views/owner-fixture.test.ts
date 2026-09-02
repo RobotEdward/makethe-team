@@ -60,6 +60,7 @@ const BASE: OwnerFixtureParams = {
   teamsNeedAnotherLook: false,
   announcementOutstanding: false,
   teamsEmailEnabled: true,
+  gatedInvites: false,
   cancellationReason: null,
 };
 

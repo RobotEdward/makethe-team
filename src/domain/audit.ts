@@ -86,6 +86,15 @@ export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
  */
 export const AUDIT_ACTIONS = [
   "fixture.cancelled",
+  // M46. A fixture moving from `scheduled` to `open` (BR-1, BR-11). The actor
+  // is the owner who pressed "Open it now" and **null when the sweep opened it
+  // at the reminder instant** — which is the whole reason the row exists.
+  // Without it, an early open and an automatic one leave identical database
+  // state (`lifecycle`, `opened_at`), so "was this opened early, and by whom?"
+  // is unanswerable from the row alone. `after` carries `{ pendingCreated,
+  // autoDeclined }` — the size of the eligible set fixed at that instant
+  // (BR-1), which no later query can reconstruct once people join or leave.
+  "fixture.opened",
   "fixture.reminder_email_deferred",
   "fixture.promotion_email_deferred",
   "fixture.cancellation_email_deferred",
