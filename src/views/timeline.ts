@@ -15,7 +15,16 @@ export interface TimelinePageParams {
    * by the caller — this view never touches a `Date`, for the same reason no
    * other view does (TR-5).
    */
-  entries: readonly { atLocal: string; actor: string | null; subject: string | null; title: string; detail: string | null }[];
+  entries: readonly {
+    /** The day, as a subhead: "Wednesday 2 September". */
+    dayLocal: string;
+    /** The clock time alone: "16:35". */
+    timeLocal: string;
+    actor: string | null;
+    subject: string | null;
+    title: string;
+    detail: string | null;
+  }[];
 }
 
 /**
@@ -24,8 +33,19 @@ export interface TimelinePageParams {
  */
 export type RenderableEntry = TimelinePageParams["entries"][number];
 
-export function toRenderable(entry: TimelineEntry, atLocal: string): RenderableEntry {
-  return { atLocal, actor: entry.actor, subject: entry.subject, title: entry.title, detail: entry.detail };
+export function toRenderable(
+  entry: TimelineEntry,
+  dayLocal: string,
+  timeLocal: string,
+): RenderableEntry {
+  return {
+    dayLocal,
+    timeLocal,
+    actor: entry.actor,
+    subject: entry.subject,
+    title: entry.title,
+    detail: entry.detail,
+  };
 }
 
 /**
@@ -41,33 +61,50 @@ export function toRenderable(entry: TimelineEntry, atLocal: string): RenderableE
 export function renderTimelinePage(params: TimelinePageParams): string {
   const { gameId, fixtureId } = params;
 
-  const items = params.entries
-    .map((entry) => {
-      // "Automatically" rather than a name, and never "somebody": the sweep
-      // opening a fixture and an organiser opening it early are otherwise the
-      // same row, and that difference is what this page is for.
-      //
-      // A subject with no actor is prefixed "to". Without it a send read
-      // "Ed · by email", which is a sentence about Ed having sent something —
-      // exactly backwards, since Ed is who it went to and nobody sent it.
-      const who =
-        entry.actor === null
-          ? entry.subject === null
-            ? "Automatically"
-            : `to ${escapeHtml(entry.subject)}`
-          : entry.subject === null
-            ? `by ${escapeHtml(entry.actor)}`
-            : `${escapeHtml(entry.subject)} — by ${escapeHtml(entry.actor)}`;
+  const renderEntry = (entry: RenderableEntry): string => {
+    // "Automatically" rather than a name, and never "somebody": the sweep
+    // opening a fixture and an organiser opening it early are otherwise the
+    // same row, and that difference is what this page is for.
+    //
+    // A subject with no actor is prefixed "to". Without it a send read
+    // "Ed · by email", which is a sentence about Ed having sent something —
+    // exactly backwards, since Ed is who it went to and nobody sent it.
+    const who =
+      entry.actor === null
+        ? entry.subject === null
+          ? "Automatically"
+          : `to ${escapeHtml(entry.subject)}`
+        : entry.subject === null
+          ? `by ${escapeHtml(entry.actor)}`
+          : `${escapeHtml(entry.subject)} — by ${escapeHtml(entry.actor)}`;
 
-      const detail = entry.detail === null ? "" : ` · ${escapeHtml(entry.detail)}`;
+    const detail = entry.detail === null ? "" : ` · ${escapeHtml(entry.detail)}`;
 
-      return `
+    return `
       <li>
-        <span class="timeline-when">${escapeHtml(entry.atLocal)}</span>
         <span class="timeline-what">${escapeHtml(entry.title)}</span>
-        <span class="timeline-who">${who}${detail}</span>
+        <span class="timeline-who"><span class="timeline-when">${escapeHtml(entry.timeLocal)}</span>${who}${detail}</span>
       </li>`;
-    })
+  };
+
+  // Grouped by day, in the order the entries arrive — they are already newest
+  // first, so consecutive runs share a day and a change of day starts a new
+  // group. Not a sort or a Map: either would decide an order of its own, and
+  // the order here is the caller's (M47 narrowed *which* events appear, and
+  // nothing may quietly reorder them).
+  const groups: { day: string; entries: RenderableEntry[] }[] = [];
+  for (const entry of params.entries) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.day === entry.dayLocal) last.entries.push(entry);
+    else groups.push({ day: entry.dayLocal, entries: [entry] });
+  }
+
+  const items = groups
+    .map(
+      (group) => `
+      <h2 class="timeline-day">${escapeHtml(group.day)}</h2>
+      <ol class="timeline">${group.entries.map(renderEntry).join("")}</ol>`,
+    )
     .join("");
 
   const body = `
@@ -77,7 +114,7 @@ export function renderTimelinePage(params: TimelinePageParams): string {
     ${
       params.entries.length === 0
         ? `<p class="timeline-empty">Nothing yet.</p>`
-        : `<ol class="timeline">${items}</ol>`
+        : items
     }
     <p class="back-link"><a href="${escapeHtml(fixturePath(gameId, fixtureId))}">Back to the fixture</a></p>
   `;

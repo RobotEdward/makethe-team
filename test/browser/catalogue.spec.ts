@@ -77,6 +77,7 @@ const ROUTE_TO_ID = new Map<string, string>([
   // usual failure and just as quiet. The timeline (M46) had neither.
   ["/g/:id/archive", "archive-game"],
   ["/g/:id/invite/rotate", "rotate-invite"],
+  ["/g/:id/f/:fixtureId/guest/add", "add-guest"],
   ["/g/:id/f/:fixtureId/timeline", "fixture-timeline"],
   ["/g/:id/squad/:playerId/remove", "remove-member"],
   ["/g/:id/squad/:playerId", "squad-member"],

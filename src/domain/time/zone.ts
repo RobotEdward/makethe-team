@@ -13,6 +13,7 @@ const formatters = new Map<string, Intl.DateTimeFormat>();
 const dateOnlyFormatters = new Map<string, Intl.DateTimeFormat>();
 const displayFormatters = new Map<string, Intl.DateTimeFormat>();
 const shortDateFormatters = new Map<string, Intl.DateTimeFormat>();
+const timeOnlyFormatters = new Map<string, Intl.DateTimeFormat>();
 
 /** Read-only view of the formatter cache size, for tests only. */
 export function formatterCacheSize(): number {
@@ -67,6 +68,15 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
     minute: "2-digit",
     second: "2-digit",
     hourCycle: "h23",
+  });
+}
+
+function timeOnlyFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  // Its own cache, for the reason every formatter here has one: a single cache
+  // keyed by zone alone cannot hold two option sets for the same zone.
+  return cachedFormatter(timeZone, timeOnlyFormatters, "en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -132,6 +142,22 @@ export function formatLocalDateTime(instant: Date, timeZone: string): string {
  * conversion in the app goes through this module (TR-5), and a view building
  * its own `Intl.DateTimeFormat` is exactly what that rule forbids.
  */
+/**
+ * The clock time alone: "16:35".
+ *
+ * For a list already grouped under its day, where repeating the date on every
+ * row is noise — the fixture timeline (M52), where every entry printed the
+ * full date and several shared it, so the eye read three identical dates
+ * before reaching any event.
+ *
+ * Here rather than in the view for the reason the others are: every timezone
+ * conversion in the app goes through this module (TR-5), and a view building
+ * its own Intl.DateTimeFormat is exactly what that rule forbids.
+ */
+export function formatLocalTime(instant: Date, timeZone: string): string {
+  return timeOnlyFormatterFor(timeZone).format(instant);
+}
+
 export function formatLocalDate(instant: Date, timeZone: string): string {
   return dateOnlyFormatterFor(timeZone).format(instant);
 }

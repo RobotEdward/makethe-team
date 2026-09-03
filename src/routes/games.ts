@@ -79,7 +79,7 @@ import {
   type TeamAssignment,
   type TeamId,
 } from "../domain/teams.js";
-import { formatLocalDate, formatLocalDateTime, formatLocalShortDate } from "../domain/time/zone.js";
+import { formatLocalDate, formatLocalDateTime, formatLocalShortDate, formatLocalTime } from "../domain/time/zone.js";
 import { squadForViewer, standingsForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv } from "../env.js";
@@ -91,6 +91,7 @@ import { sendPickerHandover } from "../notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { sendTeamsEmails } from "../notify/send-teams.js";
 import { ownerNotificationRows, renderGameFormPage } from "../views/game-form.js";
+import { renderAddGuestPage } from "../views/add-guest.js";
 import { renderRotateInvitePage } from "../views/rotate-invite.js";
 import { renderNotFoundPage } from "../views/not-found.js";
 import { buildLeagueTable } from "../domain/league-table.js";
@@ -1219,11 +1220,35 @@ gamesRoutes.get("/g/:id/squad/:playerId", requirePlayer, async (c) => {
   const target = await loadSquadTarget(c, c.req.param("id"), c.req.param("playerId"));
   if (target === null) return c.text("Not found", 404);
 
+  // The same game-scoped presence query the overview runs, and the one row out
+  // of it that matters here (M52). Reused rather than given a per-player
+  // variant: it is one round trip either way, and two queries answering the
+  // same question are how the row and the page it links to come to disagree —
+  // which is what the M52 review found, in the other direction.
+  const now = new Date(Date.now());
+  const presence = (await getSquadPresence(getDb(c.env.DB), target.game.id, now)).find(
+    (row) => row.playerId === target.member.playerId,
+  );
+
   return c.html(
     renderSquadMemberPage({
       nav: pageNav(c, "games"),
       gameId: target.game.id,
       gameName: target.game.name,
+      signals:
+        presence === undefined
+          ? undefined
+          : squadSignals(
+              {
+                isGuest: target.member.isGuest,
+                lastSeenAt: presence.lastSeenAt,
+                lastAnsweredAt: presence.lastAnsweredAt,
+                lastStandaloneAt: presence.lastStandaloneAt,
+                pushDevices: presence.pushDevices,
+                deliveryFailing: presence.deliveryFailing,
+              },
+              now,
+            ),
       // Never the raw column, and never a literal `null` for the second
       // argument: this page is genuinely unreachable for an erased member
       // (erasure deactivates every membership, and `loadSquadTarget` refuses
@@ -1968,7 +1993,14 @@ gamesRoutes.get("/g/:id/f/:fixtureId/timeline", requirePlayer, async (c) => {
       gameName: game.name,
       kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
       entries: entries.map((entry) =>
-        toRenderable(entry, formatLocalDateTime(entry.at, game.timezone)),
+        // Day and time apart (M52): the page groups by day and prints the
+        // date once over each group, so a run of entries sharing an instant no
+        // longer stacks the same date three times above the events.
+        toRenderable(
+          entry,
+          formatLocalDate(entry.at, game.timezone),
+          formatLocalTime(entry.at, game.timezone),
+        ),
       ),
     }),
   );
@@ -2111,6 +2143,32 @@ gamesRoutes.post("/g/:id/f/:fixtureId/invite/player/:playerId", requirePlayer, a
   }
 
   return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+});
+
+/**
+ * The add-a-guest page (M52). A GET that renders and writes nothing; the POST
+ * below is unchanged and is still what adds the guest.
+ *
+ * It carries the places-left figure because this is the last screen before the
+ * write, and going over the limit is allowed rather than refused (BR-8) — so
+ * the page says what will happen instead of standing in the way.
+ */
+gamesRoutes.get("/g/:id/f/:fixtureId/guest/add", requirePlayer, async (c) => {
+  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  if (target === null) return c.html(renderNotFoundPage(), 404);
+
+  const left = target.fixture.maxPlayers - target.fixture.inCount;
+
+  return c.html(
+    renderAddGuestPage({
+      nav: pageNav(c, "games"),
+      gameId: target.game.id,
+      fixtureId: target.fixture.id,
+      gameName: target.game.name,
+      kicksOffAtLocal: formatLocalDateTime(target.fixture.kicksOffAt, target.game.timezone),
+      spotsLeft: left > 0 ? left : null,
+    }),
+  );
 });
 
 gamesRoutes.post("/g/:id/f/:fixtureId/guest", requirePlayer, async (c) => {

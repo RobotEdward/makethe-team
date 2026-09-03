@@ -391,12 +391,23 @@ export function renderGameFormPage(params: GameFormPageParams): string {
           hint: "Off — everyone is asked at once. On, only the core group is asked first, and the rest as spots come free.",
           checked: gatedChecked(values),
         })}
-        ${field(
-          "gatedFallbackHoursBefore",
-          "If we're still short of the minimum, ask the next group",
-          `<select id="gatedFallbackHoursBefore" name="gatedFallbackHoursBefore">${fallbackOptions}</select>`,
-        )}
-        ${gameId === undefined ? "" : `<p><a href="${escapeHtml(inviteOrderPath(gameId))}">Edit the invite order &rarr;</a></p>`}
+        <!-- Grouped so their state can follow the switch above (M52). With
+             priority order off these two are inert — the order is not
+             consulted at all — but they rendered at full contrast, which reads
+             as a live setting. Dimmed by CSS keyed off the checkbox, and still
+             fully operable: locking them out would stop an owner turning the
+             switch on and choosing its fallback in the same save, which is the
+             only save most owners will make. See the styles for why this needs
+             no script. -->
+        <div class="gated-dependants">
+          <p class="gated-note">These apply only while priority order is on.</p>
+          ${field(
+            "gatedFallbackHoursBefore",
+            "If we're still short of the minimum, ask the next group",
+            `<select id="gatedFallbackHoursBefore" name="gatedFallbackHoursBefore">${fallbackOptions}</select>`,
+          )}
+          ${gameId === undefined ? "" : `<p><a href="${escapeHtml(inviteOrderPath(gameId))}">Edit the invite order &rarr;</a></p>`}
+        </div>
       </fieldset>`
     : "";
 

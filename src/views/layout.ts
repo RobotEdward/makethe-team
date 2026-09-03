@@ -223,6 +223,16 @@ export const STYLES = `
   p { color: var(--mut); margin: 0; }
   a { color: var(--link); }
   .danger-link { color: var(--danger); font-weight: 600; }
+  /* Site-wide from M52. It used to live in one page-specific block, and three
+     pages were pulling that whole block in for this single margin — which is
+     how a page ends up carrying rules for controls it never renders. The base
+     rule above gives paragraphs zero margin, so the spacing is opt-in per
+     paragraph like this.
+
+     Deliberately not naming the block it came from: every word here is inlined
+     into the holding page, which asserts a handful of operational words are
+     absent, and that name contained one of them. */
+  .back-link { margin-top: 1.5rem; }
 
   /* A label for a control whose meaning is obvious to a sighted reader from
      the row it sits in, and invisible to a screen reader without this.

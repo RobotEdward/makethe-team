@@ -447,6 +447,17 @@ export function tokenUnmutePath(token: string): string {
   return `/r/${encodeURIComponent(token)}/unmute`;
 }
 
+/**
+ * The add-a-guest page (M52) — a GET that renders the form the organiser's
+ * fixture page used to carry inline.
+ *
+ * A different path from `ownerGuestPath`, which the form still posts to: the
+ * page asks and the existing POST acts, so nothing about the write changed.
+ */
+export function addGuestPath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/guest/add`;
+}
+
 /** Where removing a guest posts (J6b §5). */
 export function ownerGuestRemovePath(gameId: string, fixtureId: string, playerId: string): string {
   return `/g/${gameId}/f/${fixtureId}/guest/${playerId}/remove`;

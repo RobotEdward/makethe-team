@@ -1,6 +1,8 @@
 import { gamePath } from "../auth/paths.js";
+import type { SquadSignals } from "../domain/presence.js";
+import { renderSquadSignals } from "./squad-signals.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_SIGNALS_CSS } from "./styles.js";
 
 export interface SquadMemberPageOptions {
   /** The signed-in header (M16); see PageNav in layout.ts. */
@@ -15,6 +17,18 @@ export interface SquadMemberPageOptions {
   role: "player" | "owner";
   /** Already formatted in the game's timezone by the caller (TR-5). */
   joinedAtLocal: string;
+  /**
+   * The reachability markers (M33), all four of them, or undefined when the
+   * caller did not gather them.
+   *
+   * This page is where the two *informational* markers live as of M52. On a
+   * squad row they were on almost every line — most players never install the
+   * app and never turn push on — with no legend anywhere, which is the failure
+   * `src/views/squad-signals.ts` warns against in its own header. Here there
+   * is room to name them, and this is the page somebody opens to find out
+   * about one person.
+   */
+  signals?: SquadSignals;
 }
 
 /**
@@ -43,6 +57,7 @@ export function renderSquadMemberPage({
   isGuest,
   role,
   joinedAtLocal,
+  signals,
 }: SquadMemberPageOptions): string {
   // An address we hold is a value, and gets the caption-above-value treatment:
   // the dashed .read-only box means "nothing here to act on", which of a value
@@ -68,6 +83,16 @@ export function renderSquadMemberPage({
   // screen-reader user nothing to navigate by between the name and the way
   // out. The captions name each fact; the heading names what the two of them
   // together are.
+  // Nothing at all when there is nothing to report, matching how every other
+  // section in this product handles emptiness: a heading over four absences
+  // says less than silence, and for a guest all four would be absences.
+  const markers = signals === undefined ? "" : renderSquadSignals(signals, "all");
+  const reachability =
+    markers === ""
+      ? ""
+      : `<p class="readout-label">How they hear about games</p>
+         <span class="signals-said">${markers}</span>`;
+
   const body = `
     <h1>${escapeHtml(memberName)}</h1>
     <p>In <a href="${escapeHtml(gamePath(gameId))}">${escapeHtml(gameName)}</a>.</p>
@@ -77,6 +102,7 @@ export function renderSquadMemberPage({
 
     <p class="readout-label">In this squad</p>
     <p>${role === "owner" ? "Organiser" : "Player"}, since ${escapeHtml(joinedAtLocal)}.</p>
+    ${reachability}
 
     <p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to ${escapeHtml(gameName)}</a>, where you can change their role or take them out of the squad.</p>
   `;
@@ -85,6 +111,6 @@ export function renderSquadMemberPage({
     nav,
     title: `${memberName} — ${gameName} — Make The Team`,
     body,
-    pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS],
+    pageStyles: [SQUAD_SIGNALS_CSS, FIXTURE_STYLES_CSS, FORM_CSS],
   });
 }

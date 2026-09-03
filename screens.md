@@ -680,6 +680,18 @@ One renderer, two scopes.
 
 ---
 
+### 3.7a Add a guest — `GET /g/:id/f/:fixtureId/guest/add` (M52), `POST .../guest`
+Its own page since M52, reached from a link beside the squad on §3.5. It was a form at the foot
+of the organiser's fixture page — which the M52 capture measured at **3954px at 390px** once a
+busy fixture was finally photographed — so every organiser who never adds a guest scrolled past
+it to reach the footer actions, and the one who does was hunting for it at the bottom of the
+longest page in the product, usually pitchside.
+- **Contents:** `Add a guest` (h1); the game and kickoff; "playing just this once… they keep no
+  place in the squad afterwards"; and the places left, or the over-limit warning when the fixture
+  is full — stated *before* the name is typed, because going over the limit is allowed (BR-8)
+  rather than refused, so the page says what will happen instead of standing in the way.
+- **Actions:** `Add guest` (primary), and one text back-link to the fixture.
+
 ### 3.8 Invite order — `GET/POST /g/:id/invites` (M34, BR-38; acted on immediately since M44)
 The owner's editor for *who gets asked when*, used only when `Ask in priority order` is on.
 - **Two controls, not one list.** "Who is asked when the game opens" and "in what order does
@@ -692,6 +704,14 @@ The owner's editor for *who gets asked when*, used only when `Ask in priority or
   members *named* and no remove control. Naming them is the point: an owner who cannot see who
   is in "everyone else" cannot tell whether a new joiner landed somewhere sensible.
 - **M44:** saving the order acts on it immediately rather than at the next fixture.
+- **The no-groups state (fixed M52).** `tiers` is never empty — the implicit final tier always
+  exists — so with no explicit groups `tiers[0]` *is* that tier, and the page headed it "Core
+  group — asked when the game opens" while every select under it correctly read "Everyone else":
+  a heading asserting a membership its own controls denied. The reassurance line beneath was
+  gated on `rest.length === 1`, false when `rest` is empty, so the second card rendered as a
+  heading over nothing. Every game starts in that state, so it was the first thing an organiser
+  ever saw here. The heading now reads "Everyone — asked together when the game opens".
+- **One text back-link (M52)**, which the page had never had.
 
 ### 3.8a Replace the invite link — `GET/POST /g/:id/invite/rotate` (M52)
 Reached from a `danger-link` inside the invite card, which until M52 was a full-width button

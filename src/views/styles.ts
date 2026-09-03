@@ -117,13 +117,6 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
     border: none; background: var(--card-raised); color: var(--mut); font-size: var(--t-body); text-align: left;
   }
 
-  /* Paragraphs get zero margin by default (the layout's base rule), so a
-     closing paragraph that follows a .read-only box — which carries no
-     bottom margin of its own — would otherwise butt straight up against it
-     and read as one run of text. Spacing is opt-in per paragraph, the same
-     way .viewer-headline and .kickoff already are above, rather than a
-     change to the base rule that would ripple through every other page. */
-  .back-link { margin-top: 1.5rem; }
 
   /* Two big, unmistakable tap targets: stacked on a phone, side by side once
      there is room for both without cramping. */
@@ -531,6 +524,16 @@ export const FORM_CSS = `
      the organiser needs to see that "On the waitlist (0)" exists and is empty,
      which is information about the fixture, not clutter. */
   .audience-group label.audience-none { color: var(--mut); cursor: not-allowed; }
+  /* The Invites fieldset's dependants (M52), dimmed live and with no script:
+     :has() lets the fieldset react to its own checkbox, so a page that never
+     runs any JavaScript still shows these as inert when priority order is off.
+     Opacity only — they stay focusable and submittable, because turning the
+     switch on and setting the fallback in one save is the ordinary case. A
+     browser without :has() simply shows them as before. */
+  .gated-note { color: var(--mut); font-size: var(--t-support); margin: 0.75rem 0 0; }
+  fieldset:has(input[name="gatedInvitesEnabled"]:not(:checked)) .gated-dependants {
+    opacity: 0.55;
+  }
   .audience-empty { color: var(--warn); font-size: var(--t-support); margin: 0.75rem 0 0.25rem; }
   .audience-group input[type="radio"] {
     flex: 0 0 auto; width: 1.4rem; height: 1.4rem; padding: 0; border: none;
@@ -1243,6 +1246,20 @@ export const SQUAD_SIGNALS_CSS = `
     position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
     overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
   }
+  /* On the member's own page the words are the point (M52). The markers moved
+     there because two of the four are true of almost every player, so on a
+     squad row they were glyphs on every line with no legend; here there is one
+     person and room to say what each one means. Un-clipping is scoped to this
+     wrapper, so the row keeps the icons-only treatment it needs to stay a row.
+
+     More specific than the clip above, so it wins wherever the blocks land in
+     a page's cascade. */
+  .signals-said .member-signals { display: flex; flex-direction: column; gap: 0.4rem; margin-left: 0; }
+  .signals-said .signal { gap: 0.45rem; }
+  .signals-said .signal-label {
+    position: static; width: auto; height: auto; margin: 0;
+    overflow: visible; clip-path: none; white-space: normal;
+  }
 `;
 
 /**
@@ -1402,10 +1419,32 @@ export const TIMELINE_CSS = `
     border-left: 2px solid var(--line);
   }
   ol.timeline > li:last-child { padding-bottom: 0; }
-  .timeline-when { display: block; font-size: var(--t-support); color: var(--mut); }
-  .timeline-what { display: block; color: var(--fg); }
+  /* The event leads (M52). Until then every entry printed its full date above
+     the title, and entries sharing an instant — a sweep invites a whole squad
+     in one second — stacked the same date three or four times over the events
+     it was meant to place. The day is now a subhead over the entries it
+     covers, and the row carries the clock time only, inline with who did it. */
+  .timeline-day {
+    font-size: var(--t-body); color: var(--mut); font-weight: 600;
+    margin: 1.5rem 0 0.35rem; padding-left: 0.9rem;
+  }
+  .timeline-day:first-of-type { margin-top: 0; }
+  .timeline-what { display: block; color: var(--fg); font-weight: 600; }
   .timeline-who { display: block; font-size: var(--t-support); color: var(--mut); }
+  /* Inline, not a block of its own: the time belongs with the attribution
+     rather than above the event, and a dot separates them without a glyph
+     that a screen reader would read out. */
+  .timeline-when { margin-right: 0.4rem; font-variant-numeric: tabular-nums; }
+  .timeline-when::after { content: " ·"; }
   .timeline-empty { color: var(--mut); }
+  /* A dot per entry on the rail, so an entry attaches to the line instead of
+     the line running unbroken behind all of them. */
+  ol.timeline > li { position: relative; }
+  ol.timeline > li::before {
+    content: ""; position: absolute; left: -5px; top: 1.05rem;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--line);
+  }
 `;
 
 /**

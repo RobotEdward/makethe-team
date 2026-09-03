@@ -4,6 +4,7 @@ import {
   gamePath,
   joinPath,
   fixturePath,
+  addGuestPath,
   ownerGuestPath,
   ownerGuestRemovePath,
   ownerResponsePath,
@@ -313,29 +314,20 @@ function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixturePa
  * anyway. Nothing an organiser must be able to do depends on it.
  */
 /**
- * The add-a-guest form (§5), shown only while the fixture is still open —
- * once it's cancelled, played, or merely scheduled (not yet accepting
- * answers), there is no capacity write for it to make.
+ * The link to the add-a-guest page (§5, moved off this page in M52), shown
+ * only while the fixture is still taking changes — once it is cancelled,
+ * played, or merely scheduled there is no capacity write for it to make.
+ *
+ * A link rather than the form it used to be. The form sat at the foot of the
+ * longest page in the product — 3954px at 390px once the M52 capture finally
+ * showed a busy fixture — so every organiser who never adds a guest scrolled
+ * past it to reach the footer actions, and the one who does add a guest was
+ * hunting for it at the bottom, usually pitchside. It sits beside the squad
+ * now, which is what it is about.
  */
-/*
- * The name box is wrapped in `.field`, not left as a bare label and input:
- * this page loads `FORM_CSS` and `.guest-form` has no rules of its own, so
- * without the wrapper the only free-text box on the organiser's fixture page
- * rendered as the browser's default — a hairline box a third of the width of
- * every other input in the app, sitting on its own label's line. Found by
- * looking at the M12 capture; no string assertion can see an unstyled input.
- */
-function renderGuestForm(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
+function renderGuestLink(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
   if (!takingChanges(params.view)) return "";
-  return `<h2>Add a guest</h2>
-          <p>Someone playing just this once. They won't be emailed — you'll need to tell them yourself.</p>
-          <form method="post" action="${escapeHtml(ownerGuestPath(gameId, fixtureId))}" class="guest-form">
-            <div class="field">
-              <label for="guest-name">Their name</label>
-              <input id="guest-name" name="name" type="text" maxlength="80" required>
-            </div>
-            <button class="button" type="submit">Add guest</button>
-          </form>`;
+  return `<p class="actions"><a class="button" href="${escapeHtml(addGuestPath(gameId, fixtureId))}">Add a guest</a></p>`;
 }
 
 /**
@@ -416,7 +408,24 @@ function renderPickerControl(gameId: string, fixtureId: string, params: OwnerFix
       ? `<p class="team-note">There is nobody else in the squad to hand this to yet.</p>`
       : "";
 
-  return `<h2>Who picks the teams?</h2>
+  // Behind a native disclosure (M52). Three radios, a select and a save button
+  // for a per-fixture hand-over that most organisers set never, on the longest
+  // page in the product — the M52 design review measured it at 3954px at 390px
+  // once the capture finally showed a busy fixture. A details element, not a
+  // script: it works with JavaScript off, and the summary still says who holds
+  // it, so the answer is readable without opening it.
+  //
+  // Open when somebody else holds the pick, because then it is not a setting
+  // nobody touched — it is a fact about this fixture worth seeing.
+  const summary =
+    picker.mode === "organiser"
+      ? "Who picks the teams? You do"
+      : picker.mode === "delegate"
+        ? "Who picks the teams? Somebody in the squad"
+        : "Who picks the teams? Anyone in the squad";
+
+  return `<details class="picker-disclosure"${picker.mode === "organiser" ? "" : " open"}>
+          <summary>${escapeHtml(summary)}</summary>
           ${held}
           ${empty}
           <form method="post" action="${escapeHtml(pickerModePath(gameId, fixtureId))}" class="picker-control">
@@ -426,7 +435,8 @@ function renderPickerControl(gameId: string, fixtureId: string, params: OwnerFix
               <select id="picker-delegate" name="delegate">${options}</select>
             </div>
             <button class="button" type="submit">Save who picks</button>
-          </form>`;
+          </form>
+          </details>`;
 }
 
 /**
@@ -612,7 +622,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     ${renderPickerControl(gameId, fixtureId, params)}
 
-    ${renderGuestForm(gameId, fixtureId, params)}
+    ${renderGuestLink(gameId, fixtureId, params)}
 
     ${whatsapp.length === 0 ? "" : renderWhatsAppCard({ messages: whatsapp })}
 

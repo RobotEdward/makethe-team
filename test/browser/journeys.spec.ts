@@ -338,7 +338,10 @@ test("an organiser answers for a player, adds a guest, and goes over capacity", 
 
   await page.goto(`/g/${world.gameId}/f/${world.fixtureId}`);
 
-  // Add a guest, who occupies a slot of their own.
+  // Add a guest, who occupies a slot of their own. Its own page since M52 —
+  // the form used to sit at the foot of this one, which is the longest in the
+  // product; the fixture page now links to it from beside the squad.
+  await page.getByRole("link", { name: "Add a guest" }).click();
   await page.fill("#guest-name", "Sam Whitlock");
   await page.getByRole("button", { name: "Add guest" }).click();
   await expect(squadRow(page, "Sam Whitlock")).toHaveCount(1);
@@ -376,6 +379,9 @@ test("one more mark-in past capacity asks first, rather than waitlisting silentl
   const seatedBefore = await squad.locator("li").count();
 
   // One more is the over-capacity case: BR-8's confirmation, not a silent add.
+  // Posted from the add-a-guest page (M52); the confirmation still comes back
+  // on the fixture page, which is where the roster it is about lives.
+  await page.getByRole("link", { name: "Add a guest" }).click();
   await page.fill("#guest-name", "Priya Kapoor");
   await page.getByRole("button", { name: "Add guest" }).click();
 
@@ -536,6 +542,8 @@ async function seedTwoPlayersIn(page: Page, browser: Browser, javaScriptEnabled:
     squadRow(page, JOINER_NAME).locator('button[name="intent"][value="in"]'),
   ).toHaveAttribute("aria-pressed", "true");
 
+  // The add-a-guest page (M52), then back to the fixture the POST returns to.
+  await page.getByRole("link", { name: "Add a guest" }).click();
   await page.fill("#guest-name", GUEST_NAME);
   await page.getByRole("button", { name: "Add guest" }).click();
   await expect(squadRow(page, GUEST_NAME)).toHaveCount(1);

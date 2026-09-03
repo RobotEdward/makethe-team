@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../../src/views/owner-fixture.js";
 import { FIXTURE_STYLES_CSS, FORM_CSS, SQUAD_STYLES_CSS, WHATSAPP_CSS } from "../../src/views/styles.js";
+import { STYLES } from "../../src/views/layout.js";
 import { COPY_BUTTON_JS } from "../../src/views/scripts.js";
 import { fixtureView } from "../../src/domain/fixture-view.js";
 
@@ -168,14 +169,16 @@ describe("a squad member's stored status", () => {
 
 describe("the back link", () => {
   it("carries the class §2.5 names, and the block that declares it", () => {
-    // The class alone is inert: `.back-link { margin-top: 1.5rem }` lives in
-    // FIXTURE_STYLES_CSS, and without it the link butts against the block
-    // above it.
+    // The class alone would be inert, so this checks the rule ships with the
+    // page. `.back-link` moved to the site-wide STYLES in M52: nine pages end
+    // in one, and three of them were pulling a whole page-specific block in
+    // for this single margin. Every page carries STYLES, so the class can
+    // never be inert again — which is the point of the move, and why this
+    // assertion now names STYLES rather than the block it used to live in.
     const html = renderOwnerFixturePage(params());
     expect(html).toContain(`<p class="back-link">`);
     expect(html).toContain(`href="/g/g-1"`);
-    expect(html).toContain(FIXTURE_STYLES_CSS);
-    expect(FIXTURE_STYLES_CSS).toContain(".back-link {");
+    expect(STYLES).toContain(".back-link {");
   });
 
   it("offers exactly one way back up, at the end of the body", () => {

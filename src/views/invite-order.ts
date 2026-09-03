@@ -1,4 +1,5 @@
 import {
+  gamePath,
   inviteNextPath,
   inviteOrderPath,
   inviteTierDeletePath,
@@ -59,6 +60,18 @@ export function renderInviteOrderPage(params: InviteOrderParams): string {
   const core = tiers[0];
   const rest = tiers.slice(1);
 
+  // With no explicit groups, `tiers` holds only the implicit final one — it is
+  // never empty (BR-38) — so `core` *is* "everyone else". Heading that card
+  // "Core group — asked when the game opens" asserted a membership its own
+  // selects denied, and it was the first thing every organiser saw on this
+  // page: the M52 design review read it as "an organiser cannot tell what this
+  // editor currently does". The honest heading for that state says what
+  // actually happens, which is that everybody is asked at once.
+  const noGroupsYet = core !== undefined && core.tierId === null;
+  const coreHeading = noGroupsYet
+    ? "Everyone — asked together when the game opens"
+    : "Core group — asked when the game opens";
+
   const problem =
     params.problem === undefined ? "" : `<p class="problem">${escapeHtml(params.problem)}</p>`;
 
@@ -82,16 +95,29 @@ export function renderInviteOrderPage(params: InviteOrderParams): string {
 ${problem}
 <form method="post" action="${escapeHtml(inviteOrderPath(gameId))}">
   <section class="invite-box">
-    <h2 class="invite-cap">Core group — asked when the game opens</h2>
+    <h2 class="invite-cap">${escapeHtml(coreHeading)}</h2>
     ${core === undefined ? "" : renderMembers(core, tiers)}
   </section>
 
   <section class="invite-box">
     <h2 class="invite-cap">Then, as spots come free</h2>
-    ${rest.length === 1 ? '<p class="invite-empty">No further groups yet — everyone else is asked together.</p>' : ""}
-    <ol class="invite-ord">
+    ${
+      // `<= 1`, not `=== 1`. With no explicit groups `rest` is *empty*, so the
+      // old check was false exactly when the reassurance was most needed and
+      // the card rendered as a heading over an empty list. One group makes
+      // `rest` the implicit tier alone, which is the other case with nothing
+      // to order.
+      rest.length <= 1
+        ? '<p class="invite-empty">No further groups yet — everyone else is asked together.</p>'
+        : ""
+    }
+    ${
+      rest.length === 0
+        ? ""
+        : `<ol class="invite-ord">
       ${rest.map((tier) => renderOrderRow(tier)).join("")}
-    </ol>
+    </ol>`
+    }
   </section>
 
   ${rest.map((tier) => renderMembersFor(tier, tiers)).join("")}
@@ -106,6 +132,10 @@ ${deleteForms}
   <input id="new-tier-name" name="name" type="text" maxlength="60" required placeholder="Regulars">
   <button type="submit" class="button button-quiet">Add</button>
 </form>
+
+<!-- §5's one text back-link. Without it the last thing on this page was the
+     Add button, and the only way back to the game was the site header. -->
+<p class="back-link"><a href="${escapeHtml(gamePath(gameId))}">Back to the game</a></p>
 `;
 
   return layout({

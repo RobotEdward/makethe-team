@@ -71,8 +71,32 @@ const MARKERS = [
  * The markers for one member, or an empty string when there is nothing to
  * say — which is the common case, and must add no markup at all.
  */
-export function renderSquadSignals(signals: SquadSignals): string {
-  const shown = MARKERS.filter((marker) => signals[marker.key]);
+/**
+ * How many of the markers a surface wants (M52).
+ *
+ * `"actionable"` is the squad row: only the markers that mean something is
+ * wrong and an organiser can do something about it. The header above says a
+ * marker present on every row is a marker nobody reads, and two of the four
+ * are true of almost every player — most people never install the app and
+ * never turn push on — so the row was carrying two or three glyphs each with
+ * no legend on the page, and the two worth acting on were indistinguishable
+ * from them at that size.
+ *
+ * `"all"` is the member's own page, where somebody has gone specifically to
+ * find out about one person and there is room to say it in words.
+ *
+ * The default is the row's scope, so a new caller cannot put the quiet pair
+ * back on a list by forgetting the argument.
+ */
+export type SignalScope = "actionable" | "all";
+
+export function renderSquadSignals(
+  signals: SquadSignals,
+  scope: SignalScope = "actionable",
+): string {
+  const shown = MARKERS.filter(
+    (marker) => signals[marker.key] && (scope === "all" || marker.tone === "warn"),
+  );
   if (shown.length === 0) return "";
 
   const items = shown

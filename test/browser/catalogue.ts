@@ -211,6 +211,16 @@ export const CATALOGUE: CataloguePage[] = [
       "GET that writes nothing, so capturing it leaves the world live.",
   },
   {
+    id: "add-guest",
+    title: "Add a guest",
+    path: (w) => `/g/${w.busyGameId}/f/${w.busyFixtureId}/guest/add`,
+    persona: "owner",
+    note:
+      "Adding a guest, on its own page since M52 — it was a form at the foot " +
+      "of the organiser's fixture page, which is the longest in the product. " +
+      "Captured on the busy fixture, so the over-capacity wording shows.",
+  },
+  {
     id: "rotate-invite",
     title: "Replace the invite link?",
     path: (w) => `/g/${w.gameId}/invite/rotate`,
