@@ -314,7 +314,7 @@ describe("the M54 warm-up arrangement", () => {
   it("sends the day's first few through Cloudflare and the rest through Resend", async () => {
     const { notifier, cloudflare, resend } = warmUp(5, 95, 100);
 
-    await notifier.send(messages(12));
+    await notifier.send(messages(8));
 
     expect(cloudflare.calls[0]?.map((m) => m.to)).toEqual([
       "ply-0@example.com",
@@ -323,7 +323,7 @@ describe("the M54 warm-up arrangement", () => {
       "ply-3@example.com",
       "ply-4@example.com",
     ]);
-    expect(resend.calls[0]).toHaveLength(7);
+    expect(resend.calls[0]).toHaveLength(3);
   });
 
   it("stops warming up once the day's slice is spent, across separate batches", async () => {
@@ -341,17 +341,22 @@ describe("the M54 warm-up arrangement", () => {
   // The property the whole three-leg arrangement rests on: both Cloudflare
   // legs share one counter row, so the warm-up spends from the same daily
   // allowance the spill leg draws on rather than adding to it.
+  // Deliberately small numbers. Every message here costs a real D1 quota
+  // reservation, and the first version of this test pushed 40 through to
+  // prove the same property — enough extra contention on a shared CI runner
+  // to help tip three unrelated, heavy suites over their 5s timeout. The
+  // property needs only enough messages to exhaust both ceilings.
   it("adds no capacity — the day's total is unchanged by the warm-up", async () => {
-    const { notifier } = warmUp(5, 10, 20);
+    const { notifier } = warmUp(2, 3, 5);
 
-    const results = await notifier.send(messages(40));
+    const results = await notifier.send(messages(10));
 
-    // 10 via Resend + 20 via Cloudflare (5 warming, 15 spilling), not 35.
-    expect(results.filter((r) => r.ok)).toHaveLength(30);
+    // 3 via Resend + 5 via Cloudflare (2 warming, 3 spilling), not 10.
+    expect(results.filter((r) => r.ok)).toHaveLength(8);
     const rows = await db.select().from(emailQuota).where(eq(emailQuota.day, DAY_KEY));
     expect(rows.map((r) => [r.provider, r.sentCount]).sort()).toEqual([
-      ["cloudflare", 20],
-      ["resend", 10],
+      ["cloudflare", 5],
+      ["resend", 3],
     ]);
   });
 
