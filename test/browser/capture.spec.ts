@@ -37,7 +37,7 @@ test.beforeAll(async ({ browser }) => {
   mkdirSync(OUTPUT, { recursive: true });
   const context = await browser.newContext();
   const page = await context.newPage();
-  world = await seedWorld(page, browser);
+  world = await seedWorld(page, browser, { busy: true });
   await context.close();
 });
 

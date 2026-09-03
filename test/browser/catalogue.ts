@@ -139,7 +139,12 @@ export const CATALOGUE: CataloguePage[] = [
   {
     id: "owner-fixture",
     title: "Fixture (organiser)",
-    path: (world) => `/g/${world.gameId}/f/${world.fixtureId}`,
+    // The *busy* game's fixture (M52): full, with people waiting and a guest
+    // on it. Captured on the thin fixture, this page showed nought in, no
+    // waitlist labels, no guest row and an empty picker — none of the density
+    // it exists to manage, which is why the design review could only say the
+    // capture was not evidence either way.
+    path: (world) => `/g/${world.busyGameId}/f/${world.busyFixtureId}`,
     persona: "owner",
     // Extended rather than joined by a second entry: the team picker (BR-35)
     // is a fragment of *this* page, not a page of its own, and a second
@@ -153,7 +158,8 @@ export const CATALOGUE: CataloguePage[] = [
   {
     id: "team-picker",
     title: "Pick the teams",
-    path: (w) => `/g/${w.gameId}/f/${w.fixtureId}/teams`,
+    // The busy fixture too: a picker with nobody in it is two empty columns.
+    path: (w) => `/g/${w.busyGameId}/f/${w.busyFixtureId}/teams`,
     // The organiser can reach it too, and this is the persona the seeded
     // world already has entitled for this fixture. What a delegate sees
     // differs only by the opening sentence, which

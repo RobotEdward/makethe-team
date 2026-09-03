@@ -22,7 +22,7 @@ test.beforeAll(async ({ browser }) => {
   // and squads for no gain: these tests only load pages, never mutate them.
   const context = await browser.newContext();
   const page = await context.newPage();
-  world = await seedWorld(page, browser);
+  world = await seedWorld(page, browser, { busy: true });
   await context.close();
 });
 

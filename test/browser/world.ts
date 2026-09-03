@@ -110,6 +110,14 @@ export interface World {
   leaveToken: string;
   ownerPlayerId: string;
   cancelToken: string;
+  /**
+   * A second game of the same owner's, whose open fixture is full and has
+   * people waiting and a guest on it (M52). `owner-fixture` and `team-picker`
+   * are captured here rather than on the thin fixture above, which showed
+   * neither density nor any of the controls that only appear with it.
+   */
+  busyGameId: string;
+  busyFixtureId: string;
 }
 
 /**
@@ -304,6 +312,140 @@ async function seedMatchHistory(
   }
 }
 
+/** One seeded member of the busy game. */
+interface BusyMember {
+  id: string;
+  name: string;
+}
+
+/**
+ * A second game, created before the crons so the same two sweeps that
+ * materialise and open the first game's fixtures do this one's too (M52).
+ *
+ * `owner-fixture` is the densest page in the product — a per-member In/Out
+ * control, waitlist labels, guest rows with their own Remove, the team picker,
+ * the guest form, the WhatsApp card and two footer actions. It was captured
+ * with none of that: nought in, no guests, no waitlist, an empty picker. The
+ * M52 design review was asked whether that page had become unmanageable and
+ * could only answer "the capture is not evidence either way" — a verdict about
+ * the harness rather than about the page.
+ *
+ * **A second game, not more people in the first.** Filling the fixture every
+ * other capture already points at would change what four of them mean: the
+ * `respond-in`, `respond-out`, `respond-waitlisted` and `respond-pending`
+ * entries all act on it through `World.responseToken`, and on a full fixture
+ * "I'm in" waitlists rather than seats. An organiser running two games is also
+ * simply true.
+ */
+async function createBusyGame(page: Page): Promise<{ gameId: string; members: BusyMember[] }> {
+  // Eight places and ten players, so the fixture fills and two wait. Small on
+  // purpose: every extra player is an HTTP round trip, in a harness that runs
+  // once per spec file across dozens of specs.
+  const SQUAD = [
+    "Priya Raman", "Tom Okonjo", "Sarah Vance", "Diego Marin", "Ken Adeyemi",
+    "Lucy Brandt", "Omar Haddad", "Nina Kowalski", "Rob Ellery", "Mika Toivonen",
+  ] as const;
+
+  await page.goto("/g/new");
+  await page.fill('input[name="name"]', "Sunday 5-a-side");
+  await page.fill('input[name="venueName"]', "Burgess Park Cages");
+  const slot = imminentSlot(new Date(Date.now()));
+  await page.selectOption('select[name="weekday"]', slot.weekday);
+  await page.fill('input[name="kickoffTime"]', slot.kickoffTime);
+  await page.fill('input[name="minPlayers"]', "4");
+  await page.fill('input[name="maxPlayers"]', "8");
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/\/g\/[^/]+$/);
+
+  const gameId = new URL(page.url()).pathname.split("/")[2]!;
+
+  // One statement for the whole squad: each `query` shells out to a separate
+  // wrangler process, which is the expensive thing in this harness.
+  const members: BusyMember[] = SQUAD.map((name) => ({ id: randomUUID(), name }));
+  const address = (m: BusyMember) =>
+    `${m.name.toLowerCase().replace(/[^a-z]/g, "")}+${m.id.slice(0, 8)}@example.test`;
+  await query(
+    `INSERT INTO players (id, name, email) VALUES ${members
+      .map((m) => `('${m.id}', '${m.name}', '${address(m)}')`)
+      .join(", ")};
+     INSERT INTO memberships (id, game_id, player_id, role, joined_at) VALUES ${members
+       .map((m) => `('${randomUUID()}', '${gameId}', '${m.id}', 'player', ${Date.now()})`)
+       .join(", ")}`,
+  );
+
+  return { gameId, members };
+}
+
+/**
+ * Fill that game's open fixture: everyone answers, the last two are waitlisted
+ * by the capacity object, and the owner adds a guest.
+ *
+ * Answers go through `POST /r/:token`, never by writing `responses` rows. The
+ * capacity object is the only thing allowed to decide `in` versus `waitlisted`
+ * (TR-10), and it is what keeps `in_count` and `waitlist_count` agreeing with
+ * the rows — a hand-written seat leaves the headcount line disagreeing with
+ * the squad listed directly beneath it, which is the one error an organiser
+ * cannot be asked to reconcile.
+ */
+async function fillBusyFixture(
+  page: Page,
+  gameId: string,
+  members: readonly BusyMember[],
+): Promise<string> {
+  const [fixture] = await query<{ id: string }>(
+    `SELECT id FROM fixtures WHERE game_id = '${gameId}' AND lifecycle = 'open'
+       ORDER BY kicks_off_at LIMIT 1`,
+  );
+  if (!fixture) {
+    throw new Error(
+      `fillBusyFixture: game ${gameId} has no open fixture. Both crons run ` +
+        `after this game is created, so this ran in the wrong order.`,
+    );
+  }
+
+  // The guest first, while there is still room. Added after the fixture fills,
+  // the request is refused and the page renders without the guest row this
+  // capture exists to show — which is what happened on the first attempt, and
+  // left a comment here claiming a guest the screenshot did not have.
+  await page.request.post(`${BASE_URL}/g/${gameId}/f/${fixture.id}/guest`, {
+    form: { name: "Sam (Rob's mate)" },
+    headers: { origin: BASE_URL },
+  });
+
+  for (const member of members) {
+    const token = await signResponseToken(
+      { playerId: member.id, fixtureId: fixture.id, expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 },
+      RESPONSE_SECRET,
+    );
+    await page.request.post(`${BASE_URL}/r/${token}`, {
+      form: { intent: "in" },
+      headers: { origin: BASE_URL },
+    });
+  }
+
+  const [counts] = await query<{ inCount: number; waitlistCount: number }>(
+    `SELECT in_count AS inCount, waitlist_count AS waitlistCount FROM fixtures WHERE id = '${fixture.id}'`,
+  );
+  // The point of the whole helper: a page captured at nought in tells a
+  // reviewer nothing about a page whose job is density. Each element is
+  // asserted, because each one silently absent is a capture that looks fine
+  // and shows less than it claims.
+  const [guest] = await query<{ n: number }>(
+    `SELECT count(*) AS n FROM responses r JOIN players p ON p.id = r.player_id
+       WHERE r.fixture_id = '${fixture.id}' AND p.is_guest = 1`,
+  );
+  if ((counts?.waitlistCount ?? 0) < 1 || (guest?.n ?? 0) < 1) {
+    throw new Error(
+      `fillBusyFixture: ${counts?.inCount ?? 0} in, ${counts?.waitlistCount ?? 0} waiting, ` +
+        `${guest?.n ?? 0} guests. The fixture is meant to be full, with people ` +
+        `queued behind it and a guest among them — check max_players against ` +
+        `the squad size above, and that the guest is added before it fills.`,
+    );
+  }
+
+  return fixture.id;
+}
+
 /**
  * Build the state every catalogue page points at, by driving the app's own
  * surface rather than inserting rows.
@@ -320,7 +462,21 @@ export async function seedWorld(
   // The joiner gets its own context, which does not inherit the calling
   // test's `javaScriptEnabled`. Passing it explicitly keeps the JS-off run
   // genuinely JS-off on both sides of the invite.
-  options: { javaScriptEnabled?: boolean } = {},
+  options: {
+    javaScriptEnabled?: boolean;
+    /**
+     * Also build the busy second game (M52) — a full fixture with a waitlist
+     * and a guest, which `owner-fixture` and `team-picker` are captured on.
+     *
+     * Off by default, and the default is a measurement rather than a taste.
+     * A second game per spec file means every later cron sweep walks one more
+     * game, and a sweep runs twice per `seedWorld`: always-on took the browser
+     * suite from 15.6 minutes to 20.9. Only the specs that read the catalogue
+     * need it, so only they ask. Everything else gets `busyGameId` pointing at
+     * the ordinary game, so a path built from it is still a real page.
+     */
+    busy?: boolean;
+  } = {},
 ): Promise<World> {
   await signIn(page, TEST_OWNER);
 
@@ -423,6 +579,11 @@ export async function seedWorld(
     `INSERT INTO memberships (id, game_id, player_id, role, joined_at) VALUES ('${randomUUID()}', '${gameId}', '${legacyMemberId}', 'player', ${Date.now()})`,
   );
 
+  // Before the crons below, deliberately: the same two sweeps then materialise
+  // and open this game's fixtures as well as the first game's, so a second
+  // game costs no extra sweep (and a sweep walks every game the run has made).
+  const busy = options.busy === true ? await createBusyGame(page) : null;
+
   // --- fixtures -----------------------------------------------------------
   // Two crons, and both are needed. `15 3 * * *` materialises fixtures from
   // the game's recurrence; `0 * * * *` is the hourly sweep that *opens* the
@@ -462,6 +623,9 @@ export async function seedWorld(
   // owner are resolved, and before the tokens: it runs a cron, and the open
   // fixture above is already fixed by id so a second sweep cannot move it.
   await seedMatchHistory(page, gameId, [owner.id, member.id, legacyMemberId]);
+
+  const busyFixtureId =
+    busy === null ? fixture.id : await fillBusyFixture(page, busy.gameId, busy.members);
 
   const responseToken = await signResponseToken(
     {
@@ -508,5 +672,9 @@ export async function seedWorld(
     leaveToken,
     ownerPlayerId: owner.id,
     cancelToken,
+    // Falls back to the ordinary game when the busy one was not asked for, so
+    // every catalogue path still resolves to a page that exists.
+    busyGameId: busy?.gameId ?? gameId,
+    busyFixtureId,
   };
 }
