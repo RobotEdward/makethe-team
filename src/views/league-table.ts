@@ -1,4 +1,4 @@
-import type { LeagueRow } from "../domain/league-table.js";
+import { leaguePositions, type LeagueRow } from "../domain/league-table.js";
 import { escapeHtml } from "./layout.js";
 
 /**
@@ -42,6 +42,15 @@ function winPercentWords(percent: number | null): string {
  * The viewer's own row is marked rather than moved: a league table whose
  * fourth place is printed at the top is no longer a league table.
  *
+ * **Eight columns on a phone, and the position is one of them (M55).** The
+ * table had no rank at all — the one column a league table exists to publish —
+ * because eight was already the number that fits 390px. Win% pays for it: it
+ * is hidden below 40rem by `LEAGUE_CSS`, as the least load-bearing of the
+ * eight — it restates wins as a share of the games that settled, and W, D, L
+ * and P are all still on the row to read that off. The sentence in the note
+ * that defines it is hidden with it, or the note would explain a column that
+ * is not there. Nothing is dropped on a screen with room for it.
+ *
  * The name goes in a span with a `title`, because the column is capped so that
  * all eight columns fit a 390px screen. Uncapped, one long name pushed Points
  * — the number the table exists to report — off the right-hand edge behind a
@@ -58,20 +67,23 @@ export function renderStandingsSection(
 ): string {
   if (standings === null || standings.length === 0) return "";
 
+  const positions = leaguePositions(standings);
+
   const rows = standings
-    .map((row) => {
+    .map((row, index) => {
       // Marked, not reordered. `class="you"` on the row rather than a badge in
       // the cell: the whole line is the thing being pointed at.
       const you = row.playerId === viewerPlayerId ? ` class="you"` : "";
       return `
       <tr${you}>
+        <td class="rank">${escapeHtml(String(positions[index]))}</td>
         <td class="league-player"><span class="league-name" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</span></td>
         <td class="count">${escapeHtml(String(row.played))}</td>
         <td class="count">${escapeHtml(String(row.won))}</td>
         <td class="count">${escapeHtml(String(row.lost))}</td>
         <td class="count">${escapeHtml(String(row.drawn))}</td>
         <td class="count">${escapeHtml(goalDifferenceWords(row.goalDifference))}</td>
-        <td class="count">${escapeHtml(winPercentWords(row.winPercent))}</td>
+        <td class="count win-pct">${escapeHtml(winPercentWords(row.winPercent))}</td>
         <td class="count">${escapeHtml(String(row.points))}</td>
       </tr>`;
     })
@@ -83,18 +95,19 @@ export function renderStandingsSection(
       <table class="league">
         <thead>
           <tr>
+            <th scope="col" class="rank"><abbr title="Position">#</abbr></th>
             <th scope="col" class="league-player">Player</th>
             <th scope="col" class="count"><abbr title="Played">P</abbr></th>
             <th scope="col" class="count"><abbr title="Won">W</abbr></th>
             <th scope="col" class="count"><abbr title="Lost">L</abbr></th>
             <th scope="col" class="count"><abbr title="Drawn">D</abbr></th>
             <th scope="col" class="count"><abbr title="Goal difference">GD</abbr></th>
-            <th scope="col" class="count"><abbr title="Win percentage">Win%</abbr></th>
+            <th scope="col" class="count win-pct"><abbr title="Win percentage">Win%</abbr></th>
             <th scope="col" class="count"><abbr title="Points">Pts</abbr></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p class="league-note">Three points for a win, one for a draw. Win% is of the games that settled. GD only counts games with an agreed score, so it covers fewer games than the rest of the row.</p>`;
+    <p class="league-note">Three points for a win, one for a draw. Players level on points, goal difference and wins share a place. <span class="win-pct-note">Win% is of the games that settled. </span>GD only counts games with an agreed score, so it covers fewer games than the rest of the row.</p>`;
 }

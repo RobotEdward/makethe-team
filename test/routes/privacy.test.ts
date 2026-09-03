@@ -117,6 +117,33 @@ describe("privacy page", () => {
     }
   });
 
+  /**
+   * The contents list and the headings are generated from one array, and
+   * `heading()` throws when asked for an id that array does not hold. That is
+   * the right failure mode — a silently missing heading would leave a section
+   * of a legal page untitled — but it means a typo takes the whole page down
+   * with a 500, on the one page somebody reads before deciding whether to
+   * trust us with an address. So the page is rendered here, in full, and every
+   * link in the contents is checked against an anchor that exists.
+   */
+  it("gives every contents link a heading to land on", async () => {
+    const body = await (await SELF.fetch(url(PRIVACY_PATH))).text();
+
+    const targets = [...body.matchAll(/<a href="#([a-z]+)">/g)].map((match) => match[1]);
+    const anchors = [...body.matchAll(/<h2 id="([a-z]+)">/g)].map((match) => match[1]);
+
+    expect(targets.length).toBeGreaterThan(5);
+    expect(targets).toEqual(anchors);
+  });
+
+  it("offers a way off itself that needs no session", async () => {
+    // The page takes no `nav`, so the header every signed-in page carries is
+    // absent here by design and this link is the only way onward.
+    const body = await (await SELF.fetch(url(PRIVACY_PATH))).text();
+
+    expect(body).toContain(`<p class="back-link"><a href="/">`);
+  });
+
   it("is not indexable, like every other page here", async () => {
     const response = await SELF.fetch(url(PRIVACY_PATH));
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");

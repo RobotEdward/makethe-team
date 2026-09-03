@@ -105,16 +105,26 @@ noughts.
 
 ## The squad's league table
 
-On a game's page, **Standings** ranks everyone in the squad: **P**, **W**, **L**
-and **D** as above, then **GD** for goal difference, **Win%** and **Pts**. Three
-points for a win and one for a draw, the way a league table works. Your own row
-is highlighted where it falls — it isn't moved to the top, because a table with
-your name printed above people above you isn't a table any more.
+On a game's page, **Standings** ranks everyone in the squad: a position, then
+**P**, **W**, **L** and **D** as above, then **GD** for goal difference, **Win%**
+and **Pts**. Three points for a win and one for a draw, the way a league table
+works. Your own row is highlighted where it falls — it isn't moved to the top,
+because a table with your name printed above people above you isn't a table any
+more.
+
+Players level on points, goal difference and wins share a position, and the next
+position skips the places they used up — again, the way a league table works.
+Nobody is put above anybody else on a tiebreak the table hasn't shown you.
 
 Two of the columns are narrower than they look. **Win%** is worked out over the
 games that settled, not everything played. **GD** counts only the games where a
 score was actually agreed, so it covers fewer games than the rest of the row —
 the note under the table says so.
+
+On a narrow phone **Win%** is left out, so that the position column fits. Turn
+the phone or open the page on something wider and it comes back. Nothing else
+changes: **W**, **D**, **L** and **P** are all still on the row to work it out
+from.
 
 Whether you see the table at all follows the same setting as the squad list. If
 your organiser has chosen to keep the squad private, there are no standings on

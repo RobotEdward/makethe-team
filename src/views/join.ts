@@ -162,11 +162,22 @@ export function renderInvitePage(params: InvitePageParams): string {
   // — is signed in and is a member, and bouncing them would make their own
   // invite page unreachable without a private window, silently, in a way that
   // reads as a broken link.
+  //
+  // The emphasis follows who the page is for. Until M55 the only thing this
+  // reader could usefully do was an inline link inside the banner, while the
+  // page's one filled button was Join the squad — an action that will refuse
+  // them, because they are already in it. So the banner takes the primary
+  // fill and the submit drops to the outlined default. The form stays where
+  // it is and stays usable-looking: this reader is usually the organiser
+  // checking what their own invite looks like, and a form greyed out or
+  // hidden would be a preview of a page nobody else sees.
   const viewerBlock =
     viewer === undefined
       ? ""
-      : `<p class="nudge">You're already in this squad, signed in as ${escapeHtml(viewer.email)}. ` +
-        `<a href="${escapeHtml(viewer.gamePath)}">Go to the game</a>.</p>`;
+      : `<div class="nudge">
+           <p>You're already in this squad, signed in as ${escapeHtml(viewer.email)}.</p>
+           <div class="actions"><a class="button primary" href="${escapeHtml(viewer.gamePath)}">Go to the game</a></div>
+         </div>`;
 
   const body = `
     ${viewerBlock}
@@ -195,7 +206,7 @@ export function renderInvitePage(params: InvitePageParams): string {
       <p>We'll add you to the squad and email you when there's a game on.</p>
       <p><a href="${PRIVACY_PATH}">Privacy</a></p>
       <div class="actions">
-        <button class="button primary" type="submit">Join the squad</button>
+        <button class="button${viewer === undefined ? " primary" : ""}" type="submit">Join the squad</button>
       </div>
     </form>
 

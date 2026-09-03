@@ -180,6 +180,15 @@ export const STYLES = `
      alignments at once — the design review's finding 6. */
   main { max-width: 30rem; width: 100%; text-align: left; }
   main.centred { text-align: center; }
+  /* Paragraph spacing for the centred pages, which are single statements with
+     no pageStyles of their own and so cannot reach FORM_CSS's .prose rule.
+     The reset sets p { margin: 0 } so that cards and rows control their own
+     gaps; without this the 404 ran its three sentences together as one
+     undifferentiated block, which is how the M52 capture showed it. Here
+     rather than in a page block because there is no new block to register in
+     PAGE_STYLE_BLOCKS, and forgetting that registration is the failure this
+     codebase makes silently. */
+  main.centred p + p { margin-top: 0.9rem; }
   /* The signed-in header (M16). Shares main's 30rem column so the name and
      the page's own content keep one left edge. */
   /* Two rows, not the default equal split: the header's row hugs its content
@@ -276,6 +285,13 @@ export const STYLES = `
     background: var(--field); color: var(--fg);
     font: inherit; font-size: var(--t-lead); font-weight: 700;
     cursor: pointer; -webkit-tap-highlight-color: transparent;
+    /* An anchor wearing this class is a button, and a button is not
+       underlined. Without it the site-wide rule for links underlines the label
+       of every link-shaped button in the product — visible on the holding
+       page, where the underline ran the width of the word inside a filled
+       pill. The keep-link class has carried its own copy of this for exactly
+       one such button since M16; this is that fix generalised. */
+    text-decoration: none;
   }
   .button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .button:active { transform: translateY(1px); }
@@ -312,6 +328,12 @@ export const STYLES = `
   /* Sign-out is a real action but never the point of the page it sits on, so
      it gets the plain filled default rather than the primary fill. */
   .signout { margin: 1.25rem 0; }
+
+  /* Breathing room around a page's one call to action, for a page that has no
+     pageStyles at all and so cannot reach FORM_CSS's .actions. Needed because
+     the reset sets p { margin: 0 }, which leaves a button flush against
+     whatever follows it. */
+  .lone-action { margin: 1.25rem 0; }
 `;
 
 /**

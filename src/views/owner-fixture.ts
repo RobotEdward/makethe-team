@@ -37,6 +37,7 @@ import {
   SQUAD_STYLES_CSS,
   TEAM_PICKER_CSS,
   WHATSAPP_CSS,
+  WIDE_COLUMN_CSS,
 } from "./styles.js";
 import { renderWhatsAppCard, type WhatsAppMessage } from "./whatsapp.js";
 
@@ -677,9 +678,13 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
       WHATSAPP_CSS,
       RESULT_CSS,
       FRESHNESS_CSS,
-      // Last, and it declares no selector any block above declares — M34's
-      // classes are all `invite-` prefixed for exactly that reason.
+      // No selector any block above declares — M34's classes are all
+      // `invite-` prefixed for exactly that reason.
       INVITE_ORDER_CSS,
+      // Genuinely last: it overrides FORM_CSS's `main` from inside a media
+      // query, which carries no specificity of its own, so order is the whole
+      // mechanism. See that block's comment.
+      WIDE_COLUMN_CSS,
     ],
     pageScripts,
   });

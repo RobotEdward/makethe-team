@@ -6,7 +6,7 @@ import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
 import { renderTeamPicker, renderTeamsReadOnly, type TeamPickerParams } from "./team-picker.js";
 import { TEAM_PICKER_JS, type PageScriptBlock } from "./scripts.js";
-import { FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS } from "./styles.js";
+import { FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS, WIDE_COLUMN_CSS } from "./styles.js";
 
 /**
  * The team picker on a page of its own (M29), for somebody who is picking the
@@ -136,7 +136,10 @@ export function renderPickerPage(params: PickerPageParams): string {
     // `src/views/owner-fixture.ts` gives the same pair and the order
     // `PAGE_STYLE_BLOCKS` holds them in: the picker's rules are written
     // expecting the form rules to be underneath them.
-    pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS],
+    // WIDE_COLUMN_CSS last: it overrides FORM_CSS's `main` from inside a
+    // media query, which carries no specificity of its own, so order is the
+    // whole mechanism. See that block's comment.
+    pageStyles: [FIXTURE_STYLES_CSS, FORM_CSS, TEAM_PICKER_CSS, WIDE_COLUMN_CSS],
     pageScripts,
   });
 }

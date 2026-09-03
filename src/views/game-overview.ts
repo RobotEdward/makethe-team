@@ -14,7 +14,7 @@ import {
 import { oddMaxWarning } from "../domain/game-form.js";
 import type { SquadSignals } from "../domain/presence.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
-import { formatLocalDateTime } from "../domain/time/zone.js";
+import { formatLocalCompactDateTime } from "../domain/time/zone.js";
 import { SITE_ORIGIN } from "../notify/delivery.js";
 import { fixtureStatusWords } from "./fixture.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
@@ -182,7 +182,14 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     })
     .join("");
 
-  // One row per fixture. The state is `fixtureStatusWords`, never the stored
+  // One row per fixture, with the kickoff abbreviated (M55). "Sunday 6
+  // September at 19:00" is twenty-seven characters before the state and the
+  // headcount that share the row, and at 390px every row wrapped onto a second
+  // line — so a list of four upcoming fixtures was eight lines of which half
+  // were orphaned fragments. The long form stays where a date is the whole
+  // sentence; see `formatLocalCompactDateTime`.
+  //
+  // The state is `fixtureStatusWords`, never the stored
   // lifecycle value itself: this page is reachable by an organiser who is also
   // just a player, and "open" is an internal token, not something to tell them.
   // The words come from the same table the single-fixture page reads, so the
@@ -191,7 +198,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     .map(
       (fixture) =>
         `<li>
-        <a href="${escapeHtml(fixturePath(gameId, fixture.id))}">${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))}</a>
+        <a href="${escapeHtml(fixturePath(gameId, fixture.id))}">${escapeHtml(formatLocalCompactDateTime(fixture.kicksOffAt, timezone))}</a>
         <span class="detail">${escapeHtml(fixtureStatusWords(fixture.lifecycle))} — ${fixture.inCount} in</span>
       </li>`,
     )

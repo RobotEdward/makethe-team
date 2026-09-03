@@ -219,8 +219,8 @@ describe("GET /g/:id as a member", () => {
 
     const html = await (await appFetch(`/g/${gameId}`, cookie)).text();
 
-    expect(html).toMatch(/<li>[^<]+ — Open for responses<\/li>/);
-    expect(html).not.toMatch(/ — open</);
+    expect(html).toMatch(/<li>[^<]+ <span class="detail">Open for responses<\/span><\/li>/);
+    expect(html).not.toMatch(/>open</);
   });
 
   it("says so when no fixture is open, and names nobody", async () => {

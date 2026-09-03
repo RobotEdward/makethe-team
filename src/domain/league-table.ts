@@ -92,3 +92,31 @@ export function buildLeagueTable(tallies: readonly LeagueTally[]): LeagueRow[] {
         (left.playerId < right.playerId ? -1 : left.playerId > right.playerId ? 1 : 0),
     );
 }
+
+/**
+ * The position each row occupies, for a table already in `buildLeagueTable`
+ * order (M55).
+ *
+ * **Standard competition ranking, on the sporting keys only.** Players level
+ * on points, goal difference and wins share a position, and the next position
+ * skips the places they used up — the convention every published league table
+ * follows. That is not a nicety: the comparator above breaks a remaining tie
+ * on name and then player id, and it says in its own comment that those two
+ * exist to make the sort *total*, not to rank anybody. Numbering the rendered
+ * order 1..n would take that alphabetical accident and print it as fourth and
+ * fifth place, which is the table asserting something nobody measured.
+ *
+ * Takes the rows already sorted, and depends on it: the first row matching a
+ * given triple is that triple's position only because equal rows are adjacent.
+ */
+export function leaguePositions(standings: readonly LeagueRow[]): number[] {
+  return standings.map(
+    (row) =>
+      standings.findIndex(
+        (other) =>
+          other.points === row.points &&
+          other.goalDifference === row.goalDifference &&
+          other.won === row.won,
+      ) + 1,
+  );
+}

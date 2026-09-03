@@ -207,11 +207,13 @@ describe("pageStyles cascade order", () => {
     const ownerFixture = arrays.find(({ id }) => id.startsWith("src/views/owner-fixture.ts"));
     expect(
       ownerFixture?.blocks,
-      "src/views/owner-fixture.ts passes seven blocks (M25 Task 10 added " +
-        "RESULT_CSS) and is the page whose 440px-wide squad rows at a 390px " +
-        "viewport this guard was written for. If the scan can no longer see " +
-        "it, fix the scan before trusting the assertions below.",
-    ).toHaveLength(8);
+      "src/views/owner-fixture.ts carries more style blocks than any other " +
+        "page, and is the one whose 440px-wide squad rows at a 390px viewport " +
+        "this guard was written for. The count is pinned only so that a scan " +
+        "which silently stopped seeing the array fails here; if you added a " +
+        "block, update it. If the scan can no longer see the page at all, fix " +
+        "the scan before trusting the assertions below.",
+    ).toHaveLength(9);
   });
 
   it("lists every selector two of a page's blocks declare", () => {

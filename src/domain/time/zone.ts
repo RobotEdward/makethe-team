@@ -14,6 +14,7 @@ const dateOnlyFormatters = new Map<string, Intl.DateTimeFormat>();
 const displayFormatters = new Map<string, Intl.DateTimeFormat>();
 const shortDateFormatters = new Map<string, Intl.DateTimeFormat>();
 const timeOnlyFormatters = new Map<string, Intl.DateTimeFormat>();
+const compactFormatters = new Map<string, Intl.DateTimeFormat>();
 
 /** Read-only view of the formatter cache size, for tests only. */
 export function formatterCacheSize(): number {
@@ -101,6 +102,20 @@ function shortDateFormatterFor(timeZone: string): Intl.DateTimeFormat {
   });
 }
 
+function compactFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  // A sixth cache for a sixth option set, for the reason the others each have
+  // one: a cache keyed by zone alone cannot hold two option sets for the same
+  // zone without handing a caller the wrong one.
+  return cachedFormatter(timeZone, compactFormatters, "en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
 function displayFormatterFor(timeZone: string): Intl.DateTimeFormat {
   // en-GB, not en-US: this is what src/routes/respond.ts used before this
   // formatter moved here, and it's what produces "Thursday 13 August at
@@ -156,6 +171,25 @@ export function formatLocalDateTime(instant: Date, timeZone: string): string {
  */
 export function formatLocalTime(instant: Date, timeZone: string): string {
   return timeOnlyFormatterFor(timeZone).format(instant);
+}
+
+/**
+ * The same instant as `formatLocalDateTime`, abbreviated: "Sat 6 Sept, 19:00".
+ *
+ * For a *list* of kickoffs rather than a single one. The long form is right
+ * where a date is the sentence — an email subject, the heading of the fixture
+ * page — and wrong down the side of a column, where it runs to about
+ * forty-five characters and wraps onto a second line at 390px. A list whose
+ * every row is two lines is half as much of a list, and the weekday and month
+ * are the two parts a reader scanning for "which Saturday" needs least
+ * spelled out.
+ *
+ * Here rather than in the view for the reason the others are: every timezone
+ * conversion in the app goes through this module (TR-5), and a view building
+ * its own Intl.DateTimeFormat is exactly what that rule forbids.
+ */
+export function formatLocalCompactDateTime(instant: Date, timeZone: string): string {
+  return compactFormatterFor(timeZone).format(instant);
 }
 
 export function formatLocalDate(instant: Date, timeZone: string): string {

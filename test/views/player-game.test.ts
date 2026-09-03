@@ -35,8 +35,17 @@ function params(over: Partial<PlayerGameParams> = {}): PlayerGameParams {
 }
 
 /** The one "Coming up" row a test seeded a single fixture into. */
+/**
+ * The first "Coming up" row as a reader sees it: markup stripped and runs of
+ * whitespace collapsed. The row carries a `.detail` span since M55, so the
+ * text and the tags have to be separated before either can be asserted on.
+ */
 const comingUpRow = (html: string) =>
-  html.match(/<ul class="fixtures">(?:<li>([^<]*)<\/li>)?/)?.[1];
+  html
+    .match(/<ul class="fixtures">(?:<li>([\s\S]*?)<\/li>)?/)?.[1]
+    ?.replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
 describe("coming up", () => {
   /**
@@ -57,7 +66,7 @@ describe("coming up", () => {
 
   it.each(LIFECYCLES)("says in words what a %s fixture's state is", (lifecycle) => {
     const html = renderPlayerGamePage(params({ upcoming: [{ kicksOffAt: KICKOFF, lifecycle }] }));
-    expect(comingUpRow(html)).toBe(`Thursday 5 March at 19:00 — ${WORDS[lifecycle]}`);
+    expect(comingUpRow(html)).toBe(`Thu 5 Mar, 19:00 ${WORDS[lifecycle]}`);
   });
 
   it("never shows a player an internal lifecycle value", () => {
@@ -65,7 +74,7 @@ describe("coming up", () => {
       const row = comingUpRow(renderPlayerGamePage(params({ upcoming: [{ kicksOffAt: KICKOFF, lifecycle }] })))!;
       // Not a substring check: "Not open yet" contains "open". The row must
       // not *end in* the raw token, which is what it used to render.
-      expect(row.endsWith(`— ${lifecycle}`)).toBe(false);
+      expect(row.endsWith(` ${lifecycle}`)).toBe(false);
     }
   });
 
@@ -105,7 +114,7 @@ describe("a lifecycle this build does not know", () => {
 
   it("says so in words rather than printing nothing or the raw value", () => {
     const row_ = comingUpRow(renderPlayerGamePage(params({ upcoming: [row] })))!;
-    expect(row_).toBe("Thursday 5 March at 19:00 — Status unknown");
+    expect(row_).toBe("Thu 5 Mar, 19:00 Status unknown");
     expect(row_).not.toContain("undefined");
     expect(row_).not.toContain("abandoned");
   });

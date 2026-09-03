@@ -21,8 +21,15 @@ home.get("/", (c) =>
   c.html(
     layout({
       title: "Make The Team",
+      // The one action here is a button, not a run of link text. Everywhere
+      // else in the product the thing a page exists to make you do wears
+      // .button primary, and this page had it as a bare inline link — the
+      // weakest treatment available, on the only control a first-time visitor
+      // is given. Both classes live in layout()'s own STYLES rather than in a
+      // page block, which is what makes them reachable from a page that
+      // passes no pageStyles.
       body: `<h1>Make The Team</h1>
-             <p><a href="${SIGN_IN_PATH}">Sign in</a></p>
+             <p class="lone-action"><a class="button primary" href="${SIGN_IN_PATH}">Sign in</a></p>
              <p><a href="${PRIVACY_PATH}">Privacy</a></p>`,
       centred: true,
     }),

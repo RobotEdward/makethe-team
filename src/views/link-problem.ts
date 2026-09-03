@@ -1,3 +1,4 @@
+import { SIGN_IN_PATH } from "../auth/paths.js";
 import { layout } from "./layout.js";
 
 /**
@@ -18,6 +19,15 @@ import { layout } from "./layout.js";
  * handler in `src/app.ts` needs it too, and the one thing this page must
  * never become is two pages that drift apart.
  *
+ * **The first thing it offers is something the reader can do alone.** Until
+ * M55 both routes off this page went through somebody else: ask the organiser
+ * for a fresh link, or contact them directly. Most people who land here have
+ * an account already — the link they tapped was emailed to it — and signing
+ * in reaches the same fixture with no link at all. Sending them to interrupt
+ * a volunteer for a page they can open themselves was the wrong order.
+ * `SIGN_IN_PATH` is a module constant, so the body is still constant and the
+ * byte-identical property above still holds by construction.
+ *
  * The *status* is the caller's choice, and the two callers differ on purpose
  * — see `renderLinkProblemPage`'s users. An expected token failure answers
  * 200 (the link the player tapped is not gone or malformed from HTTP's point
@@ -30,7 +40,8 @@ export function renderLinkProblemPage(): string {
   const body = `
     <h1>This link isn't working</h1>
     <p>It may have expired, already been used for a fixture that's since finished, or been copied incorrectly.</p>
-    <p>Ask whoever organises your game to send you a fresh link, or get in touch with them directly.</p>
+    <p>If you have an account, <a href="${SIGN_IN_PATH}">sign in</a> — your games are all there, and you can answer a fixture from one without needing a link at all.</p>
+    <p>If you don't, ask whoever organises your game to send you a fresh link, or get in touch with them directly.</p>
   `;
   return layout({ title: "This link isn't working — Make The Team", body, centred: true });
 }

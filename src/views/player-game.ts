@@ -1,6 +1,6 @@
 import { fixtureAnswerPath, fixturePath, gamePastFixturesPath, gamePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
-import { formatLocalDateTime } from "../domain/time/zone.js";
+import { formatLocalCompactDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseStatus } from "../domain/response-status.js";
@@ -182,7 +182,12 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
   const upcomingItems = upcoming
     .map(
       (fixture) =>
-        `<li>${escapeHtml(formatLocalDateTime(fixture.kicksOffAt, timezone))} — ${escapeHtml(fixtureStatusWords(fixture.lifecycle))}</li>`,
+        // The kickoff abbreviated and the state demoted to `.detail`, both for
+        // the reason the organiser's copy of this list gives (M55): at 390px
+        // the long form plus the state wrapped every row onto a second line.
+        // `.detail` is the same class the organiser's rows already use, so the
+        // two lists of the same fixtures now read the same way.
+        `<li>${escapeHtml(formatLocalCompactDateTime(fixture.kicksOffAt, timezone))} <span class="detail">${escapeHtml(fixtureStatusWords(fixture.lifecycle))}</span></li>`,
     )
     .join("");
 

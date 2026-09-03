@@ -34,12 +34,15 @@ import { layout } from "./layout.js";
  * *does* have a Player elsewhere falls past that guard into this page.
  */
 export function renderNotFoundPage(): string {
-  // Three short lines, not three paragraphs of explanation. `p` has no margin
-  // (`layout()`'s base sheet), so every seam between paragraphs here reads as
-  // one block of prose — and `centred` is documented for pages that say one
-  // thing. Adding a `<style>` block to space them out would mean another
-  // entry in `STYLE_BLOCKS` to forget; shorter copy is the cheaper answer and
-  // the better one.
+  // Three short lines, not three paragraphs of explanation, because `centred`
+  // is documented for pages that say one thing.
+  //
+  // Until M55 they also ran together as one block of prose: `p` has no margin
+  // in `layout()`'s base sheet, and this page has no `pageStyles` to reach the
+  // `.prose` rule that puts it back. The answer was not a new `<style>` block
+  // — that would be another entry in `STYLE_BLOCKS` to forget — but one rule
+  // in the base sheet, on `main.centred p + p`, which every page of this shape
+  // already carries.
   const body = `
     <h1>We can't find that page</h1>
     <p>This link may be for a game you're not in, or you may be signed in with a different email address from the one your squad knows.</p>

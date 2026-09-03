@@ -61,7 +61,7 @@ describe("app.onError", () => {
       expect(response.status).toBe(500);
       const body = await response.text();
       expect(body).toContain("This link isn't working");
-      expect(body).toContain("Ask whoever organises your game");
+      expect(body).toContain("ask whoever organises your game");
       expect(response.headers.get("content-type")).toMatch(/text\/html/);
     } finally {
       errorSpy.mockRestore();

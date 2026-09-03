@@ -774,6 +774,20 @@ export const TEAM_PICKER_CSS = `
 export const PRIVACY_STYLES_CSS = `
   main { max-width: 40rem; }
   .lede { font-size: var(--t-lead); color: var(--fg); margin-bottom: 1.5rem; }
+  /* The contents (M55). A run of links separated by middots rather than a
+     bulleted list: eight bullets is a screenful on a phone, and the reader
+     would meet a table of contents before the sentence that tells them what
+     the page is for. Ruled top and bottom so it reads as apparatus rather
+     than as the page's first section.
+
+     line-height 2 is not decoration — the links wrap onto three or four lines
+     at 390px, and at the default 1.6 the wrapped rows sit close enough that a
+     thumb aimed at one lands on its neighbour. */
+  .contents {
+    margin: 0 0 2rem; padding: 0.6rem 0;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    font-size: var(--t-support); line-height: 2;
+  }
   .held { margin: 0 0 1.1rem; }
   .held-what { color: var(--fg); font-weight: 600; }
   .held-why { margin-top: 0.15rem; }
@@ -1512,10 +1526,25 @@ export const LEAGUE_CSS = `
   }
   table.league thead th { color: var(--mut); font-weight: normal; }
   table.league thead abbr { text-decoration: none; cursor: help; }
-  table.league .league-player {
+  /* The position column (M55). Sticky at the left edge with the name sticky
+     directly after it: a rank that scrolls away from its own row is worse
+     than none, and the two have to travel together. The 2rem offset on the
+     name is this cell's own width, and the pair only works because the two
+     numbers agree — box-sizing: border-box (set globally) is what makes the
+     declared width the whole cell, padding included. */
+  table.league .rank {
     text-align: left;
     position: sticky;
     left: 0;
+    width: 2rem;
+    background: var(--bg);
+    padding-left: 0;
+    color: var(--mut);
+  }
+  table.league .league-player {
+    text-align: left;
+    position: sticky;
+    left: 2rem;
     background: var(--bg);
     padding-left: 0;
   }
@@ -1526,6 +1555,14 @@ export const LEAGUE_CSS = `
      spare. The title attribute on the span carries the whole name either way. */
   @media (max-width: 40rem) {
     .league-name { max-width: 8.5rem; }
+    /* Win% steps aside on a phone so the position column can have its place.
+       Eight columns is what fits 390px, and this is the one of the eight that
+       says least that the others do not: it is W as a share of the games that
+       settled, and W, D, L and P are all still on the row to read it off. The
+       sentence in the note that explains it goes with it, or the note would
+       define a column that is not there. */
+    table.league .win-pct { display: none; }
+    .league-note .win-pct-note { display: none; }
   }
   /* The viewer's own row is marked where it falls and never moved to the top —
      a table that reprints your row above the people above you is not a league
@@ -1537,8 +1574,44 @@ export const LEAGUE_CSS = `
      under the name. */
   table.league tbody tr.you { font-weight: 600; }
   table.league tbody tr.you td { background: var(--accent-mut); }
+  table.league tbody tr.you .rank { background: var(--accent-mut); }
   table.league tbody tr.you .league-player { background: var(--accent-mut); }
   .league-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
+`;
+
+/**
+ * A wider column, for the two pages that are a working surface rather than
+ * something to read (M55).
+ *
+ * The product runs at 30rem, and `FORM_CSS` widens the pages with real forms
+ * to 40rem. Both are measures chosen for reading. The team picker and the
+ * organiser's fixture page are neither: the picker is two drop columns side
+ * by side, which at 40rem gives each side about 18rem to hold a full name and
+ * a drag handle, and the fixture page is the longest page in the product —
+ * measured at 3954px on a phone — most of whose length is a squad list one
+ * name per row. On a laptop both were leaving several hundred pixels of empty
+ * ground either side of a column that had run out of room.
+ *
+ * **Only above 64rem**, which is a laptop and not a tablet held upright.
+ * Below it nothing changes, so the phone layout these two pages were actually
+ * designed against is untouched.
+ *
+ * It must be listed *after* `FORM_CSS` in a page's `pageStyles`. A rule inside
+ * a media query has no specificity bonus over the bare `main` rule it is
+ * overriding — only source order separates them — and
+ * `test/views/style-cascade.test.ts` cannot see this pair, because it compares
+ * selector strings and a media-scoped selector carries its prelude. That is
+ * what `test/views/wide-column.test.ts` is for.
+ */
+export const WIDE_COLUMN_CSS = `
+  @media (min-width: 64rem) {
+    main { max-width: 52rem; }
+    /* The header comes too. layout()'s own comment on .site-header says it
+       shares main's column so the name and the page content keep one left
+       edge, and that is only true while the two widths agree — left behind at
+       30rem it sits inset from the content by eleven rems of nothing. */
+    .site-header { max-width: 52rem; }
+  }
 `;
 
 export const PAGE_STYLE_BLOCKS = [
@@ -1568,6 +1641,7 @@ export const PAGE_STYLE_BLOCKS = [
   TIMELINE_CSS,
   RECORD_CSS,
   LEAGUE_CSS,
+  WIDE_COLUMN_CSS,
 ] as const;
 
 export type PageStyleBlock = (typeof PAGE_STYLE_BLOCKS)[number];

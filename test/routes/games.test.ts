@@ -3,7 +3,7 @@ import { eq, inArray } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
 import { auditLog, fixtures, games, memberships, players } from "../../src/db/schema.js";
-import { formatLocalDateTime } from "../../src/domain/time/zone.js";
+import { formatLocalCompactDateTime } from "../../src/domain/time/zone.js";
 import { COPY_BUTTON_JS, SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 import { cellsWithScope } from "../../src/notify/notification-controls.js";
 import { loadNotificationSettings } from "../../src/notify/notification-settings.js";
@@ -488,7 +488,7 @@ describe("the fixtures list on /g/:id", () => {
 
     const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}`, { headers: { cookie } })).text();
 
-    expect(html).toContain(formatLocalDateTime(kickoff, "Europe/London"));
+    expect(html).toContain(formatLocalCompactDateTime(kickoff, "Europe/London"));
     expect(html).toContain("open");
     expect(html).toContain("5 in");
   });

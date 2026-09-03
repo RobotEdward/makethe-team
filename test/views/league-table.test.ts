@@ -58,7 +58,7 @@ describe("the standings section", () => {
   it("leaves the win percentage blank for a player with no settled games", () => {
     const html = render([tally({ won: 0, lost: 0, drawn: 0, goalsFor: 0, goalsAgainst: 0 })]);
 
-    expect(html).toContain(`<td class="count">—</td>`);
+    expect(html).toContain(`<td class="count win-pct">—</td>`);
     expect(html).not.toContain("0%");
   });
 
@@ -179,5 +179,77 @@ describe("LEAGUE_CSS own-row mark", () => {
     const cellTint = /background:\s*var\((--[a-z-]+)\)/.exec(stickyOwnCell?.[1] ?? "")?.[1];
 
     expect(cellTint, "the sticky cell's tint must match the row's").toBe(rowTint);
+  });
+});
+
+/**
+ * The position column (M55), and the one thing it must not do: present the
+ * comparator's stability tiebreak as a ranking. `buildLeagueTable` breaks a
+ * remaining tie on name and then player id so that `Array.prototype.sort` is
+ * given a total order — those two keys exist to stop rows swapping between
+ * reloads, not to say who finished ahead of whom.
+ */
+describe("the position column", () => {
+  it("heads the column and numbers the rows", () => {
+    const html = render([
+      tally({ playerId: "p-1", name: "Ada Okafor", won: 5, drawn: 0, lost: 1, played: 6 }),
+      tally({ playerId: "p-2", name: "Ben Ash", won: 1, drawn: 0, lost: 5, played: 6 }),
+    ]);
+
+    expect(html).toContain(`<abbr title="Position">#</abbr>`);
+    expect(html).toContain(`<td class="rank">1</td>`);
+    expect(html).toContain(`<td class="rank">2</td>`);
+  });
+
+  it("gives players level on points, goal difference and wins the same place", () => {
+    // Identical on every sporting key; only the names differ, and the name is
+    // exactly the key that must not decide a position.
+    const html = render([
+      tally({ playerId: "p-1", name: "Ada Okafor", won: 2, drawn: 0, lost: 0, played: 2, goalsFor: 4, goalsAgainst: 2 }),
+      tally({ playerId: "p-2", name: "Ben Ash", won: 2, drawn: 0, lost: 0, played: 2, goalsFor: 4, goalsAgainst: 2 }),
+      tally({ playerId: "p-3", name: "Cara Vine", won: 0, drawn: 0, lost: 2, played: 2, goalsFor: 0, goalsAgainst: 6 }),
+    ]);
+
+    const ranks = [...html.matchAll(/<td class="rank">(\d+)<\/td>/g)].map((match) => match[1]);
+
+    // Standard competition ranking: the shared place is used twice and the
+    // place it consumed is skipped, as every published league table does.
+    expect(ranks).toEqual(["1", "1", "3"]);
+  });
+
+  it("separates players level on points but not on goal difference", () => {
+    const html = render([
+      tally({ playerId: "p-1", name: "Ada Okafor", won: 2, drawn: 0, lost: 0, played: 2, goalsFor: 9, goalsAgainst: 1 }),
+      tally({ playerId: "p-2", name: "Ben Ash", won: 2, drawn: 0, lost: 0, played: 2, goalsFor: 3, goalsAgainst: 2 }),
+    ]);
+
+    const ranks = [...html.matchAll(/<td class="rank">(\d+)<\/td>/g)].map((match) => match[1]);
+
+    expect(ranks).toEqual(["1", "2"]);
+  });
+});
+
+/**
+ * Win% is the column that pays for the position column on a phone. Both the
+ * cells and the sentence in the note that defines them have to go together —
+ * a note explaining a column that is not on screen is worse than no note.
+ */
+describe("Win% below 40rem", () => {
+  it("marks the cells and the note so one rule can hide both", () => {
+    const html = render([tally()]);
+
+    expect(html).toContain(`class="count win-pct"`);
+    expect(html).toContain(`<span class="win-pct-note">`);
+  });
+
+  it("hides them together, and only on a narrow screen", () => {
+    const narrow = /@media \(max-width: 40rem\) \{([\s\S]*?)\n {2}\}/.exec(LEAGUE_CSS)?.[1] ?? "";
+
+    expect(narrow).toContain(".win-pct { display: none; }");
+    expect(narrow).toContain(".win-pct-note { display: none; }");
+    // Presence pinned as well as absence: an empty match would satisfy both
+    // `not.toContain` checks below without hiding anything.
+    expect(narrow).not.toBe("");
+    expect(narrow).not.toContain(".rank { display: none");
   });
 });
