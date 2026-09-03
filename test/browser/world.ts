@@ -124,14 +124,184 @@ export interface World {
  * to use instead.
  */
 async function query<T>(sql: string): Promise<T[]> {
-  const { stdout } = await run(
-    "npx",
-    ["wrangler", "d1", "execute", "makethe-team", "--local", "--json", "--command", sql],
-    { cwd: process.cwd(), maxBuffer: 4 * 1024 * 1024 },
+  // Retried on SQLITE_BUSY, and only on that. This runs as a separate process
+  // against the same local SQLite file the worker is using, so a read issued
+  // just after a cron sweep is triggered can land while that sweep is still
+  // writing — `database is locked`, from the CLI rather than from anything the
+  // app did. Seen once the M52 world started verifying its own seed
+  // immediately after the hourly cron. Any other failure is raised at once:
+  // a syntax error retried three times is just a slower syntax error.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const { stdout } = await run(
+        "npx",
+        ["wrangler", "d1", "execute", "makethe-team", "--local", "--json", "--command", sql],
+        { cwd: process.cwd(), maxBuffer: 4 * 1024 * 1024 },
+      );
+      const start = stdout.indexOf("[");
+      if (start === -1) throw new Error(`unexpected wrangler output:\n${stdout}`);
+      return (JSON.parse(stdout.slice(start)) as { results?: T[] }[])[0]?.results ?? [];
+    } catch (error) {
+      const busy = /database is locked|SQLITE_BUSY/.test(
+        error instanceof Error ? error.message : String(error),
+      );
+      if (!busy || attempt >= 4) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+}
+
+/**
+ * Give a game a season behind it: played fixtures with sides picked and a
+ * result everybody agreed (M52).
+ *
+ * Without this the two newest features in the product photograph as nothing.
+ * `Your record` and `Standings` both read `fixture_results` joined to a
+ * `responses` row that has a `team` on it, so a world with no settled,
+ * *sided* history renders them as empty strings — which is exactly how they
+ * reached production unlooked-at, and how three separate design reviewers came
+ * to judge a page with the feature missing from it. Five findings in that
+ * review turned out to be artefacts of a world too thin to show the thing
+ * being reviewed.
+ *
+ * Written as rows rather than driven through the app, unlike the rest of this
+ * harness, and the reason is the clock. A fixture becomes `played` only by
+ * being retired after its kickoff, and its result only materialises once a
+ * 48-hour window has closed — so producing this through the UI would mean
+ * three weeks of wall time. Backdating is the one thing the app has no surface
+ * for, which is the same exemption `seedWorld` already takes for the legacy
+ * membership below.
+ *
+ * The rows are still consistent with what the app would have written: every
+ * result has claims behind it, and the hourly cron is what turns those into
+ * the cache row, so nothing here asserts an outcome the sweep would not derive.
+ */
+async function seedMatchHistory(
+  page: Page,
+  gameId: string,
+  /** Everyone who played, in the order their sides alternate. */
+  squad: readonly string[],
+): Promise<void> {
+  // Four weeks, oldest first, with the sides written out per fixture rather
+  // than fixed per player. Three players alternating fixed sides finish level
+  // on points however the results fall, and a league table where everyone is
+  // level does not illustrate a league table — the same objection that got two
+  // screenshots of all-nought tables thrown out of the guide in M51. These
+  // sides give a clear leader, a clear bottom, and one draw.
+  //
+  // `sides` is index-aligned to `squad`.
+  const HISTORY = [
+    { daysAgo: 28, outcome: "a", scoreA: 3, scoreB: 1, sides: ["a", "b", "b"] },
+    { daysAgo: 21, outcome: "b", scoreA: 0, scoreB: 2, sides: ["a", "b", "a"] },
+    { daysAgo: 14, outcome: "draw", scoreA: 2, scoreB: 2, sides: ["a", "a", "b"] },
+    { daysAgo: 7, outcome: "a", scoreA: 4, scoreB: 2, sides: ["a", "b", "a"] },
+  ] as const;
+
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  // Past fixtures are inserted, not repurposed from the schedule. The first
+  // version of this took the furthest-out `scheduled` rows and then ran the
+  // materialisation cron again to top the schedule back up — which cost two
+  // extra cron sweeps per `seedWorld` call, and each sweep walks every game
+  // the run has created so far. Measured across the browser suite: 12 minutes
+  // became 40, then 17.7 once the row writes were batched, and 13 again once
+  // these two sweeps went away. Inserting is also the honest shape: these are
+  // finished fixtures, and nothing about a finished one needs the capacity
+  // object that materialisation exists to create.
+  const [shape] = await query<{
+    minPlayers: number;
+    maxPlayers: number;
+    prefersEvenNumbers: number;
+    shortWarningOffsetHours: number;
+    durationMinutes: number;
+  }>(
+    `SELECT min_players AS minPlayers, max_players AS maxPlayers,
+            prefers_even_numbers AS prefersEvenNumbers,
+            short_warning_offset_hours AS shortWarningOffsetHours,
+            duration_minutes AS durationMinutes
+       FROM fixtures WHERE game_id = '${gameId}' LIMIT 1`,
   );
-  const start = stdout.indexOf("[");
-  if (start === -1) throw new Error(`unexpected wrangler output:\n${stdout}`);
-  return (JSON.parse(stdout.slice(start)) as { results?: T[] }[])[0]?.results ?? [];
+  if (!shape) {
+    throw new Error(
+      `seedMatchHistory: game ${gameId} has no fixture to copy its shape from. ` +
+        `Materialisation is what creates them, so this ran before that cron.`,
+    );
+  }
+
+  // Two statements for the whole history, not one per row. Every `query` here
+  // shells out to `wrangler d1 execute`, which costs about a second, and
+  // `seedWorld` runs once per spec file across dozens of specs.
+  const fixtureRows: string[] = [];
+  const responseRows: string[] = [];
+  const claimRows: string[] = [];
+
+  for (const past of HISTORY) {
+    const fixtureId = randomUUID();
+    const kickoff = now - past.daysAgo * DAY;
+
+    // `played` outright, with the teams already published. The hourly sweep
+    // below is what turns the claims into the cache row the two tables read;
+    // retirement is not needed for a fixture that was never open.
+    fixtureRows.push(
+      `('${fixtureId}', '${gameId}', ${kickoff}, 'played', ${shape.minPlayers}, ` +
+        `${shape.maxPlayers}, ${shape.prefersEvenNumbers}, ${shape.shortWarningOffsetHours}, ` +
+        `${shape.durationMinutes}, ${squad.length}, 0, ${kickoff - 7 * DAY}, ` +
+        `${kickoff}, ${kickoff})`,
+    );
+
+    for (const [position, playerId] of squad.entries()) {
+      const side = past.sides[position];
+      if (side === undefined) {
+        throw new Error(
+          `seedMatchHistory: no side for squad position ${position}. ` +
+            `HISTORY.sides is index-aligned to squad and must be the same length.`,
+        );
+      }
+      responseRows.push(
+        `('${randomUUID()}', '${fixtureId}', '${playerId}', 'in', '${side}', ${kickoff - DAY}, 'web')`,
+      );
+    }
+
+    // Two claims that agree, which is what makes a result settle rather than
+    // stand as one person's word. Filed after kickoff, as a real one is.
+    for (const playerId of squad.slice(0, 2)) {
+      claimRows.push(
+        `('${randomUUID()}', '${fixtureId}', '${playerId}', '${past.outcome}', ` +
+          `${past.scoreA}, ${past.scoreB}, ${kickoff + 3600000}, ${kickoff + 3600000})`,
+      );
+    }
+  }
+
+  await query(
+    `INSERT INTO fixtures (id, game_id, kicks_off_at, lifecycle, min_players, max_players,
+       prefers_even_numbers, short_warning_offset_hours, duration_minutes, in_count,
+       waitlist_count, opened_at, teams_published_at, teams_saved_at)
+     VALUES ${fixtureRows.join(", ")};
+     INSERT INTO responses (id, fixture_id, player_id, status, team, responded_at, source)
+     VALUES ${responseRows.join(", ")};
+     INSERT INTO fixture_result_claims
+       (id, fixture_id, player_id, outcome, score_a, score_b, filed_at, created_at)
+     VALUES ${claimRows.join(", ")}`,
+  );
+
+  // The one sweep this needs: the hourly handler materialises the result of
+  // every played fixture whose 48-hour window has closed, which is the row
+  // both tables actually read. Nothing here asserts an outcome the sweep would
+  // not derive — the claims above are what it derives it from.
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=0+*+*+*+*`);
+
+  const settled = await query<{ n: number }>(
+    `SELECT count(*) AS n FROM fixture_results r
+       JOIN fixtures f ON f.id = r.fixture_id WHERE f.game_id = '${gameId}'`,
+  );
+  if ((settled[0]?.n ?? 0) < HISTORY.length) {
+    throw new Error(
+      `seedMatchHistory: ${settled[0]?.n ?? 0} of ${HISTORY.length} fixtures ` +
+        `settled. Standings and Your record both read fixture_results, so a ` +
+        `short count here is the two of them rendering as nothing.`,
+    );
+  }
 }
 
 /**
@@ -286,6 +456,12 @@ export async function seedWorld(
     `SELECT id FROM players WHERE email = '${TEST_OWNER}' LIMIT 1`,
   );
   if (!owner) throw new Error(`the owner ${TEST_OWNER} has no player row`);
+
+  // A season behind the game, so `Your record` and `Standings` have something
+  // to report on every page that carries them (M52). After the member and the
+  // owner are resolved, and before the tokens: it runs a cron, and the open
+  // fixture above is already fixed by id so a second sweep cannot move it.
+  await seedMatchHistory(page, gameId, [owner.id, member.id, legacyMemberId]);
 
   const responseToken = await signResponseToken(
     {
