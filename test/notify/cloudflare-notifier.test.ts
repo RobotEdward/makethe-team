@@ -5,8 +5,8 @@
  * so an un-mocked call fails the test rather than reaching the network.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CloudflareEmailNotifier } from "../../src/notify/cloudflare-notifier.js";
-import type { EmailMessage, Message, PushMessage } from "../../src/notify/notifier.js";
+import { CloudflareEmailNotifier, PROVIDER_REFUSED_REASON } from "../../src/notify/cloudflare-notifier.js";
+import type { EmailMessage, Message, PushMessage, SendResult } from "../../src/notify/notifier.js";
 
 const ACCOUNT_ID = "test-fake-account-id";
 const API_TOKEN = "test-fake-cloudflare-token-not-real";
@@ -62,6 +62,15 @@ function respondPerRecipient(bodyFor: (to: string) => Response): void {
     const payload = JSON.parse(String(init?.body)) as { to: string };
     return bodyFor(payload.to);
   });
+}
+
+/**
+ * Whether a result carries the spillable "the provider said no" verdict.
+ * Written once here so each assertion reads as the question it is asking
+ * rather than as null-handling.
+ */
+function isRefusal(result: SendResult | undefined): boolean {
+  return result !== undefined && !result.ok && result.error.startsWith(PROVIDER_REFUSED_REASON);
 }
 
 function notifier(): CloudflareEmailNotifier {
@@ -185,7 +194,7 @@ describe("CloudflareEmailNotifier", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "cloudflare send rejected: 10004: Rate limit exceeded",
+      error: `${PROVIDER_REFUSED_REASON}: cloudflare send rejected: 10004: Rate limit exceeded`,
     });
   });
 
@@ -207,7 +216,10 @@ describe("CloudflareEmailNotifier", () => {
 
     const [result] = await notifier().send([message()]);
 
-    expect(result).toEqual({ ok: false, error: "cloudflare send failed: HTTP 403 nope" });
+    expect(result).toEqual({
+      ok: false,
+      error: `${PROVIDER_REFUSED_REASON}: cloudflare send failed: HTTP 403 nope`,
+    });
   });
 
   it("reports a 200 whose body is not JSON", async () => {
@@ -251,6 +263,62 @@ describe("CloudflareEmailNotifier", () => {
     expect(results[0]?.ok).toBe(true);
     expect(results[1]).toEqual({ ok: false, error: "cloudflare-notifier-received-non-email" });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // The verdict split (M54). A 4xx or a `success: false` means Cloudflare
+  // parsed the request and rejected it, so nothing was queued and the message
+  // is safe for another leg to try. A 5xx or a network error may have been
+  // accepted before the failure surfaced, so it must stay final.
+  it("marks a 5xx as ambiguous, not a refusal, so it is never spilled", async () => {
+    fetchSpy.mockResolvedValue(new Response("upstream boom", { status: 503 }));
+
+    const [result] = await notifier().send([message()]);
+
+    expect(result).toEqual({ ok: false, error: "cloudflare send failed: HTTP 503 upstream boom" });
+  });
+
+  it("marks a network error as ambiguous, not a refusal", async () => {
+    fetchSpy.mockRejectedValue(new Error("connection reset"));
+
+    const [result] = await notifier().send([message()]);
+
+    expect(isRefusal(result)).toBe(false);
+  });
+
+  it("marks a malformed 200 body as ambiguous — it answered 2xx, so it may have queued", async () => {
+    fetchSpy.mockResolvedValue(new Response("<html>", { status: 200 }));
+
+    const [result] = await notifier().send([message()]);
+
+    expect(isRefusal(result)).toBe(false);
+  });
+
+  // A bounce is just as certain as a refusal, and deliberately not treated as
+  // one: it is a fact about the address, so retrying it on Resend would burn
+  // a second provider's reputation to reach the same verdict.
+  it("does not mark a permanent bounce as a refusal", async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse(
+        JSON.stringify({
+          success: true,
+          errors: [],
+          messages: [],
+          result: { delivered: [], permanent_bounces: ["player@example.com"], queued: [] },
+        }),
+      ),
+    );
+
+    const [result] = await notifier().send([message()]);
+
+    expect(result).toEqual({ ok: false, error: "cloudflare send permanently bounced" });
+  });
+
+  it("marks a 401 as a refusal — the realistic bad-token case", async () => {
+    fetchSpy.mockResolvedValue(new Response("unauthorized", { status: 401 }));
+
+    const [result] = await notifier().send([message()]);
+
+    expect(isRefusal(result)).toBe(true);
   });
 
   it("returns an empty array without calling fetch", async () => {

@@ -1,29 +1,53 @@
+import { PROVIDER_REFUSED_REASON } from "./cloudflare-notifier.js";
 import type { Message, Notifier, SendResult } from "./notifier.js";
 import { DAILY_CEILING_REASON, NOTIFIER_CONTRACT_VIOLATION_REASON } from "./quota.js";
 
 /**
+ * True when a leg's refusal means the next leg may safely try the same
+ * message. Two cases, and deliberately only two:
+ *
+ *  - `DAILY_CEILING_REASON` — the quota refused it before the provider was
+ *    ever called, so nothing was sent.
+ *  - `PROVIDER_REFUSED_REASON` — the provider answered and said no (a 4xx, or
+ *    a 200 carrying `success: false`), so nothing was queued.
+ *
+ * Both are *certainties* that the message was not delivered. Everything else
+ * stays final: a success (retrying would double-send), a missing recipient
+ * (no provider can fix it), and — the important one — an ambiguous provider
+ * error such as a timeout or a 5xx, which may have been delivered before the
+ * failure surfaced. Widening this beyond certainty is the bug the whole
+ * function exists to prevent.
+ */
+function mayRetryOnNextLeg(result: SendResult): boolean {
+  if (result.ok) return false;
+  return (
+    result.error === DAILY_CEILING_REASON ||
+    // A prefix test, not equality: `CloudflareEmailNotifier` appends the
+    // provider's own diagnostic after the reason so the log line stays
+    // useful, and the verdict must survive that.
+    result.error === PROVIDER_REFUSED_REASON ||
+    result.error.startsWith(`${PROVIDER_REFUSED_REASON}: `)
+  );
+}
+
+/**
  * Offers each message to a series of quota-wrapped notifiers, moving on to
- * the next one only for the messages the previous one refused *for capacity*
- * (M42).
+ * the next one only for the messages the previous one is *certain* it did
+ * not send (M42, widened in M54).
  *
- * # Why the spill condition is `DAILY_CEILING_REASON` and nothing else
+ * # The spill condition is certainty, not failure
  *
- * The whole design of this class is that spilling over is the existing
- * "we ran out of room" path, replayed against a leg that still has room.
- * Every other outcome is final:
+ * See `mayRetryOnNextLeg` for the two cases and the reasoning. The rule is
+ * that a message moves on only when the previous leg can prove it was not
+ * delivered — the quota refused it before the provider was called, or the
+ * provider answered and said no.
  *
- *  - `ok: true` — sent. Retrying on another provider would deliver twice.
- *  - `NO_RECIPIENT_REASON` — there is no address. No provider can fix that.
- *  - a provider error — **ambiguous**. Resend may well have accepted and
- *    delivered the mail before the connection failed, and `applySendResult`
- *    in `delivery.ts` already declines to retry these for that reason.
- *    Spilling one to Cloudflare would be this codebase's first mechanism
- *    that can double-send, and it would do it precisely when a player is
- *    already being told something important.
- *
- * So the condition is a single, exact string match, not "anything that
- * wasn't `ok`". A wider condition is the bug this comment exists to
- * prevent.
+ * Everything else is final, and the ambiguous provider error is the one that
+ * matters: Resend may well have accepted and delivered the mail before the
+ * connection failed, and `applySendResult` in `delivery.ts` already declines
+ * to retry these for that reason. Spilling one would be this codebase's
+ * first mechanism that can double-send, and it would do it precisely when a
+ * player is already being told something important.
  *
  * # What the caller sees
  *
@@ -36,7 +60,13 @@ import { DAILY_CEILING_REASON, NOTIFIER_CONTRACT_VIOLATION_REASON } from "./quot
  *
  * # Order matters and is not arbitrary
  *
- * `legs` is tried in order, so the first leg should be the one whose
+ * `legs` is tried in order. A leg may appear more than once: M54 puts a small
+ * Cloudflare leg *first* to keep that provider warm, the Resend bulk second,
+ * and the full Cloudflare spill third. The first and third share one counter
+ * row, each clamping to its own limit against it, so the small leg stops at
+ * the warm-up figure while the large one still allows the full daily total.
+ *
+ * Otherwise the first leg should be the one whose
  * allowance is use-it-or-lose-it and free. Resend's free tier is a daily
  * 100 that does not roll over; Cloudflare's is a monthly 3,000 that bills
  * at $0.35/1,000 beyond it. Filling Resend first therefore spends the
@@ -89,7 +119,7 @@ export class SpilloverNotifier implements Notifier {
           results[index] = { ok: false, error: NOTIFIER_CONTRACT_VIOLATION_REASON };
           return;
         }
-        if (!result.ok && result.error === DAILY_CEILING_REASON) {
+        if (mayRetryOnNextLeg(result)) {
           stillPending.push(index);
           // Recorded anyway, so that if this is the last leg the slot
           // already holds the right answer and no post-loop pass is needed

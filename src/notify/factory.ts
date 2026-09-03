@@ -93,36 +93,60 @@ function selectEmailLeg(env: Bindings, db: Db, now: Date): Notifier {
     case "":
     case "none":
       return new SpilloverNotifier([primary]);
-    case "cloudflare":
-      return new SpilloverNotifier([
-        primary,
-        new QuotaNotifier(
-          new CloudflareEmailNotifier(
-            requireBinding(
-              env.CLOUDFLARE_ACCOUNT_ID,
-              "CLOUDFLARE_ACCOUNT_ID",
-              'the "vars" block in wrangler.jsonc',
-              'EMAIL_SPILLOVER is "cloudflare"',
-            ),
-            requireBinding(
-              env.CLOUDFLARE_EMAIL_API_TOKEN,
-              "CLOUDFLARE_EMAIL_API_TOKEN",
-              "wrangler secret put CLOUDFLARE_EMAIL_API_TOKEN",
-              'EMAIL_SPILLOVER is "cloudflare"',
-            ),
-            requireBinding(
-              env.EMAIL_FROM,
-              "EMAIL_FROM",
-              'the "vars" block in wrangler.jsonc',
-              'EMAIL_SPILLOVER is "cloudflare"',
-            ),
-          ),
-          db,
-          parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY_CLOUDFLARE, "MAX_EMAILS_PER_DAY_CLOUDFLARE"),
-          now,
-          "cloudflare",
+    case "cloudflare": {
+      const cloudflare = new CloudflareEmailNotifier(
+        requireBinding(
+          env.CLOUDFLARE_ACCOUNT_ID,
+          "CLOUDFLARE_ACCOUNT_ID",
+          'the "vars" block in wrangler.jsonc',
+          'EMAIL_SPILLOVER is "cloudflare"',
         ),
+        requireBinding(
+          env.CLOUDFLARE_EMAIL_API_TOKEN,
+          "CLOUDFLARE_EMAIL_API_TOKEN",
+          "wrangler secret put CLOUDFLARE_EMAIL_API_TOKEN",
+          'EMAIL_SPILLOVER is "cloudflare"',
+        ),
+        requireBinding(
+          env.EMAIL_FROM,
+          "EMAIL_FROM",
+          'the "vars" block in wrangler.jsonc',
+          'EMAIL_SPILLOVER is "cloudflare"',
+        ),
+      );
+      const spill = new QuotaNotifier(
+        cloudflare,
+        db,
+        parseMaxEmailsPerDay(env.MAX_EMAILS_PER_DAY_CLOUDFLARE, "MAX_EMAILS_PER_DAY_CLOUDFLARE"),
+        now,
+        "cloudflare",
+      );
+
+      // M54 warm-up. Cloudflare's daily limit is a reputation ramp that only
+      // grows with real sending, and as a pure spill leg it would never send
+      // anything: Resend's ceiling is never reached, so nothing ever spills.
+      // A small leg placed *first* sends the first `warmUpPerDay` messages of
+      // each UTC day through Cloudflare instead.
+      //
+      // Both Cloudflare legs write the same `(day, "cloudflare")` counter
+      // row, each clamping to its own limit against it. The warm-up leg
+      // therefore stops at `warmUpPerDay` while `spill` still allows the full
+      // MAX_EMAILS_PER_DAY_CLOUDFLARE for the day, so this adds no capacity
+      // and `emailCeilingTotal` is unaffected.
+      //
+      // Putting an unproven leg first is only safe because a provider that
+      // answers "no" reports PROVIDER_REFUSED_REASON, which spills on to
+      // Resend — see `mayRetryOnNextLeg`. Without that, a bad token would
+      // turn into `warmUpPerDay` permanently lost notifications a day.
+      const warmUpPerDay = parseMaxEmailsPerDay(env.EMAIL_WARMUP_PER_DAY ?? "0", "EMAIL_WARMUP_PER_DAY");
+      if (warmUpPerDay === 0) return new SpilloverNotifier([primary, spill]);
+
+      return new SpilloverNotifier([
+        new QuotaNotifier(cloudflare, db, warmUpPerDay, now, "cloudflare"),
+        primary,
+        spill,
       ]);
+    }
     default:
       throw new Error(
         `unrecognised EMAIL_SPILLOVER binding: ${JSON.stringify(env.EMAIL_SPILLOVER)} (expected "none" or "cloudflare")`,

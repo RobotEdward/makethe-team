@@ -1,6 +1,26 @@
 import type { EmailMessage, Message, Notifier, SendResult } from "./notifier.js";
 
 /**
+ * The distinct, greppable reason a provider **definitively did not accept** a
+ * message: it answered, and its answer was no. Nothing was sent, and nothing
+ * about the send is in doubt.
+ *
+ * This exists to be spillable (M54). `SpilloverNotifier` will not offer an
+ * ordinary provider error to the next leg, because a timed-out or 5xx request
+ * may well have been delivered anyway and re-sending it would double-send. A
+ * 4xx or a `success: false` carries no such doubt — the provider parsed the
+ * request and rejected it — so the message can safely be tried elsewhere.
+ *
+ * The distinction earns its keep because these are exactly the failures a
+ * newly-enabled leg hits: a bad token, a domain that was never onboarded, a
+ * `from` address the provider will not accept. Without the split, the M54
+ * warm-up slice would turn a configuration mistake into permanently lost
+ * notifications — `applySendResult` records any other error as `failed` and
+ * never retries it.
+ */
+export const PROVIDER_REFUSED_REASON = "provider-refused";
+
+/**
  * How many sends are in flight at once (M42).
  *
  * Cloudflare Email Service has **no batch endpoint** — unlike Resend's
@@ -130,7 +150,14 @@ export class CloudflareEmailNotifier implements Notifier {
 
     if (!response.ok) {
       const bodyText = await response.text().catch(() => "<unreadable body>");
-      return failure(`cloudflare send failed: HTTP ${response.status} ${truncate(bodyText, 500)}`);
+      const detail = `cloudflare send failed: HTTP ${response.status} ${truncate(bodyText, 500)}`;
+      // 4xx means the request reached Cloudflare, was understood, and was
+      // rejected — a bad token, an unonboarded domain, a `from` it will not
+      // accept. Nothing was queued, so this is safe to try on another leg.
+      //
+      // 5xx is not: the request may have been accepted and the failure
+      // raised afterwards. Treated as ambiguous, exactly like a timeout.
+      return response.status < 500 ? refusal(detail) : failure(detail);
     }
 
     let parsedBody: unknown;
@@ -161,7 +188,8 @@ function interpret(body: unknown, recipient: string): SendResult {
   const record = body as Record<string, unknown>;
 
   if (record["success"] !== true) {
-    return failure(`cloudflare send rejected: ${truncate(describeErrors(record["errors"]), 500)}`);
+    // Cloudflare answered 200 and said no. Unambiguous: nothing was queued.
+    return refusal(`cloudflare send rejected: ${truncate(describeErrors(record["errors"]), 500)}`);
   }
 
   const result = record["result"];
@@ -171,6 +199,10 @@ function interpret(body: unknown, recipient: string): SendResult {
   const resultRecord = result as Record<string, unknown>;
 
   if (addresses(resultRecord["permanent_bounces"]).includes(recipient)) {
+    // Deliberately not a `refusal`, though it is just as certain. A bounce
+    // says the *address* is undeliverable, which is a fact about the
+    // recipient rather than about this provider — retrying it on Resend
+    // would burn a second provider's reputation to reach the same verdict.
     return failure("cloudflare send permanently bounced");
   }
   if (
@@ -211,6 +243,17 @@ function describeErrors(value: unknown): string {
 
 function failure(error: string): SendResult {
   return { ok: false, error };
+}
+
+/**
+ * A failure the provider is certain about: it answered, and the answer was
+ * no. Carries `PROVIDER_REFUSED_REASON` as its reason so `SpilloverNotifier`
+ * can recognise it, with the diagnostic detail appended after it — the match
+ * there is a prefix test, not equality, precisely so the log line keeps the
+ * detail while the verdict stays machine-readable.
+ */
+function refusal(detail: string): SendResult {
+  return { ok: false, error: `${PROVIDER_REFUSED_REASON}: ${detail}` };
 }
 
 function truncate(value: string, maxLength: number): string {

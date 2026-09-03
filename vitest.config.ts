@@ -97,6 +97,21 @@ export default defineConfig(async () => {
             // exercises. Tests that want the webpush path construct
             // createNotifier's push leg, or web-push.ts directly, themselves.
             PUSH_NOTIFIER: "null",
+            // Pinned for the third time, for the third time for the same
+            // reason — and this one has now caused the failure the NOTIFIER
+            // comment above predicts. Turning on `EMAIL_SPILLOVER` and
+            // `EMAIL_WARMUP_PER_DAY` in wrangler.jsonc for M54 sent the first
+            // five emails of every test run through the real
+            // `CloudflareEmailNotifier`, which the outbound block above
+            // answers with a 599. 671 tests went red at once, almost none of
+            // them about email: the suite signs in over a magic link, and
+            // `linkIn` asserts on a message the test notifier never received.
+            //
+            // Tests that want the spill-over or warm-up path build the legs
+            // themselves — see test/notify/spillover-notifier.test.ts and
+            // test/notify/email-spillover-config.test.ts.
+            EMAIL_SPILLOVER: "none",
+            EMAIL_WARMUP_PER_DAY: "0",
           },
         },
       }),

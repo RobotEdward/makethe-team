@@ -99,6 +99,26 @@ export interface Bindings {
    * the spill leg rather than uncapping it.
    */
   MAX_EMAILS_PER_DAY_CLOUDFLARE?: string;
+  /**
+   * How many of each UTC day's first emails go through Cloudflare before
+   * Resend is used at all (M54). `"0"` or absent disables the warm-up and
+   * leaves Cloudflare as a pure spill leg.
+   *
+   * This exists because a spill leg never sends: Resend's ceiling is not
+   * reached on a normal day, so nothing spills, so Cloudflare stays cold —
+   * and its daily sending limit is a reputation ramp that only grows with
+   * real traffic. A handful of messages a day keeps the path exercised and
+   * the ramp moving before the capacity is actually needed.
+   *
+   * Counted against the same `(day, "cloudflare")` row as the spill leg, so
+   * raising this does **not** raise the day's total capacity — it only moves
+   * traffic earlier. `emailCeilingTotal` deliberately ignores it.
+   *
+   * Ignored unless `EMAIL_SPILLOVER` is `"cloudflare"`. Parsed fail-closed to
+   * 0 like the other ceilings, so a broken value disables the warm-up rather
+   * than sending everything through the newer provider.
+   */
+  EMAIL_WARMUP_PER_DAY?: string;
   /** HMAC key for response tokens (TR-13). Set with `wrangler secret put`. */
   RESPONSE_TOKEN_SECRET: string;
   /**

@@ -199,3 +199,111 @@ describe("emailCeilingTotal", () => {
     }
   });
 });
+
+describe("EMAIL_WARMUP_PER_DAY", () => {
+  function cloudflareEnv(overrides: Partial<Bindings> = {}): Bindings {
+    return bindings({
+      NOTIFIER: "console",
+      EMAIL_SPILLOVER: "cloudflare",
+      CLOUDFLARE_ACCOUNT_ID: "acct",
+      CLOUDFLARE_EMAIL_API_TOKEN: "tok",
+      ...overrides,
+    });
+  }
+
+  /** Which provider each send went through, in order. */
+  async function sendVia(env2: Bindings, count: number): Promise<string[]> {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const seen: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const payload = JSON.parse(String(init?.body)) as { to: string };
+      seen.push(payload.to);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          errors: [],
+          messages: [],
+          result: { delivered: [payload.to], permanent_bounces: [], queued: [] },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    try {
+      await createNotifier(env2, db, NOW).send(
+        Array.from({ length: count }, (_, i) => message({ to: `ply-${i}@example.com` })),
+      );
+      return seen;
+    } finally {
+      vi.restoreAllMocks();
+      logSpy.mockRestore();
+    }
+  }
+
+  it("routes the day's first few through Cloudflare when set", async () => {
+    const viaCloudflare = await sendVia(cloudflareEnv({ EMAIL_WARMUP_PER_DAY: "3" }), 10);
+
+    expect(viaCloudflare).toEqual(["ply-0@example.com", "ply-1@example.com", "ply-2@example.com"]);
+  });
+
+  it("routes nothing through Cloudflare when absent, as before M54", async () => {
+    expect(await sendVia(cloudflareEnv(), 10)).toEqual([]);
+  });
+
+  it("routes nothing through Cloudflare when explicitly zero", async () => {
+    expect(await sendVia(cloudflareEnv({ EMAIL_WARMUP_PER_DAY: "0" }), 10)).toEqual([]);
+  });
+
+  it("fails closed on a broken value rather than sending everything through the newer provider", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await sendVia(cloudflareEnv({ EMAIL_WARMUP_PER_DAY: "all of them" }), 10)).toEqual([]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  // The warm-up moves traffic earlier; it must not create any. If it did, the
+  // figure the admin pages report would understate what the day can spend.
+  it("does not change the day's reported ceiling", () => {
+    const withWarmUp = cloudflareEnv({
+      MAX_EMAILS_PER_DAY: "95",
+      MAX_EMAILS_PER_DAY_CLOUDFLARE: "100",
+      EMAIL_WARMUP_PER_DAY: "5",
+    });
+    const without = cloudflareEnv({
+      MAX_EMAILS_PER_DAY: "95",
+      MAX_EMAILS_PER_DAY_CLOUDFLARE: "100",
+    });
+
+    expect(emailCeilingTotal(withWarmUp)).toBe(195);
+    expect(emailCeilingTotal(withWarmUp)).toBe(emailCeilingTotal(without));
+  });
+
+  it("still sends exactly the reported ceiling in a day with the warm-up on", async () => {
+    const env2 = cloudflareEnv({
+      MAX_EMAILS_PER_DAY: "4",
+      MAX_EMAILS_PER_DAY_CLOUDFLARE: "3",
+      EMAIL_WARMUP_PER_DAY: "2",
+    });
+    const total = emailCeilingTotal(env2);
+    expect(total).toBe(7);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    stubCloudflareTransport();
+    try {
+      const results = await createNotifier(env2, db, NOW).send(
+        Array.from({ length: total + 3 }, () => message()),
+      );
+
+      expect(results.filter((r) => r.ok)).toHaveLength(total);
+      const rows = await db.select().from(emailQuota).where(eq(emailQuota.day, DAY_KEY));
+      expect(rows.map((row) => [row.provider, row.sentCount]).sort()).toEqual([
+        ["cloudflare", 3],
+        ["resend", 4],
+      ]);
+    } finally {
+      vi.restoreAllMocks();
+      logSpy.mockRestore();
+    }
+  });
+});

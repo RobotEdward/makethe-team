@@ -10,6 +10,7 @@ import {
   NOTIFIER_CONTRACT_VIOLATION_REASON,
   QuotaNotifier,
 } from "../../src/notify/quota.js";
+import { PROVIDER_REFUSED_REASON } from "../../src/notify/cloudflare-notifier.js";
 import { SpilloverNotifier } from "../../src/notify/spillover-notifier.js";
 import { resetDatabase } from "../support/factories.js";
 
@@ -152,6 +153,58 @@ describe("SpilloverNotifier", () => {
   // might already have been delivered must never be offered to a second
   // provider. Widening the spill condition beyond an exact
   // DAILY_CEILING_REASON match is what these exist to catch.
+  it("spills a definite provider refusal, which is certain nothing was sent", async () => {
+    const spill = new RecordingNotifier("b");
+    const notifier = new SpilloverNotifier([
+      new QuotaNotifier(
+        new FailingNotifier(`${PROVIDER_REFUSED_REASON}: cloudflare send failed: HTTP 403 bad token`),
+        db,
+        10,
+        DAY,
+        "cloudflare",
+      ),
+      new QuotaNotifier(spill, db, 10, DAY, "resend"),
+    ]);
+
+    const results = await notifier.send(messages(2));
+
+    expect(spill.calls[0]?.map((m) => m.to)).toEqual(["ply-0@example.com", "ply-1@example.com"]);
+    expect(results.every((r) => r.ok)).toBe(true);
+  });
+
+  it("spills a bare refusal reason carrying no diagnostic detail", async () => {
+    const spill = new RecordingNotifier("b");
+    const notifier = new SpilloverNotifier([
+      new QuotaNotifier(new FailingNotifier(PROVIDER_REFUSED_REASON), db, 10, DAY, "cloudflare"),
+      new QuotaNotifier(spill, db, 10, DAY, "resend"),
+    ]);
+
+    await notifier.send(messages(1));
+
+    expect(spill.calls[0]).toHaveLength(1);
+  });
+
+  // The reason is matched as a prefix so the provider's diagnostic survives
+  // in the log line. That must not turn into a substring match: a reason
+  // that merely *mentions* the refusal text elsewhere is not a refusal.
+  it("does not spill an error that only contains the refusal reason later in the string", async () => {
+    const spill = new RecordingNotifier("b");
+    const notifier = new SpilloverNotifier([
+      new QuotaNotifier(
+        new FailingNotifier(`upstream said ${PROVIDER_REFUSED_REASON}: but this is a timeout`),
+        db,
+        10,
+        DAY,
+        "cloudflare",
+      ),
+      new QuotaNotifier(spill, db, 10, DAY, "resend"),
+    ]);
+
+    await notifier.send(messages(1));
+
+    expect(spill.calls).toEqual([]);
+  });
+
   it("does not spill a provider error, which is ambiguous about delivery", async () => {
     const spill = new RecordingNotifier("b");
     const notifier = new SpilloverNotifier([
@@ -242,5 +295,78 @@ describe("QuotaNotifier provider scoping", () => {
 
     const rows = await db.select().from(emailQuota).where(eq(emailQuota.day, DAY_KEY));
     expect(rows).toEqual([{ day: DAY_KEY, provider: "resend", sentCount: 2 }]);
+  });
+});
+
+describe("the M54 warm-up arrangement", () => {
+  /** The three legs `selectEmailLeg` builds when EMAIL_WARMUP_PER_DAY > 0. */
+  function warmUp(warmUpPerDay: number, resendCeiling: number, cloudflareCeiling: number) {
+    const cloudflare = new RecordingNotifier("cf");
+    const resend = new RecordingNotifier("rs");
+    const notifier = new SpilloverNotifier([
+      new QuotaNotifier(cloudflare, db, warmUpPerDay, DAY, "cloudflare"),
+      new QuotaNotifier(resend, db, resendCeiling, DAY, "resend"),
+      new QuotaNotifier(cloudflare, db, cloudflareCeiling, DAY, "cloudflare"),
+    ]);
+    return { notifier, cloudflare, resend };
+  }
+
+  it("sends the day's first few through Cloudflare and the rest through Resend", async () => {
+    const { notifier, cloudflare, resend } = warmUp(5, 95, 100);
+
+    await notifier.send(messages(12));
+
+    expect(cloudflare.calls[0]?.map((m) => m.to)).toEqual([
+      "ply-0@example.com",
+      "ply-1@example.com",
+      "ply-2@example.com",
+      "ply-3@example.com",
+      "ply-4@example.com",
+    ]);
+    expect(resend.calls[0]).toHaveLength(7);
+  });
+
+  it("stops warming up once the day's slice is spent, across separate batches", async () => {
+    const { notifier, cloudflare, resend } = warmUp(5, 95, 100);
+
+    await notifier.send(messages(3, "a"));
+    await notifier.send(messages(3, "b"));
+    await notifier.send(messages(3, "c"));
+
+    // 3 + 2 warm-up sends, then nothing more through that leg.
+    expect(cloudflare.calls.map((c) => c.length)).toEqual([3, 2]);
+    expect(resend.calls.map((c) => c.length)).toEqual([1, 3]);
+  });
+
+  // The property the whole three-leg arrangement rests on: both Cloudflare
+  // legs share one counter row, so the warm-up spends from the same daily
+  // allowance the spill leg draws on rather than adding to it.
+  it("adds no capacity — the day's total is unchanged by the warm-up", async () => {
+    const { notifier } = warmUp(5, 10, 20);
+
+    const results = await notifier.send(messages(40));
+
+    // 10 via Resend + 20 via Cloudflare (5 warming, 15 spilling), not 35.
+    expect(results.filter((r) => r.ok)).toHaveLength(30);
+    const rows = await db.select().from(emailQuota).where(eq(emailQuota.day, DAY_KEY));
+    expect(rows.map((r) => [r.provider, r.sentCount]).sort()).toEqual([
+      ["cloudflare", 20],
+      ["resend", 10],
+    ]);
+  });
+
+  it("falls through to Resend when the warm-up leg refuses, losing nothing", async () => {
+    const cloudflare = new FailingNotifier(`${PROVIDER_REFUSED_REASON}: HTTP 403 bad token`);
+    const resend = new RecordingNotifier("rs");
+    const notifier = new SpilloverNotifier([
+      new QuotaNotifier(cloudflare, db, 5, DAY, "cloudflare"),
+      new QuotaNotifier(resend, db, 95, DAY, "resend"),
+      new QuotaNotifier(cloudflare, db, 100, DAY, "cloudflare"),
+    ]);
+
+    const results = await notifier.send(messages(8));
+
+    expect(results.every((r) => r.ok)).toBe(true);
+    expect(resend.calls[0]).toHaveLength(8);
   });
 });

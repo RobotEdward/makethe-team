@@ -83,27 +83,21 @@
     // quota's own accounting, and lands at ~2,900 a month, inside the
     // monthly allowance. Raised from 80 in M42.
     "MAX_EMAILS_PER_DAY": "95",
-    // M42 spill-over, shipped dark. Switching this to "cloudflare" adds a
-    // second daily ceiling on top of the one above — see `selectEmailLeg`
-    // in src/notify/factory.ts.
+    // M42 spill-over, live since 3 September 2026. makethe.team is onboarded
+    // as a Cloudflare Email Service sending domain, DKIM is live on
+    // cf-bounce._domainkey, and _dmarc carries p=reject with a rua= reporting
+    // address. See docs/runbooks/email-cloudflare-spillover.md.
+    "EMAIL_SPILLOVER": "cloudflare",
+    "CLOUDFLARE_ACCOUNT_ID": "ddf9dbf3081e8206ea763519dceb2c56",
+    // M54 warm-up: the first 5 emails of each UTC day go via Cloudflare, the
+    // rest via Resend. Cloudflare's daily limit is a reputation ramp that
+    // only grows with real sending, and as a pure spill leg it would never
+    // send at all — Resend's ceiling is never reached, so nothing spills.
     //
-    // It must NOT be switched on until makethe.team is onboarded as a
-    // Cloudflare Email Service sending domain and its DKIM record is live,
-    // and until SPF authorises both senders for the one EMAIL_FROM address
-    // below. Turning it on first means every spilled message is sent
-    // unauthenticated from a domain that already publishes SPF for Resend —
-    // i.e. straight to spam, damaging the reputation of the address the
-    // primary provider depends on.
-    //
-    // CLOUDFLARE_ACCOUNT_ID belongs in this block when that happens;
-    // CLOUDFLARE_EMAIL_API_TOKEN is a secret (`wrangler secret put`),
-    // never here.
-    "EMAIL_SPILLOVER": "none",
-    // Cloudflare includes 3,000 sends a month, then $0.35/1,000. 100 a day
-    // lands at 3,000–3,100 a month, so this cap is also the cost guard —
-    // see the binding's comment in src/env.ts. Unverified: Cloudflare's own
-    // daily limit is a reputation ramp with no published starting figure,
-    // so the real first-day allowance may be lower than this.
+    // This does NOT add capacity. Both Cloudflare legs count against the same
+    // daily row, so the day's total stays 195; this only moves 5 messages
+    // earlier. Raise it as the DMARC reports come back clean.
+    "EMAIL_WARMUP_PER_DAY": "5",
     "MAX_EMAILS_PER_DAY_CLOUDFLARE": "100",
     "EMAIL_FROM": "Make The Team <no-reply@makethe.team>",
     // Not secret — Better Auth's public base URL for issuing links against.

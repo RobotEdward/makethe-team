@@ -56,6 +56,7 @@ Add a reporting address before enabling the spill leg.
 | Binding | Where | Target value |
 |---|---|---|
 | `EMAIL_SPILLOVER` | `wrangler.jsonc` vars | `"cloudflare"` |
+| `EMAIL_WARMUP_PER_DAY` | `wrangler.jsonc` vars | `"5"` — first 5 of each UTC day go via Cloudflare |
 | `CLOUDFLARE_ACCOUNT_ID` | `wrangler.jsonc` vars | `"ddf9dbf3081e8206ea763519dceb2c56"` |
 | `MAX_EMAILS_PER_DAY_CLOUDFLARE` | `wrangler.jsonc` vars | `"100"` (already set) |
 | `MAX_EMAILS_PER_DAY` | `wrangler.jsonc` vars | `"95"` (already set) |
@@ -177,3 +178,50 @@ the DNS records are harmless when unused. Leave the token in place.
   `MAX_EMAILS_PER_DAY_CLOUDFLARE: "100"` is an assumption, and the ramp moves.
 - `docs/known-issues.md` records the two deliberate gaps: no monthly counter,
   and no idempotency key on this leg.
+
+## The warm-up slice (M54, 3 September 2026)
+
+A pure spill leg never sends: Resend's 95 is not reached on a normal day, so
+nothing spills, so Cloudflare stays cold — and its daily limit is a reputation
+ramp that only grows with real traffic. `EMAIL_WARMUP_PER_DAY` puts a small
+Cloudflare leg *first*, so the day's first N messages go through it.
+
+It adds no capacity. Both Cloudflare legs count against the same
+`(day, "cloudflare")` row, so the day's total stays 195 and
+`emailCeilingTotal` is unchanged; the warm-up only moves traffic earlier.
+
+### Raising it
+
+One var, then deploy. Start 5, and step up as the DMARC aggregate reports come
+back clean — 5 → 10 → 20 is a reasonable month. Do not exceed
+`MAX_EMAILS_PER_DAY_CLOUDFLARE`; the warm-up leg would simply stop at that
+figure, but the config would then be lying about intent.
+
+### Checking it is working
+
+```bash
+source .cf-token && npx wrangler d1 execute makethe-team --remote --command \
+  "SELECT day, provider, sent_count FROM email_quota WHERE day >= date('now','-7 day') ORDER BY day DESC, provider;"
+```
+
+Expect a `cloudflare` row every day, at or just under the warm-up figure. A
+missing row means no email went out at all that day; a row stuck below the
+figure on a busy day means the warm-up leg is refusing — check
+`notification_log` for `provider-refused`.
+
+### If the warm-up leg breaks
+
+It fails safe. A refusal Cloudflare is certain about — a 4xx, or a 200 carrying
+`success: false`, which covers a revoked token, a de-onboarded domain, and a
+rejected `from` — reports `provider-refused` and the message falls through to
+Resend. Nothing is lost and the only signal is the `notification_log` error.
+
+It is **not** safe against an ambiguous failure. A 5xx or a network timeout may
+have been delivered before the failure surfaced, so it is recorded `failed` and
+never retried, exactly as any provider error is. At 5 a day that is the
+accepted exposure; it scales linearly as the warm-up figure is raised, and is
+the reason to step it up gradually rather than in one jump.
+
+To stop the warm-up without touching anything else, set
+`EMAIL_WARMUP_PER_DAY` to `"0"` and deploy. Cloudflare reverts to a pure spill
+leg.
