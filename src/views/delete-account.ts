@@ -214,7 +214,12 @@ const ON_NOBODY_ELSE_S_BEHALF = `
 export function renderDeleteAccountPage(params: DeleteAccountPageParams): string {
   const { state } = params;
 
+  // `.prose` restores the spacing `layout()`'s `p { margin: 0 }` reset takes
+  // away (M52). Every state on this page is several paragraphs of explanation
+  // and they ran together as one block — on the page where understanding what
+  // is about to happen matters more than anywhere else in the product.
   const body = `
+    <div class="prose">
     <h1>Delete my data</h1>
     <p>You're signed in as ${escapeHtml(params.playerName)}.</p>
     ${params.problem === undefined ? "" : `<p class="nudge">${escapeHtml(params.problem)}</p>`}
@@ -232,17 +237,19 @@ export function renderDeleteAccountPage(params: DeleteAccountPageParams): string
             : pendingBody(params.erasesAtLocal ?? "")
     }
     ${ON_NOBODY_ELSE_S_BEHALF}
+    </div>
   `;
 
   return layout({
     nav: params.nav,
     title: `Delete my data — Make The Team`,
     body,
-    // `FIXTURE_STYLES_CSS` is here for `.back-link` alone (§2.5), the same way
-    // `src/views/game-overview.ts` and `src/views/leave.ts` carry it: without
-    // the block the class is inert and the link butts against the paragraph
-    // above it. Every other selector in that block is a class this page never
-    // renders, so nothing already here changes appearance.
+    // `FIXTURE_STYLES_CSS` is here for `.nudge`, which several states render.
+    // It said "`.back-link` alone" until M52 — but that link was removed in
+    // M16, when §2.5 made the header's Games link the one way back up, so the
+    // block was being justified by a class this page had stopped rendering.
+    // Every other selector in it is a class this page never renders, so
+    // nothing already here changes appearance.
     pageStyles: [FORM_CSS, FIXTURE_STYLES_CSS],
   });
 }

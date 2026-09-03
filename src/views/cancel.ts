@@ -139,6 +139,11 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
         : ""
     }
     ${error ? `<p class="form-error">${escapeHtml(error)}</p>` : ""}
+    <!-- Above the form, not after it (M52). This was the last element on the
+         page, below both the danger button and the escape, and on a phone that
+         put it below the fold on many devices — a consequence disclosed after
+         the decision point is not a disclosure. -->
+    <p class="read-only">This can't be undone. Once it's cancelled, everyone who was in or on the waitlist gets an email, and nobody can respond to this fixture again.</p>
     <form class="cancel-form" method="post" action="/cancel/${escapeHtml(token)}">
       <label for="reason">Why is it off? (optional — this goes in the email)</label>
       <textarea id="reason" name="reason" rows="4" maxlength="${MAX_REASON_LENGTH}" placeholder="Pitch flooded">${escapeHtml(reason ?? "")}</textarea>
@@ -146,7 +151,6 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
       <button class="button danger" type="submit">${callItOffLabel(reachable)}</button>
     </form>
     <a class="button keep-link" href="${escapeHtml(fixturePath(gameId, fixtureId))}">Keep the game on</a>
-    <p class="read-only">This can't be undone. Once it's cancelled, everyone who was in or on the waitlist gets an email, and nobody can respond to this fixture again.</p>
   `;
 
   return layout({ title: `Call off ${options.gameName} on ${options.kicksOffAtLocal} — Make The Team`, body });

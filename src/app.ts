@@ -212,6 +212,15 @@ export function createApp(): Hono<AppEnv> {
   // membership by another name.
   app.route("/", resultsRoutes);
 
+  // A bare string, and it stays that way. An unrouted path is reached by a
+  // scanner, not by a person tapping a link — `test/routes/not-found.test.ts`
+  // pins this and names the reason: an HTML page titled "Make The Team" would
+  // tell a probe the product and the stack, which the routes a person actually
+  // reaches can afford to and this one cannot.
+  //
+  // The M52 design review flagged the unstyled page as a dead end and it was
+  // switched to `renderNotFoundPage()` for about an hour before that guard,
+  // and the five scanner-path cases beside it, said why not.
   app.notFound((c) => c.text("Not found", 404));
 
   /**

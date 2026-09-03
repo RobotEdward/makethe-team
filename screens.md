@@ -693,6 +693,20 @@ The owner's editor for *who gets asked when*, used only when `Ask in priority or
   is in "everyone else" cannot tell whether a new joiner landed somewhere sensible.
 - **M44:** saving the order acts on it immediately rather than at the next fixture.
 
+### 3.8a Replace the invite link — `GET/POST /g/:id/invite/rotate` (M52)
+Reached from a `danger-link` inside the invite card, which until M52 was a full-width button
+that rotated the token on one press — the one destructive action in the product with no
+confirmation of its own, on a link already pasted in a group chat.
+- **It cannot count the damage, and says so rather than inventing a number.** Nobody knows how
+  many people hold an invite link; it has been forwarded, screenshotted and pinned where the app
+  cannot see. A confident figure would describe only the people who already joined — precisely
+  the group rotation does *not* affect.
+- **Contents:** `Replace the invite link for <game>?` (h1); the link stops working immediately
+  and cannot be brought back; who is affected (anyone holding it, named by where they hold it);
+  and the one number it does know — the N already in the squad, who are not affected.
+- **Actions:** `Replace the link` (danger, content-width) and `No, keep the link I have`
+  (full-width) — the safe path is the bigger target, as on §3.9 and §3.4.
+
 ### 3.9 Archive a game — `GET/POST /g/:id/archive` (M41)
 Reached from a `danger-link` at the foot of the edit form, not from the game page.
 - A served page and a real form post, like removing a member — **not a `confirm()` dialog**,

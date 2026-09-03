@@ -50,6 +50,12 @@ function confirmBody(gameName: string, token: string, isOrganiser: boolean): str
   return `
     <p>Leaving means you'll stop getting email about ${gameName}, and your place in any fixture that's still open is freed for someone else.</p>
     ${organiserWarning}
+    <!-- The escape is a sentence, not a link (M52). This page is reached from
+         an email with a token and usually no session, so a "back to the game"
+         link would bounce the visitor to sign-in — worse than none for someone
+         who only wants to undo a mis-tap. Same idiom, and same reason, as the
+         join-confirm page's "Not you?" line. -->
+    <p class="read-only">Changed your mind? Just close this page — nothing happens unless you press the button.</p>
     <form method="post" action="/leave/${escapeHtml(token)}">
       <button class="button danger" type="submit">Leave this game</button>
     </form>
@@ -154,8 +160,15 @@ export function renderLeavePage(params: LeavePageParams): string {
   const { token, gameId, state } = params;
   const gameName = escapeHtml(params.gameName);
 
+  // The heading names the act, not just the game, in the one state that offers
+  // it (M52): somebody who mis-taps the leave link in an email footer would
+  // otherwise see their game's name over a red button and nothing saying where
+  // they are. The other states are reports, not questions, so they keep the
+  // plain name.
+  const heading = state === "confirm" ? `Leave ${gameName}?` : gameName;
+
   const body = `
-    <h1>${gameName}</h1>
+    <h1>${heading}</h1>
     ${
       state === "confirm"
         ? confirmBody(gameName, token, params.isOrganiser === true)

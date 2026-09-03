@@ -91,6 +91,7 @@ import { sendPickerHandover } from "../notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../notify/send-removed.js";
 import { sendTeamsEmails } from "../notify/send-teams.js";
 import { ownerNotificationRows, renderGameFormPage } from "../views/game-form.js";
+import { renderRotateInvitePage } from "../views/rotate-invite.js";
 import { renderNotFoundPage } from "../views/not-found.js";
 import { buildLeagueTable } from "../domain/league-table.js";
 import { squadLeagueTally } from "../db/record-queries.js";
@@ -689,6 +690,30 @@ gamesRoutes.post("/g/:id/unmute", requirePlayer, async (c) => {
   if (result.kind === "not-a-member") return c.text("Not found", 404);
 
   return c.redirect(gamePath(gameId), 303);
+});
+
+/**
+ * The confirmation page for replacing a game's invite link (M52).
+ *
+ * A `GET` that only ever renders, and a separate `POST` that acts — the same
+ * shape as `/g/:id/archive` and for the same reason: a mail client prefetch or
+ * a mis-tap must not be able to kill a link that is already in a group chat.
+ */
+gamesRoutes.get("/g/:id/invite/rotate", requirePlayer, async (c) => {
+  const db = getDb(c.env.DB);
+  const game = await findGameForOwner(db, c.req.param("id"), c.get("player")!.id);
+  if (game === null) return c.html(renderNotFoundPage(), 404);
+
+  const squad = await listSquad(db, game.id);
+
+  return c.html(
+    renderRotateInvitePage({
+      nav: pageNav(c, "games"),
+      gameId: game.id,
+      gameName: game.name,
+      squadSize: squad.length,
+    }),
+  );
 });
 
 gamesRoutes.post("/g/:id/invite/rotate", requirePlayer, async (c) => {

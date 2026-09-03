@@ -76,6 +76,7 @@ const ROUTE_TO_ID = new Map<string, string>([
   // while this guard still counted it uncovered, which is the opposite of the
   // usual failure and just as quiet. The timeline (M46) had neither.
   ["/g/:id/archive", "archive-game"],
+  ["/g/:id/invite/rotate", "rotate-invite"],
   ["/g/:id/f/:fixtureId/timeline", "fixture-timeline"],
   ["/g/:id/squad/:playerId/remove", "remove-member"],
   ["/g/:id/squad/:playerId", "squad-member"],

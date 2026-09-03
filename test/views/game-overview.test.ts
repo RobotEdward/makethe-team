@@ -146,14 +146,14 @@ describe("the invite card (M12 §4)", () => {
     return undefined;
   };
 
-  it("puts the link, its QR and the rotate form in one card", () => {
+  it("puts the link, its QR and the way to replace it in one card", () => {
     const card = cardOf(render());
     expect(card).toBeDefined();
     // All three, inside the *card* — not merely somewhere in the document,
     // which was true before the card existed.
     expect(card).toContain('<div class="invite-link">');
     expect(card).toContain('<details class="qr-toggle">');
-    expect(card).toContain('action="/g/g-1/invite/rotate"');
+    expect(card).toContain('href="/g/g-1/invite/rotate"');
   });
 
   it("folds the QR away behind a native disclosure, not a script", () => {
@@ -179,17 +179,28 @@ describe("the invite card (M12 §4)", () => {
     expect(ownScripts).toHaveLength(2);
   });
 
-  it("keeps the rotate form an outlined button, not a second filled one", () => {
+  /**
+   * Since M52 this card asks rather than acts. It carried a form that rotated
+   * the token on one press — a full-width button under the URL, heavier than
+   * the Copy beside it, killing a link already pasted in a group chat with
+   * nothing asked first. It was the one destructive action in the product with
+   * no confirmation page of its own.
+   */
+  it("links to the confirmation page instead of rotating on the spot", () => {
     const card = cardOf(render())!;
-    expect(card).toContain('<button class="button" type="submit">Replace this link</button>');
-    expect(card).not.toContain("button primary");
-    expect(card).not.toContain("button danger");
+
+    expect(card).toContain('<a class="danger-link" href="/g/g-1/invite/rotate">Replace this link</a>');
+    // Nothing in the card writes. The Copy button stays — it is type="button"
+    // and copies the URL client-side — so this asserts on submits and on the
+    // rotate action, not on the presence of any button at all.
+    expect(card).not.toContain('action="/g/g-1/invite/rotate"');
+    expect(card).not.toContain('type="submit"');
   });
 
   it("offers a way to message the whole squad, outside the invite card and its rotate form (M15 Task 10)", () => {
-    // Its own block, not a control of `POST /invite/rotate`: nested in that
-    // form it read as part of replacing the invite link. Still `button`, never
-    // `button primary` — the rotate button is this page's one primary action.
+    // Its own block, not a control of the invite card: nested in the rotate
+    // form it used to live beside, it read as part of replacing the invite
+    // link. Still `button`, never `button primary`.
     const html = render();
     expect(html).toContain(`<p class="actions"><a class="button" href="/g/g-1/message">Message everyone</a></p>`);
     expect(cardOf(html)!).not.toContain("Message everyone");

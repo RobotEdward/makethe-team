@@ -4,9 +4,16 @@ import { layout } from "./layout.js";
  * The page behind every 404 a person can land on by following a link (M38).
  *
  * Replaces `c.text("Not found", 404)` on the GET routes a shared link
- * actually reaches — `/g/:id` and its fixture pages, `/j/:token`, and the
- * app-wide fallback. The POST handlers keep the bare text: nobody arrives at
- * one by tapping a link in a group chat.
+ * actually reaches — `/g/:id` and its fixture pages, and `/j/:token`.
+ *
+ * **Not the app-wide `notFound` fallback**, which this comment claimed until
+ * M52 and never covered. That one stays a bare string on purpose: an unrouted
+ * path is reached by a scanner rather than by a person tapping a link, and an
+ * HTML page titled "Make The Team" would tell a probe the product and the
+ * stack. `test/routes/not-found.test.ts` pins it, with five scanner paths
+ * beside it. The POST handlers keep the bare text too: nobody arrives at one
+ * by tapping a link in a group chat, and somebody who submitted a form whose
+ * token died mid-session is not who this page is written for.
  *
  * **The body is a constant, and that is the security property.** TR-18 makes
  * a refusal a 404 rather than a 403 so that a game id cannot be probed:

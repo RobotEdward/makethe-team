@@ -103,3 +103,29 @@ describe("the way back up", () => {
     }
   });
 });
+
+/**
+ * The page a person reads before erasing themselves (M52).
+ *
+ * Its four paragraphs ran together as one block, because `layout()`'s reset is `p { margin: 0 }` and this page never
+ * added spacing back — on the page in the product where comprehension matters
+ * most, the whole irreversible-action explanation was an eleven-line wall.
+ *
+ */
+describe("delete-account readability and escape", () => {
+  const offer = () =>
+    renderDeleteAccountPage({
+      nav: { isAdmin: false, current: "account" },
+      playerName: "Alex Morgan",
+      state: "offer",
+    });
+
+  // No back-link assertion here on purpose: §2.5 made the header's Games link
+  // the one way back up in M16, and the body link this page used to carry was
+  // removed as a duplicate. "the way back up" above is the guard for that, and
+  // the M52 design review's call for an escape here is already answered by it.
+
+  it("separates its paragraphs instead of running them together", () => {
+    expect(offer()).toContain("prose");
+  });
+});

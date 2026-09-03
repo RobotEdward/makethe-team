@@ -648,3 +648,40 @@ describe("renderCancelConfirmPage copy", () => {
     expect(html).toContain("<title>Call off Thursday 7-a-side on Sunday 16 August, 19:00 — Make The Team</title>");
   });
 });
+
+/**
+ * Where the irreversibility warning sits on the page (M52).
+ *
+ * It was the last element, below both the danger button and the "Keep the game
+ * on" escape — and on a phone, below the fold on many devices. A consequence
+ * disclosed after the decision point is not a disclosure. It now sits directly
+ * above the form that carries the button.
+ */
+describe("the cancel page's warning", () => {
+  it("states the consequence before the control that causes it", () => {
+    const html = renderCancelConfirmPage({
+      token: "t",
+      kicksOffAtLocal: "Thursday 5 March at 19:00",
+      gameName: "Thursday 7-a-side",
+      venueName: "Peckham Rye Astro",
+      inCount: 6,
+      recipientCount: 8,
+      unreachableCount: 0,
+      gameId: "g-1",
+      fixtureId: "f-1",
+    });
+
+    const warning = html.indexOf("This can't be undone");
+    const button = html.indexOf("Call it off");
+    const escape = html.indexOf("Keep the game on");
+
+    // Paired with a presence assertion: indexOf returns -1 for an absent
+    // needle, and -1 is less than everything, so an ordering test alone would
+    // pass vacuously if the warning were deleted.
+    expect(warning).toBeGreaterThan(-1);
+    expect(button).toBeGreaterThan(-1);
+    expect(escape).toBeGreaterThan(-1);
+    expect(warning).toBeLessThan(button);
+    expect(warning).toBeLessThan(escape);
+  });
+});

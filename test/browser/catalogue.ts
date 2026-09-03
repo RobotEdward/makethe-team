@@ -205,6 +205,16 @@ export const CATALOGUE: CataloguePage[] = [
       "GET that writes nothing, so capturing it leaves the world live.",
   },
   {
+    id: "rotate-invite",
+    title: "Replace the invite link?",
+    path: (w) => `/g/${w.gameId}/invite/rotate`,
+    persona: "owner",
+    note:
+      "The owner's confirmation before rotating the invite link (M52). A GET " +
+      "that only ever renders the question, so capturing it leaves the link " +
+      "live — which is the whole reason the page exists.",
+  },
+  {
     id: "fixture-timeline",
     title: "Fixture timeline",
     path: (w) => `/g/${w.gameId}/f/${w.fixtureId}/timeline`,

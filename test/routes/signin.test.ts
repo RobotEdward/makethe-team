@@ -1023,6 +1023,15 @@ describe("no password field anywhere (TR-16)", () => {
         new Request(`${ORIGIN}/g/${gameId}/archive`, { headers: { cookie } }),
       );
 
+      // The invite-link rotation confirmation (M52): a GET that only ever
+      // renders the question, so the link stays live for every capture after
+      // it — which is the point of the page existing at all.
+      await capture(
+        "rotate invite confirm",
+        /Replace the invite link for .*\?/,
+        new Request(`${ORIGIN}/g/${gameId}/invite/rotate`, { headers: { cookie } }),
+      );
+
       // The squad member page (M11 Task 6), the same removable member as
       // above — an organiser's read-only view of one squad member.
       await capture(
@@ -1187,6 +1196,7 @@ describe("no password field anywhere (TR-16)", () => {
         "message squad",
         "squad remove confirm",
         "archive game confirm",
+        "rotate invite confirm",
         "squad member",
         "invite",
         "join outcome",
@@ -1392,6 +1402,7 @@ describe("no password field anywhere (TR-16)", () => {
       "message squad",
       "squad remove confirm",
       "archive game confirm",
+      "rotate invite confirm",
       "squad member",
       "invite order",
     ]);
@@ -1783,6 +1794,7 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
     "GET /g/:id/fixtures": "past fixtures",
     "GET /g/:id/squad/:playerId/remove": "squad remove confirm",
     "GET /g/:id/archive": "archive game confirm",
+    "GET /g/:id/invite/rotate": "rotate invite confirm",
     "GET /g/:id/squad/:playerId": "squad member",
     "GET /g/:id/f/:fixtureId": "owner fixture",
     "GET /g/:id/f/:fixtureId/teams": "team picker",

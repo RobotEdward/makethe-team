@@ -447,6 +447,13 @@ export const CANCEL_STYLES_CSS = `
  */
 export const FORM_CSS = `
   main { max-width: 40rem; }
+  /* Paragraph spacing, for pages that are mostly prose. layout()'s reset is
+     p { margin: 0 } so that cards and rows control their own gaps; a page that
+     is several paragraphs of explanation needs it back, or the whole thing
+     reads as one block. */
+  .prose p + p { margin-top: 0.9rem; }
+  .prose h1 + p { margin-top: 0.9rem; }
+  .prose form, .prose ul { margin-top: 1.1rem; }
   .field { margin: 1.1rem 0; }
   .field label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
   /* A resting border, not border: none. A select keeps the browser's own

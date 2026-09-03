@@ -185,6 +185,17 @@ export function gameArchivePath(gameId: string): string {
   return `/g/${gameId}/archive`;
 }
 
+/**
+ * The confirmation page for replacing a game's invite link, and the target its
+ * form posts to (M52).
+ *
+ * One path for both, like `/g/:id/archive`: the `GET` asks and the `POST`
+ * acts, so a prefetch or a mis-tap can only ever render the question.
+ */
+export function gameInviteRotatePath(gameId: string): string {
+  return `/g/${gameId}/invite/rotate`;
+}
+
 export function gameUnarchivePath(gameId: string): string {
   return `/g/${gameId}/unarchive`;
 }

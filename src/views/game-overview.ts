@@ -1,5 +1,6 @@
 import {
   gameEditPath,
+  gameInviteRotatePath,
   gamePastFixturesPath,
   gameUnarchivePath,
   gameMessagePath,
@@ -235,9 +236,12 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
         <summary>Show the QR code</summary>
         <div class="qr">${qrSvg(inviteUrl)}</div>
       </details>
-      <form class="actions" method="post" action="${escapeHtml(`/g/${gameId}/invite/rotate`)}">
-        <button class="button" type="submit">Replace this link</button>
-      </form>
+      <!-- A link to a confirmation page, not a form that acts (M52). This was
+           a full-width button under the invite URL, heavier than the Copy
+           beside it, and pressing it killed a link already pasted in a group
+           chat with nothing asked first — the one destructive action in the
+           product without its own page. -->
+      <p class="actions"><a class="danger-link" href="${escapeHtml(gameInviteRotatePath(gameId))}">Replace this link</a></p>
     </div>
 
     <!-- Outside the invite card, and outside the rotate form: messaging the

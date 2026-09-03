@@ -85,3 +85,51 @@ describe("renderLeavePage", () => {
     expect(html).not.toMatch(/style="/);
   });
 });
+
+/**
+ * The confirm state says what it is, and says that doing nothing is safe (M52).
+ *
+ * The h1 was the game's name in every state, so somebody who mis-tapped the
+ * leave link in an email footer saw their game's name and a red button with
+ * nothing telling them where they were. There was also no way out: unlike the
+ * cancel page, which offers "Keep the game on", the only controls were the
+ * danger button and a sign-in link.
+ *
+ * A back *link* is not available here and would be worse than none — this page
+ * is reached from an email with a token and usually no session, so anything
+ * pointing at the game would bounce the visitor to sign-in. The product
+ * already has the right idiom for a page reached this way, on join-confirm:
+ * say that closing the page does nothing.
+ */
+describe("the leave confirmation", () => {
+  const confirm = () =>
+    renderLeavePage({
+      token: "t",
+      gameId: "g-1",
+      gameName: "Thursday 7-a-side",
+      state: "confirm",
+      isOrganiser: false,
+    });
+
+  it("names the act in the heading, not just the game", () => {
+    expect(confirm()).toContain("<h1>Leave Thursday 7-a-side?</h1>");
+  });
+
+  it("says that doing nothing is safe", () => {
+    const html = confirm();
+    const escape = html.indexOf("close this page");
+    const button = html.indexOf("Leave this game");
+
+    expect(escape).toBeGreaterThan(-1);
+    expect(button).toBeGreaterThan(-1);
+    expect(escape).toBeLessThan(button);
+  });
+
+  it("leaves the other states' headings alone", () => {
+    for (const state of ["done", "already-left"] as const) {
+      const html = renderLeavePage({ token: "t", gameId: "g-1", gameName: "Thursday 7-a-side", state });
+      expect(html).toContain("<h1>Thursday 7-a-side</h1>");
+      expect(html).not.toContain("close this page");
+    }
+  });
+});
