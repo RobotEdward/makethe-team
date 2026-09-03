@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { PageNav } from "../views/layout.js";
 import type { Context } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
+import { parseIntent, recordWebAnswer } from "./web-answer.js";
 import {
   DASHBOARD_PATH,
   NEW_GAME_PATH,
@@ -463,7 +464,16 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
   if (openFixtureIds[0] !== undefined) {
     const withSquad = await getFixtureWithSquad(db, openFixtureIds[0]);
     if (withSquad !== null) {
+      // The viewer's own row from the *unfiltered* squad, for the same reason
+      // `teams` below reads it there: `squadForViewer` returns null on a game
+      // that hides its list, and a player's own answer survives that.
+      const mine = withSquad.squad.find((member) => member.playerId === viewerPlayerId);
       openFixture = {
+        fixtureId: withSquad.fixture.id,
+        // A member with no response row has not been asked yet, which is what
+        // `pending` means — the state a joiner is in before the backfill, and
+        // the one the answer block offers both buttons for.
+        myStatus: mine?.status ?? "pending",
         kicksOffAtLocal: formatLocalDateTime(withSquad.fixture.kicksOffAt, game.timezone),
         view: fixtureView(
           {
@@ -566,6 +576,48 @@ function muteControlsFor(
  * form's `prefersEvenNumbers`, there is no stored value being edited whose
  * unticking has to survive a validation round-trip.
  */
+/**
+ * A signed-in member answering one fixture from the game page (M52).
+ *
+ * The write is `recordWebAnswer`, shared with `POST /app` rather than copied:
+ * the entitlement re-check, the capacity object that alone decides `in` versus
+ * `waitlisted`, the promotion email and the race handling must be identical on
+ * both, and a second copy would have been the fourth place in this codebase
+ * deciding who gets a place.
+ *
+ * The only real difference is where the player lands afterwards. The dashboard
+ * route redirects to the dashboard, which would have bounced a player out of
+ * the game they were reading; this comes back to the same page, so the answer
+ * appears where it was given.
+ *
+ * The fixture id is in the path rather than a hidden field, and the game id
+ * beside it is passed through to be checked against the fixture's own — a
+ * member of one game must not be able to answer a fixture in another the same
+ * owner runs (TR-18). A refusal is a 404, never a 403.
+ */
+gamesRoutes.post("/g/:id/f/:fixtureId/answer", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const form = await c.req.parseBody();
+  const intent = parseIntent(form["intent"]);
+  if (intent === null) {
+    return c.text('Bad Request: "intent" must be exactly "in" or "out"', 400);
+  }
+
+  const gameId = c.req.param("id");
+  const recorded = await recordWebAnswer(
+    c,
+    c.get("player")!.id,
+    c.req.param("fixtureId"),
+    intent,
+    new Date(Date.now()),
+    gameId,
+  );
+  if (recorded === "not-found") return c.text("Not found", 404);
+
+  return c.redirect(gamePath(gameId), 303);
+});
+
 gamesRoutes.post("/g/:id/mute", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { gamePastFixturesPath } from "../../src/auth/paths.js";
 import { LIFECYCLES, type Lifecycle } from "../../src/domain/lifecycle.js";
+import { fixtureView } from "../../src/domain/fixture-view.js";
 import { fixtureStatusWords } from "../../src/views/fixture.js";
 import { renderPlayerGamePage, type PlayerGameParams } from "../../src/views/player-game.js";
 import { FORM_CSS, INVITE_CSS, SQUAD_STYLES_CSS } from "../../src/views/styles.js";
@@ -182,3 +183,87 @@ describe("the link to past fixtures (M27)", () => {
     expect(html).toContain(`href="${gamePastFixturesPath(BASE.gameId)}"`);
   });
 });
+
+/**
+ * The player's game page can be answered from (M52).
+ *
+ * The game's name is the largest element on every dashboard fixture card and
+ * it links here; `Your squads` links here; a member tapping a kickoff lands
+ * here. Yet the page rendered the kickoff, the status, the teams and the squad
+ * and then stopped — no buttons, no headline saying whether the viewer had
+ * answered. The most-tapped link on the dashboard led somewhere strictly less
+ * capable than the card it was tapped from.
+ *
+ * The block is the dashboard's, imported rather than restated, so a waitlisted
+ * player cannot read as confirmed on one page and not the other (BR-5).
+ */
+describe("answering from the game page", () => {
+  const openFixture = (over: Partial<NonNullable<PlayerGameParams["openFixture"]>> = {}) => ({
+    fixtureId: "f-1",
+    kicksOffAtLocal: "Thursday 5 March at 19:00",
+    myStatus: "pending" as const,
+    view: fixtureView(
+      {
+        lifecycle: "open",
+        kicksOffAt: KICKOFF,
+        inCount: 4,
+        minPlayers: 8,
+        maxPlayers: 14,
+        prefersEvenNumbers: false,
+        shortWarningOffsetHours: 24,
+      },
+      new Date("2026-03-01T12:00:00Z"),
+    ),
+    inCount: 4,
+    waitlistCount: 0,
+    squad: null,
+    teams: null,
+    ...over,
+  });
+
+  it("offers both answers on the open fixture", () => {
+    const html = renderPlayerGamePage(params({ openFixture: openFixture() }));
+
+    expect(html).toContain('name="intent" value="in"');
+    expect(html).toContain('name="intent" value="out"');
+  });
+
+  it("posts to this fixture, not to the dashboard", () => {
+    const html = renderPlayerGamePage(params({ openFixture: openFixture() }));
+
+    // A dashboard-scoped action would bounce the player out of the game they
+    // are looking at, and carries a fixture id in a hidden field this page has
+    // no reason to trust it with.
+    expect(html).toContain('action="/g/g-1/f/f-1/answer"');
+  });
+
+  it("says what the viewer has already answered", () => {
+    const html = renderPlayerGamePage(params({ openFixture: openFixture({ myStatus: "in" }) }));
+
+    expect(html).toContain(`class="button chosen-in"`);
+  });
+
+  it("never shows the confirmed styling to a waitlisted player (BR-5)", () => {
+    const html = renderPlayerGamePage(
+      params({ openFixture: openFixture({ myStatus: "waitlisted" }) }),
+    );
+
+    expect(html).toContain(`class="button chosen-waiting"`);
+    expect(html).not.toContain(`class="button chosen-in"`);
+  });
+
+  it("offers nothing to answer when no fixture is open", () => {
+    const html = renderPlayerGamePage(params({ openFixture: null }));
+
+    expect(html).not.toContain('name="intent"');
+  });
+
+  /** Every part of this page is plain markup; the answer block must stay so. */
+  it("adds no script", () => {
+    const html = renderPlayerGamePage(params({ openFixture: openFixture() }));
+
+    expect(html).not.toContain("onclick");
+    expect(html).not.toContain("submit()");
+  });
+});
+

@@ -1,6 +1,6 @@
 # Make The Team — screen inventory for design review
 
-*Current to M51 (2 September 2026). Before this it had not been touched since M33 and was
+*Current to M52 (3 September 2026). Before this it had not been touched since M33 and was
 missing seventeen milestones' worth of screens; if it is stale again, `test/browser/catalogue.ts`
 is the machine-checked list of every page and is the right place to start.*
 
@@ -140,6 +140,12 @@ reminder email; the tap *on this page* is what saves the answer.
   `Open for responses`, `Needs more players`, `Confirmed — the game is on`, `Cancelled`,
   `Played`, `Status unknown`.
 - **Capacity bar + count:** e.g. `10 of 10 in · 2 waiting`. Replaced an older "N spots left".
+- **Emphasis before any answer (M52):** with no answer recorded, `I'm in` carries an accent
+  *outline* and `Can't make it` stays plain. Deliberately not `.button.primary`, which is the
+  same solid accent fill as `chosen-in` — that would render "you have not answered" identically
+  to "you said yes", which is exactly what M10 §3.1 removed from these two pages. Three
+  treatments (outline, accent fill plus tick, grey fill) keep the states tellable apart with
+  colour ignored entirely. Once answered the emphasis drops; the chosen state carries it.
 - **Actions:** `I'm in` (becomes `I'm in · waiting` in amber when waitlisted; shows a tick when
   confirmed) and `Can't make it`. Both buttons persist after answering so the answer can be
   changed any time before kickoff. `aria-pressed` carries the current answer.
@@ -324,6 +330,12 @@ One page in four states, all under `Delete my data` (h1) + "You're signed in as 
   and this squad sends them nothing at all — reminder, teams, cancellation, organiser broadcast
   and result prompt alike. **Accepting one fixture never switches it off**, which is why the
   copy promises that in both states.
+- **Answer block (M52):** the same headline, buttons and full-warning the dashboard card and
+  `/r/:token` use, imported rather than restated so a waitlisted player cannot read as confirmed
+  on one page and not another (BR-5). Until M52 this page showed an open fixture and offered no
+  way to answer it — while being the target of the largest link on every dashboard card. Posts
+  to `POST /g/:id/f/:fixtureId/answer`, which shares `recordWebAnswer` with `POST /app` and
+  differs only in redirecting back here rather than to the dashboard.
 - **`Games you've played` link (M27):** under `Coming up`, to this game's past-fixtures list
   (§2.7).
 - **`Standings` (h2, M49) — the squad's league table.** One row per player in the squad, with
@@ -636,6 +648,14 @@ One renderer, two scopes.
   <date/time>` (fixture scope).
 - **Audience — fixture scope only** — `Who gets this message?` (fieldset of radios, each with
   a live count): `Playing (N)`, `On the waitlist (N)`, `Not answered yet (N)`, `Can't play (N)`.
+  **Since M52 the page opens on the largest audience there is somebody in**, not always
+  `Playing`: the moment an organiser opens this page is the moment nobody has replied and
+  kickoff is close, so the old constant preselected the one empty audience and rendered the
+  primary button as `Nobody to send to` — the page opened by saying the task was impossible.
+  Ties break in render order, so `Playing` still wins when level. An audience with nobody in it
+  is dimmed and `disabled`, never the checked one (a disabled checked radio is a form whose
+  value cannot be submitted). With every audience empty, one sentence above the choices says so
+  before the organiser writes anything.
   Default `Playing`.
   **Game scope shows no control at all**, just the sentence "This goes to everyone in the squad."
 - **Fields:** `Subject` (text, max length); `Message` (textarea, max length).
@@ -882,4 +902,12 @@ but opinions, and a design review is welcome to challenge any of them.
 - **The palette (M20):** warm cream ground, terracotta accent, Caprasimo display headings,
   Figtree body; green is reserved for success/confirmed, amber for the waitlist, red for
   irreversible actions. A WCAG contrast guard test pins every declared token pairing in both
-  light and dark themes.
+  light and dark themes, and since M52 `test/views/status-palette.test.ts` enumerates every
+  status badge with the palette family it may draw on — the rule had no guard until then, and
+  `Needs more players` shipped in the success green, byte-identical to the healthy `open`
+  badge, on four pages.
+- **The viewer's own row in a table is marked where it falls, never moved.** A league table
+  that reprints your row above the people above you is not a league table. That makes the
+  *strength* of the mark the whole feature: until M52 the mark was bold text alone, because the
+  rule meant to tint the row set the sticky cell's background to the value it already had. It
+  is now a tinted row, restated on the sticky player cell so a scrolled row shows no seam.

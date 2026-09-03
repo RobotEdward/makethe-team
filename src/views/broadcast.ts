@@ -86,14 +86,27 @@ function audienceFields(
 ): string {
   const radios = FIXTURE_AUDIENCES.map((audience) => {
     const id = `audience-${audience}`;
+    // An audience with nobody in it cannot be sent to, so it is offered as
+    // unavailable rather than as a choice that fails on submit (M52). Never
+    // the checked one, even when every audience is empty: a disabled radio
+    // that is also checked is a form whose selected value cannot be submitted,
+    // and browsers disagree about what they then send.
+    const empty = counts[audience] === 0 && audience !== selected;
     return `
-      <label for="${id}">
+      <label for="${id}"${empty ? ` class="audience-none"` : ""}>
         <input id="${id}" type="radio" name="audience" value="${audience}"${
           audience === selected ? " checked" : ""
-        }>
+        }${empty ? " disabled" : ""}>
         ${escapeHtml(AUDIENCE_LABELS[audience])} (${counts[audience]})
       </label>`;
   }).join("");
+
+  // Said once, above the choices, when there is no choice to make. The submit
+  // button's "Nobody to send to" is the same news delivered after the
+  // organiser has written the message.
+  const nobody = FIXTURE_AUDIENCES.every((audience) => counts[audience] === 0)
+    ? `<p class="audience-empty">Nobody has answered this fixture yet, so there is nobody to message. Once somebody replies they will show up here.</p>`
+    : "";
 
   // Worded so an unrecognised submission does not read as "you picked
   // Playing": `parseBroadcastForm` substitutes the default audience for a
@@ -103,6 +116,7 @@ function audienceFields(
   return `
     <fieldset class="field audience-group${errorMessage ? " field-invalid" : ""}">
       <legend>Who gets this message?</legend>
+      ${nobody}
       ${radios}
       ${errorMessage ? `<span class="error" id="audience-error">${escapeHtml(errorMessage)}</span>` : ""}
     </fieldset>`;

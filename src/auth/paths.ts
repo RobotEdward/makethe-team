@@ -300,6 +300,19 @@ export function fixturePath(gameId: string, fixtureId: string): string {
 }
 
 /**
+ * Where a signed-in member's answer to one fixture is posted (M52).
+ *
+ * Fixture-scoped rather than the dashboard's shape — that route carries the
+ * fixture in a hidden field and redirects to the dashboard, which would bounce
+ * a player out of the game page they answered from. The id is in the path
+ * here, so the handler re-derives entitlement from it (TR-18) with nothing in
+ * the form to disagree with.
+ */
+export function fixtureAnswerPath(gameId: string, fixtureId: string): string {
+  return `/g/${gameId}/f/${fixtureId}/answer`;
+}
+
+/**
  * A game's past fixtures (M27) — everything before now, most recent first.
  *
  * One path for both roles, dispatching the way `/g/:id` itself does: an

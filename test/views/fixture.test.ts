@@ -130,10 +130,44 @@ describe("fixture page", () => {
     expect(html).toMatch(/I(&#39;|')m in · waiting/);
   });
 
-  it("emphasises neither button for a player who has not answered", () => {
+  it("claims no recorded answer for a player who has not answered", () => {
     const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "pending" }, intent: null }));
     expect(html).not.toContain(`class="button chosen-`);
   });
+
+  /**
+   * The unanswered state points at the answer that fills the game (M52).
+   *
+   * Until M52 both buttons rendered with the bare `button` class, so the
+   * most-used screen in the product asked "Can you make it?" and offered two
+   * controls carrying no signal about which was the positive, capacity-filling
+   * one. On a phone they stack full-width and the game-emptying answer sits
+   * under the thumb.
+   *
+   * `expected`, not `primary`. `.button.primary` is `background: var(--accent)`
+   * — the same fill as `.button.chosen-in` — so it would make "you have not
+   * answered" look exactly like "you said yes", distinguishable only by the
+   * tick. That is precisely what M10 §3.1 removed from these two pages, and
+   * §3.1's rule (a fill plus a distinct label or glyph, never colour alone)
+   * still binds. An accent outline is a third, unambiguous treatment.
+   */
+  it("points the unanswered player at the answer that fills the game", () => {
+    const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "pending" }, intent: null }));
+
+    expect(html).toMatch(/class="button expected"[^>]*name="intent" value="in"/);
+    expect(html).toMatch(/class="button"[^>]*name="intent" value="out"/);
+  });
+
+  it.each(["in", "out", "waitlisted"] as const)(
+    "drops the emphasis once the answer is %s — the chosen state carries the meaning",
+    (status) => {
+      const html = renderFixturePage(
+        optionsWith({ viewer: { playerId: "p1", status, waitlistRank: 2 }, intent: null }),
+      );
+
+      expect(html).not.toContain(`class="button expected"`);
+    },
+  );
 
   it("shows the out answer in the out button", () => {
     const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "out" }, intent: null }));
@@ -1193,6 +1227,8 @@ describe("the capacity bar", () => {
       timezone: "Europe/London",
       archivedOn: null,
       openFixture: {
+        fixtureId: "f-1",
+        myStatus: "pending",
         kicksOffAtLocal: "Thursday 13 August, 19:00",
         view: fixtureView(
           {

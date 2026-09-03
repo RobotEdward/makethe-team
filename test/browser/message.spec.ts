@@ -47,22 +47,74 @@ test("the four audience radios and both channel checkboxes are present and opera
   // `audienceFields` in `src/views/broadcast.ts` — reading the id off the
   // domain list itself rather than a hand-typed one keeps this from silently
   // going stale if a fifth audience is ever added.
+  // One radio per `FIXTURE_AUDIENCES` entry, id'd `audience-${audience}` by
+  // `audienceFields` in `src/views/broadcast.ts` — reading the id off the
+  // domain list itself rather than a hand-typed one keeps this from silently
+  // going stale if a fifth audience is ever added.
+  //
+  // Since M52 an audience nobody is in is rendered `disabled`, so "operable"
+  // is asserted against the counts the page itself prints rather than against
+  // all four unconditionally: an empty audience that stayed clickable would be
+  // a control whose only outcome is the server's 422. The counts are read off
+  // the labels so this holds whatever shape the seeded world happens to have.
+  const countOf = async (audience: string): Promise<number> => {
+    const label = page.locator(`label[for="audience-${audience}"]`);
+    const text = (await label.textContent()) ?? "";
+    return Number(/\((\d+)\)\s*$/.exec(text.trim())?.[1] ?? "0");
+  };
+
+  const populated: string[] = [];
   for (const audience of FIXTURE_AUDIENCES) {
     const radio = page.locator(`#audience-${audience}`);
     await expect(radio).toBeVisible();
-    await expect(radio).toBeEnabled();
+
+    if ((await countOf(audience)) > 0) {
+      await expect(radio).toBeEnabled();
+      populated.push(audience);
+    }
   }
 
-  // `DEFAULT_FIXTURE_AUDIENCE` ("playing") is checked on a fresh GET.
-  await expect(page.locator("#audience-playing")).toBeChecked();
+  // The page opens on an audience it can actually send to. With nobody
+  // anywhere it falls back to `DEFAULT_FIXTURE_AUDIENCE`, which is why this
+  // asserts the checked radio is enabled rather than naming one.
+  const checked = page.locator('input[name="audience"]:checked');
+  await expect(checked).toHaveCount(1);
+  await expect(checked).toBeEnabled();
 
-  // "Operable": clicking a second radio actually moves the checked state,
-  // not just that the element exists in the DOM (a `display: none` radio
-  // still has a DOM node and still answers `toBeVisible()` false, but an
-  // un-styled or overlapping one could still pass a bare existence check).
-  await page.locator("#audience-waitlisted").check();
-  await expect(page.locator("#audience-waitlisted")).toBeChecked();
-  await expect(page.locator("#audience-playing")).not.toBeChecked();
+  // An empty audience is offered as unavailable rather than as a choice that
+  // fails on submit — except when it is the checked one, because a disabled
+  // checked radio is a form whose selected value cannot be submitted and
+  // browsers disagree about what they then send.
+  for (const audience of FIXTURE_AUDIENCES) {
+    if ((await countOf(audience)) > 0) continue;
+    const radio = page.locator(`#audience-${audience}`);
+    if (await radio.isChecked()) continue;
+    await expect(radio).toBeDisabled();
+  }
+
+  // "Operable": checking another radio actually moves the checked state, not
+  // merely that the element exists in the DOM (an unstyled or overlapping
+  // radio could still pass a bare existence check).
+  //
+  // Conditional on the world, not skipped quietly: `seedWorld` currently
+  // produces exactly one non-empty audience, so there is no second enabled
+  // radio to move to. The count is asserted below either way, so this reads as
+  // a fact about the world rather than as an assertion that vanished. It
+  // becomes unconditional the moment the seed grows a second answered state.
+  expect(populated.length, "no audience has anybody in it — the seed is wrong").toBeGreaterThan(0);
+
+  const checkedId = await checked.getAttribute("id");
+  // An ordinary loop, not `.find` with an async predicate: that predicate
+  // returns a Promise, which is always truthy, so it would pick the first
+  // element whatever the answer.
+  let target: string | undefined;
+  for (const audience of populated) {
+    if (`audience-${audience}` !== checkedId) target = audience;
+  }
+  if (target !== undefined) {
+    await page.locator(`#audience-${target}`).check();
+    await expect(page.locator(`#audience-${target}`)).toBeChecked();
+  }
 
   const email = page.locator("#email");
   const push = page.locator("#push");

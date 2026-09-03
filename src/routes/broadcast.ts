@@ -15,9 +15,9 @@ import { findGameForOwner, getFixtureWithSquad } from "../db/queries.js";
 import { loadAdminNotificationSwitches } from "../domain/app-settings.js";
 import {
   BROADCAST_AUDIENCES,
-  DEFAULT_FIXTURE_AUDIENCE,
   FIXTURE_AUDIENCES,
   audienceSelectsStatus,
+  defaultFixtureAudience,
   isAddressable,
   isReachableOn,
   type BroadcastAudience,
@@ -204,7 +204,11 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
   const recipients = await listFixtureRecipients(db, game.id, fixtureId, new Date(Date.now()));
   const admin = await loadAdminNotificationSwitches(db);
   const offered = { email: admin.isOn("n10", "email"), push: admin.isOn("n10", "push") };
-  const values = emptyValues(DEFAULT_FIXTURE_AUDIENCE, offered);
+  // The audience the organiser can actually reach, not a constant (M52). See
+  // `defaultFixtureAudience` for why opening on `playing` was worst exactly
+  // when this page was most needed.
+  const counts = countsForFixture(recipients);
+  const values = emptyValues(defaultFixtureAudience(counts), offered);
 
   return c.html(
     renderBroadcastPage({
@@ -215,7 +219,7 @@ broadcast.get("/g/:id/f/:fixtureId/message", requirePlayer, async (c) => {
         id: fixture.id,
         whenLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
       },
-      counts: countsForFixture(recipients),
+      counts,
       reachableCount: reachableCount(recipients, values.audience, values),
       values,
       offered,

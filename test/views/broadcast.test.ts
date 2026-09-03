@@ -232,3 +232,63 @@ describe("Post to WhatsApp too (M22)", () => {
     expect(html.indexOf("</form>")).toBeLessThan(html.indexOf('id="whatsapp-link"'));
   });
 });
+
+/**
+ * An audience with nobody in it cannot be sent to, and the page should say so
+ * before the organiser writes a message rather than after (M52).
+ *
+ * The radios previously rendered identically at any count, so "Playing (0)"
+ * looked as available as "Not answered yet (3)" — and since the form opened on
+ * `playing` regardless, the usual first sight of this page was an empty
+ * audience selected and a primary button reading "Nobody to send to".
+ */
+describe("renderBroadcastPage empty audiences", () => {
+  const empties: Record<BroadcastAudience, number> = {
+    everyone: 0,
+    playing: 0,
+    waitlisted: 0,
+    pending: 0,
+    unavailable: 0,
+  };
+
+  it("disables an audience nobody is in", () => {
+    const html = renderBroadcastPage(
+      params({ counts: { ...COUNTS, waitlisted: 0 }, values: { ...VALUES, audience: "playing" } }),
+    );
+
+    expect(html).toMatch(/id="audience-waitlisted"[^>]*disabled/);
+    expect(html).not.toMatch(/id="audience-playing"[^>]*disabled/);
+  });
+
+  it("marks the empty label so the reason is visible, not just the count", () => {
+    const html = renderBroadcastPage(params({ counts: { ...COUNTS, pending: 0 } }));
+
+    expect(html).toContain("audience-none");
+  });
+
+  /**
+   * Never the checked one: a disabled radio that is also checked is a form
+   * whose selected value cannot be submitted, and browsers differ on what they
+   * then send.
+   */
+  it("never disables the audience it has checked", () => {
+    const html = renderBroadcastPage(
+      params({ counts: empties, values: { ...VALUES, audience: "playing" } }),
+    );
+
+    expect(html).not.toMatch(/id="audience-playing"[^>]*disabled/);
+  });
+
+  it("says plainly when there is nobody to message at all", () => {
+    const html = renderBroadcastPage(
+      params({ counts: empties, reachableCount: 0, values: { ...VALUES, audience: "playing" } }),
+    );
+
+    expect(html).toContain("Nobody has answered this fixture yet");
+  });
+
+  it("says nothing of the kind when somebody is reachable", () => {
+    expect(renderBroadcastPage(params())).not.toContain("Nobody has answered this fixture yet");
+  });
+});
+

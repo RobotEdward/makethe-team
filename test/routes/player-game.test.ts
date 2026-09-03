@@ -378,3 +378,117 @@ describe("GET /g/:id — last result", () => {
     },
   );
 });
+
+/**
+ * Answering from the game page (M52).
+ *
+ * The page showed an open fixture and offered no way to answer it, while being
+ * the target of the largest link on every dashboard card. The write is the
+ * dashboard's — `recordWebAnswer`, shared rather than copied — so the only
+ * thing worth asserting here is that this route reaches it, scopes it, and
+ * comes back to the page the player was on.
+ */
+describe("POST /g/:id/f/:fixtureId/answer", () => {
+  it("records the answer and returns to the game page", async () => {
+    const { gameId, fixtureId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+    });
+    const db = testDb();
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+
+    const res = await SELF.fetch(`https://example.com/g/${gameId}/f/${fixtureId}/answer`, {
+      method: "POST",
+      headers: { cookie, origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },
+      body: "intent=in",
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(`/g/${gameId}`);
+
+    const [row] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, viewer!.id)));
+    expect(row?.status).toBe("in");
+  });
+
+  it("refuses a cross-site post", async () => {
+    const { gameId, fixtureId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+    });
+
+    const res = await SELF.fetch(`https://example.com/g/${gameId}/f/${fixtureId}/answer`, {
+      method: "POST",
+      headers: {
+        cookie,
+        origin: "https://evil.example",
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: "intent=in",
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects an intent that is neither in nor out", async () => {
+    const { gameId, fixtureId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+    });
+
+    const res = await SELF.fetch(`https://example.com/g/${gameId}/f/${fixtureId}/answer`, {
+      method: "POST",
+      headers: { cookie, origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },
+      body: "intent=maybe",
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(400);
+  });
+
+  /**
+   * TR-18: a refusal is a 404, not a 403, so a fixture id cannot be probed for
+   * existence from outside the squad.
+   */
+  it("404s a non-member", async () => {
+    const { gameId, fixtureId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "none",
+      squadVisibleToPlayers: true,
+    });
+
+    const res = await SELF.fetch(`https://example.com/g/${gameId}/f/${fixtureId}/answer`, {
+      method: "POST",
+      headers: { cookie, origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },
+      body: "intent=in",
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(404);
+  });
+
+  /**
+   * The game in the path must be the fixture's own. Without this a member of
+   * one game the owner runs could answer a fixture in another, because the
+   * entitlement re-check only ever sees the fixture id.
+   */
+  it("404s a fixture that belongs to a different game", async () => {
+    const { fixtureId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+    });
+    const other = await seedGameWithOpenFixture({ viewerRole: "player", squadVisibleToPlayers: true });
+
+    const res = await SELF.fetch(`https://example.com/g/${other.gameId}/f/${fixtureId}/answer`, {
+      method: "POST",
+      headers: { cookie, origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },
+      body: "intent=in",
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(404);
+  });
+});

@@ -1445,6 +1445,10 @@ describe("no password field anywhere (TR-16)", () => {
  */
 function pinRoutesToPages(capturedPageNames: readonly string[]): void {
   const EXCLUDED_ROUTES: Readonly<Record<string, string>> = {
+    "POST /g/:id/f/:fixtureId/answer":
+      "renders no HTML of its own (M52) — a 303 back to GET /g/:id, or a " +
+      "plain-text 403/400/404. The page it returns to is already enumerated " +
+      "here, and its own assertions live in test/routes/player-game.test.ts.",
     "POST /r/:token":
       "renders through the same two functions as GET /r/:token — " +
       "renderFixtureForViewer or renderLinkProblemPage (src/routes/respond.ts) " +

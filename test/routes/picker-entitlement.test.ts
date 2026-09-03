@@ -60,6 +60,11 @@ const NOT_OWNER_ONLY: Readonly<Record<string, string>> = {
     "test/routes/picker-delegation.test.ts.",
   "POST /g/:id/f/:fixtureId/teams": "the picker's Save — M29's subject.",
   "POST /g/:id/f/:fixtureId/teams/publish": "the picker's Publish — M29's subject.",
+  "POST /g/:id/f/:fixtureId/answer":
+    "any active member answers their own fixture from the game page (M52) — " +
+    "the same act as POST /app and POST /r/:token, and entitlement is " +
+    "re-derived per handler by findActionableFixture inside recordWebAnswer, " +
+    "which admits a member and nobody else.",
 };
 
 /** A game whose only fixture has been handed to the signed-in player to pick. */

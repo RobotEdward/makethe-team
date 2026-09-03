@@ -17,6 +17,35 @@ export const FIXTURE_AUDIENCES = ["playing", "waitlisted", "pending", "unavailab
 
 export const DEFAULT_FIXTURE_AUDIENCE: BroadcastAudience = "playing";
 
+/**
+ * Which audience a fresh fixture compose page should start on (M52).
+ *
+ * This was the constant above, unconditionally — and the moment an organiser
+ * opens this page is the moment nobody has replied and kickoff is close, so
+ * the form preselected the one empty audience and rendered its primary button
+ * as "Nobody to send to". The page opened by saying the task was impossible,
+ * on exactly the occasion it existed for.
+ *
+ * Ties break in `FIXTURE_AUDIENCES` order, which is the order the radios
+ * render and puts `playing` first: a page where two audiences are level opens
+ * where it always did, so this is invisible except where it fixes something.
+ *
+ * With every audience empty there is no better answer than the old constant.
+ * Checking some other radio would be checking one the organiser equally cannot
+ * send to, and the page's own refusal is what should carry that news.
+ */
+export function defaultFixtureAudience(
+  counts: Record<BroadcastAudience, number>,
+): BroadcastAudience {
+  let best: BroadcastAudience | null = null;
+  for (const audience of FIXTURE_AUDIENCES) {
+    // Strictly greater, so the first of equals wins and the order above is the
+    // tie-break rather than whichever happens to be last.
+    if ((counts[audience] ?? 0) > (best === null ? 0 : counts[best])) best = audience;
+  }
+  return best ?? DEFAULT_FIXTURE_AUDIENCE;
+}
+
 /** What the radios say. One place, so the form and any later summary agree. */
 export const AUDIENCE_LABELS: Record<BroadcastAudience, string> = {
   everyone: "Everyone in this squad",

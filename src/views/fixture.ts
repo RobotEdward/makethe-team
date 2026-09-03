@@ -590,7 +590,21 @@ export function renderStatusLine(view: FixtureView, waitlistCount: number): stri
  * of "what does 'in' look like" is how the two pages start disagreeing.
  */
 export function renderResponseButtons(action: string, status: ResponseStatus, hidden = ""): string {
-  const inClass = status === "in" ? "button chosen-in" : status === "waitlisted" ? "button chosen-waiting" : "button";
+  // `expected` on the unanswered "I'm in" (M52): before it, both buttons
+  // rendered identically and the most-used screen in the product gave no
+  // signal which answer was the positive one. Not `primary` — that is the same
+  // accent fill as `chosen-in`, so it would make "not answered" look like
+  // "said yes", which is what M10 §3.1 took off these pages. See
+  // FIXTURE_STYLES_CSS for the outline treatment that keeps the three states
+  // tellable apart without colour.
+  const inClass =
+    status === "in"
+      ? "button chosen-in"
+      : status === "waitlisted"
+        ? "button chosen-waiting"
+        : status === "out"
+          ? "button"
+          : "button expected";
   const outClass = status === "out" ? "button chosen-out" : "button";
   const inLabel = status === "waitlisted" ? "I'm in · waiting" : "I'm in";
   // A tick only on the settled answer. A waitlisted player has not got what

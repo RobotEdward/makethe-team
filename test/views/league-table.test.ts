@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderStandingsSection } from "../../src/views/league-table.js";
 import { buildLeagueTable, type LeagueTally } from "../../src/domain/league-table.js";
+import { LEAGUE_CSS } from "../../src/views/styles.js";
 
 function tally(overrides: Partial<LeagueTally> = {}): LeagueTally {
   return {
@@ -109,5 +110,74 @@ describe("the standings section", () => {
 
   it("renders nothing at all when the standings are not this viewer's to see", () => {
     expect(renderStandingsSection(null, "p-me")).toBe("");
+  });
+});
+
+/**
+ * The own-row mark, asserted on the stylesheet rather than the markup.
+ *
+ * `renderStandingsSection` puts `class="you"` on the right row and that is
+ * already covered above — but until M52 the CSS behind it read
+ * `tr.you .league-player { background: var(--bg) }`, and `.league-player`
+ * already sets exactly that for its sticky column. The rule changed nothing,
+ * so the entire mark was `font-weight: 600`: in a fourteen-row squad at 390px,
+ * finding your own row meant reading every name.
+ *
+ * The principle it serves is worth protecting — the row is marked where it
+ * falls, never moved to the top, because a table that reprints your row above
+ * the people above you is not a league table any more. That makes the strength
+ * of the mark the whole feature.
+ */
+describe("LEAGUE_CSS own-row mark", () => {
+  const ownRow = /table\.league tbody tr\.you\b[^{]*\{([^}]*)\}/g;
+
+  /** Every declaration block that targets the viewer's own row. */
+  function ownRowRules(): string[] {
+    return [...LEAGUE_CSS.matchAll(ownRow)].map((m) => m[1]!);
+  }
+
+  it("marks the row with more than a font weight", () => {
+    const declarations = ownRowRules().join(" ");
+
+    expect(declarations).toMatch(/font-weight/);
+    expect(
+      /background/.test(declarations),
+      "the own row needs a visible ground, not just bold text",
+    ).toBe(true);
+  });
+
+  it("does not set the own row's background to the value the cell already has", () => {
+    // The exact no-op that shipped: `.league-player` is `background: var(--bg)`
+    // for its sticky column, so repeating it for `tr.you` is not a mark.
+    const playerCell = /table\.league \.league-player\s*\{([^}]*)\}/.exec(LEAGUE_CSS)?.[1] ?? "";
+    const cellBackground = /background:\s*var\((--[a-z-]+)\)/.exec(playerCell)?.[1];
+
+    for (const rule of ownRowRules()) {
+      const marked = /background:\s*var\((--[a-z-]+)\)/.exec(rule)?.[1];
+      if (marked !== undefined) expect(marked).not.toBe(cellBackground);
+    }
+  });
+
+  it("keeps the sticky player cell opaque, so a scrolled row shows no seam", () => {
+    // The player column is `position: sticky`, so it must carry its own
+    // background — a transparent cell lets the scrolled numbers slide under the
+    // name. Tinting only the row's `td`s would reintroduce exactly that on the
+    // one row the tint exists for, so the tint has to be restated here.
+    const stickyOwnCell = [...LEAGUE_CSS.matchAll(ownRow)].find((m) =>
+      m[0].includes(".league-player"),
+    );
+
+    expect(
+      stickyOwnCell?.[1],
+      "tr.you .league-player must restate the row tint, or the sticky cell keeps the plain ground",
+    ).toMatch(/background:\s*var\(--[a-z-]+\)/);
+
+    const rowTint = [...LEAGUE_CSS.matchAll(ownRow)]
+      .filter((m) => !m[0].includes(".league-player"))
+      .map((m) => /background:\s*var\((--[a-z-]+)\)/.exec(m[1]!)?.[1])
+      .find((token) => token !== undefined);
+    const cellTint = /background:\s*var\((--[a-z-]+)\)/.exec(stickyOwnCell?.[1] ?? "")?.[1];
+
+    expect(cellTint, "the sticky cell's tint must match the row's").toBe(rowTint);
   });
 });

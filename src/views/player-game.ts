@@ -1,10 +1,20 @@
-import { fixturePath, gamePastFixturesPath, gamePath } from "../auth/paths.js";
+import { fixtureAnswerPath, fixturePath, gamePastFixturesPath, gamePath } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
 import { formatLocalDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
+import type { ResponseStatus } from "../domain/response-status.js";
 import type { PublishedTeams } from "../domain/teams.js";
-import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection, renderStatusLine } from "./fixture.js";
+import {
+  answerStateOf,
+  fixtureStatusWords,
+  renderFullWarning,
+  renderPublishedTeamsSection,
+  renderResponseButtons,
+  renderSquadSection,
+  renderStatusLine,
+  viewerHeadlineOpen,
+} from "./fixture.js";
 import type { LeagueRow } from "../domain/league-table.js";
 import { renderFreshness } from "./freshness.js";
 import { renderStandingsSection } from "./league-table.js";
@@ -47,6 +57,15 @@ export interface PlayerGameParams {
   timezone: string;
   /** The open fixture, or null when none is open. */
   openFixture: {
+    /** For the answer form's action (M52) — see `fixtureAnswerPath`. */
+    fixtureId: string;
+    /**
+     * The viewer's own answer, so this page can offer and show it (M52).
+     * Passed in rather than read out of `squad`, which is `null` whenever the
+     * organiser hides the list — the viewer's own answer is theirs to see on
+     * every game, hidden squad or not.
+     */
+    myStatus: ResponseStatus;
     kicksOffAtLocal: string;
     view: FixtureView;
     inCount: number;
@@ -104,6 +123,34 @@ export interface PlayerGameParams {
  * squad-management anything. No `<script>` — every part of this page is
  * plain markup, so it works with JavaScript off.
  */
+/**
+ * The answer block, identical in parts to the dashboard card's (M52).
+ *
+ * Until M52 this page showed an open fixture and offered no way to answer it,
+ * while being the target of the largest link on every dashboard card. The
+ * headline, the buttons and the full warning are all imported from
+ * `./fixture.js` rather than restated, so a waitlisted player cannot read as
+ * confirmed here and not there (BR-5) — the same reason the dashboard imports
+ * them.
+ *
+ * `false` for read-only, matching the dashboard card: this page renders an
+ * open fixture or nothing, so there is no read-only reason to carry.
+ */
+function renderAnswerBlock(
+  gameId: string,
+  openFixture: NonNullable<PlayerGameParams["openFixture"]>,
+): string {
+  const headline = viewerHeadlineOpen({ status: openFixture.myStatus, waitlistRank: null });
+  const headlineClass = `viewer-headline${openFixture.myStatus === "waitlisted" ? " warn" : ""}`;
+
+  return `
+    <section class="answer answer-${answerStateOf(openFixture.myStatus, false)}">
+      ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
+      ${renderResponseButtons(fixtureAnswerPath(gameId, openFixture.fixtureId), openFixture.myStatus)}
+      ${renderFullWarning(openFixture.view, { status: openFixture.myStatus }, openFixture.waitlistCount)}
+    </section>`;
+}
+
 export function renderPlayerGamePage(params: PlayerGameParams): string {
   const { gameId, gameName, venueName, venueAddress, timezone, openFixture, upcoming, viewerPlayerId } = params;
 
@@ -115,6 +162,7 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
       : `
         <p class="kickoff">${escapeHtml(openFixture.kicksOffAtLocal)}</p>
         ${renderStatusLine(openFixture.view, openFixture.waitlistCount)}
+        ${renderAnswerBlock(gameId, openFixture)}
         ${renderPublishedTeamsSection(openFixture.teams, openFixture.squad)}
         <h2>Squad</h2>
         ${renderSquadSection(openFixture.squad, openFixture.inCount, viewerPlayerId)}

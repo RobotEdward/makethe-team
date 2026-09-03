@@ -47,7 +47,12 @@ export const FIXTURE_STYLES_CSS = `
     font-weight: 600; font-size: var(--t-support); color: var(--fg);
   }
   .status-badge.status-confirmed { border: none; background: var(--ok-fg); color: var(--ok-bg); }
-  .status-badge.status-short { border: none; background: var(--ok-bg); color: var(--ok-fg); }
+  /* Amber, not the success pair. This wore --ok-bg/--ok-fg until M52 — byte
+     for byte the same as .status-open below — so the badge meaning "this
+     fixture may not happen, and it is your job to fix it" was indistinguishable
+     from the healthy one on four pages. test/views/status-palette.test.ts
+     enumerates every badge and the family it may draw on. */
+  .status-badge.status-short { border: none; background: var(--warn-bg); color: var(--warn); }
   .status-badge.status-cancelled { border: none; background: var(--accent-mut); color: var(--warn); }
   .status-badge.status-open { border: none; background: var(--ok-bg); color: var(--ok-fg); }
   .status-badge.status-played, .status-badge.status-scheduled { border: none; background: var(--field); color: var(--mut); }
@@ -127,6 +132,16 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
      plus a distinct label or glyph, never colour alone -- the tick on
      "chosen-in" and the "· waiting" on "chosen-waiting" are what make the
      three states tellable apart without seeing colour at all. */
+  /* The expected answer before any answer exists (M52). An outline, not the
+     .primary fill: .primary is the same var(--accent) ground as .chosen-in
+     below, so it would render "you have not answered" identically to "you said
+     yes". Three distinct treatments -- outline, accent fill plus tick, grey
+     fill -- keep the states tellable apart with colour ignored entirely. */
+  .button.expected {
+    background: transparent;
+    color: var(--accent);
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
   .button.chosen-in {
     background: var(--accent); color: var(--accent-fg);
   }
@@ -493,6 +508,11 @@ export const FORM_CSS = `
     border-bottom: 1px solid var(--line);
   }
   .audience-group label:last-of-type { border-bottom: none; }
+  /* An audience nobody is in (M52). Dimmed and not-allowed rather than hidden:
+     the organiser needs to see that "On the waitlist (0)" exists and is empty,
+     which is information about the fixture, not clutter. */
+  .audience-group label.audience-none { color: var(--mut); cursor: not-allowed; }
+  .audience-empty { color: var(--warn); font-size: var(--t-support); margin: 0.75rem 0 0.25rem; }
   .audience-group input[type="radio"] {
     flex: 0 0 auto; width: 1.4rem; height: 1.4rem; padding: 0; border: none;
     accent-color: var(--accent);
@@ -1445,8 +1465,17 @@ export const LEAGUE_CSS = `
   @media (max-width: 40rem) {
     .league-name { max-width: 8.5rem; }
   }
+  /* The viewer's own row is marked where it falls and never moved to the top —
+     a table that reprints your row above the people above you is not a league
+     table. That makes the strength of the mark the whole feature, and until
+     M52 the mark was bold text alone: the rule beside it set the sticky cell's
+     background to var(--bg), which .league-player already sets, so it changed
+     nothing. The tint is restated on .league-player because that column is
+     position: sticky and a transparent cell lets the scrolled numbers slide
+     under the name. */
   table.league tbody tr.you { font-weight: 600; }
-  table.league tbody tr.you .league-player { background: var(--bg); }
+  table.league tbody tr.you td { background: var(--accent-mut); }
+  table.league tbody tr.you .league-player { background: var(--accent-mut); }
   .league-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
 `;
 

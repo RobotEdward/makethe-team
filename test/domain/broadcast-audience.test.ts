@@ -5,6 +5,7 @@ import {
   DEFAULT_FIXTURE_AUDIENCE,
   FIXTURE_AUDIENCES,
   audienceSelectsStatus,
+  defaultFixtureAudience,
   isAddressable,
   isBroadcastAudience,
   isReachableOn,
@@ -112,5 +113,58 @@ describe("broadcast audiences", () => {
     expect(isBroadcastAudience("Playing")).toBe(false);
     expect(isBroadcastAudience(undefined)).toBe(false);
     expect(isBroadcastAudience(7)).toBe(false);
+  });
+});
+
+/**
+ * Which audience a fresh fixture compose page starts on (M52).
+ *
+ * It used to be the constant `playing`, always. The moment an organiser
+ * actually opens this page is the moment nobody has replied and kickoff is
+ * close — so the app preselected the one audience that was empty and rendered
+ * its primary button as "Nobody to send to". The page opened saying the task
+ * was impossible, on the exact occasion it was most needed.
+ */
+describe("defaultFixtureAudience", () => {
+  const counts = (over: Partial<Record<BroadcastAudience, number>>): Record<BroadcastAudience, number> => ({
+    everyone: 0,
+    playing: 0,
+    waitlisted: 0,
+    pending: 0,
+    unavailable: 0,
+    ...over,
+  });
+
+  it("starts on the largest audience there is somebody in", () => {
+    expect(defaultFixtureAudience(counts({ playing: 0, pending: 3 }))).toBe("pending");
+  });
+
+  it("keeps playing when it is the largest", () => {
+    expect(defaultFixtureAudience(counts({ playing: 9, pending: 2 }))).toBe("playing");
+  });
+
+  /**
+   * Ties resolve in render order, which puts `playing` first — so a page where
+   * two audiences are level opens on the same one it always did, and the
+   * change is invisible except where it fixes something.
+   */
+  it("breaks a tie in the order the radios render", () => {
+    expect(defaultFixtureAudience(counts({ playing: 2, pending: 2 }))).toBe("playing");
+    expect(defaultFixtureAudience(counts({ waitlisted: 4, pending: 4 }))).toBe("waitlisted");
+  });
+
+  /**
+   * With nobody anywhere there is no better answer, and inventing one would
+   * mean checking a radio the organiser cannot send to either. Falling back to
+   * the old constant keeps the page's shape stable and leaves the refusal to
+   * say what is wrong.
+   */
+  it("falls back to the standing default when every audience is empty", () => {
+    expect(defaultFixtureAudience(counts({}))).toBe(DEFAULT_FIXTURE_AUDIENCE);
+  });
+
+  /** `everyone` is the game scope's audience and has no radio here. */
+  it("never returns the game-scoped audience", () => {
+    expect(defaultFixtureAudience(counts({ everyone: 99 }))).toBe(DEFAULT_FIXTURE_AUDIENCE);
   });
 });
