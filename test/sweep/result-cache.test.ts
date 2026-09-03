@@ -448,7 +448,19 @@ describe("materialiseResults", () => {
     const second = await materialiseResults(db, AFTER_DEADLINE);
     expect(second.considered).toBe(0);
     expect(second.failures).toHaveLength(0);
-  });
+
+    // Its own budget, not the global 5s. This test seeds two orders of
+    // magnitude more rows than its neighbours on purpose, so holding it to the
+    // default makes a loaded CI runner look like a defect — which is what it
+    // did on 2 September 2026, failing `npm test` and skipping that deploy.
+    // Raising the global default instead would have hidden a real slowdown
+    // anywhere else in the suite.
+    //
+    // Seeding the rows in parallel batches was tried first and measured:
+    // 881ms against 930ms, which is noise. The D1 stub serialises the writes,
+    // so the concurrency bought nothing and cost twenty lines. The loop above
+    // is not the problem; the budget was.
+  }, 30_000);
 
   it("writes a fixture.result_locked audit row with a null actor", async () => {
     const gameId = await insertGame(db);

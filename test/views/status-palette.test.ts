@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FIXTURE_STYLES_CSS as STYLES } from "../../src/views/styles.js";
+import {
+  RECORD_CSS,
+  FIXTURE_STYLES_CSS,
+  FIXTURE_STYLES_CSS as STYLES,
+  FORM_CSS,
+} from "../../src/views/styles.js";
 
 /**
  * §5 of `screens.md` states the palette rule as a product-wide invariant:
@@ -117,5 +122,54 @@ describe("status badge palette", () => {
     const declared = [...STYLES.matchAll(/\.status-badge\.([a-z-]+)/g)].map((m) => m[1]!);
 
     expect([...new Set(declared)].sort()).toEqual(BADGES.map((b) => b.klass).sort());
+  });
+});
+
+/**
+ * Three separate "it reads as the opposite of what it means" defects, all
+ * found by the M52 design review, all one rule each.
+ */
+describe("controls that read as the wrong thing", () => {
+  /**
+   * A text input with no border, beside a select the browser draws its own
+   * border and chevron on, reads as the disabled one of the pair. Worst on the
+   * account page, where the editable Name field sits directly above the
+   * read-only email printed as plain text, and the two look equally uneditable.
+   */
+  it("gives text inputs a resting border, like the selects beside them", () => {
+    const rule = /\.field input, \.field select, \.field textarea \{([^}]*)\}/.exec(FORM_CSS)?.[1] ?? "";
+
+    expect(rule, "the shared field rule must not set border: none").not.toMatch(/border:\s*none/);
+    expect(rule).toMatch(/border:\s*1px solid/);
+  });
+
+  /**
+   * At "0 of 14 in" the capacity track was a solid full-width bar in the same
+   * grey as the page's section rules, with a zero-width fill over it — so the
+   * only mark on screen said "full". Two reviewers read it that way on first
+   * look, and it sits exactly where a player checks whether there is a place.
+   */
+  it("does not paint an empty capacity track in the same ink as a full one", () => {
+    const track = /\.capacity \.track \{([^}]*)\}/.exec(FIXTURE_STYLES_CSS)?.[1] ?? "";
+    const fill = /\.capacity \.fill \{([^}]*)\}/.exec(FIXTURE_STYLES_CSS)?.[1] ?? "";
+
+    const trackInk = /background:\s*var\((--[a-z-]+)\)/.exec(track)?.[1];
+    const fillInk = /background:\s*var\((--[a-z-]+)\)/.exec(fill)?.[1];
+
+    expect(trackInk).toBeDefined();
+    expect(trackInk).not.toBe(fillInk);
+    // A recessed groove, so an empty track reads as a container rather than as
+    // a bar that happens to be the wrong colour.
+    expect(track).toMatch(/inset/);
+  });
+
+  /**
+   * "Your record"'s total row differed from the game rows by font weight
+   * alone, and inherited the last row's bottom border as its only separator.
+   */
+  it("separates the All games total from the rows above it", () => {
+    const rule = /table\.record tfoot th, table\.record tfoot td \{([^}]*)\}/.exec(RECORD_CSS)?.[1] ?? "";
+
+    expect(rule).toMatch(/border-top:/);
   });
 });

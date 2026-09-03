@@ -185,7 +185,18 @@ export const STYLES = `
   /* Two rows, not the default equal split: the header's row hugs its content
      at the top and main centres in what remains — without this the grid gives
      each row half the viewport and the header floats mid-air on short pages. */
-  body.with-header { grid-template-rows: auto 1fr; }
+  /* align-items: start, because place-items: center on body centres both
+     axes and the 1fr row is everything below the header — so a short page put
+     its content in the middle of the viewport with the header stranded above
+     it. Measured on the M52 captures: roughly 250px of empty ground above the
+     heading at 390x844, which is most of a phone's first screenful, on several
+     pages at once. The horizontal centring is untouched.
+
+     Deliberately vague about which pages by name: this block is inlined into
+     every page including the holding page, where a handful of operational
+     words are asserted absent — the same reason the .button.primary comment
+     above says so too. */
+  body.with-header { grid-template-rows: auto 1fr; align-items: start; }
   .site-header {
     width: 100%; max-width: 30rem;
     display: flex; align-items: center; justify-content: space-between; gap: 1rem;

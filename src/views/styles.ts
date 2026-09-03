@@ -60,7 +60,14 @@ export const FIXTURE_STYLES_CSS = `
      whose fill is who is there, with the numbers under it so nothing is lost
      when the CSS does not load. */
   .capacity { margin-top: 0.6rem; }
-  .capacity .track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  /* A recessed groove, not a solid bar in the section-rule grey. At 0 of 14
+     the fill has no width, so the track was the only mark on screen and it
+     read as full -- two of the M52 design reviewers said so independently, and
+     it sits exactly where a player checks whether there is still a place. */
+  .capacity .track {
+    height: 6px; border-radius: 3px; overflow: hidden;
+    background: var(--field); box-shadow: inset 0 0 0 1px var(--line);
+  }
   .capacity .fill { display: block; height: 100%; background: var(--ok); }
   .capacity .fill.short { background: var(--wait); }
   .capacity .spots { margin-top: 0.35rem; font-size: var(--t-support); color: var(--mut); }
@@ -442,10 +449,15 @@ export const FORM_CSS = `
   main { max-width: 40rem; }
   .field { margin: 1.1rem 0; }
   .field label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+  /* A resting border, not border: none. A select keeps the browser's own
+     border and chevron whatever this says, so a borderless text input beside
+     one reads as the disabled half of a pair -- worst on the account page,
+     where the editable Name field sits directly above the read-only email
+     printed as plain text and the two looked equally uneditable. */
   .field input, .field select, .field textarea {
     width: 100%; padding: 0.6rem 0.7rem; font: inherit;
     color: var(--fg); background: var(--field);
-    border: none; border-radius: 0.75rem;
+    border: 1px solid var(--line); border-radius: 0.75rem;
   }
   .field textarea { min-height: 8rem; resize: vertical; }
   .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible {
@@ -1419,7 +1431,11 @@ export const RECORD_CSS = `
   /* The game name is the only cell allowed to wrap: it is the one that can be
      long, and letting it wrap is what keeps the number columns on screen. */
   table.record .record-game { white-space: normal; width: 99%; }
-  table.record tfoot th, table.record tfoot td { font-weight: 600; border-bottom: none; }
+  /* The total is separated by a rule as well as by weight: inheriting the last
+     game row's bottom border left it looking like one more row set in bold. */
+  table.record tfoot th, table.record tfoot td {
+    font-weight: 600; border-bottom: none; border-top: 2px solid var(--line);
+  }
   .record-note { color: var(--mut); font-size: var(--t-support); margin: -0.75rem 0 1.25rem; }
 `;
 

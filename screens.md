@@ -906,6 +906,17 @@ but opinions, and a design review is welcome to challenge any of them.
   status badge with the palette family it may draw on — the rule had no guard until then, and
   `Needs more players` shipped in the success green, byte-identical to the healthy `open`
   badge, on four pages.
+- **Pages with a header start at the top (M52).** `body` is a centring grid, and with a header
+  its rows are `auto 1fr` — so until M52 a short page centred its content in the leftover row
+  and left the header stranded above it. Roughly 250px of empty ground above the heading at
+  390x844, on several pages at once. Horizontal centring is unchanged.
+- **A text input carries a resting border (M52).** A select keeps the browser's own border and
+  chevron whatever the stylesheet says, so a borderless input beside one reads as the disabled
+  half of a pair — worst on the account page, where the editable name field sat directly above
+  the read-only email printed as plain text.
+- **An empty capacity track is a groove, not a bar (M52).** At `0 of 14 in` the fill has no
+  width, so a track painted in the section-rule grey was the only mark on screen and read as
+  full.
 - **The viewer's own row in a table is marked where it falls, never moved.** A league table
   that reprints your row above the people above you is not a league table. That makes the
   *strength* of the mark the whole feature: until M52 the mark was bold text alone, because the

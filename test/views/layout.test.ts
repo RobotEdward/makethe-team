@@ -230,3 +230,34 @@ describe("the signed-in header (M16)", () => {
     );
   });
 });
+
+/**
+ * Where a page's content sits vertically (M52).
+ *
+ * `body` is a centring grid, and with a header it becomes `auto 1fr` so the
+ * header hugs the top and `main` centres in what is left. On a short page that
+ * put the content in the middle of the viewport: measured on the M52 captures,
+ * roughly 250px of empty ground above the `Passkeys` heading at 390x844 and
+ * about 270px on past-fixtures — most of a phone's first screenful, on four
+ * pages at once. Two of the three design reviewers found it independently.
+ *
+ * The horizontal centring is the part that must survive: `main` is a 30rem
+ * column and it stays centred in the viewport.
+ */
+describe("vertical alignment", () => {
+  it("starts a page with a header at the top, not in the middle", () => {
+    const rule = /body\.with-header\s*\{([^}]*)\}/.exec(STYLES)?.[1] ?? "";
+
+    expect(rule, "body.with-header must not leave main centred in the leftover row").toMatch(
+      /align-items:\s*start/,
+    );
+  });
+
+  it("keeps the column centred horizontally", () => {
+    const rule = /^\s*body\s*\{([^}]*)\}/m.exec(STYLES)?.[1] ?? "";
+
+    // `place-items: center` sets both axes at once, so the fix above has to
+    // leave the inline axis alone rather than replacing the shorthand.
+    expect(rule + STYLES).toMatch(/justify-items:\s*center|place-items:\s*center/);
+  });
+});
