@@ -319,6 +319,11 @@ One page in four states, all under `Delete my data` (h1) + "You're signed in as 
 
 ### 2.5 A game, as a player — `GET /g/:id` (non-organiser rendering)
 - Game name (h1); venue; address.
+- **Preview banner (M61):** only when an organiser reached this rendering through `?as=player`
+  (§3.2) — "You're seeing this as a player" and a link back to the organiser view, directly
+  under the h1. Never shown to an ordinary member, who has no other view to go back to. The
+  page's controls are live, because the organiser is a real member of their own squad: an
+  answer or a mute given here is a real one, and its redirect lands back on the organiser view.
 - **Last result (M25):** a line naming the most recent played fixture's locked result — "Reds
   won 3–2" — linking to that fixture's own page (§2.6), directly under the address and above
   the open fixture. Absent until a fixture has locked; the same words a fixture's own result
@@ -373,6 +378,8 @@ was `/r/:token` out of an email, and `/g/:id` shows only the *open* fixture, so 
 fixture's published teams vanished from a player's view the moment the sweep retired it.
 - Game name (h1); optional problem notice (a 422 re-render only); venue; address; kickoff;
   status badge; then the result panel (below), then the teams and the squad.
+- **Preview banner (M61):** as §2.5's, on the same terms, when an organiser reached this
+  rendering through `?as=player` (§3.5).
 - **Published teams, past tense:** "You were on Bibs." rather than the open-fixture page's
   present tense — a played fixture is what this page is for, and "you're on" is never true of
   one. Follows the same visibility rule as everywhere else (BR-33, BR-35): a player always sees
@@ -475,6 +482,11 @@ One form serves both.
 The organiser's home for one game.
 - Game name (h1); venue; address; `Edit this game` link. Order after that (M20): `Coming up`
   first, `Squad` second, the invite card third, `Message everyone` last.
+- **`See this as a player` (M61):** under `Edit this game`, linking to the same URL with
+  `?as=player`, which renders §2.5 for the organiser as themselves — their own membership row,
+  so `squadForViewer` and `standingsForViewer` are asked with `isOwner: false` for real. Shown
+  on an archived game too. The flag is read after the entitlement check and only ever narrows;
+  a non-member carrying it still gets the same 404.
 - **Last result (M25):** a line naming the most recent played fixture's locked result — "Reds
   won 3–2" — linking to that fixture's own page (§3.5), directly under `Edit this game` and
   above `Coming up`. Absent until a fixture has locked; the same shared function the player
@@ -551,6 +563,8 @@ The organiser's home for one game.
 The busiest organiser screen.
 - Game name (h1); optional problem notice; kickoff; venue; status badge + capacity bar;
   over-capacity notice — "Over capacity — 6 in, 4 places."
+- **`See this as a player` (M61):** under the venue, linking to the same URL with `?as=player`
+  — the §2.6 rendering, on the same terms as the game page's own link (§3.2).
 - **Freshness bar (M24):** the page's last line — `Updated 3 minutes ago` on the left, a `Refresh` link on the right. See §5 for what it does.
 - **`Squad` (h2)** — one row per person:
   - **Member:** name, an `In` / `Out` segmented control that both shows and sets the current

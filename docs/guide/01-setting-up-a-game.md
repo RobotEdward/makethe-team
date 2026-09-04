@@ -43,7 +43,8 @@ Tap **Create the game** and it exists.
 This page is the game's home, and it's where you'll come back to.
 
 At the top is the name, the pitch and the address, with **Edit this game** for
-when any of that changes. **Invite people** is a card of its own, holding the
+when any of that changes, and **See this as a player** for reading the page the
+way your squad reads it — chapter 5 covers what that shows. **Invite people** is a card of its own, holding the
 link to share, a **Show the QR code** line that opens the same link as a code
 when you want it, and **Replace this link** — that's chapter 2.
 

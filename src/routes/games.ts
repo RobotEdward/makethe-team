@@ -5,6 +5,8 @@ import type { Context } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
 import { parseIntent, recordWebAnswer } from "./web-answer.js";
 import {
+  AS_PLAYER_QUERY,
+  AS_PLAYER_VALUE,
   DASHBOARD_PATH,
   NEW_GAME_PATH,
   gameEditPath,
@@ -303,6 +305,19 @@ async function standingsSortFor(c: Context<AppEnv>, db: Db, player: Player): Pro
   return requested;
 }
 
+/**
+ * Is this request the organiser asking to read the page as an ordinary member
+ * reads it (M61)?
+ *
+ * Only the two plain `GET`s below ask, and both ask *after* their entitlement
+ * check, never as part of it: the flag can move a viewer from the owner page
+ * to the member page and nowhere else. A hand-typed value that is not exactly
+ * the flag is simply not the flag, so an organiser gets their own page.
+ */
+function previewingAsPlayer(c: Context<AppEnv>): boolean {
+  return c.req.query(AS_PLAYER_QUERY) === AS_PLAYER_VALUE;
+}
+
 // `/g/:id` and friends are registered here, after `NEW_GAME_PATH` above — see
 // this file's module comment for why the order is load-bearing.
 
@@ -323,6 +338,15 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
     return renderPlayerGame(c, asMember, player.id, now);
   }
 
+  // The organiser reading their own page as the squad reads it (M61). Their
+  // membership row is re-read rather than `game` reused: the row is what makes
+  // the member page theirs, and an organiser without an active one would
+  // otherwise be shown a page they are not entitled to a place on. Nothing is
+  // impersonated — every gate below runs against their own id.
+  if (previewingAsPlayer(c)) {
+    const asMember = await findGameForMember(db, game.id, player.id);
+    if (asMember !== null) return renderPlayerGame(c, asMember, player.id, now, { preview: true });
+  }
 
 
   const [squad, upcoming, lastResult, tally] = await Promise.all([
@@ -482,7 +506,13 @@ function broadcastNoticeFrom(c: Context<AppEnv>): string | undefined {
  * capability, and this is the page every member — not just the organiser —
  * can reach.
  */
-async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSelect, viewerPlayerId: string, now: Date) {
+async function renderPlayerGame(
+  c: Context<AppEnv>,
+  game: typeof games.$inferSelect,
+  viewerPlayerId: string,
+  now: Date,
+  extras: { preview?: boolean } = {},
+) {
   const db = getDb(c.env.DB);
 
   // `listOpenFixtureIds` returns them kickoff-ordered; a game has at most one
@@ -561,6 +591,7 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
       // the squad list above is (M49, BR-33) — same module, same question.
       standings: standingsForViewer(game, buildLeagueTable(tally), { isOwner: false }),
       standingsSort: await standingsSortFor(c, db, c.get("player")!),
+      preview: extras.preview === true ? { backPath: gamePath(game.id) } : undefined,
     }),
   );
 }
@@ -1707,7 +1738,17 @@ gamesRoutes.get("/g/:id/f/:fixtureId", requirePlayer, async (c) => {
   const now = new Date(Date.now());
   const player = c.get("player")!;
   const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
-  if (target !== null) return renderOwnerFixture(c, target, now);
+  if (target !== null) {
+    // The preview (M61) — see `previewingAsPlayer` and the `/g/:id` branch
+    // above, which reads its membership row for the same reason.
+    if (previewingAsPlayer(c)) {
+      const asMember = await findGameForMember(target.db, target.game.id, player.id);
+      if (asMember !== null) {
+        return renderPlayerFixture(c, asMember, target.fixture.id, player.id, now, { preview: true });
+      }
+    }
+    return renderOwnerFixture(c, target, now);
+  }
 
   // Not an owner. A member gets their own page; everyone else gets the same
   // 404 an owner-entitlement failure gets, so the two are indistinguishable
@@ -1738,7 +1779,7 @@ export async function renderPlayerFixture(
   fixtureId: string,
   viewerPlayerId: string,
   now: Date,
-  extras: { problem?: string } = {},
+  extras: { problem?: string; preview?: boolean } = {},
   status: 200 | 422 = 200,
 ) {
   const db = getDb(c.env.DB);
@@ -1867,6 +1908,7 @@ export async function renderPlayerFixture(
         orderIsRunning &&
         !viewerInvited &&
         withSquad.squad.find((member) => member.playerId === viewerPlayerId)?.status === "waitlisted",
+      preview: extras.preview === true ? { backPath: fixturePath(game.id, fixtureId) } : undefined,
     }),
     status,
   );

@@ -1,4 +1,5 @@
 import {
+  fixtureAsPlayerPath,
   fixtureMessagePath,
   pickerModePath,
   gamePath,
@@ -607,6 +608,8 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${params.broadcastNotice === undefined ? "" : `<p class="nudge ok">${escapeHtml(params.broadcastNotice)}</p>`}
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <p class="venue">${escapeHtml(venueName)}</p>
+    <!-- M61: the same fixture, read as the squad reads it. -->
+    <p><a href="${escapeHtml(fixtureAsPlayerPath(gameId, fixtureId))}">See this as a player</a></p>
     ${renderStatusLine(view, waitlistCount)}
     ${renderOpenNow(gameId, fixtureId, view, params.gatedInvites)}
     ${renderOverCapacity(view, inCount, maxPlayers)}

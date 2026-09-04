@@ -8,6 +8,8 @@ import {
   ADMIN_SIGNIN_DOCTOR_PATH,
   DASHBOARD_PATH,
   DELETE_ACCOUNT_PATH,
+  fixtureAsPlayerPath,
+  gameAsPlayerPath,
   gamePastFixturesPath,
   NEW_GAME_PATH,
   OFFLINE_PATH,
@@ -170,6 +172,26 @@ export const CATALOGUE: CataloguePage[] = [
     note:
       "One fixture as a member sees it: the squad, the result panel, the published teams " +
       "and their own side — the only per-fixture URL a player has.",
+  },
+  {
+    id: "game-overview-as-player",
+    title: "Game overview, seen as a player (M61)",
+    // The same route and the same persona as `game-overview`, and a different
+    // page: `?as=player` sends the organiser down the member branch, so what
+    // renders is `renderPlayerGamePage` plus a banner. Entered here rather
+    // than trusted to the string tests because the banner is the one piece of
+    // this feature with a shape — an unstyled advisory line under the h1 is
+    // exactly the kind of thing `toContain` cannot see.
+    path: (w) => gameAsPlayerPath(w.gameId),
+    persona: "owner",
+    note: "An organiser reading their own game page as the squad reads it.",
+  },
+  {
+    id: "owner-fixture-as-player",
+    title: "Fixture, seen as a player (M61)",
+    path: (w) => fixtureAsPlayerPath(w.gameId, w.fixtureId),
+    persona: "owner",
+    note: "An organiser reading their own fixture page as the squad reads it.",
   },
   {
     id: "team-picker",

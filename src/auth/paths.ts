@@ -177,6 +177,26 @@ export function gameEditPath(gameId: string): string {
 }
 
 /**
+ * The organiser's preview flag (M61): the same two pages, read as an ordinary
+ * member reads them.
+ *
+ * A query flag rather than a path of its own, because there is no second page
+ * to reach — `GET /g/:id` and `GET /g/:id/f/:fixtureId` already branch owner
+ * against member, and this only decides which branch an organiser takes. The
+ * key lives here so the two links, the two handlers and their tests cannot
+ * spell it differently.
+ *
+ * It never widens: both handlers read it *after* entitlement, and it can only
+ * move a viewer from the wider page to the narrower one.
+ */
+export const AS_PLAYER_QUERY = "as";
+export const AS_PLAYER_VALUE = "player";
+
+export function gameAsPlayerPath(gameId: string): string {
+  return `${gamePath(gameId)}?${AS_PLAYER_QUERY}=${AS_PLAYER_VALUE}`;
+}
+
+/**
  * Archiving a game (M41): `GET` is the confirmation, `POST` does it.
  * Unarchive is `POST`-only from the game page's banner. Both are exempt from
  * the archived-game guard by name — see `src/routes/archived-guard.ts`.
@@ -308,6 +328,11 @@ export function memberDetailPath(gameId: string, playerId: string): string {
  */
 export function fixturePath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}`;
+}
+
+/** The fixture page read as an ordinary member reads it — see `gameAsPlayerPath`. */
+export function fixtureAsPlayerPath(gameId: string, fixtureId: string): string {
+  return `${fixturePath(gameId, fixtureId)}?${AS_PLAYER_QUERY}=${AS_PLAYER_VALUE}`;
 }
 
 /**

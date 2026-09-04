@@ -135,6 +135,17 @@ other names, no other answers, just theirs and how many are in so far. It
 changes nothing for you: as the organiser you always see the whole squad,
 whatever this is set to.
 
+**See this as a player**, under **Edit this game** on the game page, shows you
+the other half of that. It swaps your organiser page for the one your squad
+gets — no invite card, no In/Out control beside anyone else's name, and the
+squad list only if you've left it switched on. A banner at the top says you're
+seeing it as a player and links back.
+
+It isn't a pretend view. You're a member of your own game, so that page is
+genuinely yours: the answer buttons and the auto-decline switch on it do what
+they say. Use one and you'll land back on the organiser page afterwards. Every
+fixture page has the same link, under the venue.
+
 ## One fixture at a time
 
 Every fixture has its own page, separate from the game page above — tap its

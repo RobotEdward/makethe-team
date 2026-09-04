@@ -4,6 +4,7 @@ import type { PublishedTeams } from "../domain/teams.js";
 import { fixtureStatusWords, renderPublishedTeamsSection, renderSquadSection } from "./fixture.js";
 import { renderFreshness } from "./freshness.js";
 import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
+import { renderPreviewBanner, type PreviewParams } from "./preview-banner.js";
 import { renderResultPanel, type ResultPanelParams } from "./result.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
@@ -130,6 +131,11 @@ export interface PlayerFixtureParams {
    * wrong sentence on exactly the pages that show the reader least.
    */
   heldByInviteOrder?: boolean;
+  /**
+   * Set only when this page is an organiser reading their own fixture as the
+   * squad reads it (M61); `undefined` for every ordinary member.
+   */
+  preview?: PreviewParams;
 }
 
 /**
@@ -185,6 +191,7 @@ export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
+    ${renderPreviewBanner(params.preview)}
     ${problem}
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}

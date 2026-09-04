@@ -1,4 +1,5 @@
 import {
+  gameAsPlayerPath,
   gameEditPath,
   gameInviteRotatePath,
   gamePastFixturesPath,
@@ -222,6 +223,10 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     ${oddMax}
     ${archivedBanner(gameId, params.archivedOn)}
     ${params.archivedOn === null ? `<p><a href="${escapeHtml(gameEditPath(gameId))}">Edit this game</a></p>` : ""}
+    <!-- M61. Offered on an archived game too: its history is exactly what an
+         organiser might want to check the shape of, and the member page it
+         leads to is readable either way. -->
+    <p><a href="${escapeHtml(gameAsPlayerPath(gameId))}">See this as a player</a></p>
     ${lastResultLine}
 
     <h2>Coming up</h2>

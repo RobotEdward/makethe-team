@@ -19,6 +19,7 @@ import type { LeagueRow, StandingsSort } from "../domain/league-table.js";
 import { renderFreshness } from "./freshness.js";
 import { renderStandingsSection } from "./league-table.js";
 import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
+import { renderPreviewBanner, type PreviewParams } from "./preview-banner.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
 import {
@@ -41,6 +42,11 @@ export interface PlayerGameParams {
   standings: readonly LeagueRow[] | null;
   /** The column this viewer has the standings sorted by (M59). */
   standingsSort: StandingsSort;
+  /**
+   * Set only when this page is an organiser reading their own game as the
+   * squad reads it (M61); `undefined` for every ordinary member.
+   */
+  preview?: PreviewParams;
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
   /**
@@ -202,6 +208,7 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
+    ${renderPreviewBanner(params.preview)}
     <p>${escapeHtml(venueName)}</p>
     ${addressLine}
     ${params.archivedOn === null ? "" : `<div class="nudge archived-banner"><p>This game was archived on ${escapeHtml(params.archivedOn)}. No more fixtures will be scheduled; what's here is its history.</p></div>`}
