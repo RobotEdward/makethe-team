@@ -1589,15 +1589,24 @@ export const LEAGUE_CSS = `
      try; capped everywhere, a name was clipped on a desktop with 300px going
      spare. The title attribute on the span carries the whole name either way. */
   @media (max-width: 40rem) {
-    .league-name { max-width: 8.5rem; }
-    /* Win% steps aside on a phone so the position column can have its place.
-       Eight columns is what fits 390px, and this is the one of the eight that
-       says least that the others do not: it is W as a share of the games that
-       settled, and W, D, L and P are all still on the row to read it off. The
-       sentence in the note that explains it goes with it, or the note would
-       define a column that is not there. */
-    table.league .win-pct { display: none; }
-    .league-note .win-pct-note { display: none; }
+    /* Six columns rather than eight leaves the name a good deal more room —
+       the cap exists only to keep Pts on the screen, and 11rem still does. */
+    .league-name { max-width: 11rem; }
+    /* W, L and D step aside on a phone (M60). Each is one part of a record the
+       columns beside them already summarise: Pts is W and D weighted, Win% is
+       W over the games that settled, and P is the count they are parts of. So
+       the four that stay — P, GD, Win%, Pts — are what the table is opened to
+       read, and the three that go are the ones that can be worked back out.
+       Until M60 this rule hid Win% instead, which kept the parts and dropped
+       the summary. */
+    table.league .record-col { display: none; }
+    /* …except the one being sorted on, which must never be the column that is
+       not there: a table ordered by an invisible number reads as unordered.
+       One rule per column, and each is qualified by the table element so it
+       outranks the hide above rather than merely following it. */
+    table.league.sorted-won .col-won { display: table-cell; }
+    table.league.sorted-lost .col-lost { display: table-cell; }
+    table.league.sorted-drawn .col-drawn { display: table-cell; }
   }
   /* The viewer's own row is marked where it falls and never moved to the top —
      a table that reprints your row above the people above you is not a league

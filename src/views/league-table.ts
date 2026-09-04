@@ -34,6 +34,35 @@ function winPercentWords(percent: number | null): string {
 }
 
 /**
+ * The three columns a phone drops (M60): each carries `record-col`, which the
+ * one narrow-screen rule hides, and `col-<key>`, which the restore rule below
+ * selects on. Both classes are needed on every one of the six cells — three
+ * headings and three counts a row — or a column half disappears.
+ */
+const RECORD_CELL_CLASS = {
+  won: "count record-col col-won",
+  lost: "count record-col col-lost",
+  drawn: "count record-col col-drawn",
+} as const;
+
+/**
+ * The table's own class, naming the sorted column when it is one a phone would
+ * otherwise hide (M60).
+ *
+ * A player who sorted by wins and then opened the page on a phone would be
+ * looking at a table ordered by a column that is not on the screen, which
+ * reads as no order at all. `LEAGUE_CSS` pairs each of these with a rule that
+ * puts that one column back below 40rem — seven columns for that one sort,
+ * still fewer than the eight that fitted before M60.
+ *
+ * Nothing is added for a sort a phone shows anyway, so the common table
+ * carries no class it does not use.
+ */
+function tableClass(sort: StandingsSort): string {
+  return sort === "won" || sort === "lost" || sort === "drawn" ? `league sorted-${sort}` : "league";
+}
+
+/**
  * One column heading: a link to sort by it, or plain text when it is already
  * the sort (M59).
  *
@@ -87,17 +116,17 @@ function sortableHeading(
  * 5 beside rows ordered by appearances is two orderings printed on one table,
  * and the reader has no way to tell which one the page means.
  *
- * **Eight columns on a phone, and the position is one of them (M55).** The
- * table had no rank at all — the one column a league table exists to publish —
- * because eight was already the number that fits 390px. Win% pays for it: it
- * is hidden below 40rem by `LEAGUE_CSS`, as the least load-bearing of the
- * eight — it restates wins as a share of the games that settled, and W, D, L
- * and P are all still on the row to read that off. The sentence in the note
- * that defines it is hidden with it, or the note would explain a column that
- * is not there. Nothing is dropped on a screen with room for it.
+ * **Six columns on a phone (M55, M60).** All nine fit a laptop; 390px fits
+ * about six, so `LEAGUE_CSS` hides W, L and D below 40rem and keeps `#`,
+ * Player, P, GD, Win% and Pts. The three that go are each one *part* of a
+ * record the four that stay already summarise — Pts is W and D weighted, Win%
+ * is W over the games that settled — which is the argument the other way round
+ * from M55's, when it was Win% that stepped aside. The exception is the column
+ * being sorted on: see `tableClass`. Nothing is dropped on a screen with room
+ * for it.
  *
  * The name goes in a span with a `title`, because the column is capped so that
- * all eight columns fit a 390px screen. Uncapped, one long name pushed Points
+ * the columns fit a 390px screen. Uncapped, one long name pushed Points
  * — the number the table exists to report — off the right-hand edge behind a
  * scroll nobody would think to try. The title is what makes the truncation
  * recoverable rather than lossy.
@@ -130,9 +159,9 @@ export function renderStandingsSection(
         <td class="rank">${escapeHtml(positions[index] ?? "")}</td>
         <td class="league-player"><span class="league-name" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</span></td>
         <td class="count">${escapeHtml(String(row.played))}</td>
-        <td class="count">${escapeHtml(String(row.won))}</td>
-        <td class="count">${escapeHtml(String(row.lost))}</td>
-        <td class="count">${escapeHtml(String(row.drawn))}</td>
+        <td class="${RECORD_CELL_CLASS.won}">${escapeHtml(String(row.won))}</td>
+        <td class="${RECORD_CELL_CLASS.lost}">${escapeHtml(String(row.lost))}</td>
+        <td class="${RECORD_CELL_CLASS.drawn}">${escapeHtml(String(row.drawn))}</td>
         <td class="count">${escapeHtml(goalDifferenceWords(row.goalDifference))}</td>
         <td class="count win-pct">${escapeHtml(winPercentWords(row.winPercent))}</td>
         <td class="count">${escapeHtml(String(row.points))}</td>
@@ -143,15 +172,15 @@ export function renderStandingsSection(
   return `
     <h2>Standings</h2>
     <div class="league-scroll">
-      <table class="league">
+      <table class="${escapeHtml(tableClass(sort))}">
         <thead>
           <tr>
             <th scope="col" class="rank"><abbr title="Position">#</abbr></th>
             ${sortableHeading("player", "Player", "league-player", sort)}
             ${sortableHeading("played", `<abbr title="Played">P</abbr>`, "count", sort)}
-            ${sortableHeading("won", `<abbr title="Won">W</abbr>`, "count", sort)}
-            ${sortableHeading("lost", `<abbr title="Lost">L</abbr>`, "count", sort)}
-            ${sortableHeading("drawn", `<abbr title="Drawn">D</abbr>`, "count", sort)}
+            ${sortableHeading("won", `<abbr title="Won">W</abbr>`, RECORD_CELL_CLASS.won, sort)}
+            ${sortableHeading("lost", `<abbr title="Lost">L</abbr>`, RECORD_CELL_CLASS.lost, sort)}
+            ${sortableHeading("drawn", `<abbr title="Drawn">D</abbr>`, RECORD_CELL_CLASS.drawn, sort)}
             ${sortableHeading("gd", `<abbr title="Goal difference">GD</abbr>`, "count", sort)}
             ${sortableHeading("winpct", `<abbr title="Win percentage">Win%</abbr>`, "count win-pct", sort)}
             ${sortableHeading("points", `<abbr title="Points">Pts</abbr>`, "count", sort)}
@@ -160,5 +189,5 @@ export function renderStandingsSection(
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p class="league-note">Three points for a win, one for a draw. Players level on points, goal difference and wins share a place. <span class="win-pct-note">Win% is of the games that settled. </span>GD only counts games with an agreed score, so it covers fewer games than the rest of the row.</p>`;
+    <p class="league-note">Three points for a win, one for a draw. Players level on points, goal difference and wins share a place. Win% is of the games that settled. GD only counts games with an agreed score, so it covers fewer games than the rest of the row.</p>`;
 }

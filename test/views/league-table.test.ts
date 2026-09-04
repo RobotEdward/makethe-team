@@ -237,27 +237,88 @@ describe("the position column", () => {
 });
 
 /**
- * Win% is the column that pays for the position column on a phone. Both the
- * cells and the sentence in the note that defines them have to go together —
- * a note explaining a column that is not on screen is worse than no note.
+ * Which columns a phone keeps, and which it drops (M60).
+ *
+ * 390px fits about six columns. The four that survive are the ones a player
+ * opens the table to read — how many they have played, their goal difference,
+ * their win rate and their points — and W, L and D are what pays for them:
+ * each is one *part* of a record the other four already summarise, and Pts and
+ * Win% between them say what W, L and D say in three columns.
+ *
+ * Until M60 it was Win% that stepped aside, which had the table dropping the
+ * summary and keeping the parts.
  */
-describe("Win% below 40rem", () => {
-  it("marks the cells and the note so one rule can hide both", () => {
+describe("the columns a phone keeps", () => {
+  /** The declarations inside the one narrow-screen block. */
+  const narrowBlock = () =>
+    /@media \(max-width: 40rem\) \{([\s\S]*?)\n {2}\}/.exec(LEAGUE_CSS)?.[1] ?? "";
+
+  it("marks the three record columns so one rule can hide them together", () => {
     const html = render([tally()]);
 
-    expect(html).toContain(`class="count win-pct"`);
-    expect(html).toContain(`<span class="win-pct-note">`);
+    // Six cells: three headings and three counts, for one player.
+    expect(html.match(/record-col/g)).toHaveLength(6);
   });
 
-  it("hides them together, and only on a narrow screen", () => {
-    const narrow = /@media \(max-width: 40rem\) \{([\s\S]*?)\n {2}\}/.exec(LEAGUE_CSS)?.[1] ?? "";
+  it("hides W, L and D on a narrow screen, and nothing else", () => {
+    const narrow = narrowBlock();
 
-    expect(narrow).toContain(".win-pct { display: none; }");
-    expect(narrow).toContain(".win-pct-note { display: none; }");
-    // Presence pinned as well as absence: an empty match would satisfy both
-    // `not.toContain` checks below without hiding anything.
+    expect(narrow).toContain(".record-col { display: none; }");
+    // Presence pinned as well as absence: an empty match would satisfy every
+    // `not.toContain` below without hiding anything at all.
     expect(narrow).not.toBe("");
     expect(narrow).not.toContain(".rank { display: none");
+    expect(narrow).not.toContain(".league-player { display: none");
+  });
+
+  it("keeps Win% and its note at every width, now that the column always renders", () => {
+    const html = render([tally()]);
+    const narrow = narrowBlock();
+
+    expect(html).toContain(`class="count win-pct"`);
+    expect(html).not.toContain("win-pct-note");
+    expect(narrow).not.toContain(".win-pct { display: none");
+  });
+});
+
+/**
+ * The column being sorted on is never the hidden one (M60).
+ *
+ * A phone dropping W, L and D would otherwise leave a player who sorted by
+ * wins looking at a table ordered by a column that is not on the screen, which
+ * reads as no order at all. The page knows the sort, so it says so in a class
+ * on the table and the stylesheet puts that one column back.
+ */
+describe("the sorted column on a narrow screen", () => {
+  it("names the sorted record column on the table itself", () => {
+    expect(render([tally()], "someone-else", "won")).toContain(`class="league sorted-won"`);
+    expect(render([tally()], "someone-else", "lost")).toContain(`class="league sorted-lost"`);
+    expect(render([tally()], "someone-else", "drawn")).toContain(`class="league sorted-drawn"`);
+  });
+
+  it("says nothing when the sorted column is one a phone shows anyway", () => {
+    const html = render([tally()], "someone-else", "gd");
+
+    expect(html).toContain(`class="league"`);
+    expect(html).not.toContain("sorted-");
+  });
+
+  it("puts that column back at phone width, one rule per column", () => {
+    const narrow = /@media \(max-width: 40rem\) \{([\s\S]*?)\n {2}\}/.exec(LEAGUE_CSS)?.[1] ?? "";
+
+    for (const column of ["won", "lost", "drawn"]) {
+      expect(narrow).toContain(`table.league.sorted-${column} .col-${column} { display: table-cell; }`);
+    }
+  });
+
+  it("gives every record column the class its restore rule selects on", () => {
+    const html = render([tally()]);
+
+    for (const column of ["won", "lost", "drawn"]) {
+      // A heading and a cell each, and the restore rule matches neither
+      // without them.
+      expect(html.match(new RegExp(`col-${column}`, "g"))).toHaveLength(2);
+    }
   });
 });
 

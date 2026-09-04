@@ -128,10 +128,14 @@ games that settled, not everything played. **GD** counts only the games where a
 score was actually agreed, so it covers fewer games than the rest of the row —
 the note under the table says so.
 
-On a narrow phone **Win%** is left out, so that the position column fits. Turn
-the phone or open the page on something wider and it comes back. Nothing else
-changes: **W**, **D**, **L** and **P** are all still on the row to work it out
-from.
+A phone screen has room for about six of the columns, so **W**, **L** and **D**
+are left out on one: what stays is your position, the name, **P**, **GD**,
+**Win%** and **Pts** — the four numbers the table is usually opened to read.
+The three that go are each part of a record those four already add up. Turn the
+phone or open the page on something wider and all nine come back.
+
+If you have sorted the table by **W**, **L** or **D**, that column stays on the
+phone too. A table sorted by a column you cannot see just looks jumbled.
 
 Whether you see the table at all follows the same setting as the squad list. If
 your organiser has chosen to keep the squad private, there are no standings on
