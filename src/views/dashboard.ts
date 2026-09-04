@@ -21,12 +21,14 @@ import {
   yourSideLine,
 } from "./fixture.js";
 import { renderFreshness } from "./freshness.js";
+import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS } from "./scripts.js";
 import {
   DASHBOARD_STYLES_CSS,
   FIXTURE_STYLES_CSS,
   FRESHNESS_CSS,
+  MUTE_CSS,
   RECORD_CSS,
   RESULT_CSS,
 } from "./styles.js";
@@ -161,6 +163,16 @@ export interface DashboardPageOptions {
   recentlyPlayed: RecentlyPlayedRow | null;
   /** The viewer's playing record in every game they have played in (M48). */
   record: readonly RecordRow[];
+  /**
+   * The viewer's auto-decline switch (M58), for the first squad in `squads`
+   * that is not archived — omitted when they are in none.
+   *
+   * The panel used to be reachable only from a squad page or an emailed
+   * fixture link, so a player with nothing coming up had to remember that a
+   * game page carried it. Going away for a fortnight is a thing you decide
+   * before the invitation arrives, not after.
+   */
+  mute?: MuteControlsOptions;
   /** The one refusal `POST /app/games/:gameId/leave` can produce (M7a Task 4). */
   problem?: string;
   /** Set when this player has an erasure pending — already formatted (M7b). */
@@ -596,6 +608,7 @@ export function renderDashboardPage({
   resultsNeeded,
   recentlyPlayed,
   record,
+  mute,
   problem,
   erasesAtLocal,
   erasureHeldUp,
@@ -623,6 +636,7 @@ export function renderDashboardPage({
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
         : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
     }
+    ${mute === undefined ? "" : renderMuteControls(mute)}
     ${renderResultsNeededSection(resultsNeeded)}
     ${renderRecentlyPlayedSection(recentlyPlayed)}
     ${renderYourSquadsSection(squads)}
@@ -638,7 +652,19 @@ export function renderDashboardPage({
     // (M27) — the account page pulls it in for the same class on the same
     // kind of row. Namespaced `.result-*` and colliding with nothing, so its
     // position in this array is not load-bearing.
-    pageStyles: [FIXTURE_STYLES_CSS, DASHBOARD_STYLES_CSS, RESULT_CSS, RECORD_CSS, FRESHNESS_CSS],
+    pageStyles: [
+      FIXTURE_STYLES_CSS,
+      DASHBOARD_STYLES_CSS,
+      RESULT_CSS,
+      RECORD_CSS,
+      FRESHNESS_CSS,
+      // Unconditional, though the panel above is not: a page whose stylesheet
+      // depended on the viewer's membership would be a different page for
+      // every reader, and `PAGE_STYLE_BLOCKS` hashes what is actually sent.
+      // Last for the same reason the fixture pages put it last — nothing here
+      // declares a `.mute*` selector, so it collides with nothing.
+      MUTE_CSS,
+    ],
     pageScripts: [FRESHNESS_JS],
   });
 }

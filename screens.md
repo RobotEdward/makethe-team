@@ -219,6 +219,15 @@ The signed-in home.
   response page so the two can never disagree.
 - **Empty state:** "You've nothing coming up. When your next game opens for responses, it'll
   show up here."
+- **Auto-decline panel (M58):** the same shared panel §2.5 describes, directly under the
+  fixture list — under the empty state's sentence when there is nothing coming up, which is
+  the case it exists for. Until M58 the switch was reachable only from a squad page or an
+  emailed fixture link, so deciding to be away for a fortnight meant waiting for an invitation
+  to say so on. Here it names the squad it acts on — "stop sending you anything about Tuesday
+  Fives" — because this page is about all of them and an unqualified "this squad" would name
+  nothing; the panel's own `Do this for my other squads too` checkbox is what covers the rest.
+  The squad is the first non-archived one in `Your squads` order, and the panel is absent for a
+  player in no squads. Both forms return here rather than to the squad page.
 - **`Results needed` (h2, M25):** every played fixture the viewer is entitled to see that is
   still writable and that they have not yet filed a claim on — a genuine to-do, since the
   dashboard is a to-do list. One card per fixture: game name (linking to the game), kickoff
@@ -319,7 +328,8 @@ One page in four states, all under `Delete my data` (h1) + "You're signed in as 
   dates each with its status in words.
 - **Auto-decline panel (M28):** between the open fixture and `Coming up`. Switched off it is a
   single quiet `<details>` line — `Can't play for a while?` — opening to a short explanation, a
-  four-way radio (`2 weeks` / `4 weeks` / `8 weeks` / `Indefinitely`, four selected by default),
+  five-way radio (`1 week` (M57) / `2 weeks` / `4 weeks` / `8 weeks` / `Indefinitely`, four
+  weeks selected by default),
   an optional `Do this for my other squads too` checkbox (hidden when the player is in only one
   squad, and captioned with how many there are), and `Turn on auto-decline`. Switched on it is
   always open — never behind a disclosure — as a card with an amber left edge:

@@ -15,6 +15,19 @@ export interface MuteControlsOptions {
   unmuteAction: string;
   state: MuteState;
   /**
+   * The squad the switch acts on, named in the copy. Omitted where the page is
+   * already about one game and "this squad" can only mean that one; supplied
+   * by the dashboard, which is about all of them and where an unqualified
+   * "this squad" would name nothing.
+   */
+  squadName?: string;
+  /**
+   * Where the routes behind the form send the reader afterwards. A closed set,
+   * never a URL: the field reaches the route from a form body, and a body that
+   * could carry a destination is an open redirect.
+   */
+  returnTo?: "dashboard";
+  /**
    * How many *other* active squads this player is in. Zero hides the
    * "all my games" checkbox entirely: an option that can only ever mean the
    * one squad already being acted on is a control with no effect, and the
@@ -42,6 +55,24 @@ export function renderMuteControls(options: MuteControlsOptions): string {
     : renderOff(options);
 }
 
+/**
+ * The squad as the copy names it — its name where the caller gave one, the
+ * bare "this squad" where the page itself has already established which.
+ */
+function squadPhrase(options: MuteControlsOptions): string {
+  return options.squadName === undefined ? "this squad" : escapeHtml(options.squadName);
+}
+
+/**
+ * The hidden field naming where the route redirects, or nothing. See
+ * `returnTo`: the value is an enum the route matches, not a path it follows.
+ */
+function renderReturnTo(options: MuteControlsOptions): string {
+  return options.returnTo === undefined
+    ? ""
+    : `<input type="hidden" name="from" value="${escapeHtml(options.returnTo)}">`;
+}
+
 function renderOff(options: MuteControlsOptions): string {
   const radios = MUTE_DURATIONS.map((duration) => {
     const id = `mute-${duration.value}`;
@@ -58,8 +89,9 @@ function renderOff(options: MuteControlsOptions): string {
     <details class="mute">
       <summary>Can't play for a while?</summary>
       <div class="mute-panel">
-        <p>We'll mark you as out automatically and stop sending you anything about this squad. You can still say yes to any game whenever you want — accepting one doesn't switch this back off.</p>
+        <p>We'll mark you as out automatically and stop sending you anything about ${squadPhrase(options)}. You can still say yes to any game whenever you want — accepting one doesn't switch this back off.</p>
         <form method="post" action="${escapeHtml(options.muteAction)}">
+          ${renderReturnTo(options)}
           <fieldset class="mute-durations">
             <legend class="mute-legend">Auto-decline for</legend>
             ${radios}
@@ -74,13 +106,14 @@ function renderOff(options: MuteControlsOptions): string {
 function renderOn(options: MuteControlsOptions, untilLocal: string | null): string {
   const until =
     untilLocal === null
-      ? "You're auto-declining this squad until you turn it back on."
-      : `You're auto-declining this squad until ${escapeHtml(untilLocal)}.`;
+      ? `You're auto-declining ${squadPhrase(options)} until you turn it back on.`
+      : `You're auto-declining ${squadPhrase(options)} until ${escapeHtml(untilLocal)}.`;
 
   return `
     <div class="mute-on">
       <p>${until} You can still say yes to any game.</p>
       <form method="post" action="${escapeHtml(options.unmuteAction)}">
+        ${renderReturnTo(options)}
         ${renderAllGamesCheckbox(options.otherGamesCount, "Turn it off for my other squads too")}
         <button type="submit" class="button">Turn auto-decline off</button>
       </form>

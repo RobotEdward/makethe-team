@@ -673,7 +673,7 @@ gamesRoutes.post("/g/:id/mute", requirePlayer, async (c) => {
     c.executionCtx.waitUntil(notifyReleasedSubs(c.env, fixtureId, now));
   }
 
-  return c.redirect(gamePath(gameId), 303);
+  return c.redirect(landingAfterMute(form["from"], gameId), 303);
 });
 
 /** Turning it back off. See `POST /g/:id/mute` for the entitlement reasoning. */
@@ -694,8 +694,21 @@ gamesRoutes.post("/g/:id/unmute", requirePlayer, async (c) => {
   });
   if (result.kind === "not-a-member") return c.text("Not found", 404);
 
-  return c.redirect(gamePath(gameId), 303);
+  return c.redirect(landingAfterMute(form["from"], gameId), 303);
 });
+
+/**
+ * Where the auto-decline forms land afterwards: back where they were pressed.
+ *
+ * The panel is rendered on the game page and, since M58, on the dashboard —
+ * two pages, and a reader bounced from the dashboard into a squad page has
+ * been moved somewhere they did not ask to go. The field is matched against
+ * one literal rather than treated as a path: it arrives in a form body, and a
+ * body that can name a destination is an open redirect.
+ */
+function landingAfterMute(from: unknown, gameId: string): string {
+  return from === "dashboard" ? DASHBOARD_PATH : gamePath(gameId);
+}
 
 /**
  * The confirmation page for replacing a game's invite link (M52).

@@ -3,7 +3,13 @@ import type { Context } from "hono";
 import { notifyPromotedPlayer } from "./respond.js";
 import { parseIntent, recordWebAnswer } from "./web-answer.js";
 import { eq } from "drizzle-orm";
-import { DASHBOARD_PATH, ONBOARDING_DISMISS_PATH, PRESENCE_PATH } from "../auth/paths.js";
+import {
+  DASHBOARD_PATH,
+  ONBOARDING_DISMISS_PATH,
+  PRESENCE_PATH,
+  gameMutePath,
+  gameUnmutePath,
+} from "../auth/paths.js";
 import { requirePlayer, pageNav, type Player } from "../auth/session.js";
 import { getDb } from "../db/client.js";
 import type { Db } from "../db/client.js";
@@ -13,7 +19,7 @@ import {
   listResultsNeededCandidates,
 } from "../db/dashboard-queries.js";
 import type { DashboardFixture } from "../db/dashboard-queries.js";
-import { listMemberGames } from "../db/queries.js";
+import { listMemberGames, muteStateFor } from "../db/queries.js";
 import { playerRecordByGame } from "../db/record-queries.js";
 import { listClaimsForFixtures } from "../db/result-queries.js";
 import { resultWordsForLockedRows } from "../db/result-summary.js";
@@ -22,8 +28,9 @@ import { fixtureView } from "../domain/fixture-view.js";
 import { isResultLocked } from "../domain/result-lock.js";
 import { shouldStampPresence } from "../domain/presence.js";
 import { removeMember } from "../domain/remove-member.js";
-import { formatLocalDateTime } from "../domain/time/zone.js";
+import { formatLocalDate, formatLocalDateTime } from "../domain/time/zone.js";
 import type { AppEnv, Bindings } from "../env.js";
+import type { MuteControlsOptions } from "../views/mute-controls.js";
 import {
   renderDashboardPage,
   type DashboardRow,
@@ -92,6 +99,7 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
 
   return c.html(
     renderDashboardPage({
+      mute: await muteControlsForDashboard(db, player.id, squads, now),
       nav: pageNav(c, "games"),
       playerName: player.name,
       rows: rows.map((row) => toRow(row, now)),
@@ -112,6 +120,61 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
     }),
     problem === undefined ? 200 : 422,
   );
+}
+
+/**
+ * The dashboard's auto-decline panel (M58), for the first live squad the
+ * viewer belongs to — `undefined` when they belong to none.
+ *
+ * Alphabetical, because that is the order `listMemberGames` returns and the
+ * order "Your squads" further down the page already shows: whichever squad
+ * the panel names, the reader can see it named in a list they recognise. The
+ * squad it acts on matters less than it looks, because the panel's own
+ * "do this for my other squads too" checkbox is what a player going away for
+ * a fortnight actually wants, and `muteStateFor` counts the others for it.
+ *
+ * Archived games are skipped for the reason the squad page hides the panel on
+ * one: nothing there is going to invite anybody.
+ *
+ * The state is read, not assumed off, so a player already auto-declining is
+ * shown the switch that turns it back on — the whole point of putting it here
+ * is that they should not have to remember which page it lives on.
+ */
+async function muteControlsForDashboard(
+  db: Db,
+  playerId: string,
+  squads: readonly { id: string; name: string; archivedAt: Date | null; timezone: string }[],
+  now: Date,
+): Promise<MuteControlsOptions | undefined> {
+  const squad = squads.find((entry) => entry.archivedAt === null);
+  if (squad === undefined) return undefined;
+
+  const state = await muteStateFor(db, squad.id, playerId, now);
+  if (state === null) return undefined;
+
+  return {
+    muteAction: gameMutePath(squad.id),
+    unmuteAction: gameUnmutePath(squad.id),
+    // The squad page can say "this squad" and be understood. This page is
+    // about all of them, so the panel names the one it acts on.
+    squadName: squad.name,
+    // Back here afterwards rather than into the squad page the routes would
+    // otherwise land on; see `landingAfterMute` in `src/routes/games.ts`.
+    returnTo: "dashboard",
+    state:
+      state.muted
+        ? {
+            muted: true,
+            // The date alone, in the squad's zone (TR-5) — the same call the
+            // game page's panel makes, for the same reason: the expiry's time
+            // of day is four weeks after whichever minute the player tapped,
+            // and naming it invites a precision the sweep does not honour.
+            untilLocal:
+              state.mutedUntil === null ? null : formatLocalDate(state.mutedUntil, squad.timezone),
+          }
+        : { muted: false },
+    otherGamesCount: state.otherGamesCount,
+  };
 }
 
 /** A queried fixture as the page shows it. No other player's data is involved. */

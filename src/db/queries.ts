@@ -271,9 +271,18 @@ export async function findGameForMember(
 export async function listMemberGames(
   db: Db,
   playerId: string,
-): Promise<{ id: string; name: string; owned: boolean; archivedAt: Date | null }[]> {
+): Promise<{ id: string; name: string; owned: boolean; archivedAt: Date | null; timezone: string }[]> {
   const rows = await db
-    .select({ id: games.id, name: games.name, role: memberships.role, archivedAt: games.archivedAt })
+    .select({
+      id: games.id,
+      name: games.name,
+      role: memberships.role,
+      archivedAt: games.archivedAt,
+      // Not for the list itself, which renders a name and a link. The
+      // dashboard's auto-decline panel (M58) names the date the mute runs out
+      // in the squad's own zone, and this is where it comes from (TR-5).
+      timezone: games.timezone,
+    })
     .from(games)
     .innerJoin(memberships, eq(memberships.gameId, games.id))
     .where(
@@ -287,7 +296,13 @@ export async function listMemberGames(
   // Archived games are returned, not filtered: the dashboard lists them under
   // their own heading (M41), since the whole point of archiving over deleting
   // is that the history stays reachable.
-  return rows.map((r) => ({ id: r.id, name: r.name, owned: r.role === "owner", archivedAt: r.archivedAt }));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    owned: r.role === "owner",
+    archivedAt: r.archivedAt,
+    timezone: r.timezone,
+  }));
 }
 
 /**

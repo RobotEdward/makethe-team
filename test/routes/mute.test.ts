@@ -6,6 +6,7 @@ import { fixtures, memberships, players, responses } from "../../src/db/schema.j
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { signResponseToken } from "../../src/domain/token.js";
 import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
+import { DASHBOARD_PATH } from "../../src/auth/paths.js";
 import { kickoffIn, NOW } from "../support/clock.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 
@@ -94,6 +95,109 @@ describe("the auto-decline panel on the pages that carry it", () => {
     expect(html).toContain("until you turn it back on");
     expect(html).toContain(`action="/g/${gameId}/unmute"`);
     expect(html).not.toContain("Can't play for a while?");
+  });
+});
+
+/**
+ * M58. Before this, the switch lived only on a squad page and on an emailed
+ * fixture link — so a player with nothing coming up had to already know which
+ * page carried it. Going away for a fortnight is decided before the invitation
+ * arrives, not after, and these are the cases that keep it reachable then.
+ */
+describe("the auto-decline panel on the dashboard", () => {
+  /** A squad with no fixture at all — the "nothing coming up" dashboard. */
+  async function seedQuietSquad(name: string): Promise<{ gameId: string; cookie: string; viewerId: string }> {
+    const { cookie, viewerId } = await signedInPlayer();
+    const gameId = await insertGame(db, { name });
+    const ownerId = await insertPlayer(db, { name: "Owner" });
+    await insertMembership(db, gameId, ownerId, { role: "owner" });
+    await insertMembership(db, gameId, viewerId);
+    return { gameId, cookie, viewerId };
+  }
+
+  function dashboard(cookie: string) {
+    return SELF.fetch(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } });
+  }
+
+  it("is offered with no invite anywhere in sight", async () => {
+    const { gameId, cookie } = await seedQuietSquad("Tuesday Fives");
+
+    const html = await (await dashboard(cookie)).text();
+
+    expect(html).toMatch(/nothing coming up/i);
+    expect(html).toContain("Can't play for a while?");
+    expect(html).toContain(`action="/g/${gameId}/mute"`);
+  });
+
+  it("names the squad it acts on, which the squad page has no need to", async () => {
+    const { cookie } = await seedQuietSquad("Tuesday Fives");
+
+    const html = await (await dashboard(cookie)).text();
+
+    expect(html).toContain("anything about Tuesday Fives");
+    expect(html).not.toContain("anything about this squad");
+  });
+
+  it("shows the off switch to a player already auto-declining", async () => {
+    const { gameId, cookie, viewerId } = await seedQuietSquad("Tuesday Fives");
+    await db
+      .update(memberships)
+      .set({ mutedAt: NOW, mutedUntil: null })
+      .where(and(eq(memberships.gameId, gameId), eq(memberships.playerId, viewerId)));
+
+    const html = await (await dashboard(cookie)).text();
+
+    expect(html).toContain("auto-declining Tuesday Fives until you turn it back on");
+    expect(html).toContain(`action="/g/${gameId}/unmute"`);
+  });
+
+  it("offers nothing to a player in no squads at all", async () => {
+    const { cookie } = await signedInPlayer();
+
+    const html = await (await dashboard(cookie)).text();
+
+    expect(html).toMatch(/nothing coming up/i);
+    expect(html).not.toContain("Can't play for a while?");
+  });
+
+  it("acts on the first live squad, skipping an archived one", async () => {
+    const { cookie, viewerId } = await signedInPlayer();
+    const archivedId = await insertGame(db, { name: "Aardvark FC", archivedAt: NOW });
+    const liveId = await insertGame(db, { name: "Bulldogs" });
+    await insertMembership(db, archivedId, viewerId);
+    await insertMembership(db, liveId, viewerId);
+
+    const html = await (await dashboard(cookie)).text();
+
+    expect(html).toContain(`action="/g/${liveId}/mute"`);
+    expect(html).not.toContain(`action="/g/${archivedId}/mute"`);
+  });
+
+  it("comes back to the dashboard rather than dropping the reader into a squad page", async () => {
+    const { gameId, cookie } = await seedQuietSquad("Tuesday Fives");
+
+    const on = await post(`/g/${gameId}/mute`, cookie, { duration: "4w", from: "dashboard" });
+    expect(on.status).toBe(303);
+    expect(on.headers.get("location")).toBe(DASHBOARD_PATH);
+
+    const off = await post(`/g/${gameId}/unmute`, cookie, { from: "dashboard" });
+    expect(off.status).toBe(303);
+    expect(off.headers.get("location")).toBe(DASHBOARD_PATH);
+  });
+
+  /**
+   * The field is matched against one literal, never followed. A body naming
+   * somewhere else must land where it always did.
+   */
+  it("ignores a destination the form never offered", async () => {
+    const { gameId, cookie } = await seedQuietSquad("Tuesday Fives");
+
+    const response = await post(`/g/${gameId}/mute`, cookie, {
+      duration: "4w",
+      from: "https://example.com/",
+    });
+
+    expect(response.headers.get("location")).toBe(`/g/${gameId}`);
   });
 });
 
