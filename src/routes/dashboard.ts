@@ -136,7 +136,7 @@ function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
  *
  * "Results needed" (M25 Task 13, BR-37): every played fixture the viewer is
  * entitled to see, minus the two that are not a "need" — one they have
- * already filed a claim on, and one whose 48-hour window has already locked.
+ * already filed a claim on, and one whose result window has already locked.
  *
  * "Recently played" (M27): the newest played fixture that is *not* in the
  * list above, with its result once that result has settled.
@@ -179,7 +179,7 @@ async function playedFixtureSections(
     const fixtureClaims = claimsByFixture.get(candidate.fixtureId) ?? [];
     const alreadyFiled = fixtureClaims.some((claim) => claim.playerId === playerId);
     if (alreadyFiled) return false;
-    return !isResultLocked(candidate.kicksOffAt, fixtureClaims.length, now);
+    return !isResultLocked(candidate, candidate.resultLockHoursAfter, fixtureClaims.length, now);
   });
 
   const resultsNeeded = needed.map((candidate) => ({
@@ -200,7 +200,7 @@ async function playedFixtureSections(
 
   // Words only for a *locked* fixture, through the same derivation the account
   // history and the past-fixtures page use (`resultWordsForLockedRows`) — a
-  // tally still inside its 48 hours is openly arguable, and a bare score line
+  // tally still inside its game's window is openly arguable, and a bare score line
   // here would read as settled while the panel on the fixture page itself
   // still shows it as a contested claim.
   const words = await resultWordsForLockedRows(db, [recent], now);

@@ -29,7 +29,7 @@ export interface PastFixtureRow {
   inCount: number;
   /**
    * The result summary — "Reds won 3–2", "Draw" — set only once this
-   * fixture's 48-hour window has locked (BR-37), exactly as
+   * fixture's result window has locked (BR-37), exactly as
    * `AccountFixtureRow.resultWords` is: a tally still inside its window is
    * openly arguable and must not read as settled.
    */

@@ -5,8 +5,10 @@ import {
   cellMarkerName,
   GATED_FALLBACK_NEVER,
   NOTIFICATION_SWITCHES,
+  RESULT_LOCK_CHOICES,
   supportedTimezones,
 } from "../domain/game-form.js";
+import { DEFAULT_RESULT_LOCK_HOURS_AFTER } from "../domain/result-lock.js";
 import { WEEKDAYS } from "../domain/recurrence/parse.js";
 import type { NotificationType } from "../notify/dedupe-key.js";
 import { cellsWithScope } from "../notify/notification-controls.js";
@@ -136,6 +138,21 @@ const FALLBACK_OPTIONS: readonly (readonly [string, string])[] = [
  * fallback, because the section is edit-only and submits nothing on create.
  */
 const OFFERED_FALLBACK_HOURS = "12";
+
+/**
+ * How long a result stays open to argument, worded from the whistle (M57).
+ *
+ * Built from `RESULT_LOCK_CHOICES` so the select cannot offer a length the
+ * parser refuses — the trap `GATED_FALLBACK_NEVER` exists to avoid, and the
+ * one the mute routes' hand-typed error strings fell into.
+ */
+const LOCK_LABELS: Record<number, string> = {
+  12: "12 hours after full time",
+  24: "24 hours after full time",
+  48: "2 days after full time",
+  72: "3 days after full time",
+  168: "A week after full time",
+};
 
 /**
  * Whether the gating switch renders ticked.
@@ -411,12 +428,26 @@ export function renderGameFormPage(params: GameFormPageParams): string {
       </fieldset>`
     : "";
 
+  const lockOptions = RESULT_LOCK_CHOICES.map((hours) => {
+    const code = String(hours);
+    const selected =
+      (values["resultLockHoursAfter"] ?? String(DEFAULT_RESULT_LOCK_HOURS_AFTER)) === code;
+    return `<option value="${escapeHtml(code)}"${selected ? " selected" : ""}>${escapeHtml(
+      LOCK_LABELS[hours] ?? `${hours} hours after full time`,
+    )}</option>`;
+  }).join("");
+
   const advanced = showAdvanced
     ? `
       <details>
         <summary>Advanced</summary>
         ${field("timezone", "Time zone", `<select id="timezone" name="timezone">${timezoneOptions}</select>`)}
         ${field("venueUrl", "Venue link", textInput("venueUrl", "url"))}
+        ${field(
+          "resultLockHoursAfter",
+          "How long the result stays open to argument",
+          `<select id="resultLockHoursAfter" name="resultLockHoursAfter">${lockOptions}</select>`,
+        )}
       </details>`
     : "";
 

@@ -104,7 +104,7 @@ describe("GET /g/:id/fixtures", () => {
         kicksOffAt: kickoffIn(-72),
       });
       await insertResultClaim(db, locked, viewerId, { outcome: "a", scoreA: 3, scoreB: 2 });
-      // Inside its 48 hours, so the same claim on this one is still arguable.
+      // Inside its window, so the same claim on this one is still arguable.
       const open = await insertFixture(db, gameId, {
         lifecycle: "played",
         kicksOffAt: kickoffIn(-2),

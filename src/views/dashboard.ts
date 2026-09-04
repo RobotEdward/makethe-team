@@ -128,7 +128,7 @@ export interface RecentlyPlayedRow {
   yourSide: string | null;
   /**
    * The result summary — "Reds won 3–2", "Draw" — set only once the fixture's
-   * 48-hour window has locked, exactly as `AccountFixtureRow.resultWords` is
+   * result window has locked, exactly as `AccountFixtureRow.resultWords` is
    * and for the same reason: a tally still inside its window is arguable, and
    * a bare line here would read as settled.
    */

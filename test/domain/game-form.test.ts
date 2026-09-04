@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { localDateToday, parseGameForm, parseNotificationCells, supportedTimezones } from "../../src/domain/game-form.js";
+import {
+  localDateToday,
+  parseGameForm,
+  parseNotificationCells,
+  RESULT_LOCK_CHOICES,
+  supportedTimezones,
+} from "../../src/domain/game-form.js";
 
 /** The minimum a valid submission carries. Individual tests override one key. */
 function body(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -243,6 +249,37 @@ describe("parseGameForm — result-prompt offset", () => {
     expect(errorsFor({ resultPromptOffsetHours: "-1" })).toContain("resultPromptOffsetHours");
     expect(errorsFor({ resultPromptOffsetHours: "49" })).toContain("resultPromptOffsetHours");
     expect(errorsFor({ resultPromptOffsetHours: "later" })).toContain("resultPromptOffsetHours");
+  });
+});
+
+describe("parseGameForm — the result window", () => {
+  it("defaults to 24 hours when the section was not rendered", () => {
+    // The create form has no Advanced section, so nothing about the window is
+    // submitted and BR-37's default stands.
+    const result = parseGameForm(body());
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.values.resultLockHoursAfter).toBe(24);
+  });
+
+  it("accepts every length the form offers", () => {
+    for (const hours of RESULT_LOCK_CHOICES) {
+      const result = parseGameForm(body({ resultLockHoursAfter: String(hours) }));
+      if (!result.ok) throw new Error(`expected ok for ${hours}`);
+      expect(result.values.resultLockHoursAfter).toBe(hours);
+    }
+  });
+
+  /**
+   * Refused rather than clamped to the nearest offered length: a submission
+   * this form could not have produced is a hand-crafted POST, and storing a
+   * window nobody chose is worse than refusing it — the reasoning
+   * `parseMuteDuration` states for the same shape of field.
+   */
+  it("refuses a length it does not offer, including a plausible one", () => {
+    expect(errorsFor({ resultLockHoursAfter: "36" })).toContain("resultLockHoursAfter");
+    expect(errorsFor({ resultLockHoursAfter: "0" })).toContain("resultLockHoursAfter");
+    expect(errorsFor({ resultLockHoursAfter: "-24" })).toContain("resultLockHoursAfter");
+    expect(errorsFor({ resultLockHoursAfter: "forever" })).toContain("resultLockHoursAfter");
   });
 });
 

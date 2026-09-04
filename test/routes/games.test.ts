@@ -895,6 +895,25 @@ describe("the owner notifications matrix on the edit form", () => {
     expect(row!.resultPromptOffsetHours).toBe(10);
   });
 
+  it("saves the result window from Advanced, and shows it selected on reload", async () => {
+    const { cookie, gameId } = await ownedGame();
+    const body: Record<string, string> = {
+      ...VALID,
+      ...NOTIFY_FIELDS,
+      resultLockHoursAfter: "168",
+    };
+
+    expect((await post(`/g/${gameId}/edit`, cookie, body)).status).toBe(303);
+
+    const [row] = await testDb().select().from(games).where(eq(games.id, gameId));
+    expect(row!.resultLockHoursAfter).toBe(168);
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/edit`, { headers: { cookie } })).text();
+    const advanced = html.slice(html.indexOf("<summary>Advanced</summary>"));
+    expect(advanced).toContain('id="resultLockHoursAfter"');
+    expect(advanced).toContain('<option value="168" selected>');
+  });
+
   it("shows a saved-off cell as unticked when the form reloads", async () => {
     const { cookie, gameId } = await ownedGame();
     const body: Record<string, string> = { ...VALID, ...NOTIFY_FIELDS };

@@ -46,9 +46,9 @@ async function querySql<T>(sql: string): Promise<T[]> {
  * *open* a fixture rather than inserting a row that says it is open.
  *
  * Three hours ago clears every fixture's duration (`seedWorld` never sets
- * one above the form's 60-minute default) and stays nowhere near the
- * 48-hour result-lock window (BR-37), so the fixture just retired is still
- * writable.
+ * one above the form's 60-minute default) and stays inside the result-lock
+ * window (BR-37) — 24 hours after full time by default since M57 — so the
+ * fixture just retired is still writable.
  */
 async function playFixture(page: Page, fixtureId: string): Promise<void> {
   const kicksOffAt = Date.now() - 3 * 60 * 60 * 1000;

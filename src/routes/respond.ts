@@ -9,7 +9,7 @@ import {
 } from "../db/queries.js";
 import { isHeldByInviteOrder } from "../db/invite-queries.js";
 import { tokenMutePath, tokenUnmutePath } from "../auth/paths.js";
-import { parseMuteDuration } from "../domain/mute.js";
+import { muteDurationsSentence, parseMuteDuration } from "../domain/mute.js";
 import { clearMute, setMute } from "../domain/set-mute.js";
 import type { MuteControlsOptions } from "../views/mute-controls.js";
 import { fixtures, games, players } from "../db/schema.js";
@@ -776,7 +776,7 @@ respond.post("/r/:token/mute", async (c) => {
   const form = await c.req.parseBody();
   const duration = parseMuteDuration(form["duration"]);
   if (duration === null) {
-    return c.text('Bad Request: "duration" must be one of 2w, 4w, 8w, forever', 400);
+    return c.text(`Bad Request: "duration" must be one of ${muteDurationsSentence()}`, 400);
   }
 
   const { playerId, fixtureId } = verification.payload;

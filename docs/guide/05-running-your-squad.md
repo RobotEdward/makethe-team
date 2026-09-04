@@ -76,8 +76,12 @@ told a time, moving it under them would be worse than leaving it. Rescheduling
 the imminent game is a job for the group chat, or for calling it off — see
 [calling a fixture off](06-calling-a-fixture-off.md).
 
-**Advanced** hides the settings you'll rarely want — the time zone and a link
-to the venue. **Save changes** applies everything at once.
+**Advanced** hides the settings you'll rarely want — the time zone, a link to
+the venue, and how long a result stays open to argument. That last one runs
+from the final whistle and starts at a day, which is enough for most squads;
+stretch it to a week if yours argues by group chat over several evenings. It
+takes effect straight away, including on a fixture you have already played.
+**Save changes** applies everything at once.
 
 ## Choosing what your game sends
 

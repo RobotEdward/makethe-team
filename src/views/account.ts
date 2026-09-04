@@ -41,7 +41,7 @@ export interface AccountFixtureRow {
   myStatusLabel: string;
   /**
    * The result summary — "Reds won 3–2", "Draw" — set only once this
-   * fixture's 48-hour window has locked (BR-37, M25 Task 13). Undefined for
+   * fixture's result window has locked (BR-37, M25 Task 13). Undefined for
    * every other row: an unplayed fixture has no result, and a played one
    * still inside its window is not final yet, so neither gets a line that
    * would read as settled.

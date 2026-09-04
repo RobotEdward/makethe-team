@@ -109,7 +109,15 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result", requirePlayer, async (c) => {
   // with the page re-rendered, not a 404 — the fixture merely stopped taking
   // claims, which is not an entitlement question.
   const claims = await listResultClaims(target.db, target.fixture.id);
-  if (!resultWritable(target.fixture.lifecycle, target.fixture.kicksOffAt, claims.length, now)) {
+  if (
+    !resultWritable(
+      target.fixture.lifecycle,
+      target.fixture,
+      target.game.resultLockHoursAfter,
+      claims.length,
+      now,
+    )
+  ) {
     return renderRefusal(c, target, player.id, now, "That fixture isn't taking a result any more.");
   }
 
@@ -182,7 +190,15 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result/clear", requirePlayer, async (c) 
   if (!electorate.eligibleIds.has(player.id)) return c.text("Not found", 404);
 
   const claims = await listResultClaims(target.db, target.fixture.id);
-  if (!resultWritable(target.fixture.lifecycle, target.fixture.kicksOffAt, claims.length, now)) {
+  if (
+    !resultWritable(
+      target.fixture.lifecycle,
+      target.fixture,
+      target.game.resultLockHoursAfter,
+      claims.length,
+      now,
+    )
+  ) {
     return renderRefusal(c, target, player.id, now, "That fixture isn't taking a result any more.");
   }
 

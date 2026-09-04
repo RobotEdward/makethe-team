@@ -470,11 +470,22 @@ export async function listPastFixturesForGame(
   gameId: string,
   now: Date,
   limit: number,
-): Promise<Array<{ id: string; kicksOffAt: Date; lifecycle: Lifecycle; inCount: number }>> {
+): Promise<
+  Array<{
+    id: string;
+    kicksOffAt: Date;
+    durationMinutes: number;
+    lifecycle: Lifecycle;
+    inCount: number;
+  }>
+> {
   return db
     .select({
       id: fixtures.id,
       kicksOffAt: fixtures.kicksOffAt,
+      // Full time, for the result lock (M57), as `findLastPlayedFixture`
+      // selects it for the same reason.
+      durationMinutes: fixtures.durationMinutes,
       lifecycle: fixtures.lifecycle,
       inCount: fixtures.inCount,
     })
@@ -497,9 +508,15 @@ export async function listPastFixturesForGame(
 export async function findLastPlayedFixture(
   db: Db,
   gameId: string,
-): Promise<{ id: string; kicksOffAt: Date } | null> {
+): Promise<{ id: string; kicksOffAt: Date; durationMinutes: number } | null> {
   const [fixture] = await db
-    .select({ id: fixtures.id, kicksOffAt: fixtures.kicksOffAt })
+    .select({
+      id: fixtures.id,
+      kicksOffAt: fixtures.kicksOffAt,
+      // Full time, for the result lock (M57). The caller already holds the
+      // Game row the offset comes from.
+      durationMinutes: fixtures.durationMinutes,
+    })
     .from(fixtures)
     .where(and(eq(fixtures.gameId, gameId), eq(fixtures.lifecycle, "played")))
     .orderBy(desc(fixtures.kicksOffAt))

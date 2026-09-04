@@ -22,10 +22,11 @@ import {
 const db = testDb();
 
 const KICKOFF = new Date("2026-08-13T19:00:00Z");
-// `resultDeadline` is kickoff + 48h; kept as its own constant here rather than
-// imported from `src/domain/result-lock.ts`, so this suite still catches a
-// change to that window instead of silently tracking it.
-const DEADLINE = new Date(KICKOFF.getTime() + 48 * 60 * 60 * 1000);
+// `resultDeadline` is full time plus the game's own window: the factory's
+// 60-minute fixture and the default 24 hours (M57). Kept as its own constant
+// here rather than imported from `src/domain/result-lock.ts`, so this suite
+// still catches a change to that window instead of silently tracking it.
+const DEADLINE = new Date(KICKOFF.getTime() + (60 + 24 * 60) * 60 * 1000);
 const BEFORE_DEADLINE = new Date(DEADLINE.getTime() - 1);
 const AFTER_DEADLINE = new Date(DEADLINE.getTime() + 1);
 

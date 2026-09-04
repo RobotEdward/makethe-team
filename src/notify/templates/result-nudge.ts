@@ -13,6 +13,16 @@ export interface ResultNudgeEmailPayload {
   gameName: string;
   /** Already formatted in the Game's local timezone by the caller (src/domain/time/zone.ts). Never formatted here. */
   whenLocal: string;
+  /**
+   * When the result stops taking claims, in the Game's local timezone and
+   * formatted by the caller like `whenLocal`.
+   *
+   * A date and not "48 hours after kick-off", which is what this email said
+   * until M57: the window is the owner's own setting now, so a sentence
+   * naming a fixed length would be wrong for every squad that changed it —
+   * and it is the same instant the fixture page shows as its deadline.
+   */
+  closesLocal: string;
   /** Absolute URL of the fixture page (`fixturePath`), built by the caller against `SITE_ORIGIN`. */
   fixtureUrl: string;
   /**
@@ -41,12 +51,12 @@ function href(url: string): string {
  * Render the email asking somebody to record what happened (N-12, BR-22).
  */
 export function renderResultNudgeEmail(payload: ResultNudgeEmailPayload): ResultNudgeEmail {
-  const { playerName, gameName, whenLocal, fixtureUrl, leaveUrl } = payload;
+  const { playerName, gameName, whenLocal, closesLocal, fixtureUrl, leaveUrl } = payload;
 
   const subject = `How did it go? ${gameName}, ${whenLocal}`;
   const ask =
     "Somebody needs to say what the score was. Whoever gets there first, everyone else can agree or put them right.";
-  const closing = "This closes 48 hours after kick-off.";
+  const closing = `This closes on ${closesLocal}.`;
 
   const html = `<!doctype html>
 <html lang="en">

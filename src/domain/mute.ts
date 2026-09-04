@@ -37,6 +37,7 @@ export function isMuted(state: MuteState, now: Date): boolean {
 
 /** What the radio list offers, in the order it renders. */
 export const MUTE_DURATIONS = [
+  { value: "1w", weeks: 1, label: "1 week" },
   { value: "2w", weeks: 2, label: "2 weeks" },
   { value: "4w", weeks: 4, label: "4 weeks" },
   { value: "8w", weeks: 8, label: "8 weeks" },
@@ -64,7 +65,7 @@ export function muteExpiryFor(duration: MuteDuration, now: Date): Date | null {
 }
 
 /**
- * The submitted duration, or `null` if it is not one of the four.
+ * The submitted duration, or `null` if it is not one of the listed ones.
  *
  * A form value is attacker-controlled, and an unrecognised one must not fall
  * through to a default: silently muting for a length nobody chose is worse
@@ -72,4 +73,16 @@ export function muteExpiryFor(duration: MuteDuration, now: Date): Date | null {
  */
 export function parseMuteDuration(value: unknown): MuteDuration | null {
   return MUTE_DURATIONS.some((d) => d.value === value) ? (value as MuteDuration) : null;
+}
+
+/**
+ * What a refused `duration` field is told, built from the list rather than
+ * typed out beside it.
+ *
+ * Both routes that parse a duration used to carry the four values as a string
+ * literal, so M57's fifth choice would have left two error messages naming a
+ * set the parser no longer had.
+ */
+export function muteDurationsSentence(): string {
+  return MUTE_DURATIONS.map((d) => d.value).join(", ");
 }

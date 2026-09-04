@@ -209,7 +209,7 @@ export interface DerivedResult {
  * consistent with the winning outcome, so a losing side's score can never
  * become the winner's.
  *
- * Pure: no clock and no database. The 48-hour window is
+ * Pure: no clock and no database. The result window is
  * `src/domain/result-lock.ts`'s business, and this function is the same
  * answer before and after it.
  */

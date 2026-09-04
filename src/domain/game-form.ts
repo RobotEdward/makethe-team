@@ -1,6 +1,7 @@
 import type { NotificationType } from "../notify/dedupe-key.js";
 import { cellKey, cellsWithScope } from "../notify/notification-controls.js";
 import type { Channel } from "../notify/notifier.js";
+import { DEFAULT_RESULT_LOCK_HOURS_AFTER } from "./result-lock.js";
 import { formatRecurrenceRule, WEEKDAYS, type Weekday } from "./recurrence/parse.js";
 import { formatLocalDate, LocalTimeError, parseLocalTime } from "./time/local.js";
 import { toLocalParts } from "./time/zone.js";
@@ -53,6 +54,20 @@ export const DEFAULT_RESULT_PROMPT_OFFSET_HOURS = 0;
  * error they cannot clear from the form.
  */
 export const GATED_FALLBACK_NEVER = "never";
+
+/**
+ * The windows an owner may pick for how long a result stays arguable (M57,
+ * BR-37), in hours after full time.
+ *
+ * An enumerated list rather than a free number, unlike the two offsets above:
+ * this one decides when a squad's own record stops being editable, and the
+ * costly mistakes are the typos at the edges — a `2` nobody meant that shuts
+ * the argument before anyone gets home, or a `2000` that never shuts it. Any
+ * value not on this list is refused rather than clamped, on the reasoning
+ * `parseMuteDuration` gives: silently storing a window nobody chose is worse
+ * than refusing the submission.
+ */
+export const RESULT_LOCK_CHOICES: readonly number[] = [12, 24, 48, 72, 168];
 
 /**
  * The hidden marker that rides with `gatedInvitesEnabled`'s checkbox (M34).
@@ -140,6 +155,8 @@ export interface GameFormValues {
   reminderLocalTime: string;
   shortWarningOffsetHours: number;
   resultPromptOffsetHours: number;
+  /** Hours after full time before a result locks (BR-37). */
+  resultLockHoursAfter: number;
   gatedInvitesEnabled: boolean;
   /** Hours before kickoff; null is BR-44's "never". */
   gatedFallbackHoursBefore: number | null;
@@ -362,6 +379,15 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
     );
   }
 
+  // Absent is the create form's silence — that form has no Advanced section —
+  // so it takes the default rather than failing.
+  const resultLockHoursAfter = body["resultLockHoursAfter"] === undefined
+    ? DEFAULT_RESULT_LOCK_HOURS_AFTER
+    : integer(body["resultLockHoursAfter"]);
+  if (resultLockHoursAfter === null || !RESULT_LOCK_CHOICES.includes(resultLockHoursAfter)) {
+    fail("resultLockHoursAfter", "Choose one of the offered lengths.");
+  }
+
   // Off unless the section that offers it was submitted with the box ticked.
   // `switchValue` cannot serve here: its absent-means-on default would turn
   // gating on for every game created from the create form, which has no
@@ -417,6 +443,7 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
       reminderLocalTime,
       shortWarningOffsetHours: shortWarningOffsetHours!,
       resultPromptOffsetHours: resultPromptOffsetHours!,
+      resultLockHoursAfter: resultLockHoursAfter!,
       gatedInvitesEnabled,
       gatedFallbackHoursBefore,
     },

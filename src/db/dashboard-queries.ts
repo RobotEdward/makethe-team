@@ -42,6 +42,17 @@ export interface DashboardFixture {
   maxPlayers: number;
   prefersEvenNumbers: boolean;
   shortWarningOffsetHours: number;
+  /**
+   * How long the fixture was scheduled for, and how long after full time its
+   * result stays arguable — together, everything `src/domain/result-lock.ts`
+   * needs to answer whether a played fixture has locked (M57).
+   *
+   * The pair travels on every row rather than being fetched per fixture where
+   * a lock question arises: "Results needed" asks it of up to fifty rows, and
+   * a second query per row is the N+1 this select exists to avoid.
+   */
+  durationMinutes: number;
+  resultLockHoursAfter: number;
   /** The viewer's own response. Never anybody else's. */
   myStatus: ResponseStatus;
   /**
@@ -147,6 +158,8 @@ function selectEntitledFixtures(db: Db, playerId: string, extra?: SQL) {
       maxPlayers: fixtures.maxPlayers,
       prefersEvenNumbers: fixtures.prefersEvenNumbers,
       shortWarningOffsetHours: fixtures.shortWarningOffsetHours,
+      durationMinutes: fixtures.durationMinutes,
+      resultLockHoursAfter: games.resultLockHoursAfter,
       myStatus: responses.status,
       myTeam: responses.team,
       teamsPublishedAt: fixtures.teamsPublishedAt,

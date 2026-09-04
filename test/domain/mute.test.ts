@@ -41,11 +41,12 @@ describe("isMuted", () => {
 });
 
 describe("mute durations", () => {
-  it("offers exactly the four choices the form renders", () => {
-    expect(MUTE_DURATIONS.map((d) => d.value)).toEqual(["2w", "4w", "8w", "forever"]);
+  it("offers exactly the choices the form renders, shortest first", () => {
+    expect(MUTE_DURATIONS.map((d) => d.value)).toEqual(["1w", "2w", "4w", "8w", "forever"]);
   });
 
   it("turns a weeks choice into an instant that many weeks out", () => {
+    expect(muteExpiryFor("1w", now)?.toISOString()).toBe("2026-09-08T12:00:00.000Z");
     expect(muteExpiryFor("2w", now)?.toISOString()).toBe("2026-09-15T12:00:00.000Z");
     expect(muteExpiryFor("4w", now)?.toISOString()).toBe("2026-09-29T12:00:00.000Z");
     expect(muteExpiryFor("8w", now)?.toISOString()).toBe("2026-10-27T12:00:00.000Z");
@@ -55,11 +56,11 @@ describe("mute durations", () => {
     expect(muteExpiryFor("forever", now)).toBe(null);
   });
 
-  it("accepts only the four values, so a hand-crafted POST cannot invent a duration", () => {
+  it("accepts only the listed values, so a hand-crafted POST cannot invent a duration", () => {
     for (const value of MUTE_DURATIONS.map((d) => d.value)) {
       expect(parseMuteDuration(value)).toBe(value);
     }
-    for (const bad of ["", "1w", "100w", "forever ", "FOREVER", undefined]) {
+    for (const bad of ["", "3w", "100w", "forever ", "FOREVER", undefined]) {
       expect(parseMuteDuration(bad)).toBe(null);
     }
   });

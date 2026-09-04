@@ -20,6 +20,7 @@ import {
 import { loadNotificationSettings, type EffectiveSettings } from "./notification-settings.js";
 import type { Notifier } from "./notifier.js";
 import { PUSH_COPY } from "./push-copy.js";
+import { resultDeadline } from "../domain/result-lock.js";
 import { renderResultNudgeEmail } from "./templates/result-nudge.js";
 
 /**
@@ -119,6 +120,7 @@ export async function sendResultNudges(
       kicksOffAt: fixtures.kicksOffAt,
       durationMinutes: fixtures.durationMinutes,
       resultPromptOffsetHours: games.resultPromptOffsetHours,
+      resultLockHoursAfter: games.resultLockHoursAfter,
     })
     .from(fixtures)
     .innerJoin(games, eq(fixtures.gameId, games.id))
@@ -176,7 +178,15 @@ async function nudgeOneFixture(
   notifier: Notifier,
   now: Date,
   responseTokenSecret: string,
-  fixture: { id: string; gameId: string; gameName: string; timezone: string; kicksOffAt: Date; durationMinutes: number },
+  fixture: {
+    id: string;
+    gameId: string;
+    gameName: string;
+    timezone: string;
+    kicksOffAt: Date;
+    durationMinutes: number;
+    resultLockHoursAfter: number;
+  },
   result: ResultNudgeResult,
   settings: EffectiveSettings,
 ): Promise<void> {
@@ -214,6 +224,13 @@ async function nudgeOneFixture(
   };
 
   const whenLocal = formatLocalDateTime(fixture.kicksOffAt, fixture.timezone);
+  // The same instant the fixture page prints as its deadline, through the same
+  // function: an email naming a different one than the page it links to is the
+  // drift this shared derivation exists to stop.
+  const closesLocal = formatLocalDateTime(
+    resultDeadline(fixture, fixture.resultLockHoursAfter),
+    fixture.timezone,
+  );
   const fixtureUrl = `${SITE_ORIGIN}${fixturePath(fixture.gameId, fixture.id)}`;
 
   const pending: PendingNotification[] = [];
@@ -269,7 +286,14 @@ async function nudgeOneFixture(
         responseTokenSecret,
       );
       const leaveUrl = `${SITE_ORIGIN}/leave/${leaveToken}`;
-      const rendered = renderResultNudgeEmail({ playerName: player.name, gameName: fixture.gameName, whenLocal, fixtureUrl, leaveUrl });
+      const rendered = renderResultNudgeEmail({
+        playerName: player.name,
+        gameName: fixture.gameName,
+        whenLocal,
+        closesLocal,
+        fixtureUrl,
+        leaveUrl,
+      });
       const dedupeKey = resultNudgeKey(fixture.id, playerId);
       pending.push({
         logId: crypto.randomUUID(),

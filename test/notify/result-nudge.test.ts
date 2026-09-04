@@ -6,6 +6,7 @@ import { auditLog, notificationLog } from "../../src/db/schema.js";
 import { pushKey, resultNudgeKey } from "../../src/notify/dedupe-key.js";
 import { DAILY_CEILING_REASON } from "../../src/notify/quota.js";
 import type { Message, Notifier, PushMessage, SendResult } from "../../src/notify/notifier.js";
+import { formatLocalDateTime } from "../../src/domain/time/zone.js";
 import { RESULT_NUDGE_WINDOW_MS, sendResultNudges } from "../../src/notify/send-result-nudge.js";
 import {
   requireEmailMessage,
@@ -391,6 +392,37 @@ describe("sendResultNudges", () => {
 
     const email = requireEmailMessage(notifier.all[0]!);
     expect(email.html).toContain(`https://makethe.team/g/${gameId}/f/${fixtureId}`);
+  });
+
+  /**
+   * The closing line named a fixed "48 hours after kick-off" until M57, when
+   * the window became the owner's own setting. A squad that gave itself a week
+   * must not be told in writing that it has two days.
+   */
+  it("names this game's own closing date, not a fixed length", async () => {
+    const gameId = await insertGame(db, { resultLockHoursAfter: 168 });
+    const alice = await insertPlayer(db, { name: "Alice", email: "alice@example.com" });
+    await insertMembership(db, gameId, alice);
+    const fixtureId = await insertFixture(db, gameId, {
+      lifecycle: "played",
+      kicksOffAt: KICKOFF,
+      durationMinutes: DURATION_MINUTES,
+    });
+    await insertResponse(db, fixtureId, alice, { status: "in" });
+
+    const notifier = new RecordingNotifier();
+    await sendResultNudges(db, notifier, WITHIN_WINDOW_NOW, SECRET);
+
+    // Full time plus a week, in the game's timezone (TR-5) — the same instant
+    // and the same formatting the fixture page prints as its deadline.
+    const closes = formatLocalDateTime(
+      new Date(FULL_TIME.getTime() + 168 * 60 * 60 * 1000),
+      "Europe/London",
+    );
+    const email = requireEmailMessage(notifier.all[0]!);
+    expect(email.html).toContain(`This closes on ${closes}.`);
+    expect(email.text).toContain(`This closes on ${closes}.`);
+    expect(email.html).not.toContain("48 hours after kick-off");
   });
 
   it("carries a BR-22 leave link scoped to the game, not the fixture", async () => {

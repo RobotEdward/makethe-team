@@ -217,6 +217,18 @@ export const games = sqliteTable("games", {
    */
   resultPromptOffsetHours: integer("result_prompt_offset_hours").notNull().default(0),
   /**
+   * M57, BR-37. How long after full time this Game's results stay open to
+   * argument, in hours. Until M57 there was no setting: every result locked a
+   * fixed 48 hours after *kickoff*, so a squad that played for two hours had
+   * two fewer to argue in than one that played for one.
+   *
+   * Read live from `games` rather than copied onto each fixture, unlike
+   * `durationMinutes` beside it. `updateGame` propagates a copied column only
+   * to *scheduled* fixtures, and an owner changes this setting because of the
+   * fixture played last night — the one a copy could never reach.
+   */
+  resultLockHoursAfter: integer("result_lock_hours_after").notNull().default(24),
+  /**
    * M34, BR-39. Whether this Game asks its squad in priority order rather than
    * all at once. Off by default, so every Game that existed before this
    * milestone behaves exactly as it did.

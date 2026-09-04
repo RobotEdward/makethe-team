@@ -117,7 +117,7 @@ async function seedOpenFixtureOwnedBy(ownerPlayerId: string): Promise<{ gameId: 
  * A played fixture (M25) in a game owned by `ownerPlayerId`, with `p-0`
  * already `in` and having filed a claim for side "a" — so the organiser's
  * own page has a candidate to show and, since kickoff was only an hour ago,
- * the 48-hour window (`RESULT_LOCK_WINDOW_MS`) is still open to agree with.
+ * the result window (`resultDeadline`) is still open to agree with.
  *
  * Deliberately does not give `ownerPlayerId` a `responses` row: an owner is
  * part of the electorate (`resultElectorate` counts every active owner)

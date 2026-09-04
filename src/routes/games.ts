@@ -62,7 +62,7 @@ import { cancellationRecipients } from "../domain/cancel-fixture.js";
 import { TERMINAL_LIFECYCLES } from "../domain/lifecycle.js";
 import { sendCancellationEmails } from "../notify/send-cancellation.js";
 import { renderArchiveGamePage } from "../views/archive-game.js";
-import { isMuted, parseMuteDuration } from "../domain/mute.js";
+import { isMuted, muteDurationsSentence, parseMuteDuration } from "../domain/mute.js";
 import { squadSignals } from "../domain/presence.js";
 import { effectiveMode, isPickerMode, mayPick, mayPublish } from "../domain/picker.js";
 import { clearMute, setMute } from "../domain/set-mute.js";
@@ -208,7 +208,7 @@ gamesRoutes.post(NEW_GAME_PATH, requirePlayer, async (c) => {
  */
 async function lastResultFor(
   db: Db,
-  game: { id: string; teamAName: string; teamBName: string },
+  game: { id: string; teamAName: string; teamBName: string; resultLockHoursAfter: number },
   now: Date,
 ): Promise<{ fixtureId: string; words: string } | null> {
   const last = await findLastPlayedFixture(db, game.id);
@@ -216,7 +216,7 @@ async function lastResultFor(
 
   const claims = await listResultClaims(db, last.id);
   if (claims.length === 0) return null;
-  if (!isResultLocked(last.kicksOffAt, claims.length, now)) return null;
+  if (!isResultLocked(last, game.resultLockHoursAfter, claims.length, now)) return null;
 
   const { organiserIds } = await resultElectorate(db, game.id, last.id);
   const derived = deriveResult(claims, organiserIds);
@@ -373,6 +373,8 @@ gamesRoutes.get("/g/:id/fixtures", requirePlayer, async (c) => {
             fixtureId: row.fixtureId,
             gameId: row.gameId,
             kicksOffAt: row.kicksOffAt,
+            durationMinutes: row.durationMinutes,
+            resultLockHoursAfter: row.resultLockHoursAfter,
             lifecycle: row.lifecycle,
             inCount: row.inCount,
           }),
@@ -381,13 +383,15 @@ gamesRoutes.get("/g/:id/fixtures", requirePlayer, async (c) => {
           fixtureId: row.id,
           gameId: game.id,
           kicksOffAt: row.kicksOffAt,
+          durationMinutes: row.durationMinutes,
+          resultLockHoursAfter: game.resultLockHoursAfter,
           lifecycle: row.lifecycle,
           inCount: row.inCount,
         }));
 
   // The same derivation the account history and the dashboard use, so no two
   // surfaces can name one result differently — and gated on the same lock, so
-  // a tally still inside its 48 hours shows no line at all rather than a
+  // a tally still inside this Game's window shows no line at all rather than a
   // settled-looking one.
   const words = await resultWordsForLockedRows(db, listed, now);
 
@@ -631,7 +635,7 @@ gamesRoutes.post("/g/:id/mute", requirePlayer, async (c) => {
   const form = await c.req.parseBody();
   const duration = parseMuteDuration(form["duration"]);
   if (duration === null) {
-    return c.text('Bad Request: "duration" must be one of 2w, 4w, 8w, forever', 400);
+    return c.text(`Bad Request: "duration" must be one of ${muteDurationsSentence()}`, 400);
   }
 
   // The fixture ids the mute declined on the player's behalf. `SetMuteResult`
@@ -1094,6 +1098,7 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
         reminderLocalTime: game.reminderLocalTime,
         shortWarningOffsetHours: String(game.shortWarningOffsetHours),
         resultPromptOffsetHours: String(game.resultPromptOffsetHours),
+        resultLockHoursAfter: String(game.resultLockHoursAfter),
         gatedInvitesEnabled: game.gatedInvitesEnabled ? "on" : "",
         gatedFallbackHoursBefore:
           game.gatedFallbackHoursBefore === null
@@ -1418,13 +1423,19 @@ async function ownerResultParams(
     listResultClaims(db, fixture.id),
     resultElectorate(db, game.id, fixture.id),
   ]);
-  const deadline = resultDeadline(fixture.kicksOffAt);
+  const deadline = resultDeadline(fixture, game.resultLockHoursAfter);
   return {
     names: outcomeNames(game),
     candidates: tally(claims),
     derived: deriveResult(claims, electorate.organiserIds),
-    locked: isResultLocked(fixture.kicksOffAt, claims.length, now),
-    writable: resultWritable(fixture.lifecycle, fixture.kicksOffAt, claims.length, now),
+    locked: isResultLocked(fixture, game.resultLockHoursAfter, claims.length, now),
+    writable: resultWritable(
+      fixture.lifecycle,
+      fixture,
+      game.resultLockHoursAfter,
+      claims.length,
+      now,
+    ),
     eligible: electorate.eligibleIds.has(viewerPlayerId),
     rostered: fixture.teamsPublishedAt !== null,
     yourPlayerId: viewerPlayerId,
@@ -1706,13 +1717,19 @@ export async function renderPlayerFixture(
             listResultClaims(db, fixtureId),
             resultElectorate(db, game.id, fixtureId),
           ]);
-          const deadline = resultDeadline(fixture.kicksOffAt);
+          const deadline = resultDeadline(fixture, game.resultLockHoursAfter);
           return {
             names: outcomeNames(game),
             candidates: tally(claims),
             derived: deriveResult(claims, electorate.organiserIds),
-            locked: isResultLocked(fixture.kicksOffAt, claims.length, now),
-            writable: resultWritable(fixture.lifecycle, fixture.kicksOffAt, claims.length, now),
+            locked: isResultLocked(fixture, game.resultLockHoursAfter, claims.length, now),
+            writable: resultWritable(
+              fixture.lifecycle,
+              fixture,
+              game.resultLockHoursAfter,
+              claims.length,
+              now,
+            ),
             eligible: electorate.eligibleIds.has(viewerPlayerId),
             rostered: fixture.teamsPublishedAt !== null,
             yourPlayerId: viewerPlayerId,

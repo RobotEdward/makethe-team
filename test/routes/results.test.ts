@@ -1,7 +1,7 @@
 import { SELF } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditLog, fixtureResultClaims, players } from "../../src/db/schema.js";
+import { auditLog, fixtureResultClaims, games, players } from "../../src/db/schema.js";
 import {
   insertFixture,
   insertGame,
@@ -36,8 +36,8 @@ async function viewerSession(): Promise<{ cookie: string; viewerId: string }> {
 /**
  * A played fixture the viewer was `in` for, in a game owned by someone else —
  * the ordinary case of a squad member with standing to file (BR-37 §6).
- * `kickoffIn(-24)` keeps the 48-hour window open: the deadline is 24 hours
- * from now, not yet passed.
+ * `kickoffIn(-24)` keeps the window open: full time was 23 hours ago, so the
+ * default 24-hour deadline (M57) is an hour from now, not yet passed.
  */
 async function seedPlayedFixtureFor(viewerId: string): Promise<{ gameId: string; fixtureId: string }> {
   const db = testDb();
@@ -238,7 +238,7 @@ describe("POST /g/:id/f/:fixtureId/result (M25)", () => {
     const gameId = await insertGame(db);
     await insertMembership(db, gameId, otherOwner, { role: "owner" });
     await insertMembership(db, gameId, viewerId);
-    // Kicked off 72 hours ago: the 48-hour window closed a day ago.
+    // Kicked off 72 hours ago: the default 24-hour window closed two days ago.
     const fixtureId = await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt: kickoffIn(-72) });
     await insertResponse(db, fixtureId, viewerId, { status: "in" });
     // Somebody filed, so `isResultLocked` is true rather than the empty case.
@@ -261,6 +261,47 @@ describe("POST /g/:id/f/:fixtureId/result (M25)", () => {
       .from(fixtureResultClaims)
       .where(and(eq(fixtureResultClaims.fixtureId, fixtureId), eq(fixtureResultClaims.playerId, viewerId)));
     expect(rows).toHaveLength(0);
+  });
+
+  /**
+   * The reason `result_lock_hours_after` lives on `games` and is read live,
+   * rather than being copied onto each fixture the way `duration_minutes` is.
+   * `updateGame` propagates a copied column only to *scheduled* fixtures — and
+   * an owner widens this setting because of the fixture played last night,
+   * which is exactly the one a copy could never reach.
+   */
+  it("applies an owner's longer window to a fixture that has already been played", async () => {
+    const { cookie, viewerId } = await viewerSession();
+    const db = testDb();
+    const otherOwner = await insertPlayer(db);
+    const gameId = await insertGame(db);
+    await insertMembership(db, gameId, otherOwner, { role: "owner" });
+    await insertMembership(db, gameId, viewerId);
+    // Full time was 71 hours ago: past the default 24, inside a week.
+    const fixtureId = await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt: kickoffIn(-72) });
+    await insertResponse(db, fixtureId, viewerId, { status: "in" });
+    const otherPlayer = await insertPlayer(db);
+    await insertMembership(db, gameId, otherPlayer);
+    await insertResponse(db, fixtureId, otherPlayer, { status: "in" });
+    await insertResultClaim(db, fixtureId, otherPlayer, { outcome: "a" });
+
+    // Refused first, so the widening below is what changes the answer rather
+    // than the seed having been writable all along.
+    expect((await appPost(`/g/${gameId}/f/${fixtureId}/result`, { outcome: "b" }, cookie)).status)
+      .toBe(422);
+
+    await db.update(games).set({ resultLockHoursAfter: 168 }).where(eq(games.id, gameId));
+
+    const response = await appPost(`/g/${gameId}/f/${fixtureId}/result`, { outcome: "b" }, cookie);
+
+    expect(response.status).toBe(303);
+    const [row] = await db
+      .select()
+      .from(fixtureResultClaims)
+      .where(
+        and(eq(fixtureResultClaims.fixtureId, fixtureId), eq(fixtureResultClaims.playerId, viewerId)),
+      );
+    expect(row).toMatchObject({ outcome: "b" });
   });
 
   it("422s half a score, and writes nothing", async () => {
@@ -290,9 +331,8 @@ describe("POST /g/:id/f/:fixtureId/result (M25)", () => {
     const db = testDb();
     const gameId = await insertGame(db);
     await insertMembership(db, gameId, viewerId, { role: "owner" });
-    // Kicked off 72 hours ago and already carrying a claim, so the 48-hour
-    // window is shut (`isResultLocked`) rather than the empty, still-writable
-    // case.
+    // Kicked off 72 hours ago and already carrying a claim, so the window is
+    // shut (`isResultLocked`) rather than the empty, still-writable case.
     const fixtureId = await insertFixture(db, gameId, { lifecycle: "played", kicksOffAt: kickoffIn(-72) });
     const otherPlayer = await insertPlayer(db);
     await insertMembership(db, gameId, otherPlayer);

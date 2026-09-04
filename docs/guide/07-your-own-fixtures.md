@@ -68,10 +68,11 @@ each with its own backers, until enough of the squad has settled on one. Typed
 something by mistake? **Withdraw my answer** takes your claim back off the
 board.
 
-Nothing is final straight away. The result locks two days after kick-off, so
-there's time for the squad to agree on it — and if the fixture's teams were
-never picked in the app, the locked result says so rather than guessing who
-played on which side.
+Nothing is final straight away. The result locks a day after the final
+whistle, so there's time for the squad to agree on it — and if the fixture's
+teams were never picked in the app, the locked result says so rather than
+guessing who played on which side. Your organiser can give you longer: the
+fixture page says when this one closes.
 
 ## Games you've already played
 

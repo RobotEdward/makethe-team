@@ -1,0 +1,1 @@
+ALTER TABLE `games` ADD `result_lock_hours_after` integer DEFAULT 24 NOT NULL;

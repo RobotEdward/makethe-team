@@ -19,6 +19,11 @@ export interface ResultSummaryRow {
   fixtureId: string;
   gameId: string;
   kicksOffAt: Date;
+  /** With `kicksOffAt`, full time — where the lock is measured from (M57). */
+  durationMinutes: number;
+  /** This Game's `result_lock_hours_after`, carried on the row for the same
+   * reason every other column here is: one read for the whole list. */
+  resultLockHoursAfter: number;
   lifecycle: Lifecycle;
 }
 
@@ -64,7 +69,12 @@ export async function resultWordsForLockedRows(
   }
 
   const locked = played.filter((fixture) =>
-    isResultLocked(fixture.kicksOffAt, claimsByFixture.get(fixture.fixtureId)?.length ?? 0, now),
+    isResultLocked(
+      fixture,
+      fixture.resultLockHoursAfter,
+      claimsByFixture.get(fixture.fixtureId)?.length ?? 0,
+      now,
+    ),
   );
   if (locked.length === 0) return new Map();
 

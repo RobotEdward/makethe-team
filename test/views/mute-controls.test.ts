@@ -10,11 +10,12 @@ const OFF = {
 };
 
 describe("renderMuteControls, switched off", () => {
-  it("offers exactly the four durations", () => {
+  it("offers exactly the five durations", () => {
     const html = renderMuteControls(OFF);
-    for (const value of ["2w", "4w", "8w", "forever"]) {
+    for (const value of ["1w", "2w", "4w", "8w", "forever"]) {
       expect(html).toContain(`value="${value}"`);
     }
+    expect(html).toContain("1 week");
     expect(html).toContain("2 weeks");
     expect(html).toContain("4 weeks");
     expect(html).toContain("8 weeks");

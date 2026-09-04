@@ -4,7 +4,7 @@ import { chunk, INSERT_CHUNK_SIZE } from "../db/chunk.js";
 import type { Db } from "../db/client.js";
 import { listTeamAssignments } from "../db/queries.js";
 import { listResultClaims, resultElectorate } from "../db/result-queries.js";
-import { fixtureResults, fixtures } from "../db/schema.js";
+import { fixtureResults, fixtures, games } from "../db/schema.js";
 import { deriveResult } from "../domain/result.js";
 import { isResultLocked, resultLockedAt } from "../domain/result-lock.js";
 import { announcementOutstanding } from "../domain/teams.js";
@@ -60,8 +60,18 @@ export async function materialiseResults(db: Db, now: Date): Promise<Materialise
   const outcome: MaterialiseResultsOutcome = { considered: 0, written: 0, failures: [] };
 
   const played = await db
-    .select({ id: fixtures.id, gameId: fixtures.gameId, kicksOffAt: fixtures.kicksOffAt })
+    .select({
+      id: fixtures.id,
+      gameId: fixtures.gameId,
+      kicksOffAt: fixtures.kicksOffAt,
+      durationMinutes: fixtures.durationMinutes,
+      // The lock window is the Game's, read live (M57). Joined here rather
+      // than fetched inside `materialiseOne`, which would be one query per
+      // candidate — the N+1 this select's own chunking exists to avoid.
+      resultLockHoursAfter: games.resultLockHoursAfter,
+    })
     .from(fixtures)
+    .innerJoin(games, eq(games.id, fixtures.gameId))
     .where(eq(fixtures.lifecycle, "played"));
   if (played.length === 0) return outcome;
 
@@ -131,11 +141,17 @@ export async function materialiseResults(db: Db, now: Date): Promise<Materialise
  */
 async function materialiseOne(
   db: Db,
-  candidate: { id: string; gameId: string; kicksOffAt: Date },
+  candidate: {
+    id: string;
+    gameId: string;
+    kicksOffAt: Date;
+    durationMinutes: number;
+    resultLockHoursAfter: number;
+  },
   now: Date,
 ): Promise<boolean> {
   const claims = await listResultClaims(db, candidate.id);
-  if (!isResultLocked(candidate.kicksOffAt, claims.length, now)) return false;
+  if (!isResultLocked(candidate, candidate.resultLockHoursAfter, claims.length, now)) return false;
 
   const { eligibleIds, organiserIds } = await resultElectorate(db, candidate.gameId, candidate.id);
   const derived = deriveResult(claims, organiserIds);
@@ -159,7 +175,7 @@ async function materialiseOne(
   // never surface it.
   const assignments = await listTeamAssignments(db, candidate.id);
 
-  const lockedAt = resultLockedAt(candidate.kicksOffAt, claims);
+  const lockedAt = resultLockedAt(candidate, candidate.resultLockHoursAfter, claims);
   // Same guarantee as `derived` above: claims is non-empty here, so
   // `resultLockedAt` cannot return null.
   if (lockedAt === null) return false;
