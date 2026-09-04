@@ -46,6 +46,23 @@ const LATER_KICKOFF = new Date("2030-06-20T18:00:00Z");
 /** Passed to `openFixture` as its `openedAt`; nothing asserted depends on it. */
 const OPENED_AT = new Date("2030-06-01T09:00:00Z");
 
+/**
+ * The one test in this file that seeds a hundred-odd games, given room to do
+ * it on a machine it is not alone on.
+ *
+ * Vitest's default is 5s and every other test here is nowhere near it — this
+ * one runs in well under a second locally. On 4 September 2026 it timed out on
+ * CI anyway, alongside an unrelated heavy test in `signin.test.ts` that does
+ * not touch this route at all: a contended GitHub runner is enough to stretch
+ * a second into six. The deploy that failed was a view change, and reading a
+ * red pipeline as a broken feature costs more than the seconds this buys.
+ *
+ * Raised here rather than globally on purpose. The 5s default is what catches
+ * a test that has actually hung, and it should keep catching them everywhere
+ * it is not demonstrably wrong.
+ */
+const HEAVY_SEED_TIMEOUT_MS = 30_000;
+
 interface Seeded {
   gameId: string;
   fixtureId: string;
@@ -1357,7 +1374,7 @@ describe("GET /app — results needed", () => {
     expect(response.status).toBe(200);
     const body = await response.text();
     expect(body).toContain("Results needed");
-  });
+  }, HEAVY_SEED_TIMEOUT_MS);
 });
 
 /**

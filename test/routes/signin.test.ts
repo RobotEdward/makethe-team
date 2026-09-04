@@ -66,6 +66,18 @@ import {
 const NOT_ALLOWED = "stranger@example.com";
 
 /**
+ * Room for the TR-16 sweep, which renders every reachable page in one test.
+ *
+ * Vitest's default is 5s and this runs in well under a second locally, but on
+ * 4 September 2026 it timed out on CI alongside an unrelated heavy test in
+ * `dashboard.test.ts` — a contended GitHub runner is enough to stretch a
+ * second into six, and both failures blocked a deploy that had nothing to do
+ * with either. Raised on the two tests that demonstrably need it rather than
+ * globally: the 5s default is what catches a test that has actually hung.
+ */
+const MANY_PAGES_TIMEOUT_MS = 30_000;
+
+/**
  * The exact bytes `layout()` emits for the site-wide service worker
  * registration (M13 Task 5) — `layout.ts` renders `SERVICE_WORKER_JS` as a
  * bare, attribute-free `<script>` on every page, unconditionally. Every
@@ -1439,7 +1451,7 @@ describe("no password field anywhere (TR-16)", () => {
     }
 
     pinRoutesToPages(pages.map((page) => page.name));
-  });
+  }, MANY_PAGES_TIMEOUT_MS);
 });
 
 /**
