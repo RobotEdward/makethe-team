@@ -1213,6 +1213,7 @@ describe("the capacity bar", () => {
     const playerHtml = renderPlayerGamePage({
       // No played fixtures here, so no standings (M49).
       standings: [],
+      standingsSort: "points" as const,
       nav: { isAdmin: false, current: "games" } as const,
       mute: {
         muteAction: "/g/g-1/mute",

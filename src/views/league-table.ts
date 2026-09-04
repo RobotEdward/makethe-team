@@ -1,4 +1,10 @@
-import { leaguePositions, type LeagueRow } from "../domain/league-table.js";
+import {
+  DEFAULT_STANDINGS_SORT,
+  leaguePositions,
+  sortStandings,
+  type LeagueRow,
+  type StandingsSort,
+} from "../domain/league-table.js";
 import { escapeHtml } from "./layout.js";
 
 /**
@@ -28,6 +34,38 @@ function winPercentWords(percent: number | null): string {
 }
 
 /**
+ * One column heading: a link to sort by it, or plain text when it is already
+ * the sort (M59).
+ *
+ * The active heading is deliberately not a link. A link that reloads the page
+ * you are on says "this does something" and then does nothing, and the way
+ * back to the league order is the Pts heading, which is a link whenever it is
+ * not the sort.
+ *
+ * `aria-sort` goes on the `th` and the arrow beside it is `aria-hidden`: the
+ * two say the same thing, and a screen reader announcing "down arrow" after
+ * "sorted descending" is the same fact twice.
+ *
+ * The label keeps its `abbr`, so "W" is still expandable to "Won" whether or
+ * not the column is the one being sorted on. It is markup, and the only
+ * interpolation on this page that is not escaped — every caller is a literal
+ * a few lines below, and nothing player-supplied may ever be passed here.
+ */
+function sortableHeading(
+  column: StandingsSort,
+  label: string,
+  columnClass: string,
+  active: StandingsSort,
+): string {
+  const ascending = column === "player";
+  if (column === active) {
+    const arrow = ascending ? "\u25b2" : "\u25bc";
+    return `<th scope="col" class="${escapeHtml(columnClass)}" aria-sort="${ascending ? "ascending" : "descending"}">${label}<span class="sort-mark" aria-hidden="true">${arrow}</span></th>`;
+  }
+  return `<th scope="col" class="${escapeHtml(columnClass)}"><a class="sort-link" href="${escapeHtml(`?sort=${column}`)}">${label}</a></th>`;
+}
+
+/**
  * "Standings" — the squad's league table (M49), shared by the member's game
  * page and the organiser's so the two roles cannot come to rank one squad two
  * ways.
@@ -41,6 +79,13 @@ function winPercentWords(percent: number | null): string {
  *
  * The viewer's own row is marked rather than moved: a league table whose
  * fourth place is printed at the top is no longer a league table.
+ *
+ * **Sorted by whichever column the viewer picked (M59), but numbered from the
+ * league order.** Under the default sort the position column is
+ * `leaguePositions` — shared places and all, for the reason that function
+ * gives. Under any other it is the row number: a position column reading 3, 1,
+ * 5 beside rows ordered by appearances is two orderings printed on one table,
+ * and the reader has no way to tell which one the page means.
  *
  * **Eight columns on a phone, and the position is one of them (M55).** The
  * table had no rank at all — the one column a league table exists to publish —
@@ -64,19 +109,25 @@ function winPercentWords(percent: number | null): string {
 export function renderStandingsSection(
   standings: readonly LeagueRow[] | null,
   viewerPlayerId: string,
+  sort: StandingsSort = DEFAULT_STANDINGS_SORT,
 ): string {
   if (standings === null || standings.length === 0) return "";
 
-  const positions = leaguePositions(standings);
+  // Positions come off the league order, always, and the rows off the sorted
+  // copy — which is why this reads `standings` before re-sorting it.
+  const positions =
+    sort === DEFAULT_STANDINGS_SORT
+      ? leaguePositions(standings).map(String)
+      : standings.map((_row, index) => String(index + 1));
 
-  const rows = standings
+  const rows = sortStandings(standings, sort)
     .map((row, index) => {
       // Marked, not reordered. `class="you"` on the row rather than a badge in
       // the cell: the whole line is the thing being pointed at.
       const you = row.playerId === viewerPlayerId ? ` class="you"` : "";
       return `
       <tr${you}>
-        <td class="rank">${escapeHtml(String(positions[index]))}</td>
+        <td class="rank">${escapeHtml(positions[index] ?? "")}</td>
         <td class="league-player"><span class="league-name" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</span></td>
         <td class="count">${escapeHtml(String(row.played))}</td>
         <td class="count">${escapeHtml(String(row.won))}</td>
@@ -96,14 +147,14 @@ export function renderStandingsSection(
         <thead>
           <tr>
             <th scope="col" class="rank"><abbr title="Position">#</abbr></th>
-            <th scope="col" class="league-player">Player</th>
-            <th scope="col" class="count"><abbr title="Played">P</abbr></th>
-            <th scope="col" class="count"><abbr title="Won">W</abbr></th>
-            <th scope="col" class="count"><abbr title="Lost">L</abbr></th>
-            <th scope="col" class="count"><abbr title="Drawn">D</abbr></th>
-            <th scope="col" class="count"><abbr title="Goal difference">GD</abbr></th>
-            <th scope="col" class="count win-pct"><abbr title="Win percentage">Win%</abbr></th>
-            <th scope="col" class="count"><abbr title="Points">Pts</abbr></th>
+            ${sortableHeading("player", "Player", "league-player", sort)}
+            ${sortableHeading("played", `<abbr title="Played">P</abbr>`, "count", sort)}
+            ${sortableHeading("won", `<abbr title="Won">W</abbr>`, "count", sort)}
+            ${sortableHeading("lost", `<abbr title="Lost">L</abbr>`, "count", sort)}
+            ${sortableHeading("drawn", `<abbr title="Drawn">D</abbr>`, "count", sort)}
+            ${sortableHeading("gd", `<abbr title="Goal difference">GD</abbr>`, "count", sort)}
+            ${sortableHeading("winpct", `<abbr title="Win percentage">Win%</abbr>`, "count win-pct", sort)}
+            ${sortableHeading("points", `<abbr title="Points">Pts</abbr>`, "count", sort)}
           </tr>
         </thead>
         <tbody>${rows}</tbody>

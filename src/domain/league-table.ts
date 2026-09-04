@@ -83,14 +83,26 @@ export function buildLeagueTable(tallies: readonly LeagueTally[]): LeagueRow[] {
         winPercent: settled === 0 ? null : (tally.won / settled) * 100,
       };
     })
-    .sort(
-      (left, right) =>
-        right.points - left.points ||
-        right.goalDifference - left.goalDifference ||
-        right.won - left.won ||
-        left.name.localeCompare(right.name) ||
-        (left.playerId < right.playerId ? -1 : left.playerId > right.playerId ? 1 : 0),
-    );
+    .sort(byLeagueOrder);
+}
+
+/**
+ * The league order itself: points, goal difference, wins, then name and
+ * player id to make the comparator total (see `buildLeagueTable`).
+ *
+ * Named rather than inline because `sortStandings` runs it underneath every
+ * other column. Two copies of a league's tiebreak are two things that can
+ * disagree, and the disagreement would show as a row that moves when the
+ * column it is sorted on says it should not.
+ */
+function byLeagueOrder(left: LeagueRow, right: LeagueRow): number {
+  return (
+    right.points - left.points ||
+    right.goalDifference - left.goalDifference ||
+    right.won - left.won ||
+    left.name.localeCompare(right.name) ||
+    (left.playerId < right.playerId ? -1 : left.playerId > right.playerId ? 1 : 0)
+  );
 }
 
 /**
@@ -119,4 +131,96 @@ export function leaguePositions(standings: readonly LeagueRow[]): number[] {
           other.won === row.won,
       ) + 1,
   );
+}
+
+/**
+ * The column a player has the standings sorted by (M59).
+ *
+ * `points` is the league order — the table as `buildLeagueTable` leaves it —
+ * so it is the default and the value the Pts heading links back to. There is
+ * no separate key for the position column: a sort by position *is* a sort by
+ * points, and a second name for it would be a second thing to keep in step.
+ */
+export const STANDINGS_SORTS = [
+  "points",
+  "player",
+  "played",
+  "won",
+  "lost",
+  "drawn",
+  "gd",
+  "winpct",
+] as const;
+
+export type StandingsSort = (typeof STANDINGS_SORTS)[number];
+
+export const DEFAULT_STANDINGS_SORT: StandingsSort = "points";
+
+/**
+ * A stored or submitted sort, or the league order when it is not one we know.
+ *
+ * `players.standings_sort` is `text` with no CHECK constraint, so its
+ * TypeScript type is a claim about the schema and not about the rows: a value
+ * written by a release that offered a column this one has dropped is an
+ * ordinary reading, and so is a hand-typed query string. Both land on the
+ * default rather than throwing on a page somebody is only looking at.
+ *
+ * A `Set.has` rather than a lookup object, for the reason `CHANNEL_WORDING`
+ * in `src/routes/games.ts` gives: `"toString"` and `"__proto__"` resolve on an
+ * object literal's prototype chain and would be waved through.
+ */
+const KNOWN_SORTS: ReadonlySet<string> = new Set(STANDINGS_SORTS);
+
+/** Whether a submitted value names a column this table has. */
+export function isStandingsSort(value: string): value is StandingsSort {
+  return KNOWN_SORTS.has(value);
+}
+
+export function standingsSortOrDefault(value: string | null | undefined): StandingsSort {
+  return value !== null && value !== undefined && isStandingsSort(value)
+    ? value
+    : DEFAULT_STANDINGS_SORT;
+}
+
+/**
+ * What each column is worth to the sort. Higher sorts first — which is why
+ * `winpct` maps a player with nothing settled to `-1` rather than to nought:
+ * null means "no games settled" and nought means "settled and won none", and
+ * sorting the first as the second would rank a blank record above a real one.
+ */
+const SORT_VALUE: Record<Exclude<StandingsSort, "player" | "points">, (row: LeagueRow) => number> = {
+  played: (row) => row.played,
+  won: (row) => row.won,
+  lost: (row) => row.lost,
+  drawn: (row) => row.drawn,
+  gd: (row) => row.goalDifference,
+  winpct: (row) => row.winPercent ?? -1,
+};
+
+/**
+ * The standings re-sorted by one column, best first (M59).
+ *
+ * A copy: the caller's array is the league order, and the position column is
+ * still numbered from it.
+ *
+ * Every column sorts downwards — most played, most wins, most *losses* — bar
+ * the player's name, which reads A to Z. That is not an inconsistency to
+ * tidy: a player clicking L is asking who loses most, and a name column
+ * sorted Z to A is nobody's question.
+ *
+ * The league order runs underneath all of them, so the comparator stays total
+ * for the reason `buildLeagueTable`'s does — two players level on the sorted
+ * column must not swap places between reloads.
+ */
+export function sortStandings(
+  standings: readonly LeagueRow[],
+  sort: StandingsSort,
+): LeagueRow[] {
+  const rows = [...standings];
+  if (sort === "points") return rows.sort(byLeagueOrder);
+  if (sort === "player") {
+    return rows.sort((left, right) => left.name.localeCompare(right.name) || byLeagueOrder(left, right));
+  }
+  const value = SORT_VALUE[sort];
+  return rows.sort((left, right) => value(right) - value(left) || byLeagueOrder(left, right));
 }

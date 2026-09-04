@@ -16,6 +16,8 @@ import { renderOwnerFixturePage } from "../src/views/owner-fixture.js";
 import { renderPastFixturesPage } from "../src/views/past-fixtures.js";
 import { renderPickerPage } from "../src/views/picker-page.js";
 import { squadStatusLabel } from "../src/views/squad-row.js";
+import { renderStandingsSection } from "../src/views/league-table.js";
+import { buildLeagueTable, standingsSortOrDefault } from "../src/domain/league-table.js";
 import { audienceSelectsStatus } from "../src/domain/broadcast-audience.js";
 import { deriveResult, tally } from "../src/domain/result.js";
 import { outcomeNames, renderResultPanel } from "../src/views/result.js";
@@ -335,6 +337,33 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
         clearPath: "/g/g-1/f/f-1/result/clear",
       });
     },
+  },
+  {
+    // `players.standings_sort` (M59) is `text` with no CHECK constraint like
+    // the rest, and unlike the rest it does not name a word on the page — it
+    // picks a comparator and a heading to mark. An unknown key must render the
+    // table in the league order rather than sort by `undefined`, which is the
+    // same defect wearing a different coat.
+    name: "renderStandingsSection (src/views/league-table.ts)",
+    column: "players.standings_sort",
+    reach: () =>
+      renderStandingsSection(
+        buildLeagueTable([
+          {
+            playerId: "p-1",
+            name: "Ada Okafor",
+            erasedAt: null,
+            played: 3,
+            won: 2,
+            lost: 1,
+            drawn: 0,
+            goalsFor: 5,
+            goalsAgainst: 2,
+          },
+        ]),
+        "p-1",
+        standingsSortOrDefault(OUT_OF_UNION),
+      ),
   },
 ];
 

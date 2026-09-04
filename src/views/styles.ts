@@ -1531,8 +1531,36 @@ export const LEAGUE_CSS = `
     text-align: right;
     white-space: nowrap;
   }
-  table.league thead th { color: var(--mut); font-weight: normal; }
+  /* The vertical padding is on the cell for a plain heading and on the link
+     for a sortable one, never both: the link carries the 44px tap floor the
+     rest of the product's controls obey, and stacking the cell's own padding
+     on top of that gave a header row 60px tall above 30px rows. */
+  table.league thead th { color: var(--mut); font-weight: normal; padding-top: 0; padding-bottom: 0; }
   table.league thead abbr { text-decoration: none; cursor: help; }
+  /* Sorting from the headings (M59). The link keeps the heading's muted
+     colour rather than taking var(--link): eight link-blue headings above a
+     table of numbers read as the loudest thing on the page, and the dotted
+     underline is enough to say the word is a control. The column being sorted
+     on is not a link at all — see sortableHeading in the view — so the full-strength
+     colour marks it without a second mechanism. */
+  table.league thead .sort-link {
+    display: flex; align-items: center; min-height: 44px;
+    color: inherit;
+    text-decoration: underline dotted;
+    text-decoration-color: var(--accent);
+    text-underline-offset: 0.3em;
+  }
+  /* The link fills its cell, so it has to be told the alignment the cell
+     already has: text-align does not reach a flex container's items. */
+  table.league thead .count .sort-link { justify-content: flex-end; }
+  table.league thead .league-player .sort-link { justify-content: flex-start; }
+  /* A help cursor over something clickable is a lie about what a click does. */
+  table.league thead .sort-link abbr { cursor: inherit; }
+  table.league thead th[aria-sort] { color: var(--fg); }
+  /* On the support step like every other size in the product — the scale is
+     enumerated by test/views/layout.test.ts, and an em fraction here was its
+     one exception. */
+  table.league .sort-mark { margin-left: 0.2rem; font-size: var(--t-support); }
   /* The position column (M55). Sticky at the left edge with the name sticky
      directly after it: a rank that scrolls away from its own row is worse
      than none, and the two have to travel together. The 2rem offset on the

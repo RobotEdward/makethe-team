@@ -11,6 +11,7 @@ const KICKOFF = new Date("2026-03-05T19:00:00Z");
 const BASE: PlayerGameParams = {
   // No played fixtures in these fixtures, so no standings (M49).
   standings: [],
+  standingsSort: "points" as const,
   nav: { isAdmin: false, current: "games" } as const,
   gameId: "g-1",
   gameName: "Thursday 7-a-side",

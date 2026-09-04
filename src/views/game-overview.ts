@@ -19,7 +19,7 @@ import { SITE_ORIGIN } from "../notify/delivery.js";
 import { fixtureStatusWords } from "./fixture.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { qrSvg } from "./qr.js";
-import type { LeagueRow } from "../domain/league-table.js";
+import type { LeagueRow, StandingsSort } from "../domain/league-table.js";
 import { renderFreshness } from "./freshness.js";
 import { renderStandingsSection } from "./league-table.js";
 import { renderSquadSignals } from "./squad-signals.js";
@@ -43,6 +43,8 @@ export interface GameOverviewParams {
    * the two game pages hand the same shape to the same renderer.
    */
   standings: readonly LeagueRow[] | null;
+  /** The column this viewer has the standings sorted by (M59). */
+  standingsSort: StandingsSort;
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
   gameId: string;
@@ -230,7 +232,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
     <h2>Squad (${squad.length})</h2>
     <ul class="squad">${squadItems || "<li>Nobody has joined yet.</li>"}</ul>
 
-    ${renderStandingsSection(params.standings, params.viewerPlayerId)}
+    ${renderStandingsSection(params.standings, params.viewerPlayerId, params.standingsSort)}
 
     ${params.archivedOn !== null ? "" : `<div class="card">
       <h2>Invite people</h2>

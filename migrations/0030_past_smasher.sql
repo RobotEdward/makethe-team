@@ -1,0 +1,1 @@
+ALTER TABLE `players` ADD `standings_sort` text;

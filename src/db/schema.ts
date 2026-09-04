@@ -42,6 +42,20 @@ export const players = sqliteTable(
      */
     onboardingDismissedAt: integer("onboarding_dismissed_at", { mode: "timestamp_ms" }),
     /**
+     * The column this player has their standings sorted by (M59), or null for
+     * the league order everybody starts on.
+     *
+     * `text` with no CHECK constraint, like every other lookup in this schema
+     * — so a row can hold a key no release of the table offers any more, and
+     * every read goes through `standingsSortOrDefault` rather than indexing a
+     * table with it. See `test/stored-lookups.test.ts`.
+     *
+     * One value per player, not one per game: a player who wants to see the
+     * table by appearances wants that of every squad they are in, and a
+     * per-game copy would have them set it once per squad.
+     */
+    standingsSort: text("standings_sort"),
+    /**
      * When a requested erasure becomes due (§2.1). Set by `POST /app/delete`,
      * cleared by `POST /app/delete/cancel`, and read by the hourly sweep.
      *

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { renderStandingsSection } from "../../src/views/league-table.js";
-import { buildLeagueTable, type LeagueTally } from "../../src/domain/league-table.js";
+import {
+  buildLeagueTable,
+  type LeagueTally,
+  type StandingsSort,
+} from "../../src/domain/league-table.js";
 import { LEAGUE_CSS } from "../../src/views/styles.js";
 
 function tally(overrides: Partial<LeagueTally> = {}): LeagueTally {
@@ -18,8 +22,11 @@ function tally(overrides: Partial<LeagueTally> = {}): LeagueTally {
   };
 }
 
-const render = (tallies: readonly LeagueTally[], viewerPlayerId = "someone-else") =>
-  renderStandingsSection(buildLeagueTable(tallies), viewerPlayerId);
+const render = (
+  tallies: readonly LeagueTally[],
+  viewerPlayerId = "someone-else",
+  sort: StandingsSort = "points",
+) => renderStandingsSection(buildLeagueTable(tallies), viewerPlayerId, sort);
 
 describe("the standings section", () => {
   it("heads the columns with the league-table abbreviations", () => {
@@ -253,3 +260,86 @@ describe("Win% below 40rem", () => {
     expect(narrow).not.toContain(".rank { display: none");
   });
 });
+
+/**
+ * Sorting the table from its column headings (M59).
+ *
+ * The links are plain query strings on the page's own path, so the whole
+ * feature works with no script — and the choice a player makes is stored
+ * against them by the route behind the link, not by anything here.
+ */
+describe("the standings sort headings", () => {
+  const squad = () => [
+    tally({ playerId: "p-ana", name: "Ana", played: 9, won: 4, lost: 3, drawn: 2 }),
+    tally({ playerId: "p-ben", name: "Ben", played: 8, won: 6, lost: 1, drawn: 1, goalsFor: 20, goalsAgainst: 4 }),
+    tally({ playerId: "p-cal", name: "Cal", played: 12, won: 2, lost: 8, drawn: 2, goalsFor: 3, goalsAgainst: 19 }),
+  ];
+
+  it("makes every sortable heading a link to its own column", () => {
+    const html = render(squad());
+
+    for (const sort of ["player", "played", "won", "lost", "drawn", "gd", "winpct"]) {
+      expect(html).toContain(`href="?sort=${sort}"`);
+    }
+  });
+
+  it("does not link the column already sorted on, which has nowhere to go", () => {
+    const html = render(squad(), "someone-else", "won");
+
+    expect(html).not.toContain(`href="?sort=won"`);
+    // …and the one it came from is a link again, which is the way back.
+    expect(html).toContain(`href="?sort=points"`);
+  });
+
+  it("gives the position column no link of its own, because Pts is that sort", () => {
+    expect(render(squad())).not.toContain(`href="?sort=pos"`);
+  });
+
+  it("marks the sorted column for a screen reader as well as an eye", () => {
+    const html = render(squad(), "someone-else", "played");
+
+    expect(html).toContain(`aria-sort="descending"`);
+    expect(html.match(/aria-sort=/g)).toHaveLength(1);
+  });
+
+  it("calls the player column's direction ascending, because it reads A to Z", () => {
+    expect(render(squad(), "someone-else", "player")).toContain(`aria-sort="ascending"`);
+  });
+
+  it("renders the rows in the sorted order", () => {
+    const html = render(squad(), "someone-else", "played");
+
+    expect(html.indexOf("Cal")).toBeLessThan(html.indexOf("Ana"));
+    expect(html.indexOf("Ana")).toBeLessThan(html.indexOf("Ben"));
+  });
+
+  /**
+   * Under the league sort the position column is the *league position*, ties
+   * sharing a place — `leaguePositions` exists for that, and numbering the
+   * rendered order there would print the alphabetical tiebreak as a place
+   * somebody finished in.
+   */
+  it("keeps true league positions, shared ties and all, under the league sort", () => {
+    const html = render([
+      tally({ playerId: "p-a", name: "Ann", played: 2, won: 1, lost: 1, drawn: 0, goalsFor: 3, goalsAgainst: 3 }),
+      tally({ playerId: "p-b", name: "Bea", played: 2, won: 1, lost: 1, drawn: 0, goalsFor: 3, goalsAgainst: 3 }),
+      tally({ playerId: "p-c", name: "Cyd", played: 2, won: 0, lost: 2, drawn: 0, goalsFor: 0, goalsAgainst: 4 }),
+    ]);
+
+    expect(ranks(html)).toEqual(["1", "1", "3"]);
+  });
+
+  /**
+   * Under any other sort the column can only be the row number: a position
+   * column reading 3, 1, 5 beside rows ordered by something else is two
+   * orderings printed on one table.
+   */
+  it("numbers the rows 1..n under any other sort", () => {
+    expect(ranks(render(squad(), "someone-else", "played"))).toEqual(["1", "2", "3"]);
+  });
+});
+
+/** The rendered contents of the position column, top row first. */
+function ranks(html: string): string[] {
+  return [...html.matchAll(/<td class="rank">([^<]*)<\/td>/g)].map((match) => match[1]!);
+}

@@ -15,7 +15,7 @@ import {
   renderStatusLine,
   viewerHeadlineOpen,
 } from "./fixture.js";
-import type { LeagueRow } from "../domain/league-table.js";
+import type { LeagueRow, StandingsSort } from "../domain/league-table.js";
 import { renderFreshness } from "./freshness.js";
 import { renderStandingsSection } from "./league-table.js";
 import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
@@ -39,6 +39,8 @@ export interface PlayerGameParams {
    * players (M49) — `standingsForViewer` decides, never this page.
    */
   standings: readonly LeagueRow[] | null;
+  /** The column this viewer has the standings sorted by (M59). */
+  standingsSort: StandingsSort;
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
   /**
@@ -212,7 +214,7 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
     <h2>Coming up</h2>
     <ul class="fixtures">${upcomingItems || "<li>No fixtures scheduled.</li>"}</ul>
 
-    ${renderStandingsSection(params.standings, viewerPlayerId)}
+    ${renderStandingsSection(params.standings, viewerPlayerId, params.standingsSort)}
 
     <p><a href="${escapeHtml(gamePastFixturesPath(gameId))}">Games you've played</a></p>
 

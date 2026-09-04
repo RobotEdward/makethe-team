@@ -117,6 +117,12 @@ Players level on points, goal difference and wins share a position, and the next
 position skips the places they used up — again, the way a league table works.
 Nobody is put above anybody else on a tiebreak the table hasn't shown you.
 
+Tap any column heading to sort the table by it — **P** for who turns up most,
+**L** for who loses most, **Player** for A to Z. The app remembers your choice
+and uses it for every squad you are in, until you pick another one. **Pts** is
+the way back to the league order. The **#** column shows the league position
+under that order, and simply numbers the rows under any other.
+
 Two of the columns are narrower than they look. **Win%** is worked out over the
 games that settled, not everything played. **GD** counts only the games where a
 score was actually agreed, so it covers fewer games than the rest of the row —

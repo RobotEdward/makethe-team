@@ -16,7 +16,7 @@ import {
   resultClearPath,
   resultPath,
 } from "../auth/paths.js";
-import { requirePlayer, pageNav } from "../auth/session.js";
+import { requirePlayer, pageNav, type Player } from "../auth/session.js";
 import { buildAuditInsert, recordAudit } from "../db/audit.js";
 import { buildTimeline } from "../domain/timeline.js";
 import { renderTimelinePage, toRenderable } from "../views/timeline.js";
@@ -94,7 +94,12 @@ import { ownerNotificationRows, renderGameFormPage } from "../views/game-form.js
 import { renderAddGuestPage } from "../views/add-guest.js";
 import { renderRotateInvitePage } from "../views/rotate-invite.js";
 import { renderNotFoundPage } from "../views/not-found.js";
-import { buildLeagueTable } from "../domain/league-table.js";
+import {
+  buildLeagueTable,
+  isStandingsSort,
+  standingsSortOrDefault,
+  type StandingsSort,
+} from "../domain/league-table.js";
 import { squadLeagueTally } from "../db/record-queries.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
@@ -274,6 +279,30 @@ async function squadForOverview(db: Db, gameId: string, now: Date) {
   });
 }
 
+/**
+ * The column this request's standings are sorted by, remembering a new choice
+ * as it goes (M59).
+ *
+ * **The write happens on a GET**, which is the same shape as `pushOfferedAt`
+ * being stamped when the offer is shown: nothing the player can see changes
+ * except the thing they just asked for, and a form post to set a sort would
+ * put a redirect between a heading and the table it reorders.
+ *
+ * A key the table does not have — hand-typed, or a link from a release that
+ * offered a column this one has dropped — is ignored rather than treated as
+ * "sort by the default": it must not overwrite the choice the player last made
+ * deliberately.
+ */
+async function standingsSortFor(c: Context<AppEnv>, db: Db, player: Player): Promise<StandingsSort> {
+  const stored = standingsSortOrDefault(player.standingsSort);
+  const requested = c.req.query("sort");
+  if (requested === undefined || !isStandingsSort(requested)) return stored;
+  if (requested !== stored) {
+    await db.update(players).set({ standingsSort: requested }).where(eq(players.id, player.id));
+  }
+  return requested;
+}
+
 // `/g/:id` and friends are registered here, after `NEW_GAME_PATH` above — see
 // this file's module comment for why the order is load-bearing.
 
@@ -305,6 +334,7 @@ gamesRoutes.get("/g/:id", requirePlayer, async (c) => {
 
   return c.html(
     renderGameOverviewPage({
+      standingsSort: await standingsSortFor(c, db, player),
       nav: pageNav(c, "games"),
       gameId: game.id,
       gameName: game.name,
@@ -530,6 +560,7 @@ async function renderPlayerGame(c: Context<AppEnv>, game: typeof games.$inferSel
       // The league table names every squad member, so it is gated exactly as
       // the squad list above is (M49, BR-33) — same module, same question.
       standings: standingsForViewer(game, buildLeagueTable(tally), { isOwner: false }),
+      standingsSort: await standingsSortFor(c, db, c.get("player")!),
     }),
   );
 }
@@ -2984,6 +3015,9 @@ async function renderSquadRefusal(
       // A refusal must show the page a normal load would, standings included
       // — an owner who hit J6a's invariant should not also lose their table.
       standings: standingsForViewer(game, buildLeagueTable(tally), { isOwner: true }),
+      // The stored sort, read and not written: this is the response to a POST,
+      // which carries no heading link to have chosen one.
+      standingsSort: standingsSortOrDefault(c.get("player")!.standingsSort),
       nav: pageNav(c, "games"),
       gameId: game.id,
       gameName: game.name,
