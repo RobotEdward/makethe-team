@@ -235,6 +235,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
             waitlistCount: 0,
             myStatus: OUT_OF_UNION,
             owner: false,
+            yourSide: null,
           },
         ],
         squads: [],

@@ -91,6 +91,12 @@ and your side is there too, above the squad, worded exactly the same way. It
 is always your own side, even in a game with the names turned off: that page
 still tells you which side you're on, just not who is on it with you.
 
+Your games page says it too, on the card for that fixture, so you can see which
+side you're on without opening anything — and on the card for the game you have
+just played, in the past tense. As with the email, it appears only once your
+organiser has actually sent the teams round; a pick they are still working on
+shows nowhere.
+
 If you came off the waitlist after the teams went round, there won't be a side
 for you yet, and the page says so — **Your side hasn't been picked yet.** —
 rather than showing you two line-ups with no mention of you. Your organiser is

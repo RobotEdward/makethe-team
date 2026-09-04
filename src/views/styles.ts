@@ -152,6 +152,18 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
     background: var(--line); color: var(--fg);
   }
 
+  /* The one line a player must not be able to miss: which side they are on
+     (BR-35 §5). Given the accent colour and the weight the response headline
+     uses, because it is the same kind of statement — what is true of you —
+     and it has to survive being read next to two full line-ups.
+
+     In this block and not TEAM_PICKER_CSS, where it lived until M56. That
+     block is the picker's, and two pages that render this sentence — the
+     player's own fixture page and the dashboard's cards — do not load it, so
+     the line they were told they could not miss was rendering as an unstyled
+     paragraph. Every page that renders it loads this block. */
+  .your-side { margin: 1rem 0 0.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--accent); }
+
   .full-warning { margin: 0.5rem 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
 
@@ -751,11 +763,6 @@ export const TEAM_PICKER_CSS = `
   .team-counts { display: flex; gap: 1.25rem; margin: 0.75rem 0; font-weight: 600; }
   .team-counts .count { color: var(--mut); font-weight: 400; }
   .team-note { margin: 0.5rem 0; color: var(--mut); font-size: var(--t-body); }
-  /* The one line a player must not be able to miss: which side they are on
-     (BR-35 §5). Given the accent colour and the weight the response headline
-     uses, because it is the same kind of statement — what is true of you —
-     and it has to survive being read next to two full line-ups. */
-  .your-side { margin: 1rem 0 0.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--accent); }
 `;
 
 /**

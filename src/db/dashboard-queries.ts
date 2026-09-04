@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, ne, notInArray, type SQL } from "drizzle-orm";
 import { TERMINAL_LIFECYCLES, type Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseStatus } from "../domain/response-status.js";
+import { publishedTeamsFor, type TeamId } from "../domain/teams.js";
 import type { Db } from "./client.js";
 import { fixtures, games, memberships, responses } from "./schema.js";
 
@@ -53,6 +54,22 @@ export interface DashboardFixture {
    * M25) but about which page already shows the fixture inline.
    */
   owner: boolean;
+  /**
+   * What this game calls the side the viewer has been put on — "Reds" — or
+   * `null` for every case in which there is nothing to tell them: no pick
+   * published yet, a pick that has not placed them, or a stored side this
+   * build cannot name.
+   *
+   * A name and not a `TeamId`, resolved here rather than at each render site:
+   * `responses.team` is a bare `text` column with no CHECK constraint, so the
+   * union type is a claim about the schema and not a guarantee about the rows,
+   * and one place that can answer "I do not know that side" keeps
+   * `escapeHtml(undefined)` off every page that reads this.
+   *
+   * Which cases those are is `publishedTeamsFor`'s decision and not this
+   * module's — see `sideName` below.
+   */
+  yourSide: string | null;
 }
 
 /**
@@ -131,6 +148,10 @@ function selectEntitledFixtures(db: Db, playerId: string, extra?: SQL) {
       prefersEvenNumbers: fixtures.prefersEvenNumbers,
       shortWarningOffsetHours: fixtures.shortWarningOffsetHours,
       myStatus: responses.status,
+      myTeam: responses.team,
+      teamsPublishedAt: fixtures.teamsPublishedAt,
+      teamAName: games.teamAName,
+      teamBName: games.teamBName,
       role: memberships.role,
     })
     .from(responses)
@@ -146,8 +167,38 @@ function selectEntitledFixtures(db: Db, playerId: string, extra?: SQL) {
 type EntitledRow = Awaited<ReturnType<typeof selectEntitledFixtures>>[number];
 
 function toDashboardFixture(row: EntitledRow): DashboardFixture {
-  const { gameVenueName, venueOverride, role, ...rest } = row;
-  return { ...rest, venueName: venueOverride ?? gameVenueName, owner: role === "owner" };
+  const { gameVenueName, venueOverride, role, myTeam, teamsPublishedAt, teamAName, teamBName, ...rest } =
+    row;
+  return {
+    ...rest,
+    venueName: venueOverride ?? gameVenueName,
+    owner: role === "owner",
+    yourSide: sideName({ teamsPublishedAt }, { teamAName, teamBName }, rest.myStatus, myTeam),
+  };
+}
+
+/**
+ * The viewer's side as a name, or `null`.
+ *
+ * Through `publishedTeamsFor` rather than a second reading of the same three
+ * columns: that function is where "what may a player-facing surface say about
+ * a pick" is decided for every surface (BR-35 §5), and a card that decided it
+ * again here could announce an unpublished pick, or a side belonging to
+ * somebody who has dropped out, while the fixture page said nothing.
+ *
+ * The `??` is the documented hazard, not defensive noise: `responses.team` is
+ * a bare `text` column with no CHECK constraint, so a side this build cannot
+ * name reaches the lookup as `undefined` and `escapeHtml` throws on it.
+ */
+function sideName(
+  fixture: { teamsPublishedAt: Date | null },
+  game: { teamAName: string; teamBName: string },
+  status: ResponseStatus,
+  team: TeamId | null,
+): string | null {
+  const teams = publishedTeamsFor(fixture, game, { status, team });
+  if (teams === null || teams.yourSide === null) return null;
+  return teams.names[teams.yourSide] ?? null;
 }
 
 /**

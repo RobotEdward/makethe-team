@@ -1563,3 +1563,86 @@ describe("the dashboard's record section", () => {
     expect(html).not.toContain("Your record");
   });
 });
+
+/**
+ * The side the viewer has been put on, on the cards (M56).
+ *
+ * The sentence is `yourSideLine`'s, and the fixture page's tests already pin
+ * its wording; what is left for the route is the gate — `teams_published_at`,
+ * and the viewer's own status — because that half lives in
+ * `selectEntitledFixtures` and cannot be reached from a view test at all.
+ *
+ * The absence assertions match the whole opening tag, not the class name: the
+ * page carries the block declaring `.your-side` whether or not it renders one,
+ * so `not.toContain("your-side")` fails against the stylesheet.
+ */
+describe("the dashboard's team line", () => {
+  beforeEach(resetDatabase);
+
+  /** Put the viewer on a side, and optionally announce the pick. */
+  async function pickTeams(
+    seeded: Seeded,
+    options: { published: boolean; status?: "in" | "out" } = { published: true },
+  ): Promise<void> {
+    await db
+      .update(responses)
+      .set({ status: options.status ?? "in", team: "a" })
+      .where(eq(responses.fixtureId, seeded.fixtureId));
+    if (options.published) {
+      await db
+        .update(fixtures)
+        .set({ teamsPublishedAt: new Date("2030-06-10T09:00:00Z") })
+        .where(eq(fixtures.id, seeded.fixtureId));
+    }
+  }
+
+  async function dashboard(cookie: string): Promise<string> {
+    return await (await SELF.fetch(`${ORIGIN}${DASHBOARD_PATH}`, { headers: { cookie } })).text();
+  }
+
+  it("names the viewer's side on an upcoming fixture, once the teams are published", async () => {
+    const { cookie } = await signIn();
+    const seeded = await seedFixtureFor(await viewerId());
+    await pickTeams(seeded);
+
+    expect(await dashboard(cookie)).toContain(`<p class="your-side">You're on Team A.</p>`);
+  });
+
+  it("says nothing about a pick the organiser has saved but not published", async () => {
+    const { cookie } = await signIn();
+    const seeded = await seedFixtureFor(await viewerId());
+    await pickTeams(seeded, { published: false });
+
+    // The whole point of a separate publish step: trying an arrangement out
+    // announces nothing, here as in the N-9 email.
+    expect(await dashboard(cookie)).not.toContain(`<p class="your-side">`);
+  });
+
+  it("says nothing to a player who is not in for the fixture", async () => {
+    const { cookie } = await signIn();
+    const seeded = await seedFixtureFor(await viewerId());
+    // `responses.team` is deliberately not cleared when somebody drops out
+    // (src/domain/teams.ts), so this row still carries a side.
+    await pickTeams(seeded, { published: true, status: "out" });
+
+    expect(await dashboard(cookie)).not.toContain(`<p class="your-side">`);
+  });
+
+  it("puts it in the past tense on the recently-played card", async () => {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const seeded = await seedFixtureFor(playerId, {
+      lifecycle: "played",
+      kicksOffAt: new Date("2030-06-13T18:00:00Z"),
+    });
+    await pickTeams(seeded);
+    // A claim of the viewer's own, so the fixture lands under "Recently
+    // played" rather than "Results needed" — the two sections are exclusive.
+    await insertResultClaim(db, seeded.fixtureId, playerId, { outcome: "a" });
+
+    const html = await dashboard(cookie);
+
+    expect(html).toContain("Recently played");
+    expect(html).toContain(`<p class="your-side">You were on Team A.</p>`);
+  });
+});

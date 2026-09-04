@@ -156,6 +156,22 @@ export const CATALOGUE: CataloguePage[] = [
       "and the team picker — the only owner page carrying script (TEAM_PICKER_JS).",
   },
   {
+    id: "player-fixture",
+    title: "Fixture (player)",
+    // The same route as `owner-fixture` above, and a different page: a member
+    // gets `renderPlayerFixturePage`, which shares almost nothing with the
+    // organiser's view. It had no entry at all until M56, so nobody had ever
+    // looked at it rendered — and what a look would have shown is that its
+    // "You're on Reds." line, the one BR-35 §5 says a player must not be able
+    // to miss, was rendering as plain body text because the block declaring
+    // `.your-side` was the picker's and this page does not load it.
+    path: (w) => `/g/${w.gameId}/f/${w.fixtureId}`,
+    persona: "player",
+    note:
+      "One fixture as a member sees it: the squad, the result panel, the published teams " +
+      "and their own side — the only per-fixture URL a player has.",
+  },
+  {
     id: "team-picker",
     title: "Pick the teams",
     // The busy fixture too: a picker with nobody in it is two empty columns.

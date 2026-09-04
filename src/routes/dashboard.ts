@@ -127,6 +127,7 @@ function toRow(fixture: DashboardFixture, now: Date): DashboardRow {
     myStatus: fixture.myStatus,
     waitlistCount: fixture.waitlistCount,
     owner: fixture.owner,
+    yourSide: fixture.yourSide,
   };
 }
 
@@ -212,6 +213,7 @@ async function playedFixtureSections(
       gameName: recent.gameName,
       venueName: recent.venueName,
       kicksOffAtLocal: formatLocalDateTime(recent.kicksOffAt, recent.timezone),
+      yourSide: recent.yourSide,
       resultWords: words.get(recent.fixtureId),
     },
   };

@@ -415,6 +415,24 @@ export function renderSquadSection(
 }
 
 /**
+ * "You're on Reds." — the one sentence the N-9 email leads with, in one place.
+ *
+ * Exported because the dashboard's cards say it too (M56), and it is worded
+ * identically there on purpose: a player holding the email, glancing at their
+ * dashboard and opening the fixture page must never have to work out whether
+ * three surfaces agree. Imported rather than retyped for the reason
+ * `viewerHeadlineOpen` is — two copies of a sentence is how they drift apart.
+ *
+ * The caller resolves the side's *name*; a side this build cannot name never
+ * reaches here (see `src/domain/teams.ts` and `DashboardFixture.yourSide`).
+ */
+export function yourSideLine(sideName: string, tense: "future" | "past"): string {
+  return tense === "past"
+    ? `<p class="your-side">You were on ${escapeHtml(sideName)}.</p>`
+    : `<p class="your-side">You're on ${escapeHtml(sideName)}.</p>`;
+}
+
+/**
  * The published teams, as a player sees them (BR-35 §5).
  *
  * Nothing at all unless `teams` is non-null — `publishedTeamsFor`
@@ -481,9 +499,7 @@ export function renderPublishedTeamsSection(
   const yourSideName = teams.yourSide === null ? null : (teams.names[teams.yourSide] ?? null);
   const yourSide =
     yourSideName !== null
-      ? tense === "past"
-        ? `<p class="your-side">You were on ${escapeHtml(yourSideName)}.</p>`
-        : `<p class="your-side">You're on ${escapeHtml(yourSideName)}.</p>`
+      ? yourSideLine(yourSideName, tense)
       : tense === "future" && teams.awaitingSide
         ? `<p class="your-side">Your side hasn't been picked yet.</p>`
         : "";

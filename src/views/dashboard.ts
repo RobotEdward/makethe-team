@@ -18,6 +18,7 @@ import {
   renderResponseButtons,
   renderStatusLine,
   viewerHeadlineOpen,
+  yourSideLine,
 } from "./fixture.js";
 import { renderFreshness } from "./freshness.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
@@ -69,6 +70,17 @@ export interface DashboardRow {
    * fixture page for an owner, the game page for a member — see `renderRow`.
    */
   owner: boolean;
+  /**
+   * What this game calls the side the viewer has been put on, or `null` when
+   * there is nothing to tell them — `DashboardFixture.yourSide` in
+   * `src/db/dashboard-queries.ts` decides which, through `publishedTeamsFor`.
+   *
+   * **Not a breach of the rule this interface opens with.** A player's own
+   * assignment is not somebody else's data — the same reading
+   * `publishedTeamsFor` states for BR-33 — and the type still has nowhere to
+   * put another player's side, because it is one string about the viewer.
+   */
+  yourSide: string | null;
 }
 
 /** One game the viewer is a member of, as the "Your squads" list needs it (M20 B3). */
@@ -112,6 +124,8 @@ export interface RecentlyPlayedRow {
   venueName: string;
   /** Already formatted in the game's timezone by the caller (TR-5). */
   kicksOffAtLocal: string;
+  /** The side the viewer played on, past tense here — see `DashboardRow.yourSide`. */
+  yourSide: string | null;
   /**
    * The result summary — "Reds won 3–2", "Draw" — set only once the fixture's
    * 48-hour window has locked, exactly as `AccountFixtureRow.resultWords` is
@@ -251,6 +265,7 @@ function renderRow(row: DashboardRow): string {
       <h2><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></h2>
       <p class="kickoff"><a href="${escapeHtml(fixtureHref(row))}">${escapeHtml(row.kicksOffAtLocal)}</a></p>
       <p class="venue">${escapeHtml(row.venueName)}</p>
+      ${row.yourSide === null ? "" : yourSideLine(row.yourSide, "future")}
       ${renderStatusLine(row.view, row.waitlistCount)}
       <section class="answer answer-${answerStateOf(row.myStatus, false)}">
         ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
@@ -478,6 +493,7 @@ function renderRecentlyPlayedSection(row: RecentlyPlayedRow | null): string {
         <h2><a href="${escapeHtml(gamePath(row.gameId))}">${escapeHtml(row.gameName)}</a></h2>
         <p class="kickoff"><a href="${escapeHtml(fixturePath(row.gameId, row.fixtureId))}">${escapeHtml(row.kicksOffAtLocal)}</a></p>
         <p class="venue">${escapeHtml(row.venueName)}</p>
+        ${row.yourSide === null ? "" : yourSideLine(row.yourSide, "past")}
         ${row.resultWords === undefined ? "" : `<p class="result-final">${escapeHtml(row.resultWords)}</p>`}
       </li>
     </ul>`;
