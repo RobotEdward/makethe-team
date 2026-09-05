@@ -101,6 +101,16 @@ function fill(path: string, ids: { gameId: string; fixtureId: string; viewerId: 
     .replace(":playerId", ids.viewerId);
 }
 
+/**
+ * Room for the sweep that requests every owner-only `/g/:id` route in one
+ * test. Third of its kind: `dashboard.test.ts` and `signin.test.ts` gained the
+ * same override on 4 September 2026, and on 5 September this one timed out on
+ * a CI runner at 5.2s having passed locally in well under a second, blocking
+ * the M62 deploy. Raised on the one test that demonstrably needs it, not
+ * globally — the 5s default is what catches a test that has actually hung.
+ */
+const EVERY_ROUTE_TIMEOUT_MS = 30_000;
+
 describe("the picker capability does not widen any other /g/:id route", () => {
   it("classifies every registered /g/:id route", () => {
     const registered = createApp()
@@ -150,5 +160,5 @@ describe("the picker capability does not widen any other /g/:id route", () => {
           "unless it is classified in NOT_OWNER_ONLY with a reason",
       ).toBe(404);
     }
-  });
+  }, EVERY_ROUTE_TIMEOUT_MS);
 });
