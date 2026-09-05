@@ -28,7 +28,7 @@ import {
   OFFLINE_PATH,
   PRIVACY_PATH,
 } from "../../src/auth/paths.js";
-import { recordSignInRefusal } from "../../src/auth/sign-in-gate.js";
+import { MAX_EMAIL_LENGTH, recordSignInRefusal } from "../../src/auth/sign-in-gate.js";
 import { getDb } from "../../src/db/client.js";
 import {
   fixtures,
@@ -64,6 +64,15 @@ import {
 } from "../support/sign-in.js";
 
 const NOT_ALLOWED = "stranger@example.com";
+
+/** The JSON API mount, as a browser script or a third party would post to it. */
+function magicLinkRequest(email: string) {
+  return new Request(`${ORIGIN}/api/auth/sign-in/magic-link`, {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: ORIGIN },
+    body: JSON.stringify({ email }),
+  });
+}
 
 /**
  * Room for the TR-16 sweep, which renders every reachable page in one test.
@@ -306,6 +315,47 @@ describe("POST /sign-in", () => {
     for (const [name, other] of Object.entries({ unknown, nonsense, blank, missing })) {
       expect(other, `${name} must be indistinguishable from a known address`).toEqual(known);
     }
+  });
+
+  /**
+   * `MAX_EMAIL_LENGTH` (`src/auth/sign-in-gate.ts`). Better Auth writes the
+   * `verification` row before the allowlist gate runs, so the only place an
+   * over-length address can be stopped is in front of the handler — and it
+   * has two fronts, the form and the JSON API, each of which must answer
+   * exactly as it does for an address it simply does not know.
+   */
+  describe("an over-length address", () => {
+    const overlong = `${"a".repeat(MAX_EMAIL_LENGTH)}@example.com`;
+    const longestAllowed = `${"a".repeat(MAX_EMAIL_LENGTH - "@example.com".length)}@example.com`;
+
+    it("writes no verification row from the form, while the longest legal one still does", async () => {
+      const app = createApp();
+      await app.fetch(requestLink(overlong), bindings({ SIGNIN_ALLOWLIST: overlong }));
+      expect(await getDb(env.DB).select().from(verification)).toHaveLength(0);
+
+      await app.fetch(requestLink(longestAllowed), bindings({ SIGNIN_ALLOWLIST: longestAllowed }));
+      expect(await getDb(env.DB).select().from(verification)).toHaveLength(1);
+    });
+
+    it("writes no verification row from the JSON API", async () => {
+      await createApp().fetch(magicLinkRequest(overlong), bindings({ SIGNIN_ALLOWLIST: overlong }));
+      expect(await getDb(env.DB).select().from(verification)).toHaveLength(0);
+    });
+
+    it("is answered by the JSON API exactly as an unknown address is", async () => {
+      const app = createApp();
+      const observable = async (response: Response) => ({
+        status: response.status,
+        statusText: response.statusText,
+        setCookie: response.headers.getSetCookie(),
+        headers: [...response.headers].sort(([a], [b]) => a.localeCompare(b)),
+        body: await response.text(),
+      });
+      const unknown = await observable(await app.fetch(magicLinkRequest(NOT_ALLOWED), bindings()));
+      await resetDatabase();
+      const refused = await observable(await app.fetch(magicLinkRequest(overlong), bindings()));
+      expect(refused).toEqual(unknown);
+    });
   });
 
   it("sends nothing for an address that is not allowlisted", async () => {

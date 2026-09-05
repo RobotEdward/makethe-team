@@ -114,6 +114,25 @@ export async function explainSignIn(
 export const REFUSAL_ROWS_KEPT = 100;
 
 /**
+ * The longest address the sign-in endpoints will hand to Better Auth.
+ *
+ * RFC 5321 §4.5.3.1.3 caps a forward path at 256 octets including the angle
+ * brackets, so no deliverable address exceeds 254 characters. Better Auth's
+ * own `z.email()` body schema puts no ceiling on length, and it writes the
+ * address into a `verification` row *before* `sendMagicLink` (and so the
+ * allowlist gate) runs — so without this check an anonymous caller could grow
+ * that table by kilobytes per request. Rejecting above this length is safe
+ * for the enumeration property the sign-in flow protects because the refusal
+ * depends only on the bytes typed, never on what the database holds, and the
+ * caller is answered with the same response an unknown address gets.
+ */
+export const MAX_EMAIL_LENGTH = 254;
+
+export function isPlausibleEmailLength(email: string): boolean {
+  return email.length <= MAX_EMAIL_LENGTH;
+}
+
+/**
  * Record a refused sign-in attempt for the admin doctor (M17), then prune to
  * the newest `REFUSAL_ROWS_KEPT`.
  *

@@ -31,6 +31,13 @@ export function createApp(): Hono<AppEnv> {
     c.header("X-Robots-Tag", "noindex, nofollow");
     c.header("Referrer-Policy", "strict-origin-when-cross-origin");
     c.header("X-Content-Type-Options", "nosniff");
+    // One year, the value the preload list treats as the minimum. Neither
+    // `includeSubDomains` nor `preload`: this Worker answers for one hostname
+    // and cannot vouch for anything else on the zone, and preloading is a
+    // browser-list submission with its own removal lag, not a header
+    // decision to make in passing. Harmless over plain HTTP (browsers ignore
+    // it there), so it costs nothing on `wrangler dev`.
+    c.header("Strict-Transport-Security", "max-age=31536000");
     // /sw.js is the one response that names its own policy — see
     // src/routes/pwa.ts. Checked by path, not by whether a
     // Content-Security-Policy header is already present: a presence check

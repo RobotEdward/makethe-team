@@ -10,6 +10,7 @@ import {
   SIGN_OUT_PATH,
 } from "../auth/paths.js";
 import { requireSession } from "../auth/session.js";
+import { isPlausibleEmailLength } from "../auth/sign-in-gate.js";
 import { getDb } from "../db/client.js";
 import type { AppEnv, Bindings } from "../env.js";
 import { renderCheckInboxPage, renderLinkRefusalPage, renderSignInPage } from "../views/signin.js";
@@ -33,11 +34,47 @@ export const signIn = new Hono<AppEnv>();
  * plugin's, read out of `better-auth/plugins/magic-link`, not guessed: the
  * plugin builds the emailed URL itself from `baseURL` + `basePath` and there is
  * no option to move it.
+ *
+ * **The one exception to "pass-through":** an over-length address posted to
+ * `POST /api/auth/sign-in/magic-link` is answered here, before Better Auth
+ * sees it, with the body Better Auth itself returns for any accepted request
+ * (`{ status: true }`). See `MAX_EMAIL_LENGTH` for why the row it would have
+ * written cannot be stopped from inside `sendMagicLink`, and
+ * `test/routes/signin.test.ts` for the proof that the response is
+ * indistinguishable from an unknown address's.
  */
-signIn.all(`${AUTH_API_PREFIX}/*`, (c) => {
+const MAGIC_LINK_REQUEST_PATH = `${AUTH_API_PREFIX}/sign-in/magic-link`;
+
+signIn.all(`${AUTH_API_PREFIX}/*`, async (c) => {
   const now = new Date(Date.now());
+  if (c.req.method === "POST" && c.req.path === MAGIC_LINK_REQUEST_PATH) {
+    const email = await readJsonEmail(c.req.raw.clone());
+    if (!isPlausibleEmailLength(email)) return magicLinkAccepted();
+  }
   return createAuth(c.env, getDb(c.env.DB), now).handler(c.req.raw);
 });
+
+/**
+ * Better Auth's own answer to an accepted magic-link request, reproduced for
+ * the over-length short-circuit above. If the plugin ever changes its shape
+ * the comparison test in `test/routes/signin.test.ts` fails, which is the
+ * intended way to find out.
+ */
+function magicLinkAccepted(): Response {
+  return Response.json({ status: true });
+}
+
+/** `email` out of a JSON body, `""` for anything that is not one. */
+async function readJsonEmail(request: Request): Promise<string> {
+  try {
+    const body: unknown = await request.json();
+    if (typeof body !== "object" || body === null) return "";
+    const email = (body as Record<string, unknown>)["email"];
+    return typeof email === "string" ? email : "";
+  } catch {
+    return "";
+  }
+}
 
 /**
  * The sign-in page.
@@ -103,6 +140,11 @@ signIn.get(SIGN_IN_PATH, (c) => {
 signIn.post(SIGN_IN_PATH, async (c) => {
   const now = new Date(Date.now());
   const email = await readEmailField(c.req.raw.clone());
+
+  // Same short-circuit as the API mount above; this handler builds its own
+  // internal Request and never passes through that mount, so the check has to
+  // be repeated here. The page rendered below is the same either way.
+  if (!isPlausibleEmailLength(email)) return c.html(renderCheckInboxPage());
 
   try {
     const auth = createAuth(c.env, getDb(c.env.DB), now);

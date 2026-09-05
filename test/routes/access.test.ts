@@ -22,6 +22,13 @@ describe("holding page", () => {
     expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
   });
 
+  // Missing from production until 5 September 2026, found by an external
+  // review; the other three headers had tests and this one did not.
+  it("asks the browser to stay on HTTPS for a year", async () => {
+    const response = await SELF.fetch("https://makethe.team/");
+    expect(response.headers.get("strict-transport-security")).toBe("max-age=31536000");
+  });
+
   /**
    * `Cache-Control: private, no-store` is applied by several scoped mounts —
    * never globally (see `src/app.ts`):

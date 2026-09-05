@@ -85,15 +85,13 @@ export function createAuth(env: Bindings, db: Db, now: Date, notifier?: Notifier
             return;
           }
 
-          // Not addressable here: an unbounded-length `email` (Better Auth's
-          // `z.email()` body schema does not cap local-part length) is
-          // written to the `verification` table *before* this callback runs
-          // at all, refused or not. Rejecting long addresses in this gate
-          // would not stop that write, and adding a pre-validation step of
-          // our own would need to answer with the exact same 200 on both
-          // branches (§ the whole point of this gate) or reopen the oracle it
-          // closes. Left as a recorded storage-amplification footnote rather
-          // than a fix; see task-3-report.md.
+          // Not addressable here: Better Auth's `z.email()` body schema does
+          // not cap length, and the `verification` row is written *before*
+          // this callback runs at all, refused or not. The length ceiling
+          // therefore sits in front of the handler — `isPlausibleEmailLength`
+          // in `src/routes/signin.ts`, on both the form and the API mount —
+          // and the address that reaches here is already at most
+          // `MAX_EMAIL_LENGTH` long.
           await sendSignInLink(env, db, email, url, now, notifier);
         },
       }),
