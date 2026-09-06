@@ -176,13 +176,6 @@ export function renderAccountPage({
     <p>This is how you sign in and where your reminders go, so it can't be changed here yet.</p>
     <p><a href="${PASSKEYS_PATH}">Manage your passkeys</a></p>
 
-    <h2>Your fixtures</h2>
-    ${
-      fixtures.length === 0
-        ? `<p class="read-only">Nothing yet. Once you've answered a fixture, it'll show up here.</p>`
-        : `<ul class="fixture-list">${fixtures.map(renderFixture).join("")}</ul>`
-    }
-
     ${renderDeviceSections({
       vapidPublicKey,
       devices: pushDevices,
@@ -193,6 +186,13 @@ export function renderAccountPage({
       // for it.
       reloadTo: `${ACCOUNT_PATH}?push=enabled`,
     }, hasPasskey)}
+
+    <h2>Recent fixtures</h2>
+    ${
+      fixtures.length === 0
+        ? `<p class="read-only">Nothing yet. Once you've answered a fixture, it'll show up here.</p>`
+        : `<ul class="fixture-list account-history">${fixtures.map(renderFixture).join("")}</ul>`
+    }
 
     <p><a href="${escapeHtml(DELETE_ACCOUNT_PATH)}">Delete my account and data</a> · <a href="${escapeHtml(PRIVACY_PATH)}">Privacy</a></p>
     ${signOutForm("Sign out")}

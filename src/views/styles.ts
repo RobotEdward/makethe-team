@@ -820,13 +820,20 @@ export const OFFLINE_STYLES_CSS = `
  * stylesheet every owner page also carries.
  */
 export const INSTALL_STYLES_CSS = `
-  /* The heading lives *outside* the card since M21, so the box hugs its h2
-     (the 2rem section gap is the heading's own margin now) and the first
-     paragraph inside needs no headroom. */
-  .install { margin-top: 0.75rem; padding: 1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  .device-panel { margin-top: 2rem; padding: 1.2rem 1.1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  .device-panel h2 { margin: 0; }
+  .device-intro { margin: 0.35rem 0 0; color: var(--mut); font-size: var(--t-support); }
+  .device-task { margin-top: 1.25rem; padding-top: 1.1rem; border-top: 1px solid var(--line); }
+  .device-task h3 { margin: 0; font-size: var(--t-body); }
+  .install { margin-top: 0.55rem; }
   .install > p:first-child, .install > [data-install-instructions] { margin-top: 0; }
   .install ol { margin: 0.5rem 0 0; padding-left: 1.2rem; color: var(--mut); font-size: var(--t-support); }
   .install li + li { margin-top: 0.35rem; }
+  .account-history { margin-top: 1rem; }
+  .account-history .fixture-card { padding: 0.85rem 0.9rem; margin-bottom: 0.65rem; border-radius: 0.9rem; }
+  .account-history .fixture-card h3 { margin: 0 0 0.15rem; font-size: var(--t-body); }
+  .account-history .fixture-card p { margin: 0.15rem 0 0; font-size: var(--t-support); }
+  .account-history .fixture-card .viewer-headline { margin-top: 0.45rem; font-size: var(--t-support); }
 `;
 
 /**

@@ -285,14 +285,17 @@ function renderPushBody({ vapidPublicKey, devices, defaultDeviceName, notice, re
  */
 export function renderDeviceSections(push: PushSectionOptions, hasPasskey: boolean): string {
   return `
-    <h2>Install the app</h2>
-    <section class="install">
-      ${renderInstallBody(hasPasskey)}
-    </section>
-
-    <h2>Manage notifications</h2>
-    <section class="install">
-      <div class="push">${renderPushBody(push)}</div>
+    <section class="device-panel" aria-labelledby="device-heading">
+      <h2 id="device-heading">This device</h2>
+      <p class="device-intro">Keep Make The Team handy and choose how this device reaches you.</p>
+      <div class="device-task">
+        <h3>Install the app</h3>
+        <div class="install">${renderInstallBody(hasPasskey)}</div>
+      </div>
+      <div class="device-task">
+        <h3>Manage notifications</h3>
+        <div class="push">${renderPushBody(push)}</div>
+      </div>
     </section>
   `;
 }
