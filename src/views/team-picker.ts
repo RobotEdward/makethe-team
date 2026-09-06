@@ -82,38 +82,22 @@ export function rowName(member: { name: string; erasedAt: Date | null; isGuest: 
   return `${displayName(member.name, member.erasedAt)}${member.isGuest ? " (guest)" : ""}`;
 }
 
-/**
- * Both sides' names with their current head count, above the rows.
- *
- * `data-count` is the drag-and-drop script's handle on these numbers, and the
- * only place a head count appears on the picker — the columns below carry a
- * name and no number on purpose. Two counts would be two things to keep in
- * step, and the one that went stale would be the one an organiser happened to
- * be looking at.
- */
+/** Saved totals remain useful without the live column enhancement. */
 function renderCounts(names: Record<TeamId, string>, counts: { a: number; b: number }): string {
-  const sides = TEAM_IDS.map(
-    (id) => `<span>${escapeHtml(names[id])} <span class="count" data-count="${id}">${counts[id]}</span></span>`,
-  ).join("");
-  return `<p class="team-counts">${sides}</p>`;
+  return `<p class="team-counts" id="team-saved-counts">${TEAM_IDS.map(
+    (id) => `<span>${id.toUpperCase()} · ${escapeHtml(names[id])}: ${counts[id]} picked</span>`,
+  ).join("")}</p>`;
 }
 
-/**
- * The two side columns the script drops names into, shipped `hidden`.
- *
- * Empty and hidden is the whole point: with scripting off they are never
- * revealed and never filled, so nobody is shown a pair of empty boxes with no
- * way to put anything in them. `TEAM_PICKER_JS` reveals them and moves the
- * rows — the rows themselves, radios and all — so a placed player's controls
- * travel with their name and the form's contents never change.
- */
-function renderColumns(names: Record<TeamId, string>): string {
-  const column = (id: TeamId) =>
+/** The same player rows move between these columns; no duplicate controls. */
+function renderColumns(names: Record<TeamId, string>, counts: { a: number; b: number }): string {
+  return `<div class="team-columns" id="team-columns" hidden>${TEAM_IDS.map((id) =>
     `<div class="team-column">
-               <h3>${escapeHtml(names[id])}</h3>
-               <ul class="teams team-drop" data-team="${id}"></ul>
-             </div>`;
-  return `<div class="team-columns" id="team-columns" hidden>${TEAM_IDS.map(column).join("")}</div>`;
+      <h3><span class="team-letter">${id.toUpperCase()}</span> ${escapeHtml(names[id])}</h3>
+      <p class="team-total"><span data-count="${id}">${counts[id]}</span> picked</p>
+      <ul class="teams team-drop" data-team="${id}" aria-label="${escapeHtml(names[id])}"></ul>
+    </div>`,
+  ).join("")}</div>`;
 }
 
 /**
@@ -144,9 +128,9 @@ function renderRandomise(): string {
 function renderRow(member: TeamPickerParams["members"][number], names: Record<TeamId, string>): string {
   const group = escapeHtml(member.playerId);
   const choice = (value: string, label: string) =>
-    `<label><input type="radio" name="${group}" value="${escapeHtml(value)}"${
+    `<label aria-label="${escapeHtml(label)}"><input type="radio" name="${group}" value="${escapeHtml(value)}"${
       (member.team ?? "") === value ? " checked" : ""
-    }>${escapeHtml(label)}</label>`;
+    }><span aria-hidden="true">${value === "" ? "—" : escapeHtml(value.toUpperCase())}</span></label>`;
 
   // `data-player` is what the drag-and-drop script identifies a row by. Not
   // `draggable`: that attribute is set by the script, so a browser that never
@@ -224,7 +208,7 @@ function renderPublish(params: TeamPickerParams): string {
     : `<p class="team-note">Email is off for this game, so publishing shows the teams on players' pages without sending anything.</p>`;
 
   return `${prompt}${emailNote}
-          <form method="post" action="${escapeHtml(ownerTeamsPublishPath(gameId, fixtureId))}">
+          <form method="post" action="${escapeHtml(ownerTeamsPublishPath(gameId, fixtureId))}" id="team-publish">
             <button class="button primary" type="submit">${published ? "Publish again" : "Publish teams"}</button>
           </form>`;
 }
@@ -265,8 +249,8 @@ export function renderTeamPicker(params: TeamPickerParams): string {
   const { gameId, fixtureId, names, members, counts, uneven, unassignedProblem } = params;
 
   if (members.length === 0) {
-    return `<h2>Teams</h2>
-            <p class="muted">Nobody is in yet, so there is nobody to put on a side.</p>`;
+    return `<section class="team-workspace" aria-labelledby="team-heading"><h2 id="team-heading">Teams</h2>
+            <p class="muted">Nobody is in yet, so there is nobody to put on a side.</p></section>`;
   }
 
   // Advisory, never a refusal: BR-29 makes even numbers a preference of the
@@ -283,20 +267,26 @@ export function renderTeamPicker(params: TeamPickerParams): string {
           `Everyone who's in needs a side before you can publish. Still to pick: ${unassignedProblem.join(", ")}.`,
         )}</p>`;
 
-  return `<h2>Teams</h2>
-          <p class="team-note">Only players who are in can be given a side. Nobody is told anything until you publish.</p>
+  return `<section class="team-workspace" aria-labelledby="team-heading">
+          <h2 id="team-heading">Teams</h2>
+          <p class="team-note">Move players between sides until you’re happy with the balance. A and B match the team headings; — leaves a player unpicked.</p>
+          <p class="team-note">${params.published
+            ? "Saving changes updates the teams on players’ pages. Publish again to announce the saved teams."
+            : "Save your progress as often as you like. Players see the teams once you publish."}</p>
           ${problem}
           <form method="post" action="${escapeHtml(ownerTeamsPath(gameId, fixtureId))}" id="team-picker">
             ${renderCounts(names, counts)}
             ${unevenNote}
-            ${renderColumns(names)}
+            ${renderColumns(names, counts)}
+            <h3 class="team-pool-heading" id="team-pool-heading">Players</h3>
             <ul class="teams team-drop" id="team-pool" data-team="">${members.map((member) => renderRow(member, names)).join("")}</ul>
+            <p class="team-draft-status" id="team-draft-status" role="status" aria-live="polite">Save changes before publishing. Publishing uses the saved teams.</p>
             <div class="team-actions">
               ${renderRandomise()}
               <button class="button" type="submit">Save teams</button>
             </div>
           </form>
-          ${renderPublish(params)}`;
+          ${renderPublish(params)}</section>`;
 }
 
 /**

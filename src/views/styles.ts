@@ -713,56 +713,58 @@ export const TEAM_PICKER_CSS = `
     min-height: 44px; font-size: var(--t-body); color: var(--mut);
   }
   .picker-choice input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
-  .teams { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-  .teams li { border-bottom: 1px solid var(--line); }
-  .teams fieldset { margin: 0; padding: 0.4rem 0.1rem; border: 0; }
-  /* Floated so the name sits on the text flow above the choices rather than
-     in the fieldset's default notched border position, which several
-     browsers place inconsistently once the border is removed. */
-  .teams legend { float: left; width: 100%; padding: 0; font-weight: 600; }
-  .teams .sides { clear: both; display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; }
-  /* A 44px-tall hit area for each choice, so a side can be picked on a phone
-     without hitting the radio dot itself. */
-  .teams .sides label {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    min-height: 44px; font-size: var(--t-body); color: var(--mut);
-  }
-  .teams .sides input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
-  /* The drag-and-drop columns (Task 7). They ship hidden and only
-     TEAM_PICKER_JS reveals them, so the default here must be display: none.
-     An unconditional display: flex would beat the user-agent rule that makes
-     the hidden attribute mean anything, and every scripting-off visitor would
-     be shown two empty boxes they cannot put a name into. */
-  .team-columns { display: none; }
-  .team-columns:not([hidden]) { display: flex; gap: 1rem; margin: 0.75rem 0; }
-  .team-column {
-    flex: 1 1 0; min-width: 0; padding: 0.75rem 0.85rem; border-radius: 1.25rem;
-  }
-  /* The two sides get their own fill, in source order — the first is the
-     success family (a side you can pick with confidence), the second the
-     warn family (M20 §2.4), so a scripting-on organiser can tell the columns
-     apart by colour as well as by the heading. */
-  .team-column:first-child { background: var(--ok-bg); color: var(--ok-fg); }
-  .team-column:last-child { background: var(--accent-mut); color: var(--warn); }
-  .team-column h3 { margin: 0 0 0.25rem; font-size: var(--t-body); }
-  /* Tall enough to be a target while empty — a drop area with no height is a
-     side an organiser cannot pick until somebody is already on it. On the
-     pool as well as the two columns: with every name dragged onto a side the
-     pool is the empty one, and it is the only way to drag somebody back off. */
-  .team-drop { min-height: 3.5rem; }
-  .teams li.dragging { opacity: 0.5; }
-  /* Randomise and Save side by side; flex-wrap so a narrow phone stacks them
-     rather than squashing the labels. Randomise ships hidden and flex does
-     not override the hidden attribute on a flex *item*, so with scripting
-     off the row holds Save alone. */
-  .team-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
-  /* nowrap: at 390px "Randomise teams" broke across two lines inside its
-     button (the capture showed it); wrapping belongs to the row, not the label. */
-  .team-actions .button { white-space: nowrap; }
-  .teams.over { outline: 2px dashed var(--accent); outline-offset: 2px; }
-  .team-counts { display: flex; gap: 1.25rem; margin: 0.75rem 0; font-weight: 600; }
-  .team-counts .count { color: var(--mut); font-weight: 400; }
   .team-note { margin: 0.5rem 0; color: var(--mut); font-size: var(--t-body); }
+  .team-workspace {
+    margin: 2rem 0; padding: 1.25rem; border-radius: 1.5rem; background: var(--card-raised);
+  }
+  .team-workspace h2 { margin: 0 0 0.75rem; }
+  .team-workspace h3 { overflow-wrap: anywhere; }
+  .team-workspace .team-note { margin: 0.5rem 0; color: var(--mut); font-size: var(--t-support); }
+  .team-workspace .team-counts { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 1rem 0; }
+  .teams { list-style: none; margin: 0; padding: 0; }
+  .teams li { border-bottom: 1px solid var(--line); padding: 0.65rem 0; }
+  .teams fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+  .teams legend { float: left; width: 100%; padding: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .teams .sides { clear: both; display: flex; flex-wrap: wrap; gap: 0.2rem; padding-top: 0.45rem; }
+  .teams .sides label {
+    position: relative; display: flex; flex: 1; align-items: center; justify-content: center;
+    min-width: 44px; min-height: 44px; border: 1px solid var(--mut); border-radius: 0.6rem;
+    background: var(--card-raised); color: var(--fg); cursor: pointer;
+  }
+  /* Keep native radio focus, arrow keys and form values behind the compact labels. */
+  .teams .sides input {
+    position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; margin: 0;
+    opacity: 0; cursor: pointer;
+  }
+  .teams .sides label:has(input:checked) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .teams .sides label:has(input:focus-visible) { outline: 3px solid var(--link); outline-offset: 3px; }
+  .team-columns { display: none; }
+  .team-columns:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1.25rem 0; }
+  .team-column { min-width: 0; padding: 0.75rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--card); }
+  .team-column h3 { margin: 0; font-size: var(--t-body); }
+  .team-letter { font-family: var(--mono); font-size: var(--t-support); }
+  .team-total { margin: 0.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
+  .team-total [data-count] { font-weight: 700; color: var(--fg); }
+  .team-drop { min-height: 3.5rem; }
+  .team-pool-heading { margin: 1rem 0 0; font-size: var(--t-body); }
+  #team-pool { border-bottom: 1px dashed var(--line); }
+  #team-pool .sides { max-width: 16rem; }
+  .teams li.dragging { opacity: 0.5; }
+  .teams.over { outline: 2px dashed var(--link); outline-offset: 2px; }
+  .team-draft-status { margin: 1rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
+  .team-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
+  .team-workspace .button { min-height: 44px; font-size: var(--t-body); padding: 0.75rem 1rem; }
+  .team-actions .button { white-space: nowrap; border: 1px solid var(--mut); }
+  #team-publish { border-top: 1px solid var(--line); margin-top: 1.25rem; padding-top: 1rem; }
+  #team-publish .button { width: 100%; font-size: var(--t-lead); }
+  #team-publish .button:disabled { background: var(--field); color: var(--mut); cursor: not-allowed; }
+  @media (max-width: 40rem) {
+    .team-workspace { padding: 0.75rem; }
+    .team-columns:not([hidden]) { gap: 0.5rem; }
+    .team-column { padding: 0.4rem; }
+    .teams legend { font-size: var(--t-support); }
+  }
+
 `;
 
 /**

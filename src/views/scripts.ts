@@ -472,7 +472,36 @@ export const TEAM_PICKER_JS = `
     list.appendChild(row);
     if (focused && typeof focused.focus === "function") focused.focus();
     recount();
+    if (saved) updateDraft();
   }
+
+  var saved = [];
+  for (var initial = 0; initial < rows.length; initial++) saved.push(checkedValue(rows[initial]));
+  var status = document.getElementById("team-draft-status");
+  var publish = document.getElementById("team-publish");
+  var publishButton = publish && publish.querySelector("button[type=submit]");
+  var initialUneven = form.querySelector(".team-note");
+
+  function updateDraft() {
+    var dirty = false;
+    var unpicked = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var value = checkedValue(rows[i]);
+      if (value !== saved[i]) dirty = true;
+      if (!value) unpicked++;
+    }
+    if (publishButton) publishButton.disabled = dirty;
+    if (initialUneven) initialUneven.hidden = dirty;
+    if (status) status.textContent = (dirty
+      ? "Unsaved changes. Save teams before publishing. "
+      : "Saved teams. ") + (unpicked
+        ? unpicked + (unpicked === 1 ? " player still needs a side." : " players still need a side.")
+        : "Everyone has a side.");
+  }
+  if (publish) publish.addEventListener("submit", function (event) {
+    updateDraft();
+    if (publishButton && publishButton.disabled) event.preventDefault();
+  });
 
   var dragging = null;
 
@@ -556,6 +585,10 @@ export const TEAM_PICKER_JS = `
   }
 
   columns.hidden = false;
+  var poolHeading = document.getElementById("team-pool-heading");
+  if (poolHeading) poolHeading.textContent = "Not picked yet";
+  var savedCounts = document.getElementById("team-saved-counts");
+  if (savedCounts) savedCounts.hidden = true;
   // Sort what the server already rendered into the columns, so the two
   // pictures start out agreeing. A pick saved earlier arrives with its radios
   // checked and its rows in the flat list; leaving them there would show an
@@ -565,6 +598,7 @@ export const TEAM_PICKER_JS = `
     if (value !== null) place(rows[s], value);
   }
   recount();
+  updateDraft();
 })();
 `;
 
