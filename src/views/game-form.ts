@@ -354,9 +354,10 @@ export function renderGameFormPage(params: GameFormPageParams): string {
     if (!found) return `<td class="notify-cell notify-none">—</td>`;
     const name = cellFieldName(row.type, channel);
     if (!found.adminAllows) {
-      return `<td class="notify-cell"><input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox" disabled aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}" aria-describedby="${escapeHtml(name)}-note"></td>`;
+      return `<td class="notify-cell"><span class="notify-channel">${escapeHtml(CHANNEL_LABEL[channel])}</span><input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox" disabled aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}" aria-describedby="${escapeHtml(name)}-note"></td>`;
     }
     return `<td class="notify-cell">
+        <span class="notify-channel">${escapeHtml(CHANNEL_LABEL[channel])}</span>
         <input type="hidden" name="${escapeHtml(cellMarkerName(row.type, channel))}" value="1">
         <input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox"${found.ownerWants ? " checked" : ""} aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}">
       </td>`;
@@ -384,6 +385,7 @@ export function renderGameFormPage(params: GameFormPageParams): string {
     ? `
       <fieldset class="notify-group">
         <legend>Notifications</legend>
+        <p class="notify-intro">Choose what this game sends and when. Fixtures still open for answers even when a reminder is off.</p>
         <table class="notify-matrix">
           <thead><tr><th class="notify-what">Notification</th><th>Email</th><th>Push</th></tr></thead>
           <tbody>${params.notifications.map(matrixRow).join("")}</tbody>

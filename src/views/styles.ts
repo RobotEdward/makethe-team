@@ -1382,15 +1382,18 @@ export const INVITE_ORDER_CSS = `
  * test/views/game-form-notifications.test.ts pins the block order regardless.
  */
 export const NOTIFY_MATRIX_CSS = `
-  table.notify-matrix { width: 100%; border-collapse: collapse; }
-  table.notify-matrix th { text-align: center; font-size: var(--t-support); color: var(--mut); font-weight: 600; padding: 0.4rem 0; }
-  table.notify-matrix th.notify-what { text-align: left; }
-  table.notify-matrix td { padding: 0.6rem 0; border-top: 1px solid var(--line); vertical-align: top; }
-  table.notify-matrix td.notify-what { padding-right: 1rem; }
+  .notify-intro { margin: 0.25rem 0 1rem; color: var(--mut); font-size: var(--t-support); }
+  table.notify-matrix { width: 100%; border-collapse: separate; border-spacing: 0 0.7rem; }
+  table.notify-matrix th { text-align: center; font-size: var(--t-support); color: var(--mut); font-weight: 600; padding: 0 0.5rem 0.25rem; }
+  table.notify-matrix th.notify-what { text-align: left; padding-left: 0; }
+  table.notify-matrix td { padding: 0.9rem 0.65rem; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: top; background: var(--card); }
+  table.notify-matrix td:first-child { border-left: 1px solid var(--line); border-radius: 0.9rem 0 0 0.9rem; }
+  table.notify-matrix td:last-child { border-right: 1px solid var(--line); border-radius: 0 0.9rem 0.9rem 0; }
+  table.notify-matrix td.notify-what { padding-right: 0.75rem; }
   table.notify-matrix .notify-label { display: block; font-weight: 600; }
   table.notify-matrix .hint { display: block; font-size: var(--t-support); color: var(--mut); }
-  /* 52px wide so the whole cell is the hit area, not the 1.4rem box (FORM_CSS's floor). */
-  table.notify-matrix td.notify-cell { width: 52px; text-align: center; vertical-align: middle; }
+  table.notify-matrix td.notify-cell { width: 76px; text-align: center; vertical-align: middle; }
+  .notify-channel { display: none; font-size: var(--t-support); color: var(--mut); }
   table.notify-matrix td.notify-cell input { width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
   table.notify-matrix td.notify-cell input:disabled { opacity: 0.45; }
   table.notify-matrix td.notify-none { color: var(--mut); }
@@ -1406,6 +1409,22 @@ export const NOTIFY_MATRIX_CSS = `
   }
   table.notify-matrix .notify-timing input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
   table.notify-matrix .notify-timing .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
+  .notify-unavailable { display: none; }
+  @media (max-width: 40rem) {
+    table.notify-matrix { border-spacing: 0 0.85rem; }
+    table.notify-matrix thead { display: none; }
+    table.notify-matrix, table.notify-matrix tbody, table.notify-matrix tr, table.notify-matrix td { display: block; width: 100%; }
+    table.notify-matrix tr { border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; background: var(--card); }
+    table.notify-matrix td { border: 0; border-radius: 0 !important; padding: 0.85rem 0.9rem; }
+    table.notify-matrix td.notify-what { border-bottom: 1px solid var(--line); }
+    table.notify-matrix td.notify-cell { display: flex; align-items: center; justify-content: space-between; min-height: 52px; border-bottom: 1px solid var(--line); }
+    table.notify-matrix td.notify-cell:last-child { border-bottom: 0; }
+    .notify-channel { display: inline; font-weight: 600; }
+    .notify-unavailable { display: inline; margin-left: auto; margin-right: 0.5rem; font-size: var(--t-support); color: var(--mut); }
+    table.notify-matrix td.notify-none { display: flex; align-items: center; justify-content: space-between; }
+    table.notify-matrix td.notify-none::before { content: "Channel unavailable"; font-size: var(--t-support); color: var(--mut); }
+    table.notify-matrix .notify-timing { gap: 0.5rem; }
+  }
 `;
 
 /** The administrator's notification grid (M37) — `src/views/admin-notifications.ts`. Namespaced under `.admin-notify`. */
