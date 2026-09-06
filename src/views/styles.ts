@@ -1480,6 +1480,11 @@ export const ADMIN_NOTIFICATIONS_CSS = `
  * sentence about four words wide, and every entry wrapped to four lines.
  */
 export const TIMELINE_CSS = `
+  .timeline-workspace {
+    margin-top: 1.5rem; padding: 1rem 1.1rem;
+    border: 1px solid var(--line); border-radius: 1.1rem; background: var(--card);
+  }
+  .timeline-workspace h2 { margin: 0 0 .65rem; font-size: var(--t-body); }
   .timeline-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
   ol.timeline { list-style: none; margin: 0; padding: 0; }
   ol.timeline > li {

@@ -628,7 +628,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
       ${renderSquadList(gameId, fixtureId, squad, takingChanges(view), params.gatedInvites)}
     </section>
 
-    ${params.inviteProgress === undefined ? "" : renderInviteProgress(params.inviteProgress)}
+    ${params.inviteProgress === undefined ? "" : `<section id="invite-progress" class="fixture-section">${renderInviteProgress(params.inviteProgress)}</section>`}
 
     <section id="teams" class="fixture-section" aria-labelledby="teams-heading">
       ${renderTeams(params).replace('<h2 id="team-heading">Teams</h2>', '<h2 id="teams-heading">Teams</h2>').replace('<h2>Teams</h2>', '<h2 id="teams-heading">Teams</h2>')}
@@ -638,7 +638,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     ${renderGuestLink(gameId, fixtureId, params)}
 
-    ${whatsapp.length === 0 ? "" : renderWhatsAppCard({ messages: whatsapp })}
+    ${whatsapp.length === 0 ? "" : `<section id="share" class="fixture-section">${renderWhatsAppCard({ messages: whatsapp })}</section>`}
 
     <div id="actions" class="actions">
       <a class="button" href="${escapeHtml(fixtureMessagePath(gameId, fixtureId))}">Message players</a>

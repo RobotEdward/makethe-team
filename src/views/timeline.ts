@@ -110,12 +110,15 @@ export function renderTimelinePage(params: TimelinePageParams): string {
   const body = `
     <h1>What has happened</h1>
     <p class="kickoff">${escapeHtml(params.gameName)} — ${escapeHtml(params.kicksOffAtLocal)}</p>
-    <p class="timeline-note">Invitations, answers and organiser actions, newest first. Only what has happened since this page was added — nothing before that was recorded.</p>
-    ${
-      params.entries.length === 0
-        ? `<p class="timeline-empty">Nothing yet.</p>`
-        : items
-    }
+    <section class="timeline-workspace" aria-labelledby="timeline-heading">
+      <h2 id="timeline-heading">Fixture history</h2>
+      <p class="timeline-note">Invitations, answers and organiser actions, newest first. Only what has happened since this page was added — nothing before that was recorded.</p>
+      ${
+        params.entries.length === 0
+          ? `<p class="timeline-empty">Nothing yet.</p>`
+          : items
+      }
+    </section>
     <p class="back-link"><a href="${escapeHtml(fixturePath(gameId, fixtureId))}">Back to the fixture</a></p>
   `;
 
