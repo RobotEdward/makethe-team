@@ -1108,6 +1108,10 @@ export const WHATSAPP_CSS = `
  * SQUAD_STYLES_CSS and FORM_CSS already have.
  */
 export const RESULT_CSS = `
+  .result-workspace { margin-top: 1.5rem; }
+  .result-workspace h2 { margin-bottom: 0.75rem; }
+  .result-focus { margin: 1rem 0 1.25rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--card-raised); }
+  .result-kicker { margin: 0 0 0.5rem; font-size: var(--t-support); font-weight: 600; color: var(--mut); text-transform: uppercase; letter-spacing: 0.04em; }
   .result-candidates { list-style: none; margin: 0.8rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
   .result-candidate {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem 0.9rem;
@@ -1117,6 +1121,11 @@ export const RESULT_CSS = `
   .result-backers { font-size: var(--t-support); color: var(--mut); }
   .result-yours { font-size: var(--t-support); color: var(--mut); }
   .result-candidate form { margin: 0 0 0 auto; }
+  .result-candidate:first-child { border-color: var(--accent); background: var(--card); }
+  .result-candidate:first-child .result-claim { font-size: var(--t-lead); }
+  .result-alternate { margin: 1.25rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
+  .result-alternate summary { min-height: 44px; display: flex; align-items: center; }
+  .result-alternate form { margin-top: 1rem; }
   .result-final { font-size: var(--t-lead); font-weight: 600; margin: 0.4rem 0 0.2rem; }
   /* Two of these render back to back in the locked view -- "Result 2 of 2"
      then "Score 2 of 2" -- and margin: 0 on both left them touching with no

@@ -140,7 +140,7 @@ function renderCandidates(params: ResultPanelParams): string {
         : "",
     ])
     .join("");
-  return rows === "" ? "" : `<ul class="result-candidates">${rows}</ul>`;
+  return rows === "" ? "" : `<div class="result-focus"><p class="result-kicker">Result so far</p><ul class="result-candidates">${rows}</ul></div>`;
 }
 
 function renderFileForm(params: ResultPanelParams): string {
@@ -154,7 +154,7 @@ function renderFileForm(params: ResultPanelParams): string {
     })
     .join("");
 
-  return `
+  const form = `
     <form method="post" action="${escapeHtml(params.actionPath)}">
       <h3>What happened?</h3>
       <div class="result-score">
@@ -168,8 +168,8 @@ function renderFileForm(params: ResultPanelParams): string {
       <p class="result-note">Or, if nobody remembers the score, just say who won:</p>
       ${options}
       <p><button type="submit" class="button">Record it</button></p>
-    </form>
-  `;
+    </form>`;
+  return params.candidates.length === 0 ? form : `<details class="result-alternate"><summary>I remember a different result</summary>${form}</details>`;
 }
 
 function renderClearForm(params: ResultPanelParams): string {
@@ -222,7 +222,7 @@ function renderLocked(params: ResultPanelParams): string {
  */
 export function renderResultPanel(params: ResultPanelParams): string {
   if (params.locked) {
-    return `<section><h2>Result</h2>${renderLocked(params)}</section>`;
+    return `<section class="result-workspace"><h2>Result</h2>${renderLocked(params)}</section>`;
   }
 
   const nothingYet =
@@ -232,7 +232,7 @@ export function renderResultPanel(params: ResultPanelParams): string {
     : "";
 
   return `
-    <section>
+    <section class="result-workspace">
       <h2>Result</h2>
       ${nothingYet}
       ${deadline}
