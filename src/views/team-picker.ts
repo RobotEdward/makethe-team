@@ -271,7 +271,9 @@ export function renderTeamPicker(params: TeamPickerParams): string {
           <h2 id="team-heading">Teams</h2>
           <p class="team-note">Move players between sides until you’re happy with the balance. A and B match the team headings; — leaves a player unpicked.</p>
           <p class="team-note">${params.published
-            ? "Saving changes updates the teams on players’ pages. Publish again to announce the saved teams."
+            ? params.canPublish
+              ? "Saving changes updates the teams on players’ pages. Publish again to announce the saved teams."
+              : "Saving changes updates the teams on players’ pages. Only the organiser can send a fresh message about them."
             : "Save your progress as often as you like. Players see the teams once you publish."}</p>
           ${problem}
           <form method="post" action="${escapeHtml(ownerTeamsPath(gameId, fixtureId))}" id="team-picker">
