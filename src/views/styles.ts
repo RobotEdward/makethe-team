@@ -38,6 +38,16 @@ import { STYLES } from "./layout.js";
  * second copy that could drift from it.
  */
 export const FIXTURE_STYLES_CSS = `
+  .fixture-index {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .8rem;
+    margin: 1.1rem 0 1.5rem; padding: .65rem .8rem;
+    border: 1px solid var(--line); border-radius: .8rem; background: var(--card);
+    font-size: var(--t-support);
+  }
+  .fixture-index-label { color: var(--mut); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .fixture-index a { font-weight: 700; }
+  .fixture-section { scroll-margin-top: 1rem; }
+  .fixture-section > h2 { scroll-margin-top: 1rem; }
   .venue, .kickoff { font-size: var(--t-body); }
   .kickoff { margin-bottom: 0.75rem; }
 

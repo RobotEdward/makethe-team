@@ -604,6 +604,12 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>
+    <nav class="fixture-index" aria-label="Fixture sections">
+      <span class="fixture-index-label">Jump to</span>
+      <a href="#squad">Squad</a>
+      <a href="#teams">Teams</a>
+      <a href="#actions">Messages and history</a>
+    </nav>
     ${problem}
     ${params.broadcastNotice === undefined ? "" : `<p class="nudge ok">${escapeHtml(params.broadcastNotice)}</p>`}
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
@@ -617,12 +623,16 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     ${resultPanel}
 
-    <h2>Squad</h2>
-    ${renderSquadList(gameId, fixtureId, squad, takingChanges(view), params.gatedInvites)}
+    <section id="squad" class="fixture-section" aria-labelledby="squad-heading">
+      <h2 id="squad-heading">Squad</h2>
+      ${renderSquadList(gameId, fixtureId, squad, takingChanges(view), params.gatedInvites)}
+    </section>
 
     ${params.inviteProgress === undefined ? "" : renderInviteProgress(params.inviteProgress)}
 
-    ${renderTeams(params)}
+    <section id="teams" class="fixture-section" aria-labelledby="teams-heading">
+      ${renderTeams(params).replace('<h2 id="team-heading">Teams</h2>', '<h2 id="teams-heading">Teams</h2>').replace('<h2>Teams</h2>', '<h2 id="teams-heading">Teams</h2>')}
+    </section>
 
     ${renderPickerControl(gameId, fixtureId, params)}
 
@@ -630,7 +640,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     ${whatsapp.length === 0 ? "" : renderWhatsAppCard({ messages: whatsapp })}
 
-    <div class="actions">
+    <div id="actions" class="actions">
       <a class="button" href="${escapeHtml(fixtureMessagePath(gameId, fixtureId))}">Message players</a>
       <a class="button" href="${escapeHtml(fixtureTimelinePath(gameId, fixtureId))}">What has happened</a>
     </div>

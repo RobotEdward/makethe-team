@@ -77,6 +77,17 @@ function params(over: Partial<OwnerFixtureParams> = {}): OwnerFixtureParams {
  * controls, so it is the page where getting the order wrong actually shows.
  */
 describe("the squad row's layout", () => {
+  it("offers a compact route through the long fixture workspace", () => {
+    const html = renderOwnerFixturePage(params());
+    expect(html).toContain('<nav class="fixture-index" aria-label="Fixture sections">');
+    expect(html).toContain('href="#squad"');
+    expect(html).toContain('id="squad"');
+    expect(html).toContain('href="#teams"');
+    expect(html).toContain('id="teams"');
+    expect(html).toContain('href="#actions"');
+    expect(html).toContain('id="actions"');
+  });
+
   it("lets FORM_CSS win the ul.squad row, so a row's shape is not the member's name's length", () => {
     // Both blocks declare `ul.squad > li` at identical specificity, and
     // `layout()` emits `pageStyles` in array order, so array order is cascade
@@ -306,8 +317,8 @@ describe("owner fixture page — result panel position (M27)", () => {
       }),
     );
     expect(html).toContain("<h2>Result</h2>");
-    expect(html).toContain("<h2>Squad</h2>");
-    expect(html.indexOf("<h2>Result</h2>")).toBeLessThan(html.indexOf("<h2>Squad</h2>"));
+    expect(html).toContain('<h2 id="squad-heading">Squad</h2>');
+    expect(html.indexOf("<h2>Result</h2>")).toBeLessThan(html.indexOf('<h2 id="squad-heading">Squad</h2>'));
   });
 });
 
