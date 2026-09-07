@@ -149,7 +149,8 @@ export function renderAdminUsagePage(params: AdminUsagePageParams): string {
       <h1>Usage</h1>
       <p class="tool-note">Read at ${escapeHtml(utcStamp(params.generatedAt))}.</p>
 
-      <h2>Scale now</h2>
+      <section class="admin-tool-section admin-summary" aria-labelledby="usage-scale">
+      <h2 id="usage-scale">Scale now</h2>
       <dl class="usage-figures">
         ${figure("Games", scale.games)}
         ${figure("Active squad places", scale.activeMemberships)}
@@ -160,7 +161,9 @@ export function renderAdminUsagePage(params: AdminUsagePageParams): string {
         ${figure("Push devices", scale.pushDevices)}
       </dl>
 
-      <h2>Activity</h2>
+      </section>
+      <section class="admin-tool-section" aria-labelledby="usage-activity">
+      <h2 id="usage-activity">Activity</h2>
       <table class="admin-log">
         <thead><tr>
           <th></th><th class="usage-number">7 days</th><th class="usage-number">28 days</th>
@@ -175,7 +178,9 @@ export function renderAdminUsagePage(params: AdminUsagePageParams): string {
         </tbody>
       </table>
 
-      <h2>Did it work</h2>
+      </section>
+      <section class="admin-tool-section" aria-labelledby="usage-outcomes">
+      <h2 id="usage-outcomes">Did it work</h2>
       ${
         // The denominator sentence reads as nonsense on a fresh deployment
         // ("the share is of the 0 that went ahead"), which is the first state
@@ -199,7 +204,9 @@ export function renderAdminUsagePage(params: AdminUsagePageParams): string {
         </tbody>
       </table>
 
-      <h2>Limits</h2>
+      </section>
+      <section class="admin-tool-section" aria-labelledby="usage-limits">
+      <h2 id="usage-limits">Limits</h2>
       ${sweepWarning}
       <dl class="usage-figures">
         <div>
@@ -222,8 +229,11 @@ export function renderAdminUsagePage(params: AdminUsagePageParams): string {
         there is no honest figure to show against D1's 5&nbsp;GB storage ceiling.
       </p>
 
-      <h2>Per game</h2>
+      </section>
+      <section class="admin-tool-section" aria-labelledby="usage-games">
+      <h2 id="usage-games">Per game</h2>
       ${gamesHtml}
+      </section>
     `,
   });
 }

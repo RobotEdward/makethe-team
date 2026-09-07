@@ -90,6 +90,8 @@ export function renderAdminAllowlistPage(params: AdminAllowlistPageParams): stri
           <button class="button ${openSignups ? "primary" : "danger"}" type="submit">${escapeHtml(mode.button)}</button>
         </form>
       </section>
+      <section class="admin-tool-section" aria-labelledby="allowlist-members">
+      <h2 id="allowlist-members">Addresses on the list</h2>
       <p>${
         openSignups
           ? "These addresses are kept for when sign ups are restricted again. While sign ups are open they change nothing — anyone can sign in."
@@ -104,6 +106,7 @@ export function renderAdminAllowlistPage(params: AdminAllowlistPageParams): stri
         </div>
         <button class="button primary" type="submit">Add</button>
       </form>
+      </section>
     `,
   });
 }

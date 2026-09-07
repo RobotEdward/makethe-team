@@ -123,6 +123,8 @@ export function renderAdminSigninDoctorPage(params: AdminSigninDoctorPageParams)
     body: `
       <h1>Sign-in doctor</h1>
       <p>Check an address against the sign-in gate. Someone can sign in if any door is open.</p>
+      <section class="admin-tool-section admin-summary" aria-labelledby="doctor-check">
+      <h2 id="doctor-check">Check an address</h2>
       <form method="post" action="${escapeHtml(ADMIN_SIGNIN_CHECK_PATH)}" class="allowlist-add">
         <div class="field${error ? " field-invalid" : ""}">
           <label for="email">Email address</label>
@@ -132,12 +134,17 @@ export function renderAdminSigninDoctorPage(params: AdminSigninDoctorPageParams)
         <button class="button primary" type="submit">Check</button>
       </form>
       ${verdictHtml}
-      <h2>Link requests in the last few minutes</h2>
+      </section>
+      <section class="admin-tool-section" aria-labelledby="doctor-pending">
+      <h2 id="doctor-pending">Link requests in the last few minutes</h2>
       <p>Read from the pending sign-in links themselves, so entries disappear as the links expire.</p>
       ${attemptsHtml}
-      <h2>Recently refused</h2>
+      </section>
+      <section class="admin-tool-section" aria-labelledby="doctor-refused">
+      <h2 id="doctor-refused">Recently refused</h2>
       <p>Addresses the gate turned away. They saw the normal "check your inbox" page and no email was sent.</p>
       ${refusalsHtml}
+      </section>
     `,
   });
 }
