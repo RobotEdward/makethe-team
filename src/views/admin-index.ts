@@ -28,6 +28,7 @@ export function renderAdminIndexPage(params: AdminIndexPageParams): string {
     pageStyles: [ADMIN_TOOLS_CSS],
     body: `
       <h1>Admin</h1>
+      <p class="admin-intro">Operational tools for keeping the service healthy. Open a tool when you need its current reading.</p>
       <ul class="admin-tools">
         <li>
           <a href="${escapeHtml(ADMIN_ALLOWLIST_PATH)}">Sign-up allow list</a>

@@ -69,10 +69,15 @@ export function renderAdminDeliveryPage(params: AdminDeliveryPageParams): string
     pageStyles: [ADMIN_TOOLS_CSS],
     body: `
       <h1>Email delivery</h1>
-      <p>Sent today (UTC): ${sentToday} of ${ceiling}. Once the ceiling is reached, further email quietly waits for tomorrow. Notifier: ${escapeHtml(notifierName)}.</p>
-      <h2>Recent notifications</h2>
-      <p>Game notifications, newest first. Sign-in link emails count against the ceiling but are not logged here.</p>
-      ${logHtml}
+      <section class="admin-tool-section admin-summary" aria-labelledby="delivery-summary">
+        <h2 id="delivery-summary">Today</h2>
+        <p>Sent today (UTC): ${sentToday} of ${ceiling}. Once the ceiling is reached, further email quietly waits for tomorrow. Notifier: ${escapeHtml(notifierName)}.</p>
+      </section>
+      <section class="admin-tool-section" aria-labelledby="delivery-log">
+        <h2 id="delivery-log">Recent notifications</h2>
+        <p>Game notifications, newest first. Sign-in link emails count against the ceiling but are not logged here.</p>
+        ${logHtml}
+      </section>
     `,
   });
 }

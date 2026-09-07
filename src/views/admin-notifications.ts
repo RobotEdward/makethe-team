@@ -52,12 +52,14 @@ export function renderAdminNotificationsPage(params: AdminNotificationsPageParam
       <td class="notify-cell notify-none" colspan="2">No control</td>
     </tr>`;
   const band = (title: string, note: string, types: NotificationType[], render: (t: NotificationType) => string) => `
-    <h2>${escapeHtml(title)}</h2>
-    <p class="tool-note">${escapeHtml(note)}</p>
-    <table class="admin-notify">
+    <section class="admin-tool-section">
+      <h2>${escapeHtml(title)}</h2>
+      <p class="tool-note">${escapeHtml(note)}</p>
+      <table class="admin-notify">
       <thead><tr><th class="notify-what">Notification</th><th>Email</th><th>Push</th></tr></thead>
       <tbody>${types.map(render).join("")}</tbody>
-    </table>`;
+      </table>
+    </section>`;
   const of = (scope: "owner" | "admin" | "none") => NOTIFICATION_TYPES.filter((t) => NOTIFICATION_CONTROLS[t].scope === scope);
 
   return layout({

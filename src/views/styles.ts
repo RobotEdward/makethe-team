@@ -1022,9 +1022,20 @@ export const ADMIN_ALLOWLIST_CSS = `
 `;
 
 export const ADMIN_TOOLS_CSS = `
+  .admin-intro { color: var(--mut); font-size: var(--t-support); margin: -0.15rem 0 1rem; }
   ul.admin-tools { list-style: none; padding: 0; margin: 1.1rem 0; }
-  ul.admin-tools > li { padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+  ul.admin-tools > li {
+    padding: 0.8rem 0.9rem; margin: 0 0 0.55rem;
+    border: 1px solid var(--line); border-radius: 0.9rem; background: var(--card);
+  }
+  ul.admin-tools > li > a { font-weight: 600; }
   ul.admin-tools .tool-note { color: var(--mut); font-size: var(--t-support); margin: 0.15rem 0 0; }
+  .admin-tool-section {
+    margin: 1.5rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line);
+  }
+  .admin-tool-section h2 { margin: 0 0 0.45rem; font-size: var(--t-body); }
+  .admin-tool-section > p { color: var(--mut); font-size: var(--t-support); }
+  .admin-summary { padding: 0.9rem 1rem; border: 1px solid var(--line); border-top: 0; border-radius: 0.9rem; background: var(--card); }
   ul.doors { list-style: none; padding: 0; margin: 1.1rem 0; }
   ul.doors > li { padding: 0.35rem 0; overflow-wrap: anywhere; }
   ul.doors .door-open { color: var(--accent); font-weight: 600; }
