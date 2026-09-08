@@ -42,6 +42,12 @@ is still free for somebody else.
 Both buttons stay on the page afterwards, so you can change your mind by
 tapping the other one any time before kickoff.
 
+If you have signed in on this phone — say, because you opened the page from a
+push notification in the installed app — the usual **Games** and **Account**
+links sit at the top, so you can carry on into the rest of the app from here.
+If not, a **Sign in** link at the foot of the page takes you to the same
+place.
+
 ## Who else is playing
 
 ![The squad list on the response page, every name and answer visible](images/respond-squad-shown.png)

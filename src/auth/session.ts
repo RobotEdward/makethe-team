@@ -223,6 +223,34 @@ export async function resolveSessionPlayer(
   return (await resolveSessionAndPlayer(env, db, now, headers)).player;
 }
 
+/**
+ * The signed-in header for a token page, or `undefined` when nobody is signed
+ * in — `resolveSessionPlayer`'s sibling, for the same routes and with the same
+ * cost argument (M63).
+ *
+ * `GET`/`POST /r/:token` is the caller: a push notification opens that page
+ * inside the installed app, where there is no browser chrome to go back with,
+ * and a page with no header is a dead end. Keyed on the *session*, not on the
+ * session's player matching the token's — the header links only to the session
+ * holder's own dashboard and account, so a forwarded link opened by somebody
+ * else gives away nothing about whose link it is. A session with no linked
+ * Player still gets it: `/app` answers for them too.
+ *
+ * Never throws: `resolveSessionAndPlayer` degrades a lookup fault to
+ * "anonymous", which here renders the sign-in offer instead of the header —
+ * the honest answer when we could not establish who is asking.
+ */
+export async function resolveSessionNav(
+  env: Bindings,
+  db: Db,
+  now: Date,
+  headers: Headers,
+  current: NavSection,
+): Promise<PageNav | undefined> {
+  const { session, isAdmin } = await resolveSessionAndPlayer(env, db, now, headers);
+  return session === null ? undefined : { isAdmin, current };
+}
+
 // ---------------------------------------------------------------------------
 // Route guards.
 //

@@ -15,7 +15,7 @@ import type { MuteControlsOptions } from "../views/mute-controls.js";
 import { fixtures, games, players } from "../db/schema.js";
 import { recordAudit } from "../db/audit.js";
 import { getDb, type Db } from "../db/client.js";
-import { resolveSessionPlayer } from "../auth/session.js";
+import { resolveSessionNav, resolveSessionPlayer } from "../auth/session.js";
 import { fixtureView } from "../domain/fixture-view.js";
 import { formatLocalDate, formatLocalDateTime } from "../domain/time/zone.js";
 import {
@@ -39,6 +39,7 @@ import { buildReminderMessages } from "../notify/reminder-messages.js";
 import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
 import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
+import type { PageNav } from "../views/layout.js";
 import { renderLeavePage, type LeavePageParams } from "../views/leave.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
 import { publishedTeamsFor } from "../domain/teams.js";
@@ -97,6 +98,12 @@ async function renderFixtureForViewer(params: {
    * module's own doc comment gives for why `GET` here writes nothing).
    */
   pushOffer?: { vapidPublicKey: string };
+  /**
+   * The signed-in header, if a session is on this request (M63) — resolved by
+   * the caller, because it needs the environment and the request headers and
+   * this function has neither. See `resolveSessionNav`.
+   */
+  nav: PageNav | undefined;
 }): Promise<string | null> {
   const { db, fixtureId, playerId, token, now, intent, pushOffer } = params;
   const loaded = await getFixtureWithSquad(db, fixtureId);
@@ -163,6 +170,7 @@ async function renderFixtureForViewer(params: {
           : undefined;
 
   return renderFixturePage({
+    nav: params.nav,
     gameName: game.name,
     venueName: fixture.venueOverride ?? game.venueName,
     kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
@@ -257,7 +265,8 @@ respond.get("/r/:token", async (c) => {
   const db = getDb(c.env.DB);
   const intent = parseIntent(c.req.query("intent"));
 
-  const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent });
+  const nav = await resolveSessionNav(c.env, db, now, c.req.raw.headers, "games");
+  const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent, nav });
   if (html === null) {
     console.error(`response token verified for a fixture that no longer exists: ${fixtureId}`);
     return c.html(renderLinkProblemPage(), 200);
@@ -389,7 +398,8 @@ respond.post("/r/:token", async (c) => {
 
   const pushOffer = await resolvePushOffer(c.env, db, playerId, outcome, now);
 
-  const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent, pushOffer });
+  const nav = await resolveSessionNav(c.env, db, now, c.req.raw.headers, "games");
+  const html = await renderFixtureForViewer({ db, fixtureId, playerId, token, now, intent, pushOffer, nav });
   if (html === null) {
     console.error(`fixture disappeared between recording a response and re-rendering it: ${fixtureId}`);
     return c.html(renderLinkProblemPage(), 200);

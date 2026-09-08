@@ -8,6 +8,7 @@ import { signResponseToken } from "../../src/domain/token.js";
 import { FRESHNESS_JS, SERVICE_WORKER_JS } from "../../src/views/scripts.js";
 import { insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW } from "../support/clock.js";
+import { ALLOWED, signIn } from "../support/sign-in.js";
 
 const db = getDb(env.DB);
 const SECRET = env.RESPONSE_TOKEN_SECRET;
@@ -46,6 +47,11 @@ async function seedRespondableFixture(
      * only thing that may make any of it visible to a player.
      */
     teams?: "saved" | "published";
+    /**
+     * The viewer's address. `ALLOWED` makes them the person `signIn()` signs
+     * in as, so a session can be minted that names the token's own player.
+     */
+    viewerEmail?: string;
   } = {},
 ): Promise<SeedResult> {
   const gameId = await insertGame(db, {
@@ -67,7 +73,11 @@ async function seedRespondableFixture(
   });
 
   const playerId = crypto.randomUUID();
-  await db.insert(players).values({ id: playerId, name: "Edward Cooper", email: "edward@example.com" });
+  await db.insert(players).values({
+    id: playerId,
+    name: "Edward Cooper",
+    email: overrides.viewerEmail ?? "edward@example.com",
+  });
   await db.insert(memberships).values({
     id: crypto.randomUUID(),
     gameId,
@@ -680,5 +690,65 @@ describe("the push section never discloses a device (M14 Task 12 review, Finding
 
     expect(body).not.toMatch(/action="\/app\/push\/unsubscribe"/);
     expect(body).not.toContain('name="endpoint"');
+  });
+});
+
+/**
+ * The way back into the app from a notification (M63).
+ *
+ * A push notification opens `/r/:token` inside the installed app, where there
+ * is no browser chrome to go back with. The page therefore carries the
+ * signed-in header whenever a session is on it, and a sign-in offer when none
+ * is — never both, because the header's "Games" link bounces a signed-out
+ * visitor to sign-in, which `LayoutOptions.nav` documents as worse than no
+ * link at all.
+ */
+describe("GET /r/:token — the way back into the app (M63)", () => {
+  const HEADER = 'class="site-header"';
+  const OFFER = 'href="/sign-in"';
+
+  it("offers sign-in, and no header, to a visitor with no session", async () => {
+    const { token } = await seedRespondableFixture();
+
+    const body = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(body).toContain(OFFER);
+    expect(body).not.toContain(HEADER);
+  });
+
+  it("shows the header, and no offer, to the player the token names", async () => {
+    const { token, playerId } = await seedRespondableFixture({ viewerEmail: ALLOWED });
+    const { cookie } = await signIn();
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    expect(viewer?.id).toBe(playerId);
+
+    const body = await (await SELF.fetch(`https://makethe.team/r/${token}`, { headers: { cookie } })).text();
+
+    expect(body).toContain(HEADER);
+    expect(body).toContain('href="/app"');
+    expect(body).not.toContain(OFFER);
+  });
+
+  it("shows the header to a signed-in person the token does not name, without leaking the difference", async () => {
+    // A forwarded link. The header links only to the session holder's own
+    // pages, so it gives away nothing about whose link this is.
+    const { token } = await seedRespondableFixture();
+    const { cookie } = await signIn();
+
+    const response = await SELF.fetch(`https://makethe.team/r/${token}`, { headers: { cookie } });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain(HEADER);
+    expect(body).not.toContain(OFFER);
+  });
+
+  it("keeps the offer on a read-only page too — it is about leaving, not answering", async () => {
+    const { token } = await seedRespondableFixture({ lifecycle: "played" });
+
+    const body = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(body).toContain(OFFER);
+    expect(body).not.toContain('method="post"');
   });
 });

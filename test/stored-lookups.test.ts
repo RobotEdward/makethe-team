@@ -149,6 +149,7 @@ const LOOKUPS: readonly { name: string; column: string; reach: () => string }[] 
     // stayed invisible.
     reach: () =>
       renderFixturePage({
+        nav: undefined,
         gameName: "Thursday 7-a-side",
         venueName: "Oxford Sports Park",
         kicksOffAtLocal: "Thursday 13 August, 19:00",

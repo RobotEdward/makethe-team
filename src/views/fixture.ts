@@ -8,7 +8,8 @@ import type { PublishedTeams } from "../domain/teams.js";
 import { renderFreshness } from "./freshness.js";
 import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
 import { renderPushOffer } from "./install.js";
-import { escapeHtml, layout } from "./layout.js";
+import { SIGN_IN_PATH } from "../auth/paths.js";
+import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS, PUSH_SUBSCRIBE_JS } from "./scripts.js";
 import { ordinal } from "./squad-row.js";
 import { renderTeamSides } from "./team-picker.js";
@@ -105,6 +106,13 @@ export interface FixturePageOptions {
   teams: PublishedTeams | null;
   /** Set when there is nothing this viewer can do here: render read-only, no buttons. */
   readOnlyReason?: ReadOnlyReason;
+  /**
+   * The signed-in header when a session is on the request, `undefined` when
+   * none is (M63). Required rather than optional so a caller cannot forget to
+   * ask: an absent header renders the sign-in offer instead, and a page that
+   * offered sign-in to a signed-in reader would look broken.
+   */
+  nav: PageNav | undefined;
   /**
    * The one-time push offer (M14 Task 12, spec §11) — present only when the
    * caller has already decided to show it and stamped
@@ -709,6 +717,19 @@ export function answerStateOf(status: ResponseStatus, readOnly: boolean): string
  * viewer's answer is decided by `viewer.status`, not by `?intent=` — see
  * `renderResponseButtons`.
  */
+/**
+ * The way back into the app for a reader with no session (M63).
+ *
+ * The signed-in header's "Games" link would bounce them to sign-in with no
+ * explanation (`LayoutOptions.nav` in `src/views/layout.ts`), so instead the
+ * page says what signing in buys, in the shape the leave page already uses.
+ * Sign-in carries no return-to parameter; the dashboard it lands on is where
+ * this link is promising to take them anyway.
+ */
+function renderSignInOffer(): string {
+  return `<p class="sign-in-offer"><a href="${escapeHtml(SIGN_IN_PATH)}">Sign in to see all your games and respond from the app.</a></p>`;
+}
+
 export function renderFixturePage(options: FixturePageOptions): string {
   const { gameName, venueName, kicksOffAtLocal, view, squad, inCount, viewer, readOnlyReason, pushOffer, token } =
     options;
@@ -756,10 +777,12 @@ export function renderFixturePage(options: FixturePageOptions): string {
     <h2>Squad</h2>
     ${renderSquadSection(squad, inCount, viewer.playerId)}
     ${options.mute === undefined ? "" : renderMuteControls(options.mute)}
+    ${options.nav === undefined ? renderSignInOffer() : ""}
     ${renderFreshness(`/r/${encodeURIComponent(token)}`)}
   `;
 
   return layout({
+    nav: options.nav,
     title: `${gameName} — Make The Team`,
     body,
     // `TEAM_PICKER_CSS` is the owner picker's block, reused here because the

@@ -54,6 +54,7 @@ const BASE = {
   // says "nothing published here" — which is what every case below except the
   // teams tests wants.
   teams: null,
+  nav: undefined,
 };
 
 function optionsWith(overrides: Partial<FixturePageOptions>): FixturePageOptions {
@@ -1450,5 +1451,29 @@ describe("a player held by the invite order reads a different reason (BR-40a)", 
     expect(viewerHeadlineOpen({ status: "waitlisted", waitlistRank: null })).toBe(
       "You're on the waitlist.",
     );
+  });
+});
+
+/**
+ * The way back into the app for a reader with no session (M63). The offer is
+ * a bare paragraph, and the reset zeroes paragraph margins, so its class and
+ * the rule behind it are the only thing keeping it off the mute disclosure
+ * above it — seen flush against it in the first capture.
+ */
+describe("the sign-in offer (M63)", () => {
+  it("renders for a page with no header, spaced by a rule the page's own block carries", () => {
+    const html = renderFixturePage(optionsWith({ nav: undefined }));
+
+    expect(html).toContain('<p class="sign-in-offer"><a href="/sign-in">');
+    expect(html).not.toContain('class="site-header"');
+    expect(FIXTURE_STYLES_CSS).toContain(".sign-in-offer {");
+  });
+
+  it("gives way to the header when a session is on the page", () => {
+    const html = renderFixturePage(optionsWith({ nav: { isAdmin: false, current: "games" } }));
+
+    expect(html).toContain('class="site-header"');
+    expect(html).not.toContain('class="sign-in-offer"');
+    expect(html).not.toContain('href="/sign-in"');
   });
 });

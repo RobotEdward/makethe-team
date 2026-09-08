@@ -38,6 +38,9 @@ import { STYLES } from "./layout.js";
  * second copy that could drift from it.
  */
 export const FIXTURE_STYLES_CSS = `
+  /* The reset zeroes p margins, so without this the offer sits flush under
+     the mute disclosure and reads as part of it (M63). */
+  .sign-in-offer { margin-top: 1.5rem; font-size: var(--t-support); }
   .fixture-index {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .8rem;
     margin: 1.1rem 0 1.5rem; padding: .65rem .8rem;

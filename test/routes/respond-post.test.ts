@@ -8,6 +8,7 @@ import { signResponseToken } from "../../src/domain/token.js";
 import {
   fillEmailQuota, insertGame, resetDatabase } from "../support/factories.js";
 import { kickoffIn, NOW } from "../support/clock.js";
+import { signIn } from "../support/sign-in.js";
 import { PUSH_KEY_ATTRIBUTE, PUSH_TOKEN_ATTRIBUTE } from "../../src/views/scripts.js";
 
 const db = getDb(env.DB);
@@ -674,5 +675,39 @@ describe("POST /r/:token — a waitlisted viewer never reads as confirmed (BR-5,
     // (M10 §3.1), a positive signal rather than the mere absence of one.
     expect(body).not.toMatch(/class="button chosen-in"[^>]*name="intent" value="in"/);
     expect(body).toMatch(/class="button chosen-waiting"[^>]*name="intent" value="in"/);
+  });
+});
+
+/**
+ * The re-render after an answer carries the same way back as the `GET` (M63):
+ * this is the page a player is actually left looking at after tapping a
+ * notification's "I'm in", so it is the one that most needs an exit.
+ */
+describe("POST /r/:token — the way back into the app (M63)", () => {
+  it("offers sign-in to a visitor with no session", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const token = await tokenFor(fixtureId, playerIds[0]!);
+
+    const body = await (await postIntent(token, "in")).text();
+
+    expect(body).toContain('href="/sign-in"');
+    expect(body).not.toContain('class="site-header"');
+  });
+
+  it("shows the header to a signed-in visitor", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const token = await tokenFor(fixtureId, playerIds[0]!);
+    const { cookie } = await signIn();
+
+    const response = await SELF.fetch(`https://makethe.team/r/${token}`, {
+      method: "POST",
+      headers: { cookie },
+      body: new URLSearchParams({ intent: "in" }),
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('class="site-header"');
+    expect(body).not.toContain('href="/sign-in"');
   });
 });

@@ -315,7 +315,17 @@ export const CATALOGUE: CataloguePage[] = [
     title: "Respond to a fixture",
     path: (w) => `/r/${w.responseToken}`,
     persona: "anonymous",
-    note: "Where a reminder email lands. Token-authenticated, no session.",
+    note: "Where a reminder email lands. Token-authenticated, no session — so it ends with a sign-in offer (M63).",
+  },
+  {
+    id: "respond-signed-in",
+    title: "Respond to a fixture, from the installed app",
+    path: (w) => `/r/${w.responseToken}`,
+    persona: "player",
+    note:
+      "The same page as a push notification opens it inside the installed app, where there is " +
+      "no browser chrome to go back with: a session is on the request, so the signed-in header " +
+      "is the way back and there is no sign-in offer (M63).",
   },
   {
     id: "leave",
