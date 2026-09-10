@@ -8,7 +8,7 @@ import { openFixture } from "../../src/domain/open-fixture.js";
 // `?raw` loader so the "no network call inside the object" assertion below
 // inspects the real module rather than trusting a spy.
 import fixtureCapacitySource from "../../src/capacity/fixture-capacity.ts?raw";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, insertResultClaim, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const NOW = new Date("2026-08-13T09:00:00Z");
@@ -999,5 +999,71 @@ describe("the audit trail records changes, not taps", () => {
       .from(responses)
       .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-0")));
     expect(row?.respondedAt?.getTime()).toBe(later);
+  });
+});
+
+/**
+ * M64. After full time an organiser may still correct the record — a
+ * drop-out replaced by a guest at the venue, sides re-balanced on the pitch —
+ * until the result locks. A player's own answer stays locked at `played`
+ * (BR-15), and nobody is promoted off a waitlist for a game that has finished.
+ */
+describe("correcting a played fixture", () => {
+  /** An hour after full time; the default lock is a day later still. */
+  const AFTER_FULL_TIME = new Date("2026-08-13T20:00:00Z").getTime();
+  /** Full time (19:00) plus the default 24 hours. */
+  const LOCKED = new Date("2026-08-14T19:00:00Z").getTime();
+
+  function ownerSets(fixtureId: string, playerId: string, intent: "in" | "out", now: number) {
+    return stubFor(fixtureId).setResponse({
+      playerId, intent, actorPlayerId: "p-0", source: "owner", whenFull: "refuse", now,
+    });
+  }
+
+  async function playedFixture(squadSize: number, maxPlayers = 14): Promise<string> {
+    const fixtureId = await seedOpenFixture(squadSize, maxPlayers);
+    await db.update(fixtures).set({ lifecycle: "played" }).where(eq(fixtures.id, fixtureId));
+    return fixtureId;
+  }
+
+  it("lets an organiser mark a player out after full time", async () => {
+    const fixtureId = await playedFixture(3);
+    await accept(fixtureId, "p-1");
+    await db.update(fixtures).set({ lifecycle: "played" }).where(eq(fixtures.id, fixtureId));
+
+    expect(await ownerSets(fixtureId, "p-1", "out", AFTER_FULL_TIME)).toMatchObject({ kind: "recorded", status: "out" });
+  });
+
+  it("lets an organiser mark a player in after full time", async () => {
+    const fixtureId = await playedFixture(3);
+    expect(await ownerSets(fixtureId, "p-1", "in", AFTER_FULL_TIME)).toMatchObject({ kind: "recorded", status: "in" });
+  });
+
+  it("still refuses a player's own answer after full time (BR-15)", async () => {
+    const fixtureId = await playedFixture(3);
+    expect(await accept(fixtureId, "p-1", AFTER_FULL_TIME)).toMatchObject({ kind: "rejected", reason: "fixture-not-open" });
+  });
+
+  it("refuses the organiser too once the result has locked", async () => {
+    const fixtureId = await playedFixture(3);
+    await insertResultClaim(db, fixtureId, "p-0", { filedAt: new Date(AFTER_FULL_TIME) });
+
+    expect(await ownerSets(fixtureId, "p-1", "in", LOCKED)).toMatchObject({ kind: "rejected", reason: "fixture-not-open" });
+  });
+
+  it("promotes nobody off the waitlist for a game that has finished", async () => {
+    const fixtureId = await seedOpenFixture(3, 2);
+    await accept(fixtureId, "p-0");
+    await accept(fixtureId, "p-1");
+    await accept(fixtureId, "p-2");
+    await db.update(fixtures).set({ lifecycle: "played" }).where(eq(fixtures.id, fixtureId));
+
+    const outcome = await ownerSets(fixtureId, "p-0", "out", AFTER_FULL_TIME);
+
+    expect(outcome).toMatchObject({ kind: "recorded", status: "out" });
+    expect(outcome).not.toHaveProperty("promoted");
+    const [waiting] = await db.select().from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-2")));
+    expect(waiting?.status).toBe("waitlisted");
   });
 });

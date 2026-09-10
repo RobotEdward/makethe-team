@@ -5,6 +5,7 @@ import {
   resultDeadline,
   resultLockedAt,
   resultWritable,
+  rosterEditable,
 } from "../../src/domain/result-lock.js";
 import type { ResultClaim } from "../../src/domain/result.js";
 
@@ -96,5 +97,34 @@ describe("resultLockedAt", () => {
 
   it("is null with no claims", () => {
     expect(resultLockedAt(FIXTURE, HOURS, [])).toBeNull();
+  });
+});
+
+/**
+ * M64. An organiser may correct who played and which side they were on for
+ * exactly as long as the result is still writable — one lock for the whole
+ * record of an evening, never two clocks that can disagree.
+ */
+describe("rosterEditable", () => {
+  it("is editable while the fixture is open", () => {
+    expect(rosterEditable("open", FIXTURE, HOURS, 0, KICKOFF)).toBe(true);
+  });
+
+  it("is editable after full time until the result locks", () => {
+    expect(rosterEditable("played", FIXTURE, HOURS, 1, new Date(DEADLINE.getTime() - 1))).toBe(true);
+  });
+
+  it("stays editable after the deadline while nothing has been filed", () => {
+    expect(rosterEditable("played", FIXTURE, HOURS, 0, new Date(DEADLINE.getTime() + 1))).toBe(true);
+  });
+
+  it("is frozen once the result has locked", () => {
+    expect(rosterEditable("played", FIXTURE, HOURS, 1, DEADLINE)).toBe(false);
+  });
+
+  it("is never editable on a cancelled or scheduled fixture", () => {
+    for (const lifecycle of ["scheduled", "cancelled"] as const) {
+      expect(rosterEditable(lifecycle, FIXTURE, HOURS, 0, KICKOFF)).toBe(false);
+    }
   });
 });

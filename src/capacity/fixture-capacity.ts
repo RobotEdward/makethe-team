@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { getDb, type Db } from "../db/client.js";
 import { buildAuditInsert } from "../db/audit.js";
 import {
@@ -9,7 +9,8 @@ import {
   stampInvitedIndividually,
 } from "../db/invite-queries.js";
 import { planReleases } from "../domain/invite-tiers.js";
-import { fixtures, games, players, responses } from "../db/schema.js";
+import { fixtureResultClaims, fixtures, games, players, responses } from "../db/schema.js";
+import { rosterEditable } from "../domain/result-lock.js";
 import { occupiesSlot } from "../domain/response-status.js";
 import type { Bindings } from "../env.js";
 import type {
@@ -331,7 +332,14 @@ export class FixtureCapacity extends DurableObject<Bindings> {
 
     const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
     if (!fixture) return { kind: "rejected", reason: "fixture-not-found" };
-    if (fixture.lifecycle !== "open") return { kind: "rejected", reason: "fixture-not-open" };
+    // A player's own answer locks at `played` (BR-15); only an organiser's
+    // correction may follow the result's window — see `#acceptsRosterWrite`.
+    if (fixture.lifecycle !== "open" && input.source !== "owner") {
+      return { kind: "rejected", reason: "fixture-not-open" };
+    }
+    if (!(await this.#acceptsRosterWrite(db, fixture, now))) {
+      return { kind: "rejected", reason: "fixture-not-open" };
+    }
 
     // Read every response for this fixture once. The squad is at most a few
     // dozen rows, and holding them in memory lets the whole decision — new
@@ -485,7 +493,9 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // method for why.
     const givesUpASlot = occupiesSlot(existing.status) && !occupiesSlot(status);
     const promotedRow = this.#slotTakenBy({
-      freesASlot: givesUpASlot,
+      // A slot freed after full time (M64) goes to nobody: the game is over,
+      // and a promotion here would tell somebody they are in for it.
+      freesASlot: givesUpASlot && fixture.lifecycle === "open",
       inCountWithoutThisPlayer,
       maxPlayers: fixture.maxPlayers,
       waitlisted: waitlistedWithoutThisPlayer,
@@ -610,9 +620,10 @@ export class FixtureCapacity extends DurableObject<Bindings> {
 
     const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
     if (!fixture) return { kind: "no-op", reason: "fixture-not-found" };
-    // `scheduled` holds no response rows; `cancelled` and `played` are
-    // terminal and rewriting them would be rewriting history.
-    if (fixture.lifecycle !== "open") return { kind: "no-op", reason: "fixture-not-open" };
+    // `scheduled` holds no response rows and `cancelled` is terminal.
+    // `played` is history too, but history an organiser may still correct
+    // until the result locks — see `#acceptsRosterWrite`.
+    if (!(await this.#acceptsRosterWrite(db, fixture, now))) return { kind: "no-op", reason: "fixture-not-open" };
 
     const all = await db
       .select({
@@ -647,7 +658,8 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       .from(games)
       .where(eq(games.id, fixture.gameId));
     const promotedRow = this.#slotTakenBy({
-      freesASlot: occupiesSlot(previousStatus),
+      // Same rule as `setResponse`: nobody is promoted into a finished game.
+      freesASlot: occupiesSlot(previousStatus) && fixture.lifecycle === "open",
       inCountWithoutThisPlayer,
       maxPlayers: fixture.maxPlayers,
       waitlisted: waitlistedWithoutThisPlayer,
@@ -741,7 +753,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
 
     const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
     if (!fixture) return { kind: "rejected", reason: "fixture-not-found" };
-    if (fixture.lifecycle !== "open") return { kind: "rejected", reason: "fixture-not-open" };
+    if (!(await this.#acceptsRosterWrite(db, fixture, now))) return { kind: "rejected", reason: "fixture-not-open" };
 
     const all = await db
       .select({ status: responses.status })
@@ -778,6 +790,37 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       inCount,
       spotsLeft: Math.max(0, fixture.maxPlayers - inCount),
     };
+  }
+
+  /**
+   * Whether this fixture will take a change to who is in it right now (M64).
+   *
+   * `open` always. `played` for as long as the result is writable, which is
+   * `rosterEditable`'s rule and the reason the Game row and the claim count
+   * are read here: the deadline is the game's own setting, and a claim filed
+   * after it is what locks the record. Read inside the lock so the answer is
+   * atomic with the write it admits. `scheduled` and `cancelled` never.
+   *
+   * Asked here rather than trusted from a caller flag, so that a route which
+   * forgot to ask cannot open a locked fixture by omission.
+   */
+  async #acceptsRosterWrite(
+    db: Db,
+    fixture: Pick<typeof fixtures.$inferSelect, "id" | "gameId" | "lifecycle" | "kicksOffAt" | "durationMinutes">,
+    now: Date,
+  ): Promise<boolean> {
+    if (fixture.lifecycle === "open") return true;
+    if (fixture.lifecycle !== "played") return false;
+    const [game] = await db
+      .select({ resultLockHoursAfter: games.resultLockHoursAfter })
+      .from(games)
+      .where(eq(games.id, fixture.gameId));
+    if (!game) return false;
+    const [claims] = await db
+      .select({ n: count() })
+      .from(fixtureResultClaims)
+      .where(eq(fixtureResultClaims.fixtureId, fixture.id));
+    return rosterEditable(fixture.lifecycle, fixture, game.resultLockHoursAfter, claims?.n ?? 0, now);
   }
 
   /**

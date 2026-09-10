@@ -63,6 +63,12 @@ export interface TeamPickerParams {
    * existed before M29 this is true and the section below is unchanged.
    */
   canPublish: boolean;
+  /**
+   * The fixture has been played and the organiser is correcting the record
+   * (M64). The form stays; the publish control and every sentence about
+   * announcing go, because the game the announcement would be about is over.
+   */
+  correcting?: boolean;
 }
 
 /**
@@ -180,6 +186,12 @@ function renderPublish(params: TeamPickerParams): string {
   // only the button that mails the squad. Said in words rather than by
   // rendering nothing: a Save button with no Publish beside it, on a page
   // that had both a moment ago, reads as something broken.
+  // Said in words for the same reason as the member case below: a Save
+  // button on its own where Publish used to be reads as something missing.
+  if (params.correcting) {
+    return `<p class="team-note">The game has been played, so there is nothing to announce. What you save here is the record of who played on which side.</p>`;
+  }
+
   if (!params.canPublish) {
     return `<p class="team-note">These teams have been sent out. A change you save here shows on everyone's page straight away, but only the organiser can send the squad a fresh message about it.</p>`;
   }
@@ -270,11 +282,13 @@ export function renderTeamPicker(params: TeamPickerParams): string {
   return `<section class="team-workspace" aria-labelledby="team-heading">
           <h2 id="team-heading">Teams</h2>
           <p class="team-note">Move players between sides until you’re happy with the balance. A and B match the team headings; — leaves a player unpicked.</p>
-          <p class="team-note">${params.published
-            ? params.canPublish
-              ? "Saving changes updates the teams on players’ pages. Publish again to announce the saved teams."
-              : "Saving changes updates the teams on players’ pages. Only the organiser can send a fresh message about them."
-            : "Save your progress as often as you like. Players see the teams once you publish."}</p>
+          <p class="team-note">${params.correcting
+            ? "Saving changes updates the teams on players’ pages and in the game’s history."
+            : params.published
+              ? params.canPublish
+                ? "Saving changes updates the teams on players’ pages. Publish again to announce the saved teams."
+                : "Saving changes updates the teams on players’ pages. Only the organiser can send a fresh message about them."
+              : "Save your progress as often as you like. Players see the teams once you publish."}</p>
           ${problem}
           <form method="post" action="${escapeHtml(ownerTeamsPath(gameId, fixtureId))}" id="team-picker">
             ${renderCounts(names, counts)}

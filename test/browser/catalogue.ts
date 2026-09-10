@@ -158,6 +158,17 @@ export const CATALOGUE: CataloguePage[] = [
       "and the team picker — the only owner page carrying script (TEAM_PICKER_JS).",
   },
   {
+    id: "owner-fixture-correction",
+    title: "Fixture played last night, still correctable (M64)",
+    // The same route as `owner-fixture`, in the one state neither the busy
+    // fixture (open) nor the four-week history (locked) can show: played,
+    // nothing filed, so the squad controls and the picker are back under a
+    // note saying until when. The note is the piece with a shape.
+    path: (w) => `/g/${w.gameId}/f/${w.lastNightFixtureId}`,
+    persona: "owner",
+    note: "An organiser correcting who played and which side they were on after full time, before the result locks.",
+  },
+  {
     id: "player-fixture",
     title: "Fixture (player)",
     // The same route as `owner-fixture` above, and a different page: a member

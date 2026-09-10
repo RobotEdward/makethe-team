@@ -118,6 +118,13 @@ export interface World {
    */
   busyGameId: string;
   busyFixtureId: string;
+  /**
+   * A fixture of the seeded game played last night, sides published, no
+   * result filed yet (M64): the one state in which an organiser's fixture
+   * page shows the correction note and its controls on a `played` fixture.
+   * The four-week history is locked, so none of it can photograph this.
+   */
+  lastNightFixtureId: string;
 }
 
 /**
@@ -189,7 +196,7 @@ async function seedMatchHistory(
   gameId: string,
   /** Everyone who played, in the order their sides alternate. */
   squad: readonly string[],
-): Promise<void> {
+): Promise<string> {
   // Four weeks, oldest first, with the sides written out per fixture rather
   // than fixed per player. Three players alternating fixed sides finish level
   // on points however the results fall, and a league table where everyone is
@@ -281,6 +288,26 @@ async function seedMatchHistory(
     }
   }
 
+  // Last night's game, played and sided but with nothing filed (M64): the
+  // result is still open, so the organiser may still correct the record. No
+  // claims on purpose — one would lock it a day after full time, and this
+  // world is rebuilt whenever it is used, so a claim-free row is the only way
+  // to hold the window open on every run. It has no `fixture_results` row,
+  // so it counts in neither table and leaves `settled` below untouched.
+  const lastNightFixtureId = randomUUID();
+  const lastNight = now - 14 * 60 * 60 * 1000;
+  fixtureRows.push(
+    `('${lastNightFixtureId}', '${gameId}', ${lastNight}, 'played', ${shape.minPlayers}, ` +
+      `${shape.maxPlayers}, ${shape.prefersEvenNumbers}, ${shape.shortWarningOffsetHours}, ` +
+      `${shape.durationMinutes}, ${squad.length}, 0, ${lastNight - 7 * DAY}, ` +
+      `${lastNight}, ${lastNight})`,
+  );
+  for (const [position, playerId] of squad.entries()) {
+    responseRows.push(
+      `('${randomUUID()}', '${lastNightFixtureId}', '${playerId}', 'in', '${position % 2 === 0 ? "a" : "b"}', ${lastNight - DAY}, 'web')`,
+    );
+  }
+
   await query(
     `INSERT INTO fixtures (id, game_id, kicks_off_at, lifecycle, min_players, max_players,
        prefers_even_numbers, short_warning_offset_hours, duration_minutes, in_count,
@@ -310,6 +337,8 @@ async function seedMatchHistory(
         `short count here is the two of them rendering as nothing.`,
     );
   }
+
+  return lastNightFixtureId;
 }
 
 /** One seeded member of the busy game. */
@@ -622,7 +651,7 @@ export async function seedWorld(
   // to report on every page that carries them (M52). After the member and the
   // owner are resolved, and before the tokens: it runs a cron, and the open
   // fixture above is already fixed by id so a second sweep cannot move it.
-  await seedMatchHistory(page, gameId, [owner.id, member.id, legacyMemberId]);
+  const lastNightFixtureId = await seedMatchHistory(page, gameId, [owner.id, member.id, legacyMemberId]);
 
   const busyFixtureId =
     busy === null ? fixture.id : await fillBusyFixture(page, busy.gameId, busy.members);
@@ -676,5 +705,6 @@ export async function seedWorld(
     // every catalogue path still resolves to a page that exists.
     busyGameId: busy?.gameId ?? gameId,
     busyFixtureId,
+    lastNightFixtureId,
   };
 }

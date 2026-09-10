@@ -5,7 +5,7 @@ import { auditLog, fixtures, players, responses } from "../../src/db/schema.js";
 import type { Lifecycle } from "../../src/domain/lifecycle.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { COPY_BUTTON_JS, FRESHNESS_JS, PRESENCE_JS, SCRIPT_BLOCKS, SERVICE_WORKER_JS, TEAM_PICKER_JS, WHATSAPP_LINKS_JS } from "../../src/views/scripts.js";
-import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
+import { insertGame, insertMembership, insertPlayer, insertResultClaim, resetDatabase, testDb } from "../support/factories.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import { kickoffIn } from "../support/clock.js";
 
@@ -112,6 +112,23 @@ function setLifecycle(fixtureId: string, lifecycle: Lifecycle) {
   return testDb().update(fixtures).set({ lifecycle }).where(eq(fixtures.id, fixtureId));
 }
 
+/**
+ * `played` with the result locked: kicked off three days ago and a claim on
+ * file, so the default day after full time has passed. Since M64 a bare
+ * `played` fixture is still correctable by its organiser; it is the lock,
+ * not the lifecycle, that takes the picker away.
+ */
+async function retireAndLock(fixtureId: string, claimantId: string) {
+  const kicksOffAt = kickoffIn(-72);
+  await testDb().update(fixtures).set({ lifecycle: "played", kicksOffAt }).where(eq(fixtures.id, fixtureId));
+  await insertResultClaim(testDb(), fixtureId, claimantId, { filedAt: new Date(kicksOffAt.getTime() + 3_600_000) });
+}
+
+/** `setLifecycle`, except that `played` also locks the result — see `retireAndLock`. */
+function closeAs(fixtureId: string, lifecycle: Lifecycle, claimantId: string) {
+  return lifecycle === "played" ? retireAndLock(fixtureId, claimantId) : setLifecycle(fixtureId, lifecycle);
+}
+
 describe("the team picker on GET /g/:id/f/:fixtureId", () => {
   beforeEach(resetDatabase);
 
@@ -182,7 +199,7 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     async (lifecycle) => {
       const { cookie, viewerId } = await ownerSession();
       const { gameId, fixtureId } = await seedPickableFixture(viewerId);
-      await setLifecycle(fixtureId, lifecycle);
+      await closeAs(fixtureId, lifecycle, viewerId);
 
       const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
 
@@ -195,7 +212,7 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId, ada, bram } = await seedPickableFixture(viewerId);
     await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [ada]: "a", [bram]: "b" }, cookie);
-    await setLifecycle(fixtureId, "played");
+    await retireAndLock(fixtureId, viewerId);
 
     const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })).text();
 
@@ -480,7 +497,7 @@ describe("POST /g/:id/f/:fixtureId/teams", () => {
   it.each(["scheduled", "played", "cancelled"] as const)("refuses a %s fixture", async (lifecycle) => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId, ada } = await seedPickableFixture(viewerId);
-    await setLifecycle(fixtureId, lifecycle);
+    await closeAs(fixtureId, lifecycle, viewerId);
 
     const response = await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [ada]: "a" }, cookie);
 

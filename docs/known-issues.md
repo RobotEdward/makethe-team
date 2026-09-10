@@ -267,10 +267,22 @@ standard, not an implementation choice made here.
 
    `test/played-fixture-freeze.test.ts` is what makes that true rather than assumed: it
    enumerates every write path this codebase has and asserts none of them can mutate those
-   four columns on a `played` fixture. **If it ever fails, this note comes back and the
-   column with it** — a result's teams-accuracy figure would then be a claim about rows
-   that can still move underneath it, exactly the silent-noise failure this note originally
-   raised.
+   four columns once the fixture's result has locked. **If it ever fails, this note comes
+   back and the column with it** — a result's teams-accuracy figure would then be a claim
+   about rows that can still move underneath it, exactly the silent-noise failure this note
+   originally raised.
+
+   **Amended by M64 (10 September 2026): the boundary is the result lock, not `played`.**
+   An organiser may correct who was in a played fixture and which side they were on — the
+   drop-out replaced by a guest at the venue, sides re-balanced on the pitch — for as long
+   as the result is writable, which is `rosterEditable` in `src/domain/result-lock.ts` and
+   the same `resultWritable` rule the claims follow. The cache row is written at lock and
+   reads the live rows at that instant, so `teams_accurate` still equals the derivation at
+   the moment the derivation froze; what changed is that "frozen" now means "result locked"
+   on both sides. Players' own answers still lock at `played` (BR-15), publishing is still
+   refused on anything but an open fixture, and no waitlist promotion happens after full
+   time. The known consequence: a played fixture on which nobody ever files a result stays
+   correctable indefinitely, exactly as it stays open to a first claim.
 
    `fixture_results.teams_accurate` (BR-37 §5) does exist as a stored column, but it caches
    the predicate's answer at lock — a snapshot, so a later change to the predicate cannot

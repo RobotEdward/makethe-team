@@ -107,3 +107,33 @@ export function resultLockedAt(
   const deadline = resultDeadline(fixture, lockHoursAfter);
   return first > deadline ? first : deadline;
 }
+
+/**
+ * Whether an organiser may still change who is in this fixture and which
+ * side they are on (M64).
+ *
+ * Open, and the ordinary rules apply. `played`, and the roster follows the
+ * result: a last-minute drop-out replaced by a guest at the venue, and sides
+ * re-balanced on the pitch, are part of the same record as the score, and the
+ * game already has one owner-configurable window in which that record can be
+ * argued with. One lock for the whole evening — the alternative is a roster
+ * that can move under a result's cached teams-accuracy figure after the
+ * result itself has frozen (`src/sweep/result-cache.ts`).
+ *
+ * The consequence to know about: a played fixture nobody ever filed a result
+ * on stays correctable indefinitely, exactly as `resultWritable` leaves it
+ * open to a first claim. The first claim after the deadline locks both.
+ *
+ * The caller decides who may act on this; it says nothing about players.
+ * Their own answers lock at `played` under BR-15 regardless.
+ */
+export function rosterEditable(
+  lifecycle: Lifecycle,
+  fixture: LockableFixture,
+  lockHoursAfter: number,
+  claimCount: number,
+  now: Date,
+): boolean {
+  if (lifecycle === "open") return true;
+  return resultWritable(lifecycle, fixture, lockHoursAfter, claimCount, now);
+}

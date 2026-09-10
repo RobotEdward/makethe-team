@@ -386,3 +386,64 @@ describe("a squad row's controls all live in one grid cell (M46)", () => {
     expect(FORM_CSS).toContain("ul.squad > li > .row-controls {");
   });
 });
+
+/**
+ * M64. After full time the organiser can still correct who played and which
+ * side they were on, until the result locks. The controls come back for
+ * exactly that window, with a note saying so; invite buttons do not, since
+ * there is nothing left to invite anyone to.
+ */
+describe("correcting a played fixture", () => {
+  const playedView = fixtureView(
+    {
+      lifecycle: "played",
+      kicksOffAt: KICKOFF,
+      inCount: 2,
+      minPlayers: 8,
+      maxPlayers: 10,
+      prefersEvenNumbers: false,
+      shortWarningOffsetHours: 12,
+    },
+    NOW,
+  );
+
+  it("shows the squad controls, the guest link and the picker while correctable", () => {
+    const html = renderOwnerFixturePage(
+      params({ view: playedView, correction: { deadlineLocal: "Friday 14 August, 19:00" } }),
+    );
+    expect(html).toContain('name="intent" value="out"');
+    expect(html).toContain(">Add a guest</a>");
+    expect(html).toContain('action="/g/g-1/f/f-1/teams"');
+    expect(html).toContain("until Friday 14 August, 19:00");
+  });
+
+  it("says the window closes with the first result once the deadline has passed unfiled", () => {
+    const html = renderOwnerFixturePage(params({ view: playedView, correction: { deadlineLocal: null } }));
+    expect(html).toContain("until someone records a result");
+  });
+
+  it("offers no publish control: there is nobody left to tell about a game that is over", () => {
+    const html = renderOwnerFixturePage(
+      params({ view: playedView, teamsPublished: true, correction: { deadlineLocal: null } }),
+    );
+    expect(html).toContain('action="/g/g-1/f/f-1/teams"');
+    expect(html).not.toContain("/teams/publish");
+    expect(html).not.toContain("Publish again");
+    expect(html).toContain("nothing to announce");
+  });
+
+  it("never offers an invite button on a played fixture, gated or not", () => {
+    const html = renderOwnerFixturePage(
+      params({ view: playedView, gatedInvites: true, correction: { deadlineLocal: null } }),
+    );
+    expect(html).not.toContain("/invite/player/");
+  });
+
+  it("keeps every control off once the record has locked", () => {
+    const html = renderOwnerFixturePage(params({ view: playedView }));
+    expect(html).not.toContain('name="intent" value="out"');
+    expect(html).not.toContain(">Add a guest</a>");
+    expect(html).not.toContain('action="/g/g-1/f/f-1/teams"');
+    expect(html).not.toContain("still correct");
+  });
+});

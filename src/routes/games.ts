@@ -50,6 +50,7 @@ import { changeMemberRole, parseRole } from "../domain/change-role.js";
 import { createGame } from "../domain/create-game.js";
 import { displayName } from "../domain/display-name.js";
 import { fixtureView, takingChanges } from "../domain/fixture-view.js";
+import { rosterEditable } from "../domain/result-lock.js";
 import { GATED_FALLBACK_NEVER, parseGameForm, parseNotificationCells } from "../domain/game-form.js";
 import { inviteGateApplies, loadInviteOrder } from "../db/invite-queries.js";
 import { inviteTiers, memberships } from "../db/schema.js";
@@ -1521,6 +1522,27 @@ async function ownerResultParams(
 }
 
 /**
+ * Whether an organiser may still change who is in this fixture and which
+ * side they are on (M64) — the route-side reading of `rosterEditable`, which
+ * needs the claim count only once the fixture is `played`.
+ *
+ * The Durable Object asks the same question again inside its lock before any
+ * capacity write, so this answer decides what the page offers and what the
+ * D1-only team save accepts; it is never the last word on a slot.
+ */
+async function rosterEditableNow(
+  db: Db,
+  game: { resultLockHoursAfter: number },
+  fixture: Pick<typeof fixtures.$inferSelect, "id" | "lifecycle" | "kicksOffAt" | "durationMinutes">,
+  now: Date,
+): Promise<boolean> {
+  if (fixture.lifecycle === "open") return true;
+  if (fixture.lifecycle !== "played") return false;
+  const claims = await listResultClaims(db, fixture.id);
+  return rosterEditable(fixture.lifecycle, fixture, game.resultLockHoursAfter, claims.length, now);
+}
+
+/**
  * Build `OwnerFixtureParams` from a loaded `FixtureWithSquad`.
  *
  * One place for the three render paths this page has (a plain GET here, plus
@@ -1544,8 +1566,25 @@ async function ownerFixtureParams(
       ? await ownerResultParams(db, game, fixture, viewerPlayerId, now)
       : undefined;
   const notificationSettings = await loadNotificationSettings(db, [game.id]);
+  // M64. Only a played fixture whose result is still open gets the note and
+  // its controls back. `result.writable` *is* `rosterEditable` for a played
+  // fixture (`src/domain/result-lock.ts`), read from the panel rather than
+  // asked again so the note and the panel cannot name different deadlines.
+  // The deadline is named while it is still ahead — the same instant the
+  // panel shows — and once it has passed with nothing filed, the first claim
+  // is what will lock the record, so the note says that instead.
+  const correction =
+    result !== undefined && result.writable
+      ? {
+          deadlineLocal:
+            resultDeadline(fixture, game.resultLockHoursAfter).getTime() > now.getTime()
+              ? result.deadlineLocal
+              : null,
+        }
+      : undefined;
   return {
     nav,
+    ...(correction === undefined ? {} : { correction }),
     gameId: game.id,
     inviteToken: game.inviteToken,
     teamNames: teamNames(game),
@@ -2724,8 +2763,11 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
   if (withSquad === null) return c.text("Not found", 404);
 
   // The same predicate the picker renders behind, so a form that was on
-  // screen when the fixture closed cannot save through the back of it.
-  if (!takingChanges(fixtureView(target.fixture, now))) {
+  // screen when the fixture closed cannot save through the back of it. The
+  // owner alone may also save in M64's correction window after full time: a
+  // delegate's or an open-mode member's job ended with the game.
+  const mayCorrect = target.isOwner && (await rosterEditableNow(target.db, target.game, target.fixture, now));
+  if (!takingChanges(fixtureView(target.fixture, now)) && !mayCorrect) {
     return renderPickingRefusal(c, target, now, { problem: "That fixture isn't taking changes any more." });
   }
 

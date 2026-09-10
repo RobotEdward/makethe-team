@@ -93,6 +93,15 @@ export interface OwnerFixtureParams {
   /** A refused publish's list of names with no side yet, shown on the picker. */
   unassignedProblem?: readonly string[];
   /**
+   * Present when the fixture has been played and the organiser may still
+   * correct who was in it and which side they were on (M64) — until the
+   * result locks. `deadlineLocal` is that instant in the game's timezone, or
+   * null when nothing has been filed yet and the first claim is what will
+   * lock it. Absent on an open fixture (the ordinary controls apply) and once
+   * the record has frozen.
+   */
+  correction?: { deadlineLocal: string | null };
+  /**
    * Whether an announcement has *ever* gone out for this fixture
    * (`teams_published_at` is set). Never cleared, so this stays true after a
    * later save — which is what keeps a re-picked fixture distinguishable from
@@ -327,8 +336,32 @@ function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixturePa
  * hunting for it at the bottom, usually pitchside. It sits beside the squad
  * now, which is what it is about.
  */
+/**
+ * Whether the organiser may change who is in this fixture right now: while it
+ * is taking changes, or in M64's correction window after full time. The one
+ * predicate the squad controls, the guest link, the picker and the picker's
+ * script all read, so they cannot disagree about when an organiser can act.
+ */
+function rosterControlsShown(params: OwnerFixtureParams): boolean {
+  return takingChanges(params.view) || params.correction !== undefined;
+}
+
+/**
+ * The M64 note above the squad: the fixture is over, but the record is not
+ * yet final. Says when it will be, so nobody discovers the deadline by
+ * hitting it.
+ */
+function renderCorrectionNote(params: OwnerFixtureParams): string {
+  if (params.correction === undefined) return "";
+  const until =
+    params.correction.deadlineLocal === null
+      ? "until someone records a result"
+      : `until ${params.correction.deadlineLocal}`;
+  return `<p class="nudge">This game has been played. You can still correct who played and which side they were on ${escapeHtml(until)}.</p>`;
+}
+
 function renderGuestLink(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
-  if (!takingChanges(params.view)) return "";
+  if (!rosterControlsShown(params)) return "";
   return `<p class="actions"><a class="button" href="${escapeHtml(addGuestPath(gameId, fixtureId))}">Add a guest</a></p>`;
 }
 
@@ -453,11 +486,11 @@ function renderPickerControl(gameId: string, fixtureId: string, params: OwnerFix
  * with the one the publish guard reads would be worse than no count.
  */
 function renderTeams(params: OwnerFixtureParams): string {
-  const { gameId, fixtureId, squad, view, teamNames, prefersEvenNumbers, unassignedProblem } = params;
+  const { gameId, fixtureId, squad, teamNames, prefersEvenNumbers, unassignedProblem } = params;
   const playing = squad.filter((member) => member.status === "in");
   const counts = sideCounts(squad);
 
-  if (!takingChanges(view)) {
+  if (!rosterControlsShown(params)) {
     // Only players who are both `in` and placed: a dropout keeps their side
     // on purpose, and showing them here would claim they played.
     return renderTeamsReadOnly({ names: teamNames, members: playing.filter((member) => member.team !== null) });
@@ -478,6 +511,7 @@ function renderTeams(params: OwnerFixtureParams): string {
     // Always, whatever the fixture's picking mode: `mayPublish` restricts a
     // member picking in `open` mode, never the person whose game it is (M29).
     canPublish: true,
+    correcting: params.correction !== undefined,
   });
 }
 
@@ -594,7 +628,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
   // The copy script only when there is a Copy button for it to reveal; the
   // picker's drag enhancement only where the picker is (see `renderTeams`).
   const pageScripts: PageScriptBlock[] = [];
-  if (takingChanges(view)) pageScripts.push(TEAM_PICKER_JS);
+  if (rosterControlsShown(params)) pageScripts.push(TEAM_PICKER_JS);
   if (whatsapp.length > 0) pageScripts.push(COPY_BUTTON_JS);
   // Only when a message actually has switches — an all-cancelled card has
   // none, and a block that finds nothing to do is a hash in the CSP for
@@ -625,7 +659,17 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     <section id="squad" class="fixture-section" aria-labelledby="squad-heading">
       <h2 id="squad-heading">Squad</h2>
-      ${renderSquadList(gameId, fixtureId, squad, takingChanges(view), params.gatedInvites)}
+      ${renderCorrectionNote(params)}
+      ${renderSquadList(
+        gameId,
+        fixtureId,
+        squad,
+        rosterControlsShown(params),
+        // Invite buttons only while there is something to invite anyone to:
+        // in the correction window the squad controls are back, but an
+        // "invite now" on a game that has finished would be a lie.
+        params.gatedInvites && takingChanges(view),
+      )}
     </section>
 
     ${params.inviteProgress === undefined ? "" : `<section id="invite-progress" class="fixture-section">${renderInviteProgress(params.inviteProgress)}</section>`}

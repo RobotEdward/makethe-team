@@ -2,7 +2,15 @@ import { env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { fixtures, responses } from "../../src/db/schema.js";
-import { insertFixture, insertGame, insertPlayer, insertResponse, resetDatabase, testDb } from "../support/factories.js";
+import {
+  insertFixture,
+  insertGame,
+  insertPlayer,
+  insertResponse,
+  insertResultClaim,
+  resetDatabase,
+  testDb,
+} from "../support/factories.js";
 
 const NOW = new Date("2026-08-13T12:00:00Z");
 const OWNER = "owner-player-id";
@@ -287,5 +295,63 @@ describe("FixtureCapacity.withdrawMember while over capacity", () => {
       promoted: { playerId: waiter, previousWaitlistPosition: 1 },
     });
     expect(await rowFor(fixtureId, waiter)).toMatchObject({ status: "in", waitlistPosition: null });
+  });
+});
+
+/**
+ * M64. A guest who did not turn up can be taken off a played fixture until
+ * the result locks; the slot they held is not handed to anyone, because the
+ * game is over.
+ */
+describe("withdrawMember on a played fixture", () => {
+  const KICKOFF = new Date("2026-08-13T18:00:00Z");
+  const AFTER_FULL_TIME = new Date("2026-08-13T20:00:00Z").getTime();
+  /** Full time (19:00, a 60-minute fixture) plus the default 24 hours. */
+  const LOCKED = new Date("2026-08-14T19:00:00Z").getTime();
+
+  async function withdrawAt(fixtureId: string, playerId: string, now: number) {
+    const actorPlayerId = await insertPlayer(testDb());
+    return env.FIXTURE_CAPACITY.getByName(fixtureId).withdrawMember({ playerId, actorPlayerId, now });
+  }
+
+  it("removes the player while the result is still open", async () => {
+    const db = testDb();
+    const fixtureId = await insertFixture(db, await insertGame(db), {
+      lifecycle: "played", kicksOffAt: KICKOFF, durationMinutes: 60, inCount: 1,
+    });
+    const playerId = await insertPlayer(db);
+    await insertResponse(db, fixtureId, playerId, { status: "in" });
+
+    expect(await withdrawAt(fixtureId, playerId, AFTER_FULL_TIME)).toMatchObject({ kind: "removed", previousStatus: "in", inCount: 0 });
+  });
+
+  it("promotes nobody for a game that has finished", async () => {
+    const db = testDb();
+    const fixtureId = await insertFixture(db, await insertGame(db, { maxPlayers: 1 }), {
+      lifecycle: "played", kicksOffAt: KICKOFF, durationMinutes: 60, inCount: 1, maxPlayers: 1,
+    });
+    const playing = await insertPlayer(db);
+    const waiting = await insertPlayer(db);
+    await insertResponse(db, fixtureId, playing, { status: "in" });
+    await insertResponse(db, fixtureId, waiting, { status: "waitlisted", waitlistPosition: 1 });
+
+    const outcome = await withdrawAt(fixtureId, playing, AFTER_FULL_TIME);
+
+    expect(outcome).toMatchObject({ kind: "removed" });
+    expect(outcome).not.toHaveProperty("promoted");
+    expect(await rowFor(fixtureId, waiting)).toMatchObject({ status: "waitlisted" });
+  });
+
+  it("is a no-op once the result has locked", async () => {
+    const db = testDb();
+    const fixtureId = await insertFixture(db, await insertGame(db), {
+      lifecycle: "played", kicksOffAt: KICKOFF, durationMinutes: 60, inCount: 1,
+    });
+    const playerId = await insertPlayer(db);
+    await insertResponse(db, fixtureId, playerId, { status: "in" });
+    await insertResultClaim(db, fixtureId, playerId, { filedAt: new Date(AFTER_FULL_TIME) });
+
+    expect(await withdrawAt(fixtureId, playerId, LOCKED)).toEqual({ kind: "no-op", reason: "fixture-not-open" });
+    expect(await rowFor(fixtureId, playerId)).toMatchObject({ status: "in" });
   });
 });

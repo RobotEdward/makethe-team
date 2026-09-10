@@ -334,8 +334,21 @@ is exactly what the note is warning you about. The button stays **Publish
 again** from the first time you publish onwards, so you can always tell a
 squad that has been told something from one that never has.
 
-Once the fixture has been played or called off, the teams stay on the page as
-a record of who was on which side. The controls go; the pick doesn't.
+Once the fixture has been called off, the teams stay on the page as a record
+of who was on which side. The controls go; the pick doesn't.
+
+Once it has been *played*, you get a little longer. Games rarely go exactly as
+planned: someone drops out at the last minute, a guest fills in, and you
+re-balance the sides on the pitch. So after full time the squad controls, the
+guest button and the picker stay until the result locks, under a note that
+says how long you have. Mark the drop-out out, add the guest, move people
+between sides and press **Save teams**, and the record shows who actually
+played. There is no **Publish** — the game is over, so there is nobody to tell
+— and players can't change their own answers after full time; only an
+organiser can correct the record. The window is the same one a result stays
+open to argument in: a day after full time unless you've changed it in
+**Advanced**, and if nobody has recorded a result by then, the first result
+that is recorded closes both.
 
 ## Posting to your WhatsApp group
 

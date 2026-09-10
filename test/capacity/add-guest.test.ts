@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
 import { fixtures, memberships, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
-import { insertGame, resetDatabase } from "../support/factories.js";
+import { insertGame, insertResultClaim, resetDatabase } from "../support/factories.js";
 
 const db = getDb(env.DB);
 const NOW = new Date("2026-08-13T09:00:00Z");
@@ -129,5 +129,38 @@ describe("addGuest", () => {
     // otherwise. Both occupy a slot (§5).
     expect(first.kind).toBe("added");
     expect(second).toMatchObject({ kind: "added", inCount: 2 });
+  });
+});
+
+/**
+ * M64. The guest who filled in at the venue can be added afterwards, until
+ * the result locks.
+ */
+describe("addGuest on a played fixture", () => {
+  const AFTER_FULL_TIME = new Date("2026-08-13T20:00:00Z").getTime();
+  /** Full time (19:00) plus the default 24 hours. */
+  const LOCKED = new Date("2026-08-14T19:00:00Z").getTime();
+
+  it("adds the guest while the result is still open", async () => {
+    const fixtureId = await seedOpenFixture(3);
+    await db.update(fixtures).set({ lifecycle: "played" }).where(eq(fixtures.id, fixtureId));
+
+    const outcome = await stubFor(fixtureId).addGuest({
+      name: "Sam Whitlock", actorPlayerId: "p-0", whenFull: "refuse", now: AFTER_FULL_TIME,
+    });
+
+    expect(outcome).toMatchObject({ kind: "added", inCount: 1 });
+  });
+
+  it("refuses once the result has locked", async () => {
+    const fixtureId = await seedOpenFixture(3);
+    await db.update(fixtures).set({ lifecycle: "played" }).where(eq(fixtures.id, fixtureId));
+    await insertResultClaim(db, fixtureId, "p-0", { filedAt: new Date(AFTER_FULL_TIME) });
+
+    const outcome = await stubFor(fixtureId).addGuest({
+      name: "Sam Whitlock", actorPlayerId: "p-0", whenFull: "refuse", now: LOCKED,
+    });
+
+    expect(outcome).toEqual({ kind: "rejected", reason: "fixture-not-open" });
   });
 });
