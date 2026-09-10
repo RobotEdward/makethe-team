@@ -6,8 +6,7 @@ const BASE: PromotionEmailPayload = {
   gameName: "Thursday 7-a-side",
   venueName: "Oxford Sports Park",
   kicksOffAtLocal: "Thursday 13 August, 19:00",
-  respondInUrl: "https://makethe.team/r/tok123?intent=in",
-  respondOutUrl: "https://makethe.team/r/tok123?intent=out",
+  respondUrl: "https://makethe.team/r/tok123",
   leaveUrl: "https://makethe.team/leave/tok123",
 };
 
@@ -34,25 +33,25 @@ describe("renderPromotionEmail", () => {
     }
   });
 
-  it("both renditions contain both response links", () => {
+  it("both renditions contain the one response link, and no intent on it (M65)", () => {
     const { html, text } = renderPromotionEmail(BASE);
     for (const rendition of [html, text]) {
-      expect(rendition).toContain(BASE.respondInUrl);
-      expect(rendition).toContain(BASE.respondOutUrl);
+      expect(rendition).toContain(BASE.respondUrl);
+      expect(rendition).not.toContain("intent=");
     }
   });
 
-  it("the 'can't make it' link is offered, so a promoted player can hand the spot straight back", () => {
+  it("says how to hand the spot back, as a sentence pointing at the page rather than a button (M65)", () => {
     const { html, text } = renderPromotionEmail(BASE);
-    expect(html.toLowerCase()).toMatch(/can.t make it/);
-    expect(text.toLowerCase()).toMatch(/can.t make it/);
+    expect(html.toLowerCase()).toMatch(/can(&#39;|')t make it after all/);
+    expect(text.toLowerCase()).toMatch(/can't make it after all/);
+    expect(html).not.toMatch(/>Can't make it<\/a>/);
   });
 
-  it("the accept action is the filled one, matching the reminder's treatment", () => {
+  it("the one action is the filled one, matching the reminder's treatment", () => {
     const { html } = renderPromotionEmail(BASE);
-    // The `?intent=in` anchor carries the solid background; the `out` one is outlined.
-    const inAnchor = html.slice(html.indexOf(`href="${BASE.respondInUrl}"`));
-    expect(inAnchor.slice(0, 400)).toContain("background-color:#c67139");
+    const anchor = html.slice(html.indexOf(`href="${BASE.respondUrl}"`));
+    expect(anchor.slice(0, 400)).toContain("background-color:#c67139");
   });
 
   it("the text rendition contains no HTML tags", () => {
@@ -87,7 +86,7 @@ describe("renderPromotionEmail", () => {
   it("escapes the URLs it embeds, so a quote in one cannot break out of the attribute", () => {
     const { html } = renderPromotionEmail({
       ...BASE,
-      respondInUrl: `https://makethe.team/r/tok" onclick="alert(1)`,
+      respondUrl: `https://makethe.team/r/tok" onclick="alert(1)`,
     });
     expect(html).not.toContain('onclick="alert(1)"');
     expect(html).toContain("&quot;");

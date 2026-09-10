@@ -4,10 +4,13 @@ import { formatLocalCompactDateTime } from "../domain/time/zone.js";
 import type { FixtureView } from "../domain/fixture-view.js";
 import type { Lifecycle } from "../domain/lifecycle.js";
 import type { ResponseStatus } from "../domain/response-status.js";
+import type { ResponseIntent } from "../capacity/types.js";
 import type { PublishedTeams } from "../domain/teams.js";
 import {
   answerStateOf,
+  changeGuardFor,
   fixtureStatusWords,
+  renderChangeGuard,
   renderFullWarning,
   renderPublishedTeamsSection,
   renderResponseButtons,
@@ -47,6 +50,8 @@ export interface PlayerGameParams {
    * squad reads it (M61); `undefined` for every ordinary member.
    */
   preview?: PreviewParams;
+  /** The M65 change guard, read back from the answer route's redirect — see the dashboard's field of the same name. */
+  changeGuard?: { fixtureId: string; intent: ResponseIntent };
   /** The signed-in header (M16); see PageNav in layout.ts. */
   nav: PageNav;
   /**
@@ -147,15 +152,25 @@ export interface PlayerGameParams {
 function renderAnswerBlock(
   gameId: string,
   openFixture: NonNullable<PlayerGameParams["openFixture"]>,
+  changeGuard: PlayerGameParams["changeGuard"],
 ): string {
   const headline = viewerHeadlineOpen({ status: openFixture.myStatus, waitlistRank: null });
   const headlineClass = `viewer-headline${openFixture.myStatus === "waitlisted" ? " warn" : ""}`;
+  const guard = changeGuardFor(openFixture.myStatus, changeGuard, openFixture.fixtureId);
 
   return `
     <section class="answer answer-${answerStateOf(openFixture.myStatus, false)}">
-      ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
+      ${
+        guard !== undefined
+          ? renderChangeGuard({
+              action: fixtureAnswerPath(gameId, openFixture.fixtureId),
+              guard,
+              keepHref: gamePath(gameId),
+            })
+          : `${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
       ${renderResponseButtons(fixtureAnswerPath(gameId, openFixture.fixtureId), openFixture.myStatus)}
-      ${renderFullWarning(openFixture.view, { status: openFixture.myStatus }, openFixture.waitlistCount)}
+      ${renderFullWarning(openFixture.view, { status: openFixture.myStatus }, openFixture.waitlistCount)}`
+      }
     </section>`;
 }
 
@@ -170,7 +185,7 @@ export function renderPlayerGamePage(params: PlayerGameParams): string {
       : `
         <p class="kickoff">${escapeHtml(openFixture.kicksOffAtLocal)}</p>
         ${renderStatusLine(openFixture.view, openFixture.waitlistCount)}
-        ${renderAnswerBlock(gameId, openFixture)}
+        ${renderAnswerBlock(gameId, openFixture, params.changeGuard)}
         ${renderPublishedTeamsSection(openFixture.teams, openFixture.squad)}
         <h2>Squad</h2>
         ${renderSquadSection(openFixture.squad, openFixture.inCount, viewerPlayerId)}

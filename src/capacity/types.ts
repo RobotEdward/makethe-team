@@ -29,6 +29,13 @@ export interface SetResponseInput {
    * refused.
    */
   whenFull: "waitlist" | "refuse" | "exceed";
+  /**
+   * The caller has shown the player the `confirm-change` question and they
+   * answered yes (M65). Absent or false, a reversal of the player's own
+   * answer inside `RECENT_ANSWER_WINDOW_MS` is not written — see that
+   * outcome. Ignored for an owner's override, which is never asked.
+   */
+  confirmChange?: boolean;
 }
 
 /**
@@ -87,6 +94,15 @@ export type SetResponseOutcome =
    * amendment 5.
    */
   | { kind: "waitlisted"; waitlistPosition: number; inCount: number }
+  /**
+   * Nothing written: this intent reverses an answer the player gave
+   * themselves seconds ago (`reversesRecentAnswer`, M65). Two players on one
+   * production fixture each flipped in→out→in within ten seconds and both
+   * meant the first tap; the caller shows the question and comes back with
+   * `confirmChange: true` if the player really does mean it. `currentStatus`
+   * is what the page should say they said.
+   */
+  | { kind: "confirm-change"; currentStatus: "in" | "out" | "waitlisted" }
   | {
       kind: "rejected";
       reason: "fixture-not-open" | "not-eligible" | "fixture-not-found" | "would-exceed-capacity";

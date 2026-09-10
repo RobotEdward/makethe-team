@@ -187,13 +187,13 @@ describe("gating switched on after the invitations already went out", () => {
  */
 describe("releasing a tier promotes the players it was holding", () => {
   /** What `setResponse` does for a player answering for themselves. */
-  const say = (fixtureId: string, playerId: string, intent: "in" | "out") =>
+  const say = (fixtureId: string, playerId: string, intent: "in" | "out", now = NOW.getTime()) =>
     env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
       playerId,
       intent,
       actorPlayerId: null,
       source: "token",
-      now: NOW.getTime(),
+      now,
       whenFull: "waitlist",
     });
 
@@ -243,7 +243,8 @@ describe("releasing a tier promotes the players it was holding", () => {
     await say(fixtureId, "p-2", "in");
     await say(fixtureId, "p-3", "in");
 
-    await say(fixtureId, "p-0", "out");
+    // A change of mind a minute later, past the M65 guard window.
+    await say(fixtureId, "p-0", "out", NOW.getTime() + 60_000);
     const outcome = await claim(fixtureId);
 
     // p-4 tapped first, so p-4 takes the one slot — arrival order, never row

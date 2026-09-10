@@ -307,7 +307,7 @@ describe("POST /g/:id/f/:fixtureId/teams/publish", () => {
         actorPlayerId: null,
         source: "token",
         whenFull: "waitlist",
-        now: NOW.getTime(),
+        now: NOW.getTime() + 60_000, // a change of mind, past the M65 guard window
       });
     }
 
@@ -480,7 +480,7 @@ describe("the publish control on GET /g/:id/f/:fixtureId", () => {
       actorPlayerId: null,
       source: "token",
       whenFull: "waitlist",
-      now: NOW.getTime(),
+      now: NOW.getTime() + 60_000, // a change of mind, past the M65 guard window
     });
 
     const html = await page(seed, cookie);
@@ -519,7 +519,7 @@ describe("the publish control on GET /g/:id/f/:fixtureId", () => {
       actorPlayerId: null,
       source: "token",
       whenFull: "waitlist",
-      now: NOW.getTime(),
+      now: NOW.getTime() + 60_000, // a change of mind, past the M65 guard window
     });
     expect(await page(seed, cookie), "the churn must surface while it is unacknowledged").toContain("last sent out");
 

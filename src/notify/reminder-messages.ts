@@ -107,7 +107,7 @@ export async function buildReminderMessages(params: {
       responseTokenSecret,
     );
 
-    const respondInUrl = `${SITE_ORIGIN}/r/${token}?intent=in`;
+    const respondUrl = `${SITE_ORIGIN}/r/${token}`;
     // Built unconditionally: it is the push copy's input as well as the
     // email's, and which leg(s) actually get sent is decided independently,
     // below.
@@ -118,8 +118,7 @@ export async function buildReminderMessages(params: {
       kicksOffAtLocal,
       inCount,
       spotsLeft,
-      respondInUrl,
-      respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
+      respondUrl,
       leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
       // M45. Read here rather than carried on `ReminderCandidate`: two senders
       // build this message and pick their own candidates, so a field they each
@@ -171,7 +170,7 @@ export async function buildReminderMessages(params: {
           to: candidate.playerId,
           title: copy.title,
           body: copy.body,
-          url: respondInUrl,
+          url: respondUrl,
           // Sharpened from `PUSH_COPY`'s gameName+kickoff approximation
           // (Task 9) to the real fixture id, now that this caller holds one
           // (Task 13).

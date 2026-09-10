@@ -27,8 +27,7 @@ const sampleContext = {
   firstGameAlreadyOpen: false,
   inCount: 8,
   spotsLeft: 2,
-  respondInUrl: "https://makethe.team/r/abc?intent=in",
-  respondOutUrl: "https://makethe.team/r/abc?intent=out",
+  respondUrl: "https://makethe.team/r/abc",
   leaveUrl: "https://makethe.team/leave/abc",
   reason: "Pitch waterlogged",
   problem: { kind: "short", inCount: 8, minPlayers: 10 } as

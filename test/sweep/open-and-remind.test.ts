@@ -885,20 +885,21 @@ describe("the day-before email for a player who has already accepted", () => {
     const undecided = requireEmailMessage(sent.find((m) => m.to === "undecided@example.com")!);
 
     expect(accepted.text).toContain("You're in.");
-    expect(accepted.text).not.toContain("I'm in:");
+    expect(accepted.text).not.toContain("Can you make it?");
     // The same tick, the same fixture, the same code path — only the reader's
     // own answer differs. A failure here means the flag is being read once for
     // the batch rather than per player.
     expect(undecided.text).not.toContain("You're in.");
-    expect(undecided.text).toContain("I'm in:");
+    expect(undecided.text).toContain("Can you make it?");
   });
 
   it("still gives the accepted player a way out", async () => {
     const sent = await remindWith({ accepted: "in" });
     const accepted = requireEmailMessage(sent[0]!);
 
-    expect(accepted.text).toContain("Can't make it:");
-    expect(accepted.html).toContain("intent=out");
+    // A sentence pointing at the response page, not a second button (M65).
+    expect(accepted.text).toMatch(/can't make it after all\?/i);
+    expect(accepted.html).toMatch(/makethe\.team\/r\//);
   });
 
   it("asks a player who declined, exactly as before", async () => {
@@ -906,7 +907,7 @@ describe("the day-before email for a player who has already accepted", () => {
     // prompt that lets somebody whose plans changed get back in.
     const sent = await remindWith({ declined: "out" });
 
-    expect(requireEmailMessage(sent[0]!).text).toContain("I'm in:");
+    expect(requireEmailMessage(sent[0]!).text).toContain("Can you make it?");
   });
 
   it("sends exactly one email to the accepted player, not two (BR-18)", async () => {

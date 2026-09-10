@@ -1663,3 +1663,64 @@ describe("the dashboard's team line", () => {
     expect(html).toContain(`<p class="your-side">You were on Team A.</p>`);
   });
 });
+
+describe("POST /app — a reversal within seconds is asked about first (M65)", () => {
+  async function answered(intent: "in" | "out") {
+    const { cookie } = await signIn();
+    const playerId = await viewerId();
+    const { fixtureId } = await seedFixtureFor(playerId);
+    expect((await post(cookie, { fixtureId, intent })).status).toBe(303);
+    return { cookie, playerId, fixtureId };
+  }
+
+  it("sends the player back to the dashboard with the question, and writes nothing", async () => {
+    const { cookie, playerId, fixtureId } = await answered("out");
+
+    const response = await post(cookie, { fixtureId, intent: "in" });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(`${DASHBOARD_PATH}?confirm=in&fixture=${fixtureId}`);
+    expect((await responseRow(fixtureId, playerId))!.status).toBe("out");
+  });
+
+  it("asks on that card, with the confirm flag and the fixture id in the form", async () => {
+    const { cookie, fixtureId } = await answered("out");
+    await post(cookie, { fixtureId, intent: "in" });
+
+    const body = await (
+      await createApp().fetch(
+        new Request(`${ORIGIN}${DASHBOARD_PATH}?confirm=in&fixture=${fixtureId}`, { headers: { cookie } }),
+        bindings(),
+      )
+    ).text();
+
+    expect(body).toContain("You said you can&#39;t make it a moment ago.");
+    expect(body).toContain(`<input type="hidden" name="confirm" value="1">`);
+    expect(body).toContain(`<input type="hidden" name="fixtureId" value="${fixtureId}">`);
+    expect(body).toContain(`href="${DASHBOARD_PATH}"`);
+    expect(body).not.toContain(`class="button chosen-out"`);
+  });
+
+  it("writes the change once confirmed", async () => {
+    const { cookie, playerId, fixtureId } = await answered("out");
+
+    const response = await post(cookie, { fixtureId, intent: "in", confirm: "1" });
+
+    expect(response.headers.get("location")).toBe(DASHBOARD_PATH);
+    expect((await responseRow(fixtureId, playerId))!.status).toBe("in");
+  });
+
+  it("ignores a stale question — the answer it names is no longer the recorded one", async () => {
+    const { cookie, fixtureId } = await answered("in");
+
+    const body = await (
+      await createApp().fetch(
+        new Request(`${ORIGIN}${DASHBOARD_PATH}?confirm=in&fixture=${fixtureId}`, { headers: { cookie } }),
+        bindings(),
+      )
+    ).text();
+
+    expect(body).not.toContain("a moment ago");
+    expect(body).toContain(`class="button chosen-in"`);
+  });
+});

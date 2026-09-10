@@ -492,3 +492,70 @@ describe("POST /g/:id/f/:fixtureId/answer", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("POST /g/:id/f/:fixtureId/answer — a reversal within seconds is asked about first (M65)", () => {
+  async function answer(gameId: string, fixtureId: string, cookie: string, body: string) {
+    return SELF.fetch(`https://example.com/g/${gameId}/f/${fixtureId}/answer`, {
+      method: "POST",
+      headers: { cookie, origin: ORIGIN, "content-type": "application/x-www-form-urlencoded" },
+      body,
+      redirect: "manual",
+    });
+  }
+
+  async function viewerRow(fixtureId: string) {
+    const db = testDb();
+    const [viewer] = await db.select().from(players).where(eq(players.email, ALLOWED));
+    const [row] = await db
+      .select()
+      .from(responses)
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, viewer!.id)));
+    return row;
+  }
+
+  it("sends the player back to the game page with the question, and writes nothing", async () => {
+    const { gameId, fixtureId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+    });
+    await answer(gameId, fixtureId, cookie, "intent=in");
+
+    const res = await answer(gameId, fixtureId, cookie, "intent=out");
+
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(`/g/${gameId}?confirm=out&fixture=${fixtureId}`);
+    expect((await viewerRow(fixtureId))?.status).toBe("in");
+  });
+
+  it("asks on the page, posting back to the same action with the confirm flag", async () => {
+    const { gameId, fixtureId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+    });
+    await answer(gameId, fixtureId, cookie, "intent=in");
+    await answer(gameId, fixtureId, cookie, "intent=out");
+
+    const body = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}?confirm=out&fixture=${fixtureId}`, { headers: { cookie } })
+    ).text();
+
+    expect(body).toContain("You said you&#39;re in a moment ago.");
+    expect(body).toContain(`action="/g/${gameId}/f/${fixtureId}/answer"`);
+    expect(body).toContain(`<input type="hidden" name="confirm" value="1">`);
+    expect(body).toContain(`href="/g/${gameId}"`);
+    expect(body).not.toContain(`class="button chosen-in"`);
+  });
+
+  it("writes the change once confirmed", async () => {
+    const { gameId, fixtureId, cookie } = await seedGameWithOpenFixture({
+      viewerRole: "player",
+      squadVisibleToPlayers: true,
+    });
+    await answer(gameId, fixtureId, cookie, "intent=in");
+
+    const res = await answer(gameId, fixtureId, cookie, "intent=out&confirm=1");
+
+    expect(res.headers.get("location")).toBe(`/g/${gameId}`);
+    expect((await viewerRow(fixtureId))?.status).toBe("out");
+  });
+});

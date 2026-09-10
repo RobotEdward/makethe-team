@@ -1477,3 +1477,57 @@ describe("the sign-in offer (M63)", () => {
     expect(html).not.toContain('href="/sign-in"');
   });
 });
+
+describe("the recorded 'out' state is unmistakable (M65)", () => {
+  it("marks the chosen out button with a cross, the way the in button carries a tick", () => {
+    const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "out" }, intent: null }));
+    const outButton = html.slice(html.indexOf(`class="button chosen-out"`));
+    expect(outButton.slice(0, 200)).toContain("✕");
+  });
+
+  it("puts no cross on the out button while it is not the answer", () => {
+    for (const status of ["pending", "in", "waitlisted"] as const) {
+      const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status }, intent: null }));
+      expect(html).not.toContain("✕");
+    }
+  });
+});
+
+describe("the change guard (M65)", () => {
+  const guarded = (currentStatus: "in" | "out" | "waitlisted", intent: "in" | "out") =>
+    renderFixturePage(
+      optionsWith({ viewer: { playerId: "p1", status: currentStatus }, intent, changeGuard: { currentStatus, intent } }),
+    );
+
+  it("says what the player just said, and asks whether to change it", () => {
+    const html = guarded("out", "in");
+    expect(html).toContain("You said you can&#39;t make it a moment ago.");
+    expect(html).toContain("Change that to I&#39;m in?");
+  });
+
+  it("names each answer the player could be reversing", () => {
+    expect(guarded("in", "out")).toContain("You said you&#39;re in a moment ago.");
+    expect(guarded("waitlisted", "out")).toContain("You joined the waitlist a moment ago.");
+    expect(guarded("in", "out")).toContain("Change that to can&#39;t make it?");
+  });
+
+  it("posts the same intent again with the confirmation flag, and nothing else", () => {
+    const html = guarded("out", "in");
+    const form = html.slice(html.indexOf('<form method="post" action="/r/tok"'));
+    expect(form).toContain(`<input type="hidden" name="confirm" value="1">`);
+    expect(form).toContain(`name="intent" value="in"`);
+    expect(form).not.toContain(`name="intent" value="out"`);
+  });
+
+  it("offers a way to keep the answer that is a plain link back, not a post", () => {
+    const html = guarded("out", "in");
+    expect(html).toContain(`href="/r/tok"`);
+    expect(html).toMatch(/keep can&#39;t make it/i);
+  });
+
+  it("replaces the ordinary buttons rather than adding to them", () => {
+    const html = guarded("out", "in");
+    expect(html).not.toContain(`class="button chosen-out"`);
+    expect(html.match(/name="intent"/g)).toHaveLength(1);
+  });
+});

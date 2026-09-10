@@ -390,6 +390,14 @@ describe("accepting while muted", () => {
   it("puts the player in for that fixture and leaves the mute running", async () => {
     const { gameId, fixtureId, cookie, viewerId } = await seedMemberGame();
     await post(`/g/${gameId}/mute`, cookie, { duration: "4w" });
+    // The mute has just auto-declined this fixture. Push that decline a minute
+    // into the past: an opposite answer within twenty seconds of it is asked
+    // about rather than written (M65), and this test is about the mute, not
+    // the guard.
+    await db
+      .update(responses)
+      .set({ respondedAt: new Date(Date.now() - 60_000) })
+      .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, viewerId)));
     const token = await signResponseToken(
       { playerId: viewerId, fixtureId, expiresAt: KICKOFF.getTime() + 86_400_000 },
       SECRET,

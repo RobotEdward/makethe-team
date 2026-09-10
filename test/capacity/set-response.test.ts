@@ -42,7 +42,14 @@ function accept(fixtureId: string, playerId: string, now: number = NOW.getTime()
   });
 }
 
-function decline(fixtureId: string, playerId: string, now: number = NOW.getTime()) {
+// A minute later than `accept`'s default, not the same instant: since M65 an
+// answer that reverses the player's own within twenty seconds is asked about
+// rather than written (`reversesRecentAnswer`), and nearly every test below
+// that declines is a change of mind. The M65 block at the end of this file is
+// where the window itself is exercised, with explicit clocks.
+const CHANGE_OF_MIND = NOW.getTime() + 60_000;
+
+function decline(fixtureId: string, playerId: string, now: number = CHANGE_OF_MIND) {
   return stubFor(fixtureId).setResponse({
     playerId, intent: "out", actorPlayerId: null, source: "token", whenFull: "waitlist", now,
   });
@@ -77,7 +84,7 @@ describe("recording a response", () => {
     expect(outcome).toMatchObject({ kind: "recorded", status: "out", inCount: 0 });
     const [row] = await db.select().from(responses)
       .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-0")));
-    expect(row?.respondedAt?.toISOString()).toBe(NOW.toISOString());
+    expect(row?.respondedAt?.toISOString()).toBe(new Date(CHANGE_OF_MIND).toISOString());
   });
 
   it("lets a player change their mind, freeing the slot", async () => {
@@ -296,7 +303,7 @@ describe("BR-7 — promotion from the waitlist", () => {
     expect(outcome).toMatchObject({
       kind: "recorded",
       status: "out",
-      promoted: { playerId: "p-4", previousWaitlistPosition: 2, promotedAt: NOW.getTime() },
+      promoted: { playerId: "p-4", previousWaitlistPosition: 2, promotedAt: CHANGE_OF_MIND },
     });
   });
 
@@ -1065,5 +1072,79 @@ describe("correcting a played fixture", () => {
     const [waiting] = await db.select().from(responses)
       .where(and(eq(responses.fixtureId, fixtureId), eq(responses.playerId, "p-2")));
     expect(waiting?.status).toBe("waitlisted");
+  });
+});
+
+describe("a reversal within seconds is asked about, not written (M65)", () => {
+  const T0 = NOW.getTime();
+
+  it("answers confirm-change for an opposite answer 10 s after the player's own, and writes nothing", async () => {
+    const fixtureId = await seedOpenFixture(3);
+    await decline(fixtureId, "p-0", T0);
+
+    const outcome = await accept(fixtureId, "p-0", T0 + 10_000);
+
+    expect(outcome).toEqual({ kind: "confirm-change", currentStatus: "out" });
+    const [row] = await db.select().from(responses).where(eq(responses.playerId, "p-0"));
+    expect(row?.status).toBe("out");
+    expect(row?.respondedAt?.getTime()).toBe(T0);
+    expect(await counts(fixtureId)).toEqual({ inCount: 0, cached: 0 });
+  });
+
+  it("writes the reversal once the caller confirms it", async () => {
+    const fixtureId = await seedOpenFixture(3);
+    await decline(fixtureId, "p-0", T0);
+
+    const outcome = await stubFor(fixtureId).setResponse({
+      playerId: "p-0", intent: "in", actorPlayerId: null, source: "token", whenFull: "waitlist",
+      now: T0 + 10_000, confirmChange: true,
+    });
+
+    expect(outcome).toMatchObject({ kind: "recorded", status: "in" });
+    expect(await counts(fixtureId)).toEqual({ inCount: 1, cached: 1 });
+  });
+
+  it("writes the reversal without asking once 20 s have passed", async () => {
+    const fixtureId = await seedOpenFixture(3);
+    await accept(fixtureId, "p-0", T0);
+
+    const outcome = await decline(fixtureId, "p-0", T0 + 20_000);
+
+    expect(outcome).toMatchObject({ kind: "recorded", status: "out" });
+  });
+
+  it("never asks about a re-tap of the same answer", async () => {
+    const fixtureId = await seedOpenFixture(3);
+    await decline(fixtureId, "p-0", T0);
+
+    expect(await decline(fixtureId, "p-0", T0 + 1_000)).toMatchObject({ kind: "recorded", status: "out" });
+  });
+
+  it("names the waitlist when that is what the player is reversing out of", async () => {
+    const fixtureId = await seedOpenFixture(3, 1);
+    await accept(fixtureId, "p-1", T0);
+    await accept(fixtureId, "p-0", T0);
+
+    expect(await decline(fixtureId, "p-0", T0 + 3_000)).toEqual({ kind: "confirm-change", currentStatus: "waitlisted" });
+  });
+
+  it("never asks an owner — an override is a decision with the whole picture in view (BR-27)", async () => {
+    const fixtureId = await seedOpenFixture(3);
+    await decline(fixtureId, "p-0", T0);
+
+    const outcome = await stubFor(fixtureId).setResponse({
+      playerId: "p-0", intent: "in", actorPlayerId: "p-1", source: "owner", whenFull: "exceed", now: T0 + 2_000,
+    });
+
+    expect(outcome).toMatchObject({ kind: "recorded", status: "in" });
+  });
+
+  it("never asks a player who is undoing an owner's override seconds later", async () => {
+    const fixtureId = await seedOpenFixture(3);
+    await stubFor(fixtureId).setResponse({
+      playerId: "p-0", intent: "out", actorPlayerId: "p-1", source: "owner", whenFull: "exceed", now: T0,
+    });
+
+    expect(await accept(fixtureId, "p-0", T0 + 2_000)).toMatchObject({ kind: "recorded", status: "in" });
   });
 });

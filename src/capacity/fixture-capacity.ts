@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { and, count, eq } from "drizzle-orm";
+import { reversesRecentAnswer } from "../domain/recent-answer.js";
 import { getDb, type Db } from "../db/client.js";
 import { buildAuditInsert } from "../db/audit.js";
 import {
@@ -352,6 +353,8 @@ export class FixtureCapacity extends DurableObject<Bindings> {
         status: responses.status,
         waitlistPosition: responses.waitlistPosition,
         invitedAt: responses.invitedAt,
+        respondedAt: responses.respondedAt,
+        setByPlayerId: responses.setByPlayerId,
       })
       .from(responses)
       .where(eq(responses.fixtureId, fixtureId));
@@ -368,6 +371,20 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     // that it had been undone.
     const existing = all.find((r) => r.playerId === input.playerId && r.status !== "withdrawn");
     if (!existing) return { kind: "rejected", reason: "not-eligible" };
+
+    // M65. Inside the lock rather than in the routes, so every path that
+    // records a player's own answer — the emailed link, the dashboard, the
+    // game page — asks the same question from the same row, and none can
+    // forget to. Owners are never asked: `actorPlayerId` is the BR-27 mark of
+    // an override, made with the whole squad in view.
+    if (
+      input.actorPlayerId === null &&
+      input.confirmChange !== true &&
+      (existing.status === "in" || existing.status === "out" || existing.status === "waitlisted") &&
+      reversesRecentAnswer(existing, input.intent, input.now)
+    ) {
+      return { kind: "confirm-change", currentStatus: existing.status };
+    }
 
     const others = all.filter((r) => r.id !== existing.id);
     const inCountWithoutThisPlayer = others.filter((r) => r.status === "in").length;

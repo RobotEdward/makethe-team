@@ -390,7 +390,7 @@ describe("POST /g/:id/f/:fixtureId/teams", () => {
       actorPlayerId: null,
       source: "token",
       whenFull: "waitlist",
-      now: NOW.getTime(),
+      now: NOW.getTime() + 60_000, // a change of mind, past the M65 guard window
     });
     expect(await teamOf(fixtureId, ada), "the orphaned side is the signal, until a save acknowledges it").toBe("a");
 

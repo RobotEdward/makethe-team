@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import type { PageNav } from "../views/layout.js";
 import type { Context } from "hono";
 import { wrongOrigin } from "../auth/origin.js";
-import { parseIntent, recordWebAnswer } from "./web-answer.js";
+import { changeGuardQuery, parseIntent, readChangeGuardQuery, recordWebAnswer } from "./web-answer.js";
 import {
   AS_PLAYER_QUERY,
   AS_PLAYER_VALUE,
@@ -593,6 +593,7 @@ async function renderPlayerGame(
       standings: standingsForViewer(game, buildLeagueTable(tally), { isOwner: false }),
       standingsSort: await standingsSortFor(c, db, c.get("player")!),
       preview: extras.preview === true ? { backPath: gamePath(game.id) } : undefined,
+      changeGuard: readChangeGuardQuery((name) => c.req.query(name)),
     }),
   );
 }
@@ -674,15 +675,21 @@ gamesRoutes.post("/g/:id/f/:fixtureId/answer", requirePlayer, async (c) => {
   }
 
   const gameId = c.req.param("id");
+  const fixtureId = c.req.param("fixtureId");
   const recorded = await recordWebAnswer(
     c,
     c.get("player")!.id,
-    c.req.param("fixtureId"),
+    fixtureId,
     intent,
     new Date(Date.now()),
     gameId,
+    form["confirm"] === "1",
   );
   if (recorded === "not-found") return c.text("Not found", 404);
+  if (recorded !== "recorded") {
+    // The M65 question, carried through the redirect this route already makes.
+    return c.redirect(`${gamePath(gameId)}${changeGuardQuery(fixtureId, intent)}`, 303);
+  }
 
   return c.redirect(gamePath(gameId), 303);
 });
@@ -2010,6 +2017,12 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
     }
     if (outcome.reason === "not-eligible") return c.text("Not found", 404);
     return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking answers any more." }, 422);
+  }
+  if (outcome.kind === "confirm-change") {
+    // Unreachable: the object never asks an owner (`actorPlayerId` is set
+    // above). Named rather than cast away so a change to that rule fails
+    // here, loudly, instead of auditing a status that was never written.
+    throw new Error("capacity object asked an owner to confirm a change");
   }
 
   await recordAudit(target.db, {

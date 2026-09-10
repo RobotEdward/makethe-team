@@ -13,13 +13,20 @@ the same action as answering in the first place: go back to the page — from th
 email again, or from the tab you still have open — and tap **Can't make it**
 there.
 
-The page then says **You said you can't make it** — that's how you know it
-worked, the same as with any answer. Sam Whitlock has answered that way here.
+The page then says **You said you can't make it**, and the button turns dark
+with a cross on it — that's how you know it worked, the same as with any
+answer. Sam Whitlock has answered that way here.
 Tapping **I'm in** puts you back, and there's no penalty and no message to
 write. If the squad has filled up while you were out, the page says so before
 you tap — here, **The squad is full — answering yes puts you 3rd on the
 waitlist.** — so changing your mind back to yes might land you on the waitlist
 rather than a place, and you'll know that before you tap it.
+
+If you tap the other button within a few seconds of answering, the page asks
+before it changes anything — **You said you can't make it a moment ago. Change
+that to I'm in?** — with one button to confirm and a link to keep your answer.
+That is there because a second tap that soon is usually a slip, not a change
+of heart. After twenty seconds the buttons work as normal.
 
 Say one of the ten players marked **In** drops out. The place doesn't sit
 empty: Mika Toivonen, first on the waitlist, is moved in and gets an email

@@ -125,7 +125,7 @@ export async function sendPromotionEmail(params: SendPromotionEmailParams): Prom
     responseTokenSecret,
   );
 
-  const respondInUrl = `${SITE_ORIGIN}/r/${token}?intent=in`;
+  const respondUrl = `${SITE_ORIGIN}/r/${token}`;
   const emailPayload = {
     playerName: player.name,
     gameName: game.name,
@@ -134,8 +134,7 @@ export async function sendPromotionEmail(params: SendPromotionEmailParams): Prom
     kicksOffAtLocal: formatLocalDateTime(fixture.kicksOffAt, game.timezone),
     // Every URL is built here, from `SITE_ORIGIN` and a token this function
     // just signed — never from anything in the request that triggered it.
-    respondInUrl,
-    respondOutUrl: `${SITE_ORIGIN}/r/${token}?intent=out`,
+    respondUrl,
     leaveUrl: `${SITE_ORIGIN}/leave/${leaveToken}`,
   };
   const rendered = renderPromotionEmail(emailPayload);
@@ -172,7 +171,7 @@ export async function sendPromotionEmail(params: SendPromotionEmailParams): Prom
         to: promoted.playerId,
         title: copy.title,
         body: copy.body,
-        url: respondInUrl,
+        url: respondUrl,
         // Sharpened from PUSH_COPY's gameName+kickoff approximation (Task 9)
         // to the real fixture id, now that this caller holds one (Task 13).
         tag: `n2:${fixtureId}`,

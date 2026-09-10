@@ -12,8 +12,11 @@ import {
 import type { FixtureView } from "../domain/fixture-view.js";
 import { totalRecord, unrecordedIn, type PlayerRecord } from "../domain/record.js";
 import type { ResponseStatus } from "../domain/response-status.js";
+import type { ResponseIntent } from "../capacity/types.js";
 import {
   answerStateOf,
+  changeGuardFor,
+  renderChangeGuard,
   renderFullWarning,
   renderResponseButtons,
   renderStatusLine,
@@ -175,6 +178,12 @@ export interface DashboardPageOptions {
   mute?: MuteControlsOptions;
   /** The one refusal `POST /app/games/:gameId/leave` can produce (M7a Task 4). */
   problem?: string;
+  /**
+   * The M65 change guard, read back from `POST /app`'s redirect
+   * (`changeGuardQuery`). Asked on the one card it names, and only while
+   * that card's answer still differs from the intent — see `renderRow`.
+   */
+  changeGuard?: { fixtureId: string; intent: ResponseIntent };
   /** Set when this player has an erasure pending — already formatted (M7b). */
   erasesAtLocal?: string;
   /**
@@ -259,12 +268,13 @@ function fixtureHref(row: DashboardRow): string {
   return row.owner ? fixturePath(row.gameId, row.fixtureId) : gamePath(row.gameId);
 }
 
-function renderRow(row: DashboardRow): string {
+function renderRow(row: DashboardRow, changeGuard: DashboardPageOptions["changeGuard"]): string {
   // Same sentences the fixture page uses for the same statuses — imported, not
   // restated, so a waitlisted player can never read as confirmed on one page
   // and not the other (BR-5).
   const headline = viewerHeadlineOpen({ status: row.myStatus, waitlistRank: null });
   const headlineClass = `viewer-headline${row.myStatus === "waitlisted" ? " warn" : ""}`;
+  const guard = changeGuardFor(row.myStatus, changeGuard, row.fixtureId);
   // The card ends in the same answer block the response page opens with
   // (M20 B7), through the same exported state expression rather than a second
   // copy of it — the reason the headline itself is imported. `false` for
@@ -280,9 +290,18 @@ function renderRow(row: DashboardRow): string {
       ${row.yourSide === null ? "" : yourSideLine(row.yourSide, "future")}
       ${renderStatusLine(row.view, row.waitlistCount)}
       <section class="answer answer-${answerStateOf(row.myStatus, false)}">
-        ${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
+        ${
+          guard !== undefined
+            ? renderChangeGuard({
+                action: DASHBOARD_PATH,
+                guard,
+                keepHref: DASHBOARD_PATH,
+                hidden: `<input type="hidden" name="fixtureId" value="${escapeHtml(row.fixtureId)}">`,
+              })
+            : `${headline ? `<p class="${headlineClass}">${escapeHtml(headline)}</p>` : ""}
         ${renderActions(row)}
-        ${renderFullWarning(row.view, { status: row.myStatus }, row.waitlistCount)}
+        ${renderFullWarning(row.view, { status: row.myStatus }, row.waitlistCount)}`
+        }
       </section>
     </li>`;
 }
@@ -613,6 +632,7 @@ export function renderDashboardPage({
   erasesAtLocal,
   erasureHeldUp,
   onboarding,
+  changeGuard,
 }: DashboardPageOptions): string {
   const problemNotice = problem === undefined ? "" : `<p class="nudge">${escapeHtml(problem)}</p>`;
   const erasureBanner =
@@ -634,7 +654,7 @@ export function renderDashboardPage({
     ${
       rows.length === 0
         ? `<p class="read-only">You've nothing coming up. When your next game opens for responses, it'll show up here.</p>`
-        : `<ul class="fixture-list">${rows.map(renderRow).join("")}</ul>`
+        : `<ul class="fixture-list">${rows.map((row) => renderRow(row, changeGuard)).join("")}</ul>`
     }
     ${mute === undefined ? "" : renderMuteControls(mute)}
     ${renderResultsNeededSection(resultsNeeded)}

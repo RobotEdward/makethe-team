@@ -38,7 +38,7 @@ import { loadNotificationSettings } from "../notify/notification-settings.js";
 import { buildReminderMessages } from "../notify/reminder-messages.js";
 import { sendPromotionEmail } from "../notify/send-promotion.js";
 import { renderLinkProblemPage } from "../views/link-problem.js";
-import { renderFixturePage, type ReadOnlyReason } from "../views/fixture.js";
+import { renderFixturePage, type ChangeGuard, type ReadOnlyReason } from "../views/fixture.js";
 import type { PageNav } from "../views/layout.js";
 import { renderLeavePage, type LeavePageParams } from "../views/leave.js";
 import { squadForViewer } from "../domain/squad-visibility.js";
@@ -98,6 +98,8 @@ async function renderFixtureForViewer(params: {
    * module's own doc comment gives for why `GET` here writes nothing).
    */
   pushOffer?: { vapidPublicKey: string };
+  /** The capacity object's `confirm-change` (M65), when that is what the `POST` got back. */
+  changeGuard?: ChangeGuard;
   /**
    * The signed-in header, if a session is on this request (M63) — resolved by
    * the caller, because it needs the environment and the request headers and
@@ -105,7 +107,7 @@ async function renderFixtureForViewer(params: {
    */
   nav: PageNav | undefined;
 }): Promise<string | null> {
-  const { db, fixtureId, playerId, token, now, intent, pushOffer } = params;
+  const { db, fixtureId, playerId, token, now, intent, pushOffer, changeGuard } = params;
   const loaded = await getFixtureWithSquad(db, fixtureId);
   if (!loaded) return null;
 
@@ -186,6 +188,7 @@ async function renderFixtureForViewer(params: {
     token,
     intent,
     readOnlyReason,
+    changeGuard,
     // The viewer's own row, not the visibility-filtered list above: their own
     // side is theirs to know whatever BR-33 does to everybody else's names
     // (see `publishedTeamsFor`), and reading it from a list that can be
@@ -366,6 +369,9 @@ respond.post("/r/:token", async (c) => {
   if (intent === null) {
     return c.text('Bad Request: "intent" must be exactly "in" or "out"', 400);
   }
+  // The change guard's own confirm button is the only thing that sets this
+  // (M65). Anything else — a first answer, a re-tap — posts without it.
+  const confirmChange = form["confirm"] === "1";
 
   const outcome = await c.env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
     playerId,
@@ -374,7 +380,31 @@ respond.post("/r/:token", async (c) => {
     source: "token",
     now: now.getTime(),
     whenFull: "waitlist",
+    confirmChange,
   });
+
+  if (outcome.kind === "confirm-change") {
+    // Nothing was written, so nothing below — the promotion, the tier
+    // release, the push offer — has anything to act on. Same page, with the
+    // question where the buttons were.
+    const db = getDb(c.env.DB);
+    const nav = await resolveSessionNav(c.env, db, now, c.req.raw.headers, "games");
+    const html = await renderFixtureForViewer({
+      db,
+      fixtureId,
+      playerId,
+      token,
+      now,
+      intent,
+      changeGuard: { currentStatus: outcome.currentStatus, intent },
+      nav,
+    });
+    if (html === null) {
+      console.error(`fixture disappeared between asking about a change and re-rendering it: ${fixtureId}`);
+      return c.html(renderLinkProblemPage(), 200);
+    }
+    return c.html(html, 200);
+  }
 
   if (outcome.kind === "rejected" && outcome.reason === "fixture-not-found") {
     // Same not-yet-fatal race the GET handles: the token verified fine, the

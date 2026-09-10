@@ -30,15 +30,14 @@ export interface PromotionEmailPayload {
   /** Already formatted in the Game's local timezone by the caller (src/domain/time/zone.ts). Never formatted here. */
   kicksOffAtLocal: string;
   /**
-   * `GET /r/<token>?intent=in` — opens the response page. The Player is
-   * *already* `in` by the time this email is sent (the Durable Object moved
-   * them inside the capacity lock), so this link confirms nothing and records
-   * nothing: it is how they see the squad and the details. See the doc
-   * comment on `renderPromotionEmail` for why the copy is careful about that.
+   * `GET /r/<token>` — the response page. The Player is *already* `in` by
+   * the time this email is sent (the Durable Object moved them inside the
+   * capacity lock), so this link confirms nothing and records nothing: it is
+   * how they see the squad and the details, and where they hand the spot
+   * back if they cannot make it after all. One link since M65, for the reason
+   * the reminder gives.
    */
-  respondInUrl: string;
-  /** As `respondInUrl`, but opens with "Can't make it" emphasised — the way a promoted Player hands the spot straight back. */
-  respondOutUrl: string;
+  respondUrl: string;
   /**
    * A working leave-game/unsubscribe link (BR-22): `/leave/:token`, signed
    * with a leave token scoped to the Game rather than to this Fixture. This
@@ -69,11 +68,12 @@ function href(url: string): string {
  *   message is built, so nothing here asks them to accept or confirm. Saying
  *   "tap to claim your spot" would be a lie, and a lie with a race in it: the
  *   spot is theirs whether or not they ever open the mail.
- * - **The links still record nothing.** Mail scanners follow every link in
- *   every email; both of these open the response page, where the single
+ * - **The link still records nothing.** Mail scanners follow every link in
+ *   every email; this one opens the response page, where the single
  *   deliberate tap happens. That is the same guarantee the reminder makes,
- *   and it is why "Can't make it" is a link to a page rather than a one-tap
- *   withdrawal — a prefetcher must not be able to give the spot away again.
+ *   and it is why handing the spot back is a sentence pointing at the page
+ *   rather than a one-tap withdrawal — a prefetcher must not be able to give
+ *   the spot away again.
  *
  * The layout and the palette match `reminder.ts` on purpose, including the
  * filled/solid treatment of the accept action: these are the two emails a
@@ -81,12 +81,12 @@ function href(url: string): string {
  * same place.
  */
 export function renderPromotionEmail(payload: PromotionEmailPayload): PromotionEmail {
-  const { playerName, gameName, venueName, kicksOffAtLocal, respondInUrl, respondOutUrl, leaveUrl } = payload;
+  const { playerName, gameName, venueName, kicksOffAtLocal, respondUrl, leaveUrl } = payload;
 
   const subject = `${gameName} — you're in`;
 
   const lead = "A spot opened up and it's yours — you're off the waitlist and in the squad.";
-  const caveat = "Nothing to do to accept: the spot is already yours. If you can't make it after all, say so and it goes to the next player waiting.";
+  const caveat = "Nothing to do to accept: the spot is already yours. Can't make it after all? Say so on the game page and it goes to the next player waiting.";
 
   const html = `<!doctype html>
 <html lang="en">
@@ -118,13 +118,8 @@ ${escapeHtml(lead)}
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
-<td style="padding:0 0 12px;">
-<a href="${href(respondInUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">See the Game</a>
-</td>
-</tr>
-<tr>
 <td>
-<a href="${href(respondOutUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#ebddc5; color:#201e1d; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #ebddc5;">Can't make it</a>
+<a href="${href(respondUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">See the game</a>
 </td>
 </tr>
 </table>
@@ -159,11 +154,8 @@ Not playing any more? <a href="${href(leaveUrl)}" style="color:#645c50;">Leave t
     "",
     lead,
     "",
-    "See the Game:",
-    respondInUrl,
-    "",
-    "Can't make it:",
-    respondOutUrl,
+    "See the game:",
+    respondUrl,
     "",
     caveat,
     "",

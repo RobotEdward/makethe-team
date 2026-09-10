@@ -25,25 +25,25 @@ export interface ReminderEmailPayload {
   inCount: number;
   spotsLeft: number;
   /**
-   * `GET /r/<token>?intent=in` — opens the response page with "I'm in"
-   * emphasised. Tapping this link does not itself record a response: the
-   * player still taps the button on that page to confirm. See the module
-   * doc comment on `renderReminderEmail` for why that second tap is
-   * deliberate, and keep the copy honest about it.
+   * `GET /r/<token>` — the Player's response page, where the one deliberate
+   * tap happens. One link, not an "I'm in" and a "Can't make it" pair (M65):
+   * two buttons that looked like answers and recorded nothing sent players
+   * tapping twice — once here, once on the page — and the second tap was
+   * where the slips happened. See the module doc comment on
+   * `renderReminderEmail` for why the tap cannot record anything from here.
    */
-  respondInUrl: string;
-  /** As `respondInUrl`, but opens with "Can't make it" emphasised. */
-  respondOutUrl: string;
+  respondUrl: string;
   /**
    * True when this Player already holds a slot (`status === "in"`) at send
    * time, so the email confirms rather than asks (M45).
    *
-   * **The "Can't make it" link stays either way, and must.** Every tier
-   * release and every waitlist promotion in the product is driven by somebody
-   * dropping out early; an email that tells a Player their game is tomorrow
-   * and offers them no way to say they cannot make it after all sends them
-   * hunting for the app, and the ones who do not bother are the no-shows the
-   * organiser finds out about at kick-off.
+   * **The way out stays either way, and must.** Every tier release and every
+   * waitlist promotion in the product is driven by somebody dropping out
+   * early; an email that tells a Player their game is tomorrow and offers
+   * them no way to say they cannot make it after all sends them hunting for
+   * the app, and the ones who do not bother are the no-shows the organiser
+   * finds out about at kick-off. Since M65 that way out is a sentence under
+   * the link rather than a second button.
    *
    * Optional, defaulting to the asking copy: every existing caller and test
    * predates this and means "ask them".
@@ -81,19 +81,16 @@ function spotsLine(spotsLeft: number, inCount: number): string {
 /**
  * Render the single email a Player gets the day before a Game (N-1).
  *
- * The copy is deliberately careful about the two response links: "I'm in"
- * and "Can't make it" describe an intention, not a completed action —
- * nothing here says "click to confirm" or implies the tap itself records
- * anything, because it does not. Mail scanners and security appliances
- * follow every link in every email automatically; if the link recorded a
- * response, every inbox that got pre-fetched or scanned would silently fill
- * a slot for a Player who never opened the message. The response page on
- * the other end is where the actual, single, deliberate confirming tap
- * happens.
+ * The link records nothing, and the copy says so. Mail scanners and security
+ * appliances follow every link in every email automatically; if the link
+ * recorded a response, every inbox that got pre-fetched or scanned would
+ * silently fill a slot for a Player who never opened the message. The
+ * response page on the other end is where the actual, single, deliberate
+ * tap happens — which is why, since M65, the email offers one "respond"
+ * link rather than a yes and a no that only looked like answers.
  */
 export function renderReminderEmail(payload: ReminderEmailPayload): ReminderEmail {
-  const { playerName, gameName, venueName, kicksOffAtLocal, inCount, spotsLeft, respondInUrl, respondOutUrl, leaveUrl } =
-    payload;
+  const { playerName, gameName, venueName, kicksOffAtLocal, inCount, spotsLeft, respondUrl, leaveUrl } = payload;
   const confirmed = payload.confirmed === true;
 
   // Unchanged for both. It is accurate either way, and it is what makes the
@@ -109,6 +106,11 @@ export function renderReminderEmail(payload: ReminderEmailPayload): ReminderEmai
    * answer went missing.
    */
   const standing = confirmed ? "You're in." : null;
+  const ask = confirmed ? null : "Can you make it?";
+  const button = confirmed ? "See the game" : "Respond on Make The Team";
+  const after = confirmed
+    ? "Can't make it after all? Say so on your response page — it frees your spot for the next player."
+    : "Opens your response page — say yes or no there, and change your mind any time before kick-off.";
 
   const html = `<!doctype html>
 <html lang="en">
@@ -139,24 +141,16 @@ ${escapeHtml(spots)}
 ${standing === null ? "" : `<p style="margin:0 0 12px; font-size:17px; line-height:1.4; font-weight:700; color:#201e1d;">${escapeHtml(standing)}</p>`}
 <p style="margin:0 0 20px; font-size:14px; line-height:1.5; color:#645c50;">${escapeHtml(spots)}</p>
 
+${ask === null ? "" : `<p style="margin:0 0 12px; font-size:17px; line-height:1.4; font-weight:700; color:#201e1d;">${escapeHtml(ask)}</p>`}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-${
-  confirmed
-    ? ""
-    : `<tr>
-<td style="padding:0 0 12px;">
-<a href="${href(respondInUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">I'm in</a>
-</td>
-</tr>`
-}
 <tr>
 <td>
-<a href="${href(respondOutUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#ebddc5; color:#201e1d; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #ebddc5;">Can't make it</a>
+<a href="${href(respondUrl)}" style="display:block; text-align:center; padding:14px 16px; background-color:#c67139; color:#fff7f0; text-decoration:none; font-weight:700; font-size:16px; border-radius:999px; border:2px solid #c67139;">${escapeHtml(button)}</a>
 </td>
 </tr>
 </table>
 
-<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#645c50;">${confirmed ? "That opens a page where you'll tap once more to confirm — nothing is recorded until then." : "Either one opens a page where you'll tap once more to confirm — nothing is recorded until then."}</p>
+<p style="margin:16px 0 0; font-size:13px; line-height:1.5; color:#645c50;">${escapeHtml(after)}</p>
 
 <hr style="margin:24px 0; border:none; border-top:1px solid #d6c9b3;">
 
@@ -187,13 +181,11 @@ Not playing any more? <a href="${href(leaveUrl)}" style="color:#645c50;">Leave t
     ...(standing === null ? [] : [standing, ""]),
     spots,
     "",
-    ...(confirmed ? [] : ["I'm in:", respondInUrl, ""]),
-    "Can't make it:",
-    respondOutUrl,
+    ...(ask === null ? [] : [ask]),
+    `${button}:`,
+    respondUrl,
     "",
-    confirmed
-      ? "That link opens a page where you'll tap once more to confirm — nothing is recorded until then."
-      : "Either link opens a page where you'll tap once more to confirm — nothing is recorded until then.",
+    after,
     "",
     "---",
     "Make The Team — organising this Game for your squad.",

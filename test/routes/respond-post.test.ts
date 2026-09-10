@@ -104,6 +104,13 @@ async function snapshotResponses(fixtureId: string) {
 }
 
 /** Record a response directly through the Durable Object, bypassing HTTP — for setting up scenario state. */
+/**
+ * Seed an answer as though given a minute ago, not at `NOW`: the route reads
+ * the real clock, and since M65 an answer that reverses the player's own
+ * within twenty seconds is asked about rather than written. Every test that
+ * seeds "in" and then posts "out" is a change of mind, and the window itself
+ * is exercised in the M65 block at the end of this file.
+ */
 async function setResponse(fixtureId: string, playerId: string, intent: "in" | "out") {
   return env.FIXTURE_CAPACITY.getByName(fixtureId).setResponse({
     playerId,
@@ -111,13 +118,14 @@ async function setResponse(fixtureId: string, playerId: string, intent: "in" | "
     actorPlayerId: null,
     source: "system",
     whenFull: "waitlist",
-    now: NOW.getTime(),
+    now: NOW.getTime() - 60_000,
   });
 }
 
-async function postIntent(token: string, intent?: string) {
+async function postIntent(token: string, intent?: string, options: { confirm?: boolean } = {}) {
   const params = new URLSearchParams();
   if (intent !== undefined) params.set("intent", intent);
+  if (options.confirm) params.set("confirm", "1");
   return SELF.fetch(`https://makethe.team/r/${token}`, { method: "POST", body: params });
 }
 
@@ -709,5 +717,80 @@ describe("POST /r/:token — the way back into the app (M63)", () => {
     expect(response.status).toBe(200);
     expect(body).toContain('class="site-header"');
     expect(body).not.toContain('href="/sign-in"');
+  });
+});
+
+describe("POST /r/:token — a reversal within seconds is asked about first (M65)", () => {
+  it("asks, and writes nothing, when the opposite answer follows the first within the window", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+    const token = await tokenFor(fixtureId, playerId);
+    await postIntent(token, "out");
+
+    const response = await postIntent(token, "in");
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("You said you can&#39;t make it a moment ago.");
+    expect(body).toContain(`name="confirm" value="1"`);
+    expect(body).toContain(`href="/r/${token}"`);
+    const [row] = await db.select().from(responses).where(eq(responses.playerId, playerId));
+    expect(row?.status).toBe("out");
+  });
+
+  it("writes the change once the player confirms it, and shows the new answer", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+    const token = await tokenFor(fixtureId, playerId);
+    await postIntent(token, "out");
+
+    const body = await (await postIntent(token, "in", { confirm: true })).text();
+
+    expect(body).toContain("You&#39;re in.");
+    expect(body).not.toContain("a moment ago");
+    const [row] = await db.select().from(responses).where(eq(responses.playerId, playerId));
+    expect(row?.status).toBe("in");
+  });
+
+  it("lets a re-tap of the same answer through untouched", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+    const token = await tokenFor(fixtureId, playerId);
+    await postIntent(token, "out");
+
+    const body = await (await postIntent(token, "out")).text();
+
+    expect(body).not.toContain("a moment ago");
+    expect(body).toContain(`class="button chosen-out"`);
+  });
+
+  it("lets a change of mind through once the window has passed", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+    const token = await tokenFor(fixtureId, playerId);
+    await postIntent(token, "out");
+    await db
+      .update(responses)
+      .set({ respondedAt: new Date(Date.now() - 30_000) })
+      .where(eq(responses.playerId, playerId));
+
+    const body = await (await postIntent(token, "in")).text();
+
+    expect(body).not.toContain("a moment ago");
+    const [row] = await db.select().from(responses).where(eq(responses.playerId, playerId));
+    expect(row?.status).toBe("in");
+  });
+
+  it("the GET after 'keep my answer' shows the answer, not the question", async () => {
+    const { fixtureId, playerIds } = await seedOpenFixture();
+    const [playerId] = playerIds as [string];
+    const token = await tokenFor(fixtureId, playerId);
+    await postIntent(token, "out");
+    await postIntent(token, "in");
+
+    const body = await (await SELF.fetch(`https://makethe.team/r/${token}`)).text();
+
+    expect(body).not.toContain("a moment ago");
+    expect(body).toContain(`class="button chosen-out"`);
   });
 });

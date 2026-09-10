@@ -161,9 +161,20 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
   .button.chosen-waiting {
     background: var(--warn-bg); color: var(--warn);
   }
+  /* Inverted, not a darker beige (M65): the recorded "no" has to be as
+     unmissable as the accent-filled "yes", or a player who just tapped it
+     cannot tell it took. Same pair the squad list's out chip uses. */
   .button.chosen-out {
-    background: var(--line); color: var(--fg);
+    background: var(--fg); color: var(--bg);
   }
+  /* The "keep my answer" link in the change guard: a real button-sized
+     target, but visibly the lesser of the two, so the emphasised confirm is
+     the only thing that reads as an action. An anchor, so it can be a GET. */
+  .button.quiet {
+    background: transparent; color: var(--mut); font-weight: 500;
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .change-guard { margin: 0.5rem 0 0; font-size: var(--t-body); color: var(--fg); }
 
   /* The one line a player must not be able to miss: which side they are on
      (BR-35 §5). Given the accent colour and the weight the response headline

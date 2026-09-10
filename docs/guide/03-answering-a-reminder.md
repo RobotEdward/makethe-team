@@ -1,18 +1,19 @@
 # Answering a reminder
 
 The day before a game, everyone in the squad gets one email. It says when and
-where, how many people are already in, and how many places are left. It has
-two buttons.
+where, how many people are already in, and how many places are left, and asks
+**Can you make it?** above one button: **Respond on Make The Team**.
 
 You do not need an account, a password, or the app open. It takes two taps: one
 in the email, which opens the page below, and one on that page, which saves
-your answer.
+your answer. The email itself never records anything — that is why it does not
+offer a yes and a no of its own.
 
 ## Arriving from the email
 
 ![The fixture page before you have answered, asking Can you make it? above two buttons](images/respond-pending.png)
 
-Tapping either button in the email brings you here, and nothing has been
+Tapping the button in the email brings you here, and nothing has been
 recorded yet: the page asks **Can you make it?** and waits for you.
 
 **Confirmed — the game is on** means enough people have already said yes for

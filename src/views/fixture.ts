@@ -1,3 +1,4 @@
+import { answerOf } from "../domain/recent-answer.js";
 import type { ResponseIntent } from "../capacity/types.js";
 import type { SquadMember } from "../db/queries.js";
 import { displayName } from "../domain/display-name.js";
@@ -136,6 +137,21 @@ export interface FixturePageOptions {
    * carried on this field.
    */
   pushOffer?: { vapidPublicKey: string };
+  /**
+   * The capacity object answered `confirm-change` (M65): the intent posted
+   * would reverse an answer this player gave seconds ago, and nothing was
+   * written. The answer block asks instead of showing the buttons. Only
+   * `POST /r/:token` sets it, from the object's own outcome.
+   */
+  changeGuard?: ChangeGuard;
+}
+
+/** What the change guard needs to ask its question. See `renderChangeGuard`. */
+export interface ChangeGuard {
+  /** What the row says now — the answer the player is about to reverse. */
+  currentStatus: "in" | "out" | "waitlisted";
+  /** What they just posted. */
+  intent: ResponseIntent;
 }
 
 const STATUS_LABEL: Record<FixtureView["status"], string> = {
@@ -633,13 +649,81 @@ export function renderResponseButtons(action: string, status: ResponseStatus, hi
   const inLabel = status === "waitlisted" ? "I'm in · waiting" : "I'm in";
   // A tick only on the settled answer. A waitlisted player has not got what
   // they asked for, so nothing here may read as a confirmation.
-  const tick = status === "in" ? `<span aria-hidden="true">✓</span> ` : "";
+  // `&nbsp;`, not a space: the button is a flex container, and a text node's
+  // leading space is dropped there, so a plain space rendered "✓I'm in".
+  const tick = status === "in" ? `<span aria-hidden="true">✓</span>&nbsp;` : "";
+  // And a cross on a recorded "out" (M65). Before it, the only difference
+  // between "you have not answered" and "you said no" was a slightly darker
+  // beige on one button and the headline above — and two players who had
+  // just tapped "Can't make it" tapped again, one of them on "I'm in".
+  const cross = status === "out" ? `<span aria-hidden="true">✕</span>&nbsp;` : "";
 
   return `
     <form method="post" action="${escapeHtml(action)}" class="responses">${hidden}
       <button type="submit" class="${inClass}" name="intent" value="in" aria-pressed="${status === "in" || status === "waitlisted"}">${tick}${escapeHtml(inLabel)}</button>
-      <button type="submit" class="${outClass}" name="intent" value="out" aria-pressed="${status === "out"}">Can't make it</button>
+      <button type="submit" class="${outClass}" name="intent" value="out" aria-pressed="${status === "out"}">${cross}Can't make it</button>
     </form>`;
+}
+
+/**
+ * The question asked instead of the buttons when a player's answer would
+ * reverse the one they gave seconds ago (M65, `SetResponseOutcome`
+ * `confirm-change`).
+ *
+ * One form, one intent: the confirm button re-posts exactly what they just
+ * posted, plus the `confirm` flag the capacity object looks for. Keeping the
+ * current answer is a plain link back to the page — a `GET` that writes
+ * nothing, so the "no" cannot itself be a slip that records something.
+ *
+ * Shared by the response page, the dashboard card and the game page for the
+ * same reason `renderResponseButtons` is: one copy of what the question looks
+ * like, or the three pages start asking it differently.
+ */
+export function renderChangeGuard(params: {
+  action: string;
+  guard: ChangeGuard;
+  /** Where "keep my answer" goes: the page itself, without the guard. */
+  keepHref: string;
+  hidden?: string;
+}): string {
+  const { action, guard, keepHref } = params;
+  const hidden = params.hidden ?? "";
+  const said =
+    guard.currentStatus === "out"
+      ? "You said you can't make it a moment ago."
+      : guard.currentStatus === "waitlisted"
+        ? "You joined the waitlist a moment ago."
+        : "You said you're in a moment ago.";
+  const change = guard.intent === "in" ? "Change that to I'm in?" : "Change that to can't make it?";
+  const yes = guard.intent === "in" ? "Yes, change to I'm in" : "Yes, I can't make it";
+  const keep = guard.currentStatus === "out" ? "No, keep can't make it" : "No, keep me in";
+
+  return `
+      <h2 class="viewer-headline">${escapeHtml(said)}</h2>
+      <p class="change-guard">${escapeHtml(change)}</p>
+      <form method="post" action="${escapeHtml(action)}" class="responses">${hidden}
+        <input type="hidden" name="confirm" value="1">
+        <button type="submit" class="button expected" name="intent" value="${guard.intent}">${escapeHtml(yes)}</button>
+        <a class="button quiet" href="${escapeHtml(keepHref)}">${escapeHtml(keep)}</a>
+      </form>`;
+}
+
+/**
+ * Whether the M65 question belongs on this card: the guard names it, and the
+ * answer it would reverse is still the recorded one. A stale query — the
+ * player confirmed in another tab, or the window passed and they changed it —
+ * shows the ordinary buttons, because the question would be about an answer
+ * they no longer hold.
+ */
+export function changeGuardFor(
+  status: ResponseStatus,
+  guard: { fixtureId: string; intent: ResponseIntent } | undefined,
+  fixtureId: string,
+): ChangeGuard | undefined {
+  if (guard === undefined || guard.fixtureId !== fixtureId) return undefined;
+  if (status !== "in" && status !== "out" && status !== "waitlisted") return undefined;
+  if (answerOf(status) === guard.intent) return undefined;
+  return { currentStatus: status, intent: guard.intent };
 }
 
 function renderButtons(options: FixturePageOptions): string {
@@ -748,8 +832,16 @@ export function renderFixturePage(options: FixturePageOptions): string {
     <p class="venue">${escapeHtml(venueName)}</p>
     <p class="kickoff">${escapeHtml(kicksOffAtLocal)}</p>
     <section class="answer answer-${answerStateOf(viewer.status, readOnlyReason !== undefined)}">
-      ${headline ? `<h2 class="${headlineClass}">${escapeHtml(headline)}</h2>` : ""}
-      ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}
+      ${
+        options.changeGuard !== undefined && readOnlyReason === undefined
+          ? renderChangeGuard({
+              action: `/r/${encodeURIComponent(token)}`,
+              guard: options.changeGuard,
+              keepHref: `/r/${encodeURIComponent(token)}`,
+            })
+          : `${headline ? `<h2 class="${headlineClass}">${escapeHtml(headline)}</h2>` : ""}
+      ${readOnlyReason ? renderReadOnlyNotice(readOnlyReason) : renderButtons(options) + renderFullWarning(view, viewer, options.waitlistCount)}`
+      }
     </section>
     ${renderStatusLine(view, options.waitlistCount)}
     ${renderNudge(view)}

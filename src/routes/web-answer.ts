@@ -23,6 +23,40 @@ export function parseIntent(value: unknown): ResponseIntent | null {
   return value === "in" || value === "out" ? value : null;
 }
 
+/**
+ * What a signed-in answer came to. `confirm-change` is the capacity object's
+ * M65 question — the intent would reverse an answer given seconds ago, and
+ * nothing was written; the caller sends the player back to their page with
+ * the question on it (`changeGuardQuery`).
+ */
+export type WebAnswerResult =
+  | "recorded"
+  | "not-found"
+  | { kind: "confirm-change"; currentStatus: "in" | "out" | "waitlisted" };
+
+/**
+ * The querystring that carries the change guard through a redirect (M65).
+ *
+ * The two web routes answer with a redirect, not a re-render, so the question
+ * has to survive a round trip: the page's own `GET` reads these back and
+ * asks it on the one card they name. Nothing in it is trusted — the page
+ * re-derives the current answer from the row, and shows the question only
+ * while that answer still differs from the intent named here.
+ */
+export function changeGuardQuery(fixtureId: string, intent: ResponseIntent): string {
+  return `?confirm=${intent}&fixture=${encodeURIComponent(fixtureId)}`;
+}
+
+/** The change guard a page `GET` should show, read back from `changeGuardQuery`, or `undefined`. */
+export function readChangeGuardQuery(
+  query: (name: string) => string | undefined,
+): { fixtureId: string; intent: ResponseIntent } | undefined {
+  const intent = parseIntent(query("confirm"));
+  const fixtureId = query("fixture");
+  if (intent === null || fixtureId === undefined || fixtureId === "") return undefined;
+  return { fixtureId, intent };
+}
+
 export async function recordWebAnswer(
   c: Context<AppEnv>,
   playerId: string,
@@ -39,7 +73,9 @@ export async function recordWebAnswer(
    * the broadcast handlers make, for the same reason (TR-18).
    */
   expectGameId: string | null = null,
-): Promise<"recorded" | "not-found"> {
+  /** The change guard's own confirm button posted this (M65). See `SetResponseInput`. */
+  confirmChange = false,
+): Promise<WebAnswerResult> {
   // ---- The entitlement re-check (TR-18). ----
   // Nothing above this line has established that this viewer may touch this
   // fixture: the form is the caller's own input and the middleware only said
@@ -79,7 +115,12 @@ export async function recordWebAnswer(
     source: "web",
     now: now.getTime(),
     whenFull: "waitlist",
+    confirmChange,
   });
+
+  if (outcome.kind === "confirm-change") {
+    return outcome;
+  }
 
   if (outcome.kind === "recorded" && outcome.promoted) {
     // `waitUntil`, matching `POST /r/:token`: this runs on the *dropping*

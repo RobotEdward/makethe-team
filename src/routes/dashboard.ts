@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { notifyPromotedPlayer } from "./respond.js";
-import { parseIntent, recordWebAnswer } from "./web-answer.js";
+import { changeGuardQuery, parseIntent, readChangeGuardQuery, recordWebAnswer } from "./web-answer.js";
 import { eq } from "drizzle-orm";
 import {
   DASHBOARD_PATH,
@@ -117,6 +117,7 @@ async function renderDashboard(c: Context<AppEnv>, problem?: string) {
         player.erasesAt === null ? undefined : formatLocalDateTime(player.erasesAt, "Europe/London"),
       erasureHeldUp: heldUp,
       onboarding,
+      changeGuard: readChangeGuardQuery((name) => c.req.query(name)),
     }),
     problem === undefined ? 200 : 422,
   );
@@ -319,8 +320,12 @@ dashboard.post(DASHBOARD_PATH, requirePlayer, async (c) => {
   }
   const fixtureId = typeof form["fixtureId"] === "string" ? form["fixtureId"] : "";
 
-  const recorded = await recordWebAnswer(c, player.id, fixtureId, intent, now);
+  const recorded = await recordWebAnswer(c, player.id, fixtureId, intent, now, null, form["confirm"] === "1");
   if (recorded === "not-found") return c.text("Not found", 404);
+  if (recorded !== "recorded") {
+    // The M65 question, carried through the redirect this route already makes.
+    return c.redirect(`${DASHBOARD_PATH}${changeGuardQuery(fixtureId, intent)}`, 303);
+  }
 
   return c.redirect(DASHBOARD_PATH, 303);
 });
