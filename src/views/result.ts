@@ -55,8 +55,12 @@ function claimWords(
   const label = outcomeLabel(names, outcome);
   if (label === null) return null;
   if (scoreA === null || scoreB === null) return outcome === "draw" ? "Draw" : `${label} won`;
-  const score = `${scoreA}–${scoreB}`;
-  return outcome === "draw" ? `Draw ${score}` : `${label} won ${score}`;
+  // Winner's score first. The sentence names the winner, so "Skins won 2–3"
+  // — Team A's score leading regardless of who won — read as the wrong side
+  // winning. A draw has no winner and keeps the A, B order the form uses.
+  if (outcome === "draw") return `Draw ${scoreA}–${scoreB}`;
+  const [winner, loser] = outcome === "a" ? [scoreA, scoreB] : [scoreB, scoreA];
+  return `${label} won ${winner}–${loser}`;
 }
 
 export interface ResultPanelParams {

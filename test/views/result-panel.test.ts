@@ -72,6 +72,30 @@ describe("renderResultPanel", () => {
     expect(html).toContain("2 of 3");
   });
 
+  /**
+   * The score reads winner-first. "Skins won 2–3" is Team A's score first
+   * regardless of who won, which reads as the wrong side winning; the
+   * sentence names the winner, so their score leads.
+   */
+  it("puts the winning side's score first when Team B won", () => {
+    const derived = deriveResult(
+      [claim("p1", { outcome: "b", scoreA: 2, scoreB: 3 }), claim("p2", { outcome: "b", scoreA: 2, scoreB: 3 })],
+      new Set(),
+    );
+    const html = renderResultPanel(params({ derived, locked: true, writable: false }));
+    expect(html).toContain("Skins won 3–2");
+    expect(html).not.toContain("won 2–3");
+  });
+
+  it("keeps a draw in Team A, Team B order", () => {
+    const derived = deriveResult(
+      [claim("p1", { outcome: "draw", scoreA: 1, scoreB: 1 }), claim("p2", { outcome: "draw", scoreA: 1, scoreB: 1 })],
+      new Set(),
+    );
+    const html = renderResultPanel(params({ derived, locked: true, writable: false }));
+    expect(html).toContain("Draw 1–1");
+  });
+
   it("says the score was not agreed when the winning outcome had no scores", () => {
     const derived = deriveResult([claim("p1"), claim("p2")], new Set());
     const html = renderResultPanel(params({ derived, locked: true, writable: false }));
