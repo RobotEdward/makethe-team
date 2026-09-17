@@ -5,16 +5,10 @@ import {
   gamePath,
   joinPath,
   fixturePath,
-  addGuestPath,
-  ownerGuestPath,
-  ownerGuestRemovePath,
-  ownerResponsePath,
   openFixturePath,
-  inviteMemberPath,
   fixtureTimelinePath,
 } from "../auth/paths.js";
 import type { SquadMember } from "../db/queries.js";
-import { RESPONSE_STATUSES } from "../domain/response-status.js";
 import { displayName } from "../domain/display-name.js";
 import { takingChanges, type FixtureView } from "../domain/fixture-view.js";
 import { PICKER_MODES, type PickerMode } from "../domain/picker.js";
@@ -23,7 +17,7 @@ import { cancelledMessage, openMessageParts, teamsMessage } from "../domain/what
 import { SITE_ORIGIN } from "../notify/delivery.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { renderStatusLine } from "./fixture.js";
-import { attribution, squadStatusLabel } from "./squad-row.js";
+import { renderConfirm, renderCorrectionNote, renderGuestLink, renderSquadList } from "./squad-controls.js";
 import { renderTeamPicker, renderTeamsReadOnly } from "./team-picker.js";
 import { renderFreshness } from "./freshness.js";
 import { renderInviteProgress, type InviteProgressParams } from "./invite-order.js";
@@ -168,175 +162,6 @@ function renderOverCapacity(view: FixtureView, inCount: number, maxPlayers: numb
 }
 
 /**
- * One squad row's controls: remove, for a guest; a segmented mark-in/mark-out
- * for a member.
- *
- * The segment displays the member's current answer as well as setting it
- * (M10 §3.3), which is what lets the status text come off the row — fourteen
- * members previously meant twenty-eight full-width buttons, and at 390px the
- * labels wrapped. Two submits in one form, exactly as before: nothing here
- * needs JavaScript.
- *
- * `aria-pressed` carries the same fact the fill does, so the state is not
- * stated in colour alone.
- */
-function renderMemberControls(
-  gameId: string,
-  fixtureId: string,
-  member: SquadMember,
-  canInvite: boolean,
-): string {
-  // Every branch returns its controls inside one `.row-controls` element, a
-  // guest's single Remove form included. The row's grid pins each *direct
-  // child* form to one cell, so two forms there overlap and the first is
-  // invisible (see FORM_CSS); wrapping only the two-control case would leave
-  // the rule that prevents it depending on how many controls a row happens to
-  // have, which is how it would come back.
-  if (member.isGuest) {
-    return `<span class="row-controls"><form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form></span>`;
-  }
-  // A waitlisted member is neither in nor out, and the first half of the
-  // segment says so rather than offering a pressed "In" (M46). It used to:
-  // the reading was "the organiser marked them in and capacity queued them",
-  // which is true of how the row got there and useless as a control — the
-  // owner's actual question is "can I move this person up?", and a button
-  // already showing as pressed answers "you have". Neither half is pressed
-  // here, because neither is the state they are in; `renderStatusSpan` keeps
-  // the rank beside the name, which is the fact the label cannot carry.
-  const waiting = member.status === "waitlisted";
-  const isIn = member.status === "in";
-  const isOut = member.status === "out";
-  // Only on a row the invite order has not reached (M46). Rendered before the
-  // segment rather than inside it: the segment's two halves are one question
-  // with two answers, and a third button that does something else entirely
-  // would read as a third answer to it.
-  const invite = canInvite
-    ? `<form method="post" action="${escapeHtml(inviteMemberPath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Invite now</button></form>`
-    : "";
-  return `<span class="row-controls">${invite}<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}" class="segment">
-             <button class="seg${isIn ? " on" : ""}" type="submit" name="intent" value="in" aria-pressed="${isIn}">${waiting ? "Promote" : "In"}</button>
-             <button class="seg${isOut ? " out" : ""}" type="submit" name="intent" value="out" aria-pressed="${isOut}">Out</button>
-           </form></span>`;
-}
-
-/**
- * The status span beside a member's name — or nothing, when the segment
- * (`renderMemberControls`) already states the same fact (M10 §3.3: "this
- * makes the control display it instead of repeating it beside the control").
- *
- * Three deliberate exceptions keep the span alive rather than dropping it for
- * everyone:
- *  - `waitlisted`: since M46 the segment's first half reads "Promote" and
- *    neither half is pressed, so the segment now states what the owner can
- *    *do* and nothing at all about where in the queue this player is. Only
- *    this label carries the rank. Not an oversight — leave it.
- *  - a guest: `renderMemberControls` gives a guest a Remove button, never a
- *    segment, so nothing else on the row ever states a guest's status.
- *  - a closed fixture (`!showControls`): no control of any kind renders —
- *    segment or Remove — so this is the only place left that states anyone's
- *    status, guest or member, at any status.
- */
-function renderStatusSpan(member: SquadMember, showControls: boolean): string {
-  // A fourth case, and the one that is not a design decision: a status this
-  // build has never heard of. The segment cannot be "already saying it",
-  // because it renders neither half pressed — exactly what it renders for
-  // `pending` — so dropping the span would quietly read as "hasn't answered
-  // yet" about a row nothing is known about. `RESPONSE_STATUSES` is the
-  // canonical list, and `responses.status` has no CHECK constraint behind it.
-  const knownToTheSegment = (RESPONSE_STATUSES as readonly string[]).includes(member.status);
-  const segmentAlreadySaysIt =
-    showControls && !member.isGuest && knownToTheSegment && member.status !== "waitlisted";
-  if (segmentAlreadySaysIt) return "";
-  // The stored value reaches a class attribute, so it is escaped like every
-  // other interpolation (Constraint 6) — the same hole closed in
-  // `renderStatusLine`. For a status this build knows the output is unchanged;
-  // for one it does not, the value is a database string and not markup.
-  return `<span class="status status-${escapeHtml(member.status)}">${escapeHtml(squadStatusLabel(member))}</span>`;
-}
-
-function renderSquadList(
-  gameId: string,
-  fixtureId: string,
-  squad: readonly SquadMember[],
-  showControls: boolean,
-  /**
-   * Whether this Game runs an invite order (BR-39). Without it every row on an
-   * ungated fixture would sprout an "invite now" button — the whole squad is
-   * unstamped there, because nothing ever stamps them.
-   */
-  gatedInvites: boolean,
-): string {
-  if (squad.length === 0) return `<p class="muted">No players yet.</p>`;
-
-  const items = squad
-    .map((member) => {
-      const guest = member.isGuest ? " (guest)" : "";
-      // The squad and everyone's state still render on a fixture that has
-      // closed — only the controls go, because there is nothing left to change.
-      const canInvite = gatedInvites && !member.isGuest && member.invitedAt === null;
-      const controls = showControls ? renderMemberControls(gameId, fixtureId, member, canInvite) : "";
-      const status = renderStatusSpan(member, showControls);
-      // `displayName`, never `member.name` — see `src/views/fixture.ts` and §4.
-      return `<li><span class="name">${escapeHtml(displayName(member.name, member.erasedAt))}${guest}</span>${status}${attribution(member)}${controls}</li>`;
-    })
-    .join("");
-
-  return `<ul class="squad">${items}</ul>`;
-}
-
-/**
- * BR-8's over-capacity confirmation (§4.2): a banner above the squad asking
- * the owner to confirm a mark-in that would take the fixture past
- * `max_players`, or (Task 6) adding a guest that would do the same.
- *
- * `confirm.playerId === null` is Task 6's guest case — wired here so the
- * banner is written once, even though the guest route itself is not built
- * yet.
- */
-function renderConfirm(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
-  if (params.confirm === undefined) return "";
-  const { confirm, gameName, inCount, maxPlayers } = params;
-
-  return `<div class="confirm">
-           <p>${escapeHtml(`${gameName} is full (${inCount} of ${maxPlayers}). Add ${confirm.name} anyway?`)}</p>
-           <form method="post" action="${escapeHtml(
-             confirm.playerId === null
-               ? ownerGuestPath(gameId, fixtureId)
-               : ownerResponsePath(gameId, fixtureId, confirm.playerId),
-           )}">
-             <input type="hidden" name="intent" value="in">
-             <input type="hidden" name="override" value="1">
-             ${confirm.playerId === null ? `<input type="hidden" name="name" value="${escapeHtml(confirm.name)}">` : ""}
-             <button class="button primary" type="submit">Add them anyway</button>
-           </form>
-           <p><a href="${escapeHtml(fixturePath(gameId, fixtureId))}">No, leave it</a></p>
-         </div>`;
-}
-
-/**
- * One fixture, as its organiser sees it (J6b §3): the squad, everyone's
- * current state, and the controls to change it (Task 5).
- *
- * Reuses `renderStatusLine` from `src/views/fixture.ts` rather than restating
- * its wording, so the status badge reads identically on the player's page and
- * the organiser's. Every control here is a plain form, so the page works with
- * JavaScript off — including the team picker, whose one script
- * (`TEAM_PICKER_JS`, Task 7) only sets radios this page would have posted
- * anyway. Nothing an organiser must be able to do depends on it.
- */
-/**
- * The link to the add-a-guest page (§5, moved off this page in M52), shown
- * only while the fixture is still taking changes — once it is cancelled,
- * played, or merely scheduled there is no capacity write for it to make.
- *
- * A link rather than the form it used to be. The form sat at the foot of the
- * longest page in the product — 3954px at 390px once the M52 capture finally
- * showed a busy fixture — so every organiser who never adds a guest scrolled
- * past it to reach the footer actions, and the one who does add a guest was
- * hunting for it at the bottom, usually pitchside. It sits beside the squad
- * now, which is what it is about.
- */
-/**
  * Whether the organiser may change who is in this fixture right now: while it
  * is taking changes, or in M64's correction window after full time. The one
  * predicate the squad controls, the guest link, the picker and the picker's
@@ -346,24 +171,6 @@ function rosterControlsShown(params: OwnerFixtureParams): boolean {
   return takingChanges(params.view) || params.correction !== undefined;
 }
 
-/**
- * The M64 note above the squad: the fixture is over, but the record is not
- * yet final. Says when it will be, so nobody discovers the deadline by
- * hitting it.
- */
-function renderCorrectionNote(params: OwnerFixtureParams): string {
-  if (params.correction === undefined) return "";
-  const until =
-    params.correction.deadlineLocal === null
-      ? "until someone records a result"
-      : `until ${params.correction.deadlineLocal}`;
-  return `<p class="nudge">This game has been played. You can still correct who played and which side they were on ${escapeHtml(until)}.</p>`;
-}
-
-function renderGuestLink(gameId: string, fixtureId: string, params: OwnerFixtureParams): string {
-  if (!rosterControlsShown(params)) return "";
-  return `<p class="actions"><a class="button" href="${escapeHtml(addGuestPath(gameId, fixtureId))}">Add a guest</a></p>`;
-}
 
 /**
  * What the "who picks the teams?" control needs to know (M29).
@@ -653,13 +460,25 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
     ${renderStatusLine(view, waitlistCount)}
     ${renderOpenNow(gameId, fixtureId, view, params.gatedInvites)}
     ${renderOverCapacity(view, inCount, maxPlayers)}
-    ${renderConfirm(gameId, fixtureId, params)}
+    ${
+      params.confirm === undefined
+        ? ""
+        : renderConfirm({
+            gameId,
+            fixtureId,
+            gameName,
+            inCount,
+            maxPlayers,
+            confirm: params.confirm,
+            leaveHref: fixturePath(gameId, fixtureId),
+          })
+    }
 
     ${resultPanel}
 
     <section id="squad" class="fixture-section" aria-labelledby="squad-heading">
       <h2 id="squad-heading">Squad</h2>
-      ${renderCorrectionNote(params)}
+      ${renderCorrectionNote(params.correction)}
       ${renderSquadList(
         gameId,
         fixtureId,
@@ -680,7 +499,7 @@ export function renderOwnerFixturePage(params: OwnerFixtureParams): string {
 
     ${renderPickerControl(gameId, fixtureId, params)}
 
-    ${renderGuestLink(gameId, fixtureId, params)}
+    ${rosterControlsShown(params) ? renderGuestLink(gameId, fixtureId) : ""}
 
     ${whatsapp.length === 0 ? "" : `<section id="share" class="fixture-section">${renderWhatsAppCard({ messages: whatsapp })}</section>`}
 

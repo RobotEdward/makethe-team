@@ -28,12 +28,13 @@ import { ALLOWED, ORIGIN, signIn } from "./support/sign-in.js";
  * fixture whose rosters moved after the fact, and the design needs the column
  * back.
  *
- * Until the result locks, M64 lets the organiser — and only the organiser —
- * correct the record: the drop-out replaced by a guest at the venue, the
- * sides re-balanced on the pitch. The second half of this file enumerates
- * that window: every owner path accepts, every player path still refuses
- * (BR-15), and publishing stays refused because it would email a squad about
- * a game that is over.
+ * Until the result locks, M64 lets the organiser correct the record: the
+ * drop-out replaced by a guest at the venue, the sides re-balanced on the
+ * pitch. The second half of this file enumerates that window: every owner
+ * path accepts, every player path still refuses (BR-15), and publishing stays
+ * refused because it would email a squad about a game that is over. Since
+ * M66 the named delegate shares the window; their half is in
+ * test/routes/delegate-roster.test.ts.
  */
 const KICKOFF = new Date("2026-08-13T18:00:00Z");
 

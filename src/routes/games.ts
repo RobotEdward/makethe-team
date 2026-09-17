@@ -106,7 +106,7 @@ import {
 import { squadLeagueTally } from "../db/record-queries.js";
 import { renderGameOverviewPage } from "../views/game-overview.js";
 import { renderOwnerFixturePage, type OwnerFixtureParams } from "../views/owner-fixture.js";
-import { renderPickerPage } from "../views/picker-page.js";
+import { renderPickerPage, type PickerRoster } from "../views/picker-page.js";
 import { renderPlayerFixturePage } from "../views/player-fixture.js";
 import type { MuteControlsOptions } from "../views/mute-controls.js";
 import { renderPastFixturesPage, type PastFixtureRow } from "../views/past-fixtures.js";
@@ -1974,7 +1974,8 @@ export async function renderPlayerFixture(
 gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
-  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  // The owner or the named delegate (M66) — see `loadRosterTarget`.
+  const target = await loadRosterTarget(c, c.req.param("id"), c.req.param("fixtureId"));
   if (target === null) return c.text("Not found", 404);
 
   const playerId = c.req.param("playerId");
@@ -2007,16 +2008,12 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
     if (outcome.reason === "would-exceed-capacity") {
       // Not an error: the owner is one click from the thing they asked for.
       // 422, and the same page again with the question on it (§4.2).
-      return renderOwnerFixture(
-        c,
-        target,
-        now,
-        { confirm: { playerId, name: previous?.name ?? "this player", intent: "in" } },
-        422,
-      );
+      return renderPickingRefusal(c, target, now, {
+        confirm: { playerId, name: previous?.name ?? "this player", intent: "in" },
+      });
     }
     if (outcome.reason === "not-eligible") return c.text("Not found", 404);
-    return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking answers any more." }, 422);
+    return renderPickingRefusal(c, target, now, { problem: "That fixture isn't taking answers any more." });
   }
   if (outcome.kind === "confirm-change") {
     // Unreachable: the object never asks an owner (`actorPlayerId` is set
@@ -2061,7 +2058,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/response/:playerId", requirePlayer, async 
     c.executionCtx.waitUntil(notifyReleasedSubs(c.env, target.fixture.id, now));
   }
 
-  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+  return c.redirect(afterRosterWrite(target), 303);
 });
 
 /**
@@ -2309,7 +2306,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/invite/player/:playerId", requirePlayer, a
  * the page says what will happen instead of standing in the way.
  */
 gamesRoutes.get("/g/:id/f/:fixtureId/guest/add", requirePlayer, async (c) => {
-  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  const target = await loadRosterTarget(c, c.req.param("id"), c.req.param("fixtureId"));
   if (target === null) return c.html(renderNotFoundPage(), 404);
 
   const left = target.fixture.maxPlayers - target.fixture.inCount;
@@ -2322,6 +2319,7 @@ gamesRoutes.get("/g/:id/f/:fixtureId/guest/add", requirePlayer, async (c) => {
       gameName: target.game.name,
       kicksOffAtLocal: formatLocalDateTime(target.fixture.kicksOffAt, target.game.timezone),
       spotsLeft: left > 0 ? left : null,
+      backHref: afterRosterWrite(target),
     }),
   );
 });
@@ -2329,13 +2327,13 @@ gamesRoutes.get("/g/:id/f/:fixtureId/guest/add", requirePlayer, async (c) => {
 gamesRoutes.post("/g/:id/f/:fixtureId/guest", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
-  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  const target = await loadRosterTarget(c, c.req.param("id"), c.req.param("fixtureId"));
   if (target === null) return c.text("Not found", 404);
 
   const now = new Date(Date.now());
   const form = await c.req.parseBody();
   const parsed = parseGuestName(form["name"]);
-  if (!parsed.ok) return renderOwnerFixture(c, target, now, { problem: parsed.problem }, 422);
+  if (!parsed.ok) return renderPickingRefusal(c, target, now, { problem: parsed.problem });
 
   const override = form["override"] === "1";
   const outcome = await c.env.FIXTURE_CAPACITY.getByName(target.fixture.id).addGuest({
@@ -2349,15 +2347,9 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest", requirePlayer, async (c) => {
     if (outcome.reason === "would-exceed-capacity") {
       // `playerId: null` is what tells the banner to repost to the guest
       // endpoint with the name it is holding, rather than to a player.
-      return renderOwnerFixture(
-        c,
-        target,
-        now,
-        { confirm: { playerId: null, name: parsed.name, intent: "in" } },
-        422,
-      );
+      return renderPickingRefusal(c, target, now, { confirm: { playerId: null, name: parsed.name, intent: "in" } });
     }
-    return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking answers any more." }, 422);
+    return renderPickingRefusal(c, target, now, { problem: "That fixture isn't taking answers any more." });
   }
 
   await recordAudit(target.db, {
@@ -2369,7 +2361,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest", requirePlayer, async (c) => {
     now,
   });
 
-  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+  return c.redirect(afterRosterWrite(target), 303);
 });
 
 /**
@@ -2393,7 +2385,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest", requirePlayer, async (c) => {
 gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
 
-  const target = await loadFixtureTarget(c, c.req.param("id"), c.req.param("fixtureId"));
+  const target = await loadRosterTarget(c, c.req.param("id"), c.req.param("fixtureId"));
   if (target === null) return c.text("Not found", 404);
 
   const playerId = c.req.param("playerId");
@@ -2415,7 +2407,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
   // itself, rather than redirecting back to a squad that still lists them.
   if (outcome.kind === "no-op") {
     if (outcome.reason === "fixture-not-open") {
-      return renderOwnerFixture(c, target, now, { problem: "That fixture isn't taking changes any more." }, 422);
+      return renderPickingRefusal(c, target, now, { problem: "That fixture isn't taking changes any more." });
     }
     return c.text("Not found", 404);
   }
@@ -2435,7 +2427,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/guest/:playerId/remove", requirePlayer, as
     c.executionCtx.waitUntil(notifyPromotedPlayer(c.env, target.fixture.id, outcome.promoted, now));
   }
 
-  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+  return c.redirect(afterRosterWrite(target), 303);
 });
 
 /**
@@ -2480,6 +2472,51 @@ async function loadPickerTarget(c: Context<AppEnv>, gameId: string, fixtureId: s
 type PickerTarget = NonNullable<Awaited<ReturnType<typeof loadPickerTarget>>>;
 
 /**
+ * The game and fixture behind a `/g/:id/f/:fixtureId` path for somebody who
+ * may **change the roster** on it (M66) — the owner, or the named delegate
+ * while the fixture is in `delegate` mode.
+ *
+ * Narrower than `loadPickerTarget` in one respect: a member of an `open`-mode
+ * fixture may pick but never mark anyone in or out. "Anyone can pick" hands
+ * the squad a chore; it does not hand every member the power to drop a
+ * teammate from Thursday. A delegate is one named person the organiser
+ * chose, and the choice is what carries the roster with it — they are the
+ * one pitchside who knows Sam has texted to drop out.
+ *
+ * Exactly four routes use it: mark in/out, the add-a-guest page, the guest
+ * add and the guest remove. `test/routes/picker-entitlement.test.ts`
+ * classifies each and refuses an open-mode member on all of them; a fifth
+ * route reaching for this loader fails that test until it is classified.
+ *
+ * The same two halves as `loadPickerTarget`, in the same order — membership
+ * first, then the fixture's mode — for the same reason: a delegate who leaves
+ * the squad stops passing at once.
+ */
+async function loadRosterTarget(c: Context<AppEnv>, gameId: string, fixtureId: string) {
+  const target = await loadPickerTarget(c, gameId, fixtureId);
+  if (target === null) return null;
+  if (!target.isOwner && effectiveMode(target.fixture) !== "delegate") return null;
+  return target;
+}
+
+/**
+ * Where a roster write sends its author afterwards: the organiser back to
+ * their fixture page, a delegate back to the picker page. The fixture page
+ * dispatches by role, so a delegate redirected there would land on the
+ * player's view of the fixture with none of the controls they just used.
+ */
+function afterRosterWrite(target: PickerTarget): string {
+  return target.isOwner ? fixturePath(target.game.id, target.fixture.id) : pickerPagePath(target.game.id, target.fixture.id);
+}
+
+/**
+ * What a refusal may add to the picker page: the same three things the
+ * organiser's page accepts (`FixtureRenderExtras`), because since M66 the
+ * same four roster writes can be refused on either page.
+ */
+type PickerRenderExtras = { problem?: string; unassignedProblem?: readonly string[]; confirm?: PickerRoster["confirm"] };
+
+/**
  * Render the standalone picker page for a loaded target.
  *
  * Every derived value comes from the same helpers the organiser's fixture
@@ -2494,7 +2531,7 @@ async function renderPicker(
   c: Context<AppEnv>,
   target: PickerTarget,
   now: Date,
-  extras: { problem?: string; unassignedProblem?: readonly string[] } = {},
+  extras: PickerRenderExtras = {},
   status: 200 | 422 = 200,
 ) {
   const [withSquad, assignments] = await Promise.all([
@@ -2507,6 +2544,28 @@ async function renderPicker(
   const playing = squad.filter((member) => member.status === "in");
   const counts = sideCounts(squad);
   const notificationSettings = await loadNotificationSettings(target.db, [game.id]);
+
+  // M66. The roster for the people who hold it — the same question
+  // `loadRosterTarget` asks, so no control is rendered for somebody the
+  // route behind it would refuse. M64's correction window comes with it:
+  // the delegate who picked the sides is as likely as the organiser to know
+  // they were re-balanced on the pitch. `deadlineLocal` follows
+  // `ownerFixtureParams`: named while it is ahead, null once it has passed
+  // with nothing filed and the first claim is what will lock the record.
+  const holdsRoster = target.isOwner || effectiveMode(fixture) === "delegate";
+  const correcting = holdsRoster && fixture.lifecycle === "played" && (await rosterEditableNow(target.db, game, fixture, now));
+  const deadline = resultDeadline(fixture, game.resultLockHoursAfter);
+  const roster: PickerRoster | undefined = holdsRoster
+    ? {
+        squad,
+        inCount: fixture.inCount,
+        maxPlayers: fixture.maxPlayers,
+        ...(extras.confirm === undefined ? {} : { confirm: extras.confirm }),
+        ...(correcting
+          ? { correction: { deadlineLocal: deadline.getTime() > now.getTime() ? formatLocalDateTime(deadline, game.timezone) : null } }
+          : {}),
+      }
+    : undefined;
 
   return c.html(
     renderPickerPage({
@@ -2532,7 +2591,9 @@ async function renderPicker(
         target.isOwner ||
         mayPublish(fixture, c.get("player")!.id, fixture.teamsPublishedAt),
       mode: effectiveMode(fixture),
-      ...extras,
+      ...(roster === undefined ? {} : { roster }),
+      ...(extras.problem === undefined ? {} : { problem: extras.problem }),
+      ...(extras.unassignedProblem === undefined ? {} : { unassignedProblem: extras.unassignedProblem }),
     }),
     status,
   );
@@ -2552,7 +2613,7 @@ function renderPickingRefusal(
   c: Context<AppEnv>,
   target: PickerTarget,
   now: Date,
-  extras: { problem?: string; unassignedProblem?: readonly string[] } = {},
+  extras: PickerRenderExtras = {},
 ) {
   if (target.isOwner) return renderOwnerFixture(c, target, now, extras, 422);
   return renderPicker(c, target, now, extras, 422);
@@ -2777,9 +2838,11 @@ gamesRoutes.post("/g/:id/f/:fixtureId/teams", requirePlayer, async (c) => {
 
   // The same predicate the picker renders behind, so a form that was on
   // screen when the fixture closed cannot save through the back of it. The
-  // owner alone may also save in M64's correction window after full time: a
-  // delegate's or an open-mode member's job ended with the game.
-  const mayCorrect = target.isOwner && (await rosterEditableNow(target.db, target.game, target.fixture, now));
+  // owner and the named delegate (M66) may also save in M64's correction
+  // window after full time; an open-mode member's job ended with the game.
+  const mayCorrect =
+    (target.isOwner || effectiveMode(target.fixture) === "delegate") &&
+    (await rosterEditableNow(target.db, target.game, target.fixture, now));
   if (!takingChanges(fixtureView(target.fixture, now)) && !mayCorrect) {
     return renderPickingRefusal(c, target, now, { problem: "That fixture isn't taking changes any more." });
   }

@@ -1,4 +1,4 @@
-import { fixturePath, ownerGuestPath } from "../auth/paths.js";
+import { ownerGuestPath } from "../auth/paths.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
 import { FORM_CSS } from "./styles.js";
 
@@ -11,6 +11,12 @@ export interface AddGuestPageParams {
   kicksOffAtLocal: string;
   /** How many places are left, or null when the fixture is already full. */
   spotsLeft: number | null;
+  /**
+   * Where "Back to the fixture" goes: the organiser's fixture page, or the
+   * picker page for a delegate (M66), who has no fixture page with these
+   * controls on it to go back to.
+   */
+  backHref: string;
 }
 
 /**
@@ -55,7 +61,7 @@ export function renderAddGuestPage(params: AddGuestPageParams): string {
       </div>
       <button class="button primary" type="submit">Add guest</button>
     </form>
-    <p class="back-link"><a href="${escapeHtml(fixturePath(gameId, fixtureId))}">Back to the fixture</a></p>
+    <p class="back-link"><a href="${escapeHtml(params.backHref)}">Back to the fixture</a></p>
   `;
 
   return layout({

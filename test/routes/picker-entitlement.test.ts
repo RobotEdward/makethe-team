@@ -67,6 +67,25 @@ const NOT_OWNER_ONLY: Readonly<Record<string, string>> = {
     "which admits a member and nobody else.",
 };
 
+/**
+ * Routes under `/g/:id` that the **named delegate** may reach as well as the
+ * owner (M66), and nobody else — not a member of a fixture whose pick is
+ * `open`, whose entitlement is to the picker alone. Each is asserted both
+ * ways below: the delegate gets through, the open-mode member gets a 404.
+ *
+ * Every entry is a roster write on one fixture, which is the whole of what a
+ * delegate was handed: the person picking the teams on Thursday is the one
+ * who knows that Sam texted to drop out and that a mate is standing in.
+ */
+const OWNER_OR_DELEGATE: Readonly<Record<string, string>> = {
+  "POST /g/:id/f/:fixtureId/response/:playerId":
+    "marking a player in or out on the fixture the delegate is picking (M66).",
+  "GET /g/:id/f/:fixtureId/guest/add": "the add-a-guest page, for the same fixture (M66).",
+  "POST /g/:id/f/:fixtureId/guest": "adding a guest to the fixture the delegate is picking (M66).",
+  "POST /g/:id/f/:fixtureId/guest/:playerId/remove":
+    "removing a guest from the fixture the delegate is picking (M66).",
+};
+
 /** A game whose only fixture has been handed to the signed-in player to pick. */
 async function seedDelegateOnOpenFixture() {
   const { cookie } = await signIn();
@@ -86,6 +105,20 @@ async function seedDelegateOnOpenFixture() {
     .where(eq(fixtures.id, fixtureId));
 
   return { gameId, fixtureId, cookie, viewerId, ownerId };
+}
+
+/**
+ * The same game, but the pick is `open` to the whole squad and the signed-in
+ * player is an ordinary member of it — the strongest rights `open` mode can
+ * grant, and exactly the rights that must *not* reach the roster.
+ */
+async function seedMemberOnOpenModeFixture() {
+  const seeded = await seedDelegateOnOpenFixture();
+  await db
+    .update(fixtures)
+    .set({ pickerMode: "open", teamPickerPlayerId: null, teamPickerSetAt: null })
+    .where(eq(fixtures.id, seeded.fixtureId));
+  return seeded;
 }
 
 /**
@@ -124,8 +157,11 @@ describe("the picker capability does not widen any other /g/:id route", () => {
     // longer exists would quietly stop meaning anything, and the next route
     // to take that path would inherit the exemption without anyone deciding
     // it should.
-    for (const key of Object.keys(NOT_OWNER_ONLY)) {
+    for (const key of [...Object.keys(NOT_OWNER_ONLY), ...Object.keys(OWNER_OR_DELEGATE)]) {
       expect(registered, `${key} is exempted here but is no longer a registered route`).toContain(key);
+    }
+    for (const key of Object.keys(OWNER_OR_DELEGATE)) {
+      expect(NOT_OWNER_ONLY, `${key} is classified twice`).not.toHaveProperty(key);
     }
   });
 
@@ -136,7 +172,8 @@ describe("the picker capability does not widen any other /g/:id route", () => {
       .routes.filter((route) => !(route.method === "ALL" && route.path.endsWith("/*")))
       .filter((route) => route.path.startsWith("/g/:id"))
       .map((route) => ({ method: route.method, path: route.path }))
-      .filter((route) => !(`${route.method} ${route.path}` in NOT_OWNER_ONLY));
+      .filter((route) => !(`${route.method} ${route.path}` in NOT_OWNER_ONLY))
+      .filter((route) => !(`${route.method} ${route.path}` in OWNER_OR_DELEGATE));
 
     expect(ownerOnly.length).toBeGreaterThan(0);
 
@@ -161,4 +198,52 @@ describe("the picker capability does not widen any other /g/:id route", () => {
       ).toBe(404);
     }
   }, EVERY_ROUTE_TIMEOUT_MS);
+});
+
+/**
+ * Request one classified route with a seeded session. `fill` puts the
+ * viewer's own id in `:playerId`, which for the roster routes is the same
+ * hard case as above: a delegate marking *themselves* in is the most
+ * plausible thing a wrong check would permit, and the least plausible thing
+ * an open-mode member should be able to do.
+ */
+async function request(
+  route: string,
+  seeded: { gameId: string; fixtureId: string; viewerId: string; cookie: string },
+) {
+  const [method, path] = route.split(" ") as [string, string];
+  return SELF.fetch(`${ORIGIN}${fill(path, seeded)}`, {
+    method,
+    headers: {
+      cookie: seeded.cookie,
+      origin: ORIGIN,
+      ...(method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+    },
+    body: method === "POST" ? new URLSearchParams({ intent: "in", name: "Gus Guest" }) : undefined,
+    redirect: "manual",
+  });
+}
+
+describe("the roster routes widen to the named delegate and no further (M66)", () => {
+  it("lets the named delegate through every owner-or-delegate route", async () => {
+    const seeded = await seedDelegateOnOpenFixture();
+    for (const route of Object.keys(OWNER_OR_DELEGATE)) {
+      const response = await request(route, seeded);
+      // Anything but a refusal. The remove route 404s here for a different
+      // reason — `:playerId` is the delegate, who is not a guest — so it is
+      // asserted positively, with a real guest, in
+      // test/routes/delegate-roster.test.ts; the entitlement half of it is
+      // what the open-mode sweep below pins.
+      if (route.endsWith("/remove")) continue;
+      expect(response.status, `${route} refused the named delegate`).not.toBe(404);
+    }
+  });
+
+  it("refuses a member of an open-mode fixture on every one of them", async () => {
+    const seeded = await seedMemberOnOpenModeFixture();
+    for (const route of Object.keys(OWNER_OR_DELEGATE)) {
+      const response = await request(route, seeded);
+      expect(response.status, `${route} let an open-mode member through`).toBe(404);
+    }
+  });
 });

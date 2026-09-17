@@ -42,7 +42,7 @@ function renderPickerLink(params: PlayerFixtureParams): string {
   if (picker === undefined) return "";
   const words =
     picker.mode === "delegate"
-      ? "The organiser has asked you to pick the teams for this one."
+      ? "The organiser has asked you to pick the teams for this one. You can also mark players in or out and add a guest if plans change."
       : "The teams are open for anyone in the squad to pick.";
   return `<p>${escapeHtml(words)}</p>
           <p><a class="button" href="${escapeHtml(picker.path)}">Pick the teams</a></p>`;

@@ -48,7 +48,8 @@ export function renderPickerHandoverEmail(payload: PickerHandoverEmailPayload): 
   const { playerName, gameName, whenLocal, venueName, pickerUrl, leaveUrl } = payload;
 
   const subject = `You're picking the teams: ${gameName}, ${whenLocal}`;
-  const ask = "The organiser has asked you to pick the teams for this one.";
+  const ask =
+    "The organiser has asked you to pick the teams for this one. You can also mark players in or out and add a guest if plans change.";
   const closing =
     "Put everyone who's in on a side, then publish — publishing is what tells the squad, so nothing goes out until you do.";
 

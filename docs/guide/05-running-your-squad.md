@@ -281,6 +281,15 @@ The sides are called **Team A** and **Team B** until you say otherwise.
 form a little below the setting above, rename them for every week the game
 plays — Bibs and Skins, Reds and Blues, whatever your lot call them.
 
+You don't have to pick yourself. **Who picks the teams?**, under the picker,
+hands this one fixture to one named player, or opens it to anyone in the
+squad. A player you name gets their own picker page and, because they're the
+one who'll hear that somebody has dropped out on the way there, the squad
+controls too: they can mark players in or out, add a guest and remove one on
+that fixture, exactly as you can. Opening the pick to the whole squad hands
+over the pick and nothing else. You keep every control either way, and taking
+the pick back takes the rest back with it.
+
 ## Saving, and then telling people
 
 Saving and telling the squad are two separate things, and the page says so:
@@ -345,7 +354,7 @@ says how long you have. Mark the drop-out out, add the guest, move people
 between sides and press **Save teams**, and the record shows who actually
 played. There is no **Publish** — the game is over, so there is nobody to tell
 — and players can't change their own answers after full time; only an
-organiser can correct the record. The window is the same one a result stays
+organiser, or the player they handed the pick to, can correct the record. The window is the same one a result stays
 open to argument in: a day after full time unless you've changed it in
 **Advanced**, and if nobody has recorded a result by then, the first result
 that is recorded closes both.

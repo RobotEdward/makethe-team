@@ -212,11 +212,13 @@ export const CATALOGUE: CataloguePage[] = [
     // The organiser can reach it too, and this is the persona the seeded
     // world already has entitled for this fixture. What a delegate sees
     // differs only by the opening sentence, which
-    // test/routes/picker-delegation.test.ts pins.
+    // test/routes/picker-delegation.test.ts pins; the squad rows with their
+    // controls (M66) render for the organiser and the delegate alike.
     persona: "owner",
     note:
       "M29's standalone picker: the same team picker the organiser's fixture page carries, " +
-      "on a page of its own for whoever they handed the pick to.",
+      "on a page of its own for whoever they handed the pick to — with the squad and its " +
+      "mark-in/mark-out and guest controls above it since M66.",
   },
   {
     id: "edit-game",

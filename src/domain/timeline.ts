@@ -187,7 +187,10 @@ function describeAudit(row: AuditRow, names: NameLookup): { title: string; detai
         typeof after === "object" && after !== null && (after as { fromWaitlist?: unknown }).fromWaitlist === true;
       const rank = readNumber(after, "waitlistRank");
       return {
-        title: fromWaitlist ? "Promoted off the waitlist" : `Set to ${to ?? "a new answer"} by the organiser`,
+        // No "by the organiser" in the title: the row already names who did
+        // it, and since M66 that can be the delegate the organiser handed the
+        // fixture to.
+        title: fromWaitlist ? "Promoted off the waitlist" : `Set to ${to ?? "a new answer"}`,
         subject: playerId === null ? null : names(playerId),
         detail: fromWaitlist
           ? rank === null

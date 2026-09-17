@@ -55,7 +55,9 @@ const INTENDED_WINNERS: IntendedWinner[] = [
   // same two blocks meeting on the same two selectors, and ten copies of one
   // reason is ten places for them to drift apart. The pages are still named
   // one by one, so a sixth page pairing these blocks has to be added here.
-  ...["game-overview", "join", "leave", "owner-fixture", "player-fixture", "player-game"].flatMap((page) => [
+  // picker-page joined in M66, when the delegate's page gained the same squad
+  // rows with controls the organiser's has.
+  ...["game-overview", "join", "leave", "owner-fixture", "picker-page", "player-fixture", "player-game"].flatMap((page) => [
     {
       page: `src/views/${page}.ts#0`,
       selector: "ul.squad > li",
