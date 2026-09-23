@@ -49,7 +49,7 @@ link to share, a **Show the QR code** line that opens the same link as a code
 when you want it, and **Replace this link** — that's chapter 2.
 
 **Squad (14)** lists everyone who has joined. This game has fourteen people in
-it, with jamie marked as the organiser — that's you, because you set it up.
+it, with Jamie Hollis marked as the organiser — that's you, because you set it up.
 Chapter 5 covers what **Manage** on each row can do.
 
 **Coming up** is the part that does the work. You created the game once, and

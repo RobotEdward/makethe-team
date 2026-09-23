@@ -76,7 +76,7 @@ fixture page says when this one closes.
 
 ## Games you've already played
 
-![A game's past fixtures: one row per game played, most recent first, each with its result and a link to the fixture in full](images/past-fixtures.png)
+![A game's past fixtures: one row per game played, most recent first, each with its score and a link to the fixture in full](images/past-fixtures.png)
 
 Every game has its own list of the fixtures it has already had. On a game's
 page, **Games you've played** opens it: the ones you were in the squad for,
@@ -88,6 +88,8 @@ and holds every fixture the game has had, called-off ones included, so
 "what happened to that Thursday?" has an answer rather than a gap.
 
 ## Your record
+
+![Your record: one game, five played, two won, two lost, none drawn, and one in the NR column with the line explaining it](images/your-record.png)
 
 Under your fixtures, **Your record** counts how you've actually got on: one row
 per game you've played in, with **P**, **W**, **L** and **D** — played, won,
@@ -105,6 +107,8 @@ If you haven't played yet there's no section at all, rather than a table of
 noughts.
 
 ## The squad's league table
+
+![Standings on a phone: thirteen players ranked by points, with position, name, P, GD, Win% and Pts, and your own row highlighted mid-table](images/standings.png)
 
 On a game's page, **Standings** ranks everyone in the squad: a position, then
 **P**, **W**, **L** and **D** as above, then **GD** for goal difference, **Win%**

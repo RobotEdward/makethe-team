@@ -219,7 +219,7 @@ them, exactly as if they had tapped the button themselves.
 
 Once you do, a line appears under their name saying who marked them in — here,
 Nadia Okafor never answered their own reminder, and it now says **marked in by
-jamie**. It shows on the player's page too, not just yours: if they open their
+Jamie Hollis**. It shows on the player's page too, not just yours: if they open their
 own reminder link later, they'll see that somebody else answered for them, and
 who. Nothing is hidden from the player whose answer it is.
 

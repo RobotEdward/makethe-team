@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import type { Browser, Page } from "@playwright/test";
 import {
@@ -9,7 +10,7 @@ import {
   signLeaveToken,
   signResponseToken,
 } from "../../src/domain/token.js";
-import { toLocalParts } from "../../src/domain/time/zone.js";
+import { toLocalParts, toUtc } from "../../src/domain/time/zone.js";
 import { BASE_URL } from "../../playwright.config.js";
 import { signIn } from "./sign-in.js";
 
@@ -33,6 +34,9 @@ const GAME_ZONE = "Europe/London";
  * permanent, so nothing may resemble a real person.
  */
 export const GUIDE_ORGANISER = "jamie@example.test";
+
+/** The organiser's display name, as the squad sees it. */
+export const GUIDE_ORGANISER_NAME = "Jamie Hollis";
 
 /**
  * The game's name. Asserted on at capture time (see `guide-capture.spec.ts`)
@@ -204,6 +208,12 @@ export interface GuideWorld {
    * already on it and an Agree button of their own.
    */
   resultDemoPlayerEmail: string;
+  /**
+   * The squad member the Standings, Your record and past-fixtures shots are
+   * taken as: mid-table in `SEASON`, so the highlighted row is not simply the
+   * top one, and in the week nobody filed a result, so Your record shows NR.
+   */
+  seasonPlayerEmail: string;
 }
 
 /**
@@ -285,6 +295,14 @@ async function joinSquadMember(
 export async function buildGuideWorld(page: Page, browser: Browser): Promise<GuideWorld> {
   await signIn(page, GUIDE_ORGANISER);
 
+  // A first sign-in names the player after their address, and an organiser
+  // eight weeks into a season has long since fixed that: without this, the
+  // Standings shot lists thirteen full names and one bare "jamie".
+  await page.goto("/app/account");
+  await page.fill("#name", GUIDE_ORGANISER_NAME);
+  await page.locator("form", { has: page.locator("#name") }).getByRole("button", { name: "Save" }).click();
+  await page.waitForLoadState("networkidle");
+
   await page.goto("/g/new");
   // Deliberately no weekday in the name. `guideSlot` picks the day from the
   // clock, so a game called "Thursday Night Football" ends up playing every
@@ -295,6 +313,10 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
   await page.fill('input[name="name"]', GUIDE_GAME_NAME);
   await page.fill('input[name="venueName"]', "Meadow Park 3G");
   await page.fill('input[name="venueAddress"]', "14 Meadow Lane");
+  // Named sides, as a squad with a season behind it has: every past fixture
+  // and the picker otherwise read "Team A won", which no real squad says.
+  await page.fill('input[name="teamAName"]', "Bibs");
+  await page.fill('input[name="teamBName"]', "Skins");
 
   // The weekday must be chosen from the clock, not fixed. A fixture only opens
   // once its reminder instant — 09:00 the day before kickoff — has passed and
@@ -414,6 +436,8 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     );
   }
 
+  await seedSeason(page, gameId, fixture.id, idFor);
+
   const demo = await buildOverrideDemo(page, browser, slot);
   const hiddenSquadToken = await buildVisibilityDemo(page, browser, slot);
   const resultDemo = await buildResultDemo(page, browser, slot);
@@ -438,6 +462,7 @@ export async function buildGuideWorld(page: Page, browser: Browser): Promise<Gui
     resultDemoGameId: resultDemo.gameId,
     resultDemoFixtureId: resultDemo.fixtureId,
     resultDemoPlayerEmail: resultDemo.agreeingPlayerEmail,
+    seasonPlayerEmail: "nina@example.test",
     cancelToken: await signCancelToken(
       {
         ownerPlayerId: idFor(GUIDE_ORGANISER),
@@ -558,7 +583,9 @@ async function buildOverrideDemo(
   await page.waitForLoadState("networkidle");
 
   // The guest add, through the same page's own form. Now five in against a
-  // cap of four, so it needs the same confirmation.
+  // cap of four, so it needs the same confirmation. The form has had its own
+  // page since M52; the confirmation still comes back on the fixture page.
+  await page.getByRole("link", { name: "Add a guest" }).click();
   await page.fill("#guest-name", "Jono Fielding");
   await page.getByRole("button", { name: "Add guest" }).click();
   await page.waitForLoadState("networkidle");
@@ -741,9 +768,32 @@ async function buildResultDemo(
 
   // Backdate the kickoff and ask the sweep to retire it — the only way a
   // fixture becomes `played` (see this function's own doc comment).
-  await execSql(
-    `UPDATE fixtures SET kicks_off_at = ${Date.now() - 3 * 60 * 60 * 1000} WHERE id = '${fixture.id}'`,
+  //
+  // To the most recent 19:00 that has already reached full time, not "three
+  // hours ago": a morning capture otherwise photographs a 07:30 kickoff. Its
+  // result window runs a day past full time, so it is always still open.
+  const now = Date.now();
+  const today = toLocalParts(new Date(now), GAME_ZONE);
+  const eveningOf = (daysBack: number): number => {
+    const day = new Date(Date.UTC(today.year, today.month - 1, today.day - daysBack));
+    return toUtc(
+      {
+        year: day.getUTCFullYear(),
+        month: day.getUTCMonth() + 1,
+        day: day.getUTCDate(),
+        hour: 19,
+        minute: 0,
+        second: 0,
+      },
+      GAME_ZONE,
+    ).getTime();
+  };
+  const [{ durationMinutes } = { durationMinutes: 60 }] = await query<{ durationMinutes: number }>(
+    `SELECT duration_minutes AS durationMinutes FROM fixtures WHERE id = '${fixture.id}'`,
   );
+  const fullTimePassed = (kickoff: number): boolean => kickoff + durationMinutes * 60_000 < now;
+  const kickoff = fullTimePassed(eveningOf(0)) ? eveningOf(0) : eveningOf(1);
+  await execSql(`UPDATE fixtures SET kicks_off_at = ${kickoff} WHERE id = '${fixture.id}'`);
   await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=0+*+*+*+*`);
 
   const [retired] = await query<{ lifecycle: string }>(
@@ -765,6 +815,236 @@ async function buildResultDemo(
   await page.waitForLoadState("networkidle");
 
   return { gameId, fixtureId: fixture.id, agreeingPlayerEmail: agreeingPlayer.email };
+}
+
+/**
+ * The Meadow Park Kickabout's last eight weeks, oldest first, by email handle.
+ *
+ * Without these the guide photographed a game on its first night: no
+ * Standings, no Your record, and a past-fixtures list borrowed from a
+ * three-person demo game. Chapter 7 describes all three at length, so the
+ * pictures have to come from a squad that has actually played.
+ *
+ * `a` is side A; everyone else playing that week was side B. Ade Sowande is in
+ * none of them — he is the member who never answers, and a season behind him
+ * would contradict chapter 3.
+ *
+ * Six settle, one was called off, and one was played with nothing ever filed.
+ * The last is what puts an NR column in Your record, which chapter 7 explains
+ * and a clean history would never show.
+ */
+const SEASON: readonly (
+  | {
+      weeksAgo: number;
+      sitOut: readonly string[];
+      a: readonly string[];
+      result: { outcome: "a" | "b" | "draw"; scoreA: number; scoreB: number } | null;
+    }
+  | { weeksAgo: number; cancelled: string }
+)[] = [
+  {
+    weeksAgo: 8,
+    sitOut: ["mika", "grace", "sam"],
+    a: ["jamie", "priya", "tom", "diego", "lucy"],
+    result: { outcome: "a", scoreA: 5, scoreB: 3 },
+  },
+  {
+    weeksAgo: 7,
+    sitOut: ["omar", "rob", "sam"],
+    a: ["jamie", "sarah", "ken", "nina", "mika"],
+    result: { outcome: "b", scoreA: 2, scoreB: 4 },
+  },
+  { weeksAgo: 6, cancelled: "Pitch closed, waterlogged." },
+  {
+    weeksAgo: 5,
+    sitOut: ["tom", "nina", "grace"],
+    a: ["priya", "diego", "omar", "rob", "sam"],
+    result: { outcome: "draw", scoreA: 3, scoreB: 3 },
+  },
+  {
+    weeksAgo: 4,
+    sitOut: ["ken", "mika", "sam"],
+    a: ["priya", "tom", "lucy", "nina", "grace"],
+    result: { outcome: "a", scoreA: 6, scoreB: 2 },
+  },
+  {
+    weeksAgo: 3,
+    sitOut: ["priya", "lucy", "rob"],
+    a: ["jamie", "tom", "ken", "nina", "sam"],
+    result: null,
+  },
+  {
+    weeksAgo: 2,
+    sitOut: ["diego", "omar", "grace"],
+    a: ["jamie", "priya", "sarah", "rob", "sam"],
+    result: { outcome: "b", scoreA: 1, scoreB: 2 },
+  },
+  {
+    weeksAgo: 1,
+    sitOut: ["sarah", "nina", "sam"],
+    a: ["priya", "diego", "lucy", "mika", "grace"],
+    result: { outcome: "a", scoreA: 4, scoreB: 3 },
+  },
+];
+
+/**
+ * Write `SEASON` behind the Meadow Park Kickabout, as rows.
+ *
+ * Rows rather than the app's own forms for the reason `test/browser/world.ts`'s
+ * `seedMatchHistory` gives: a fixture becomes `played` only after its kickoff
+ * and a result settles only once its 48-hour window closes, so driving this
+ * through the UI would take two months of wall time. The settled results are
+ * still derived by the app's own hourly sweep from the claims below.
+ *
+ * Each kickoff is the open fixture's local wall-clock time a whole number of
+ * weeks earlier, counted in calendar days in `GAME_ZONE`: subtracting 7 × 24
+ * hours across a clock change would print every older fixture an hour off.
+ */
+async function seedSeason(
+  page: Page,
+  gameId: string,
+  openFixtureId: string,
+  idFor: (email: string) => string,
+): Promise<void> {
+  const [open] = await query<{
+    kicksOffAt: number;
+    minPlayers: number;
+    maxPlayers: number;
+    prefersEvenNumbers: number;
+    shortWarningOffsetHours: number;
+    durationMinutes: number;
+  }>(
+    `SELECT kicks_off_at AS kicksOffAt, min_players AS minPlayers, max_players AS maxPlayers,
+            prefers_even_numbers AS prefersEvenNumbers,
+            short_warning_offset_hours AS shortWarningOffsetHours,
+            duration_minutes AS durationMinutes
+       FROM fixtures WHERE id = '${openFixtureId}'`,
+  );
+  if (!open) throw new Error(`seedSeason: open fixture ${openFixtureId} has no row`);
+
+  const HOUR = 60 * 60 * 1000;
+  const openLocal = toLocalParts(new Date(open.kicksOffAt), GAME_ZONE);
+  const weeksBefore = (weeks: number): number => {
+    const day = new Date(Date.UTC(openLocal.year, openLocal.month - 1, openLocal.day - 7 * weeks));
+    return toUtc(
+      {
+        ...openLocal,
+        year: day.getUTCFullYear(),
+        month: day.getUTCMonth() + 1,
+        day: day.getUTCDate(),
+      },
+      GAME_ZONE,
+    ).getTime();
+  };
+
+  const pool = [GUIDE_ORGANISER, ...SQUAD.slice(0, 12).map((p) => p.email)];
+  const byHandle = (handle: string): string => {
+    const email = `${handle}@example.test`;
+    if (!pool.includes(email)) throw new Error(`seedSeason: ${handle} is not in the pool`);
+    return email;
+  };
+
+  const fixtureRows: string[] = [];
+  const responseRows: string[] = [];
+  const claimRows: string[] = [];
+  let expectedSettled = 0;
+
+  for (const week of SEASON) {
+    const fixtureId = randomUUID();
+    const kickoff = weeksBefore(week.weeksAgo);
+    const shape =
+      `${open.minPlayers}, ${open.maxPlayers}, ${open.prefersEvenNumbers}, ` +
+      `${open.shortWarningOffsetHours}, ${open.durationMinutes}`;
+
+    if ("cancelled" in week) {
+      fixtureRows.push(
+        `('${fixtureId}', '${gameId}', ${kickoff}, 'cancelled', ${shape}, 0, 0, ` +
+          `${kickoff - 34 * HOUR}, NULL, NULL, ${kickoff - 6 * HOUR}, ` +
+          `'${week.cancelled.replace(/'/g, "''")}')`,
+      );
+      continue;
+    }
+
+    const sitOut = week.sitOut.map(byHandle);
+    const sideA = new Set(week.a.map(byHandle));
+    const playing = pool.filter((email) => !sitOut.includes(email));
+    if (playing.length !== open.maxPlayers || sideA.size * 2 !== playing.length) {
+      throw new Error(
+        `seedSeason: week ${week.weeksAgo} has ${playing.length} playing and ` +
+          `${sideA.size} on side A. Each week must be a full, even ${open.maxPlayers}.`,
+      );
+    }
+
+    fixtureRows.push(
+      `('${fixtureId}', '${gameId}', ${kickoff}, 'played', ${shape}, ${playing.length}, 0, ` +
+        `${kickoff - 34 * HOUR}, ${kickoff - 3 * HOUR}, ${kickoff - 3 * HOUR}, NULL, NULL)`,
+    );
+    for (const email of playing) {
+      const side = sideA.has(email) ? "a" : "b";
+      responseRows.push(
+        `('${randomUUID()}', '${fixtureId}', '${idFor(email)}', 'in', '${side}', ${kickoff - 30 * HOUR}, 'web')`,
+      );
+    }
+    for (const email of sitOut) {
+      responseRows.push(
+        `('${randomUUID()}', '${fixtureId}', '${idFor(email)}', 'out', NULL, ${kickoff - 30 * HOUR}, 'web')`,
+      );
+    }
+
+    if (week.result) {
+      expectedSettled += 1;
+      // Two agreeing claims from people who played: one person's word does
+      // not settle a result.
+      for (const email of playing.slice(0, 2)) {
+        claimRows.push(
+          `('${randomUUID()}', '${fixtureId}', '${idFor(email)}', '${week.result.outcome}', ` +
+            `${week.result.scoreA}, ${week.result.scoreB}, ${kickoff + 2 * HOUR}, ${kickoff + 2 * HOUR})`,
+        );
+      }
+    }
+  }
+
+  await execSql(
+    `INSERT INTO fixtures (id, game_id, kicks_off_at, lifecycle, min_players, max_players,
+       prefers_even_numbers, short_warning_offset_hours, duration_minutes, in_count,
+       waitlist_count, opened_at, teams_published_at, teams_saved_at, cancelled_at,
+       cancellation_reason)
+     VALUES ${fixtureRows.join(", ")};
+     INSERT INTO responses (id, fixture_id, player_id, status, team, responded_at, source)
+     VALUES ${responseRows.join(", ")};
+     INSERT INTO fixture_result_claims
+       (id, fixture_id, player_id, outcome, score_a, score_b, filed_at, created_at)
+     VALUES ${claimRows.join(", ")}`,
+  );
+
+  // Everyone who played the season joined before it began, or the member page
+  // says "Player, since" today beside eight weeks of results. The organiser
+  // first, the rest over the following days; Ade stays today's joiner.
+  const firstKickoff = weeksBefore(Math.max(...SEASON.map((week) => week.weeksAgo)));
+  const joinedRows = pool.map(
+    (email, position) =>
+      `WHEN '${idFor(email)}' THEN ${firstKickoff - 14 * 24 * HOUR + position * 9 * HOUR}`,
+  );
+  await execSql(
+    `UPDATE memberships SET joined_at = CASE player_id ${joinedRows.join(" ")} ELSE joined_at END
+       WHERE game_id = '${gameId}'`,
+  );
+
+  // The hourly sweep is what turns claims into the `fixture_results` rows
+  // Standings and Your record read.
+  await page.request.get(`${BASE_URL}/cdn-cgi/handler/scheduled?cron=0+*+*+*+*`);
+
+  const [settled] = await query<{ n: number }>(
+    `SELECT count(*) AS n FROM fixture_results r
+       JOIN fixtures f ON f.id = r.fixture_id WHERE f.game_id = '${gameId}'`,
+  );
+  if ((settled?.n ?? 0) !== expectedSettled) {
+    throw new Error(
+      `seedSeason: ${settled?.n ?? 0} of ${expectedSettled} results settled. ` +
+        `Standings and Your record read fixture_results, so a short count ` +
+        `photographs as an empty table.`,
+    );
+  }
 }
 
 /** The squad, for the guide's prose and its tests. */

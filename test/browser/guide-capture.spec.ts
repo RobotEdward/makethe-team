@@ -105,10 +105,16 @@ test("@guide capture every screen the guide shows", async ({ page, browser }) =>
     if (shot.element) {
       const box = await page.locator(shot.element).boundingBox();
       if (!box) throw new Error(`${shot.id}: element ${shot.element} has no box`);
+      let bottom = box.y + box.height;
+      if (shot.through) {
+        const end = await page.locator(shot.through).boundingBox();
+        if (!end) throw new Error(`${shot.id}: element ${shot.through} has no box`);
+        bottom = end.y + end.height;
+      }
       const viewport = page.viewportSize();
       shotBuffer = await page.screenshot({
         fullPage: true,
-        clip: { x: 0, y: box.y, width: viewport?.width ?? 390, height: box.height },
+        clip: { x: 0, y: box.y, width: viewport?.width ?? 390, height: bottom - box.y },
       });
     } else {
       shotBuffer = await page.screenshot({ fullPage: true });

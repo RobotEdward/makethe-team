@@ -49,6 +49,13 @@ export interface Shot {
    * disclosure first is what makes the shot show what its caption claims.
    */
   expand?: string;
+  /**
+   * With `element`, extend the shot down to the bottom of this element too.
+   *
+   * Standings and Your record are a heading, a table and a note with no
+   * wrapper around them, so no single selector's box holds the section.
+   */
+  through?: string;
 }
 
 export const CHAPTERS = [
@@ -338,7 +345,7 @@ export const SHOTS: Shot[] = [
     // in step with the prose — on every regeneration.
     path: (w) => `/g/${w.demoGameId}/f/${w.demoFixtureId}`,
     persona: "organiser",
-    element: "#team-picker",
+    element: "#teams",
   },
   {
     id: "cancel",
@@ -403,13 +410,42 @@ export const SHOTS: Shot[] = [
     route: "/g/:id/fixtures",
     shows:
       "A game's past fixtures as a player who was in them sees it: one row per " +
-      "game played, most recent first, each linking to that fixture in full.",
-    path: (w) => `/g/${w.resultDemoGameId}/fixtures`,
-    // The same signed-in squad member as `result-panel` above, and for the
-    // same reason: this list is the played fixtures the *viewer* was in, so a
-    // session is what decides what it holds.
+      "game played, most recent first, each with its score and a link to that " +
+      "fixture in full.",
+    path: (w) => `/g/${w.gameId}/fixtures`,
+    // Signed in, because this list is the played fixtures the *viewer* was
+    // in, so a session is what decides what it holds.
     persona: "player",
-    signInAs: (w) => w.resultDemoPlayerEmail,
+    signInAs: (w) => w.seasonPlayerEmail,
+  },
+  {
+    id: "your-record",
+    chapter: "07-your-own-fixtures",
+    title: "Your record",
+    route: "/app",
+    shows:
+      "Your record on a player's fixtures page: one game, five played, two won, " +
+      "two lost, none drawn, and one in the NR column with the line explaining it.",
+    path: () => "/app",
+    persona: "player",
+    signInAs: (w) => w.seasonPlayerEmail,
+    element: 'h2:has-text("Your record")',
+    through: "p.record-note",
+  },
+  {
+    id: "standings",
+    chapter: "07-your-own-fixtures",
+    title: "The squad's league table",
+    route: "/g/:id",
+    shows:
+      "Standings on a game's page as a phone shows them: thirteen players ranked " +
+      "by points, with position, name, P, GD, Win% and Pts, the viewer's own row " +
+      "highlighted mid-table, and the note on how the table is worked out.",
+    path: (w) => `/g/${w.gameId}`,
+    persona: "player",
+    signInAs: (w) => w.seasonPlayerEmail,
+    element: 'h2:has-text("Standings")',
+    through: "p.league-note",
   },
   {
     id: "passkeys",
