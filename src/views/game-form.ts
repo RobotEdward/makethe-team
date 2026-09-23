@@ -351,7 +351,11 @@ export function renderGameFormPage(params: GameFormPageParams): string {
 
   const cell = (row: NotificationRowView, channel: Channel): string => {
     const found = row.cells.find((c) => c.channel === channel);
-    if (!found) return `<td class="notify-cell notify-none">—</td>`;
+    // A dash on desktop, where the column heading names the channel; on a
+    // phone the headings are gone, so the card row names it instead.
+    if (!found) {
+      return `<td class="notify-cell notify-none"><span class="notify-channel">${escapeHtml(CHANNEL_LABEL[channel])}</span><span class="notify-unavailable">Not available</span><span class="notify-dash">—</span></td>`;
+    }
     const name = cellFieldName(row.type, channel);
     if (!found.adminAllows) {
       return `<td class="notify-cell"><span class="notify-channel">${escapeHtml(CHANNEL_LABEL[channel])}</span><input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox" disabled aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}" aria-describedby="${escapeHtml(name)}-note"></td>`;

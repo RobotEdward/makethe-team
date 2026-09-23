@@ -45,7 +45,7 @@ describe("the owner notifications matrix", () => {
     const html = renderGameFormPage({ ...BASE, notifications: rows() });
     expect(html).not.toContain('name="notify.n11.email"');
     expect(html).not.toContain('name="notify.n11.email.seen"');
-    expect(html).toMatch(/data-notification="n11"[\s\S]*?<td class="notify-cell notify-none">—<\/td>/);
+    expect(html).toMatch(/data-notification="n11"[\s\S]*?<td class="notify-cell notify-none"><span class="notify-channel">Email<\/span><span class="notify-unavailable">Not available<\/span><span class="notify-dash">—<\/span><\/td>/);
   });
 
   it("renders an administrator-disabled cell unchecked, disabled, without its marker, and says why", () => {

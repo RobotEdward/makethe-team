@@ -1462,18 +1462,21 @@ export const NOTIFY_MATRIX_CSS = `
   table.notify-matrix .notify-timing .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
   .notify-unavailable { display: none; }
   @media (max-width: 40rem) {
-    table.notify-matrix { border-spacing: 0 0.85rem; }
     table.notify-matrix thead { display: none; }
     table.notify-matrix, table.notify-matrix tbody, table.notify-matrix tr, table.notify-matrix td { display: block; width: 100%; }
-    table.notify-matrix tr { border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; background: var(--card); }
+    /* Rows are blocks here, so border-spacing no longer separates them. */
+    table.notify-matrix tr { border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; background: var(--card); margin-bottom: 0.85rem; }
     table.notify-matrix td { border: 0; border-radius: 0 !important; padding: 0.85rem 0.9rem; }
+    /* The desktop cell rules above are more specific than a bare td, so the
+       width and the side edges they set have to be undone at their own
+       specificity or they win on a phone. */
+    table.notify-matrix td:first-child, table.notify-matrix td:last-child { border-left: 0; border-right: 0; }
     table.notify-matrix td.notify-what { border-bottom: 1px solid var(--line); }
-    table.notify-matrix td.notify-cell { display: flex; align-items: center; justify-content: space-between; min-height: 52px; border-bottom: 1px solid var(--line); }
+    table.notify-matrix td.notify-cell { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 52px; border-bottom: 1px solid var(--line); }
     table.notify-matrix td.notify-cell:last-child { border-bottom: 0; }
     .notify-channel { display: inline; font-weight: 600; }
     .notify-unavailable { display: inline; margin-left: auto; margin-right: 0.5rem; font-size: var(--t-support); color: var(--mut); }
-    table.notify-matrix td.notify-none { display: flex; align-items: center; justify-content: space-between; }
-    table.notify-matrix td.notify-none::before { content: "Channel unavailable"; font-size: var(--t-support); color: var(--mut); }
+    table.notify-matrix td.notify-none .notify-dash { display: none; }
     table.notify-matrix .notify-timing { gap: 0.5rem; }
   }
 `;

@@ -167,3 +167,54 @@ test("a squad row is one line at desktop width", async ({ page, browser }) => {
   // at least as compact as the phone case now is.
   expect(summaryBox.y).toBeLessThan(nameBox.y + nameBox.height);
 });
+
+/**
+ * Below 40rem each notification row becomes a card of stacked cells, but the
+ * desktop rules for the same cells are more specific than the phone overrides
+ * (`td.notify-cell { width: 76px }`, the `td:first-child`/`td:last-child`
+ * edges), so until 23 September 2026 they won: every channel cell rendered
+ * 76px wide inside its card, with the desktop row's side border still on it.
+ * A string test cannot see which of two rules the cascade picks, so this
+ * measures the rendered cells.
+ */
+test("notification settings stack into full-width cards at phone width", async ({ page, browser }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const world = await seedWorld(page, browser);
+  await page.goto(`/g/${world.gameId}/edit`);
+
+  const rows = page.locator("table.notify-matrix tbody tr");
+  const rowCount = await rows.count();
+  expect(rowCount, "the edit form should list the game's notifications").toBeGreaterThan(1);
+
+  const problems: string[] = [];
+  for (let r = 0; r < rowCount; r += 1) {
+    const row = rows.nth(r);
+    const rowBox = (await row.boundingBox())!;
+    const cells = row.locator("td");
+    const cellCount = await cells.count();
+    for (let c = 0; c < cellCount; c += 1) {
+      const cell = cells.nth(c);
+      const box = (await cell.boundingBox())!;
+      const edges = await cell.evaluate((el) => {
+        const { getComputedStyle } = globalThis as unknown as {
+          getComputedStyle: (element: unknown) => { borderLeftWidth: string; borderRightWidth: string };
+        };
+        const style = getComputedStyle(el);
+        return `${style.borderLeftWidth}/${style.borderRightWidth}`;
+      });
+      const where = `row ${r + 1} cell ${c + 1}`;
+      // The card's own 1px border sits outside its cells.
+      if (Math.abs(box.width - (rowBox.width - 2)) > 2) {
+        problems.push(`${where} is ${Math.round(box.width)}px wide in a ${Math.round(rowBox.width)}px card`);
+      }
+      if (edges !== "0px/0px") problems.push(`${where} keeps side borders ${edges}`);
+    }
+  }
+  expect(problems, problems.join("\n")).toEqual([]);
+
+  // A channel this message never uses names the channel, rather than leaving
+  // a bare dash beside a label that doesn't say which channel it means.
+  const none = page.locator("table.notify-matrix td.notify-none").first();
+  await expect(none.locator(".notify-channel")).toBeVisible();
+  await expect(none).toContainText("Not available");
+});
