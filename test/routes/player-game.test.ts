@@ -348,8 +348,8 @@ describe("GET /g/:id — last result", () => {
   it.each(["owner", "player"] as const)(
     "shows nothing for a claim still inside its 48-hour window (%s) (M25 review fix, I3)",
     async (viewerRole) => {
-      // `screens.md`'s own words: "Absent until a fixture has locked." Before
-      // this fix `lastResultFor` never called `isResultLocked`, so a single
+      // `docs/design/information-architecture.md`: "absent until a fixture has
+      // locked". Before this fix `lastResultFor` never called `isResultLocked`, so a single
       // claim filed minutes after full time put a bare, settled-looking line
       // on this page while the claim was still openly arguable for another
       // 46-odd hours.

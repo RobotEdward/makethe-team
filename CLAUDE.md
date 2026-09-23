@@ -106,4 +106,6 @@ implement in the main context.
 - Every interpolation goes through `escapeHtml`, including `href` and class attributes.
 - All timezone conversion goes through `formatLocalDateTime` (TR-5).
 - Guards establish *who*; entitlement is re-asked per handler, and a refusal is a 404, not a 403 (TR-18).
+- `docs/design/` is the current information architecture, design system and UI standards; a UI change
+  that adds a page, token or component, or breaks a rule there, updates it in the same commit.
 - `docs/known-issues.md` records deliberate non-fixes with their reasoning, so nobody re-litigates them.

@@ -1,3 +1,5 @@
+> **Superseded.** The current design system and UI standards are in [`docs/design/`](../../design/README.md). This spec records the decision as it was made.
+
 # M12 — Apply the visual and usability standards to every screen
 
 > **Provenance.** This spec arrived from the Claude Design project

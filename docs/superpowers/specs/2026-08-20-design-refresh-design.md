@@ -1,3 +1,5 @@
+> **Superseded.** The current design system and UI standards are in [`docs/design/`](../../design/README.md). This spec records the decision as it was made.
+
 # Design refresh: warm palette, display type, seven IA fixes — design
 
 **Date:** 20 August 2026

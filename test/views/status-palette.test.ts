@@ -7,7 +7,7 @@ import {
 } from "../../src/views/styles.js";
 
 /**
- * §5 of `screens.md` states the palette rule as a product-wide invariant:
+ * `docs/design/ui-standards.md` states the palette rule as a product-wide invariant:
  * green is reserved for success and confirmation, amber for the waitlist and
  * for attention. Nothing enforced it, and the rule was broken in the one place
  * it matters most.

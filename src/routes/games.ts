@@ -209,10 +209,10 @@ gamesRoutes.post(NEW_GAME_PATH, requirePlayer, async (c) => {
  * `resultWordsForLockedRows` uses and says why (M25 review fix).** Without
  * it, one person's claim filed minutes after full time put a bare, settled-
  * looking line on both game pages while the claim was still openly
- * arguable — contradicting `screens.md`'s "absent until a fixture has
- * locked" and the result panel right below it, which shows the same claims
- * *with* their backer counts precisely so a contested tally does not read as
- * fact.
+ * arguable — contradicting `docs/design/information-architecture.md`'s
+ * "absent until a fixture has locked" and the result panel right below it,
+ * which shows the same claims *with* their backer counts precisely so a
+ * contested tally does not read as fact.
  */
 async function lastResultFor(
   db: Db,

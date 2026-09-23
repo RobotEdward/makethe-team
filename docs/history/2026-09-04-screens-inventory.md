@@ -1,3 +1,6 @@
+> **Archived 23 September 2026.** Superseded by [`docs/design/information-architecture.md`](../design/information-architecture.md).
+> Kept for its milestone-by-milestone reasoning; it stopped being current at M52 and is not updated.
+
 # Make The Team — screen inventory for design review
 
 *Current to M52 (3 September 2026). Before this it had not been touched since M33 and was
