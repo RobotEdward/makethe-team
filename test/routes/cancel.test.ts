@@ -236,7 +236,8 @@ describe("GET /cancel/:token", () => {
     // now, not a page-local override to `--warn` (amber) — cancelling a game
     // is destructive, not a correctable form error.
     expect(body).not.toMatch(/\.cancel-form \.button\.danger \{[^}]*--warn/);
-    expect(body).toMatch(/\.cancel-heading\s*\{[^}]*--danger/);
+    // M67: the title is not coloured; the danger button alone carries it.
+    expect(body).not.toMatch(/\.cancel-heading\s*\{[^}]*--danger/);
   });
 
   it("offers exactly one form, one submit and a reason field, with no JavaScript", async () => {

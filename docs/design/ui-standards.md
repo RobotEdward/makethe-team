@@ -98,6 +98,8 @@ Rules marked **(tested)** fail a test when broken. The rest are held by review.
   Standings by weight and a `--fg` rule above and below. **(tested)**
 - An empty capacity track is a groove, not a bar that reads as full. **(tested)**
 - Font sizes come only from `--t-title`, `--t-lead`, `--t-body`, `--t-support`. **(tested)**
+- The display face is for `h1` and `h2` only; no uppercase eyebrows; mono only for copyable
+  text. **(tested)**
 - Text and surface pairs meet their contrast floors in both themes. **(tested, for the pairs
   listed in `test/views/contrast.test.ts`)**
 
@@ -171,15 +173,12 @@ Known departures, found on 23 September 2026. Fixing one is welcome; copying one
    `summary`, checkboxes, `.invite-remove`, `.result-withdraw` and several invite inputs. No
    44px floor on `.invite-remove`, `.result-withdraw`, `.danger-link`, the generic summaries
    and the WhatsApp option checkboxes.
-8. **No global `h3`.** Each component sets its own, and `.team-workspace h3` gets the browser
-   default size.
-9. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
+8. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
     `background_color` (`#fbfaf8`, matching no surface), the app icon, the QR code, and the
     email templates' inline palette.
-10. **The invite-order counter asks for IBM Plex Mono at weight 600**, which is not loaded.
-11. **Stale CSS comments** describe a dashed `.read-only` border, an accent confirmed badge
+9. **Stale CSS comments** describe a dashed `.read-only` border, an accent confirmed badge
     and an outlined default button, none of which exist any more.
-12. **`.keep-link` lives in `CANCEL_STYLES_CSS`**, so three other confirmation pages load the
+10. **`.keep-link` lives in `CANCEL_STYLES_CSS`**, so three other confirmation pages load the
     whole cancel block for one rule.
 
 **Data seen only in the guide's captures**

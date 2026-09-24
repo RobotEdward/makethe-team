@@ -14,8 +14,8 @@ import { STYLE_BLOCKS } from "../../src/views/styles.js";
 const ENFORCE = {
   radii: false,
   spacing: false,
-  uppercase: false,
-  mono: false,
+  uppercase: true,
+  mono: true,
   cardToken: false,
   accentMutToken: true,
 };

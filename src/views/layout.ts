@@ -248,8 +248,15 @@ export const STYLES = `
     text-decoration: underline; text-decoration-color: var(--accent);
     text-decoration-thickness: 2px; text-underline-offset: 0.4em;
   }
+  /* The display face is for the page title and section headings only (M67).
+     Titles inside cards, link-titles, day labels and the answer headline are
+     Figtree, or every card competes with the page for the reader's eye. */
   h1 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-title); letter-spacing: 0; margin: 0 0 0.5rem; }
   h2 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-lead); margin: 2rem 0 0.6rem; }
+  h1, h2 { line-height: 1.1; color: var(--fg); text-wrap: balance; }
+  h3 { font-family: inherit; font-size: var(--t-body); font-weight: 600; line-height: 1.3; }
+  /* The one mono surface: text a person copies character for character. */
+  .copyable { font-family: var(--mono); }
   p { color: var(--mut); margin: 0; }
   a { color: var(--link); }
   .danger-link { color: var(--danger); font-weight: 600; }

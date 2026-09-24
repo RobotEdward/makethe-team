@@ -47,7 +47,7 @@ export const FIXTURE_STYLES_CSS = `
     border: 1px solid var(--line); border-radius: .8rem; background: var(--card);
     font-size: var(--t-support);
   }
-  .fixture-index-label { color: var(--mut); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .fixture-index-label { color: var(--mut); font-weight: 600; font-size: var(--t-support); }
   .fixture-index a { font-weight: 700; }
   .fixture-section { scroll-margin-top: 1rem; }
   .fixture-section > h2 { scroll-margin-top: 1rem; }
@@ -86,7 +86,7 @@ export const FIXTURE_STYLES_CSS = `
   .capacity .fill { display: block; height: 100%; background: var(--ok); }
   .capacity .fill.short { background: var(--wait); }
   .capacity .spots { margin-top: 0.35rem; font-size: var(--t-support); color: var(--mut); }
-  .capacity .count { font-family: var(--mono); }
+  .capacity .count { font-variant-numeric: tabular-nums; }
 
   /* The width is a class, never a style attribute. style-src is hashes plus
      one font origin and no unsafe-hashes, so a style attribute cannot be
@@ -114,14 +114,7 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
      second panel it would otherwise draw. */
   .answer.answer-closed .read-only { margin-top: 0; padding: 0; background: none; }
 
-  .viewer-headline {
-    margin-top: 1.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--fg); line-height: 1.3;
-  }
-  /* A waitlisted viewer must never read as confirmed (BR-5): same warn
-     colour the squad list already uses for a waitlisted row, so it is
-     visually distinct from the accent-coloured "confirmed" badge that can
-     appear right below it. */
-  .viewer-headline.warn { color: var(--warn); }
+  .viewer-headline { margin-top: 1.5rem; color: var(--fg); font-family: inherit; font-weight: 700; font-size: var(--t-lead); line-height: 1.3; }
 
   .read-only {
     margin-top: 1.25rem; padding: 0.85rem 1rem; border-radius: 1.25rem;
@@ -213,7 +206,7 @@ export const SQUAD_STYLES_CSS = `
   .squad-group { margin: 0 0 1.1rem; }
   .group-head { display: flex; align-items: baseline; gap: 0.5rem; margin: 0 0 0.4rem; }
   .group-label { font-weight: 600; color: var(--fg); font-size: var(--t-support); }
-  .group-count { font-family: var(--mono); font-size: var(--t-support); color: var(--mut); }
+  .group-count { font-variant-numeric: tabular-nums; font-size: var(--t-support); color: var(--mut); }
   .chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; padding: 0; }
   .chip {
     padding: 0.3rem 0.65rem; border-radius: 999px;
@@ -258,7 +251,7 @@ export const DASHBOARD_STYLES_CSS = `
     padding: 1.1rem 1rem 1.25rem; margin-bottom: 1rem;
     border: none; border-radius: 1.25rem; background: var(--card-raised);
   }
-  .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
+  .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); font-family: inherit; font-weight: 600; line-height: 1.3; }
   /* Still 0.9rem for the account page's history row, which wears this same
      card class with a bare headline and no answer block around it. */
   .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: var(--t-lead); }
@@ -342,7 +335,7 @@ export const DASHBOARD_STYLES_CSS = `
     margin-top: 1.25rem; padding: 1rem 1rem 0.75rem;
     border: none; border-radius: 1.25rem; background: var(--card-raised);
   }
-  .onboarding h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); }
+  .onboarding h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.25rem; font-size: var(--t-lead); }
   .onboarding ul { list-style: none; margin: 0; padding: 0; }
   .onboarding li a {
     display: flex; align-items: center; min-height: 44px; font-size: var(--t-body);
@@ -449,7 +442,7 @@ export const CANCEL_STYLES_CSS = `
     margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left;
   }
-  .cancel-heading { margin-top: 0; color: var(--danger); }
+  .cancel-heading { margin-top: 0; }
 `;
 
 /**
@@ -569,7 +562,7 @@ export const FORM_CSS = `
   .qr { margin: 1rem 0; max-width: 240px; }
   .invite-link { display: flex; gap: 0.5rem; align-items: center; }
   .invite-link input {
-    flex: 1; font-family: var(--mono); font-size: var(--t-support);
+    flex: 1; font-size: var(--t-support);
     background: var(--field); border: none; border-radius: 0.75rem;
   }
   /* Without this, .button's own flex: 1 (from STYLES) matches .invite-link
@@ -775,7 +768,7 @@ export const TEAM_PICKER_CSS = `
   .team-column.side-b { background: var(--side-b-bg); color: var(--side-b-fg); }
   .team-column .team-total, .team-column .team-total [data-count] { color: inherit; }
   .team-column h3 { margin: 0; font-size: var(--t-body); }
-  .team-letter { font-family: var(--mono); font-size: var(--t-support); }
+  .team-letter { font-weight: 600; font-size: var(--t-support); }
   .team-total { margin: 0.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
   .team-total [data-count] { font-weight: 700; color: var(--fg); }
   .team-drop { min-height: 3.5rem; }
@@ -953,7 +946,7 @@ export const PUSH_STYLES_CSS = `
  */
 export const INVITE_CSS = `
   .card { margin: 1.1rem 0; padding: 1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
-  .card h2 { margin: 0 0 0.6rem; font-size: var(--t-body); }
+  .card h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.6rem; font-size: var(--t-body); }
   .card .actions { margin-top: 0.75rem; }
   .qr-toggle { margin: 0; border: 0; padding: 0; }
   /* The padding is the tap target, and it is not decoration. At the support
@@ -1036,7 +1029,7 @@ export const ADMIN_ALLOWLIST_CSS = `
     margin: 1.1rem 0; padding: 0.9rem 1rem; border-radius: 1.25rem;
     background: var(--card-raised);
   }
-  .signup-mode h2 { margin: 0 0 0.2rem; font-size: var(--t-body); }
+  .signup-mode h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.2rem; font-size: var(--t-body); }
   .signup-mode p { margin: 0 0 0.7rem; color: var(--mut); font-size: var(--t-support); }
   .signup-mode .state { color: var(--fg); font-weight: 600; }
   .allowlist-add { display: flex; gap: 0.75rem; align-items: flex-end; }
@@ -1055,7 +1048,7 @@ export const ADMIN_TOOLS_CSS = `
   .admin-tool-section {
     margin: 1.5rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line);
   }
-  .admin-tool-section h2 { margin: 0 0 0.45rem; font-size: var(--t-body); }
+  .admin-tool-section h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.45rem; font-size: var(--t-body); }
   .admin-tool-section > p { color: var(--mut); font-size: var(--t-support); }
   .admin-summary { padding: 0.9rem 1rem; border: 1px solid var(--line); border-top: 0; border-radius: 0.9rem; background: var(--card); }
   ul.doors { list-style: none; padding: 0; margin: 1.1rem 0; }
@@ -1116,7 +1109,7 @@ export const WHATSAPP_CSS = `
   /* text-align: left because the cancelled page is a centred layout and a
      centred message would centre every line of the textarea too. */
   .whatsapp { margin: 1.1rem 0; padding: 1rem; border-radius: 1.25rem; background: var(--card-raised); text-align: left; }
-  .whatsapp h2 { margin: 0 0 0.35rem; font-size: var(--t-body); }
+  .whatsapp h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.35rem; font-size: var(--t-body); }
   .whatsapp h3 { margin: 0.9rem 0 0.35rem; font-size: var(--t-support); color: var(--mut); }
   .whatsapp p { margin: 0 0 0.6rem; color: var(--mut); font-size: var(--t-support); }
   /* Its own field rules rather than FORM_CSS's .field textarea: this is not a
@@ -1161,7 +1154,7 @@ export const RESULT_CSS = `
   .result-workspace { margin-top: 1.5rem; }
   .result-workspace h2 { margin-bottom: 0.75rem; }
   .result-focus { margin: 1rem 0 1.25rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--card-raised); }
-  .result-kicker { margin: 0 0 0.5rem; font-size: var(--t-support); font-weight: 600; color: var(--mut); text-transform: uppercase; letter-spacing: 0.04em; }
+  .result-kicker { margin: 0 0 0.5rem; font-size: var(--t-support); font-weight: 600; color: var(--mut); }
   .result-candidates { list-style: none; margin: 0.8rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
   .result-candidate {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem 0.9rem;
@@ -1387,7 +1380,7 @@ export const INVITE_ORDER_CSS = `
   .invite-ord > li:last-child { border-bottom: none; }
   .invite-ord > li::before {
     counter-increment: invite-tier; content: counter(invite-tier);
-    font-family: var(--mono); font-size: var(--t-support); font-weight: 600;
+    font-variant-numeric: tabular-nums; font-size: var(--t-support); font-weight: 600;
     color: var(--mut); background: var(--field); border-radius: 999px;
     width: 1.5rem; height: 1.5rem; display: grid; place-items: center; flex: none;
   }
@@ -1407,7 +1400,7 @@ export const INVITE_ORDER_CSS = `
     background: var(--bg); color: var(--fg); padding: 0.5rem 0.7rem; min-width: 8rem;
   }
   .invite-progress { margin-top: 1.5rem; }
-  .invite-progress h2 { font-size: var(--t-body); margin: 0 0 0.6rem; }
+  .invite-progress h2 { font-family: inherit; font-weight: 600; line-height: 1.3; font-size: var(--t-body); margin: 0 0 0.6rem; }
   .invite-states { list-style: none; margin: 0; padding: 0; }
   .invite-state {
     background: var(--card-raised); border-radius: 1.25rem;
@@ -1520,7 +1513,7 @@ export const TIMELINE_CSS = `
     margin-top: 1.5rem; padding: 1rem 1.1rem;
     border: 1px solid var(--line); border-radius: 1.1rem; background: var(--card);
   }
-  .timeline-workspace h2 { margin: 0 0 .65rem; font-size: var(--t-body); }
+  .timeline-workspace h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 .65rem; font-size: var(--t-body); }
   .timeline-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
   ol.timeline { list-style: none; margin: 0; padding: 0; }
   ol.timeline > li {
@@ -1534,7 +1527,7 @@ export const TIMELINE_CSS = `
      it was meant to place. The day is now a subhead over the entries it
      covers, and the row carries the clock time only, inline with who did it. */
   .timeline-day {
-    font-size: var(--t-body); color: var(--mut); font-weight: 600;
+    font-family: inherit; font-weight: 600; line-height: 1.3; font-size: var(--t-body); color: var(--mut); font-weight: 600;
     margin: 1.5rem 0 0.35rem; padding-left: 0.9rem;
   }
   .timeline-day:first-of-type { margin-top: 0; }

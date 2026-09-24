@@ -243,7 +243,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       <h2>Invite people</h2>
       <p>Share this link in your group chat, or let people scan the code.</p>
       <div class="invite-link">
-        <input id="invite-url" type="text" readonly value="${escapeHtml(inviteUrl)}">
+        <input id="invite-url" class="copyable" type="text" readonly value="${escapeHtml(inviteUrl)}">
         <button class="button" type="button" id="invite-copy" data-copy="invite-url" hidden>Copy</button>
       </div>
       <details class="qr-toggle">

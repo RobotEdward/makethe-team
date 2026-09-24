@@ -50,16 +50,20 @@ the important pairs, in both themes, are enforced by `test/views/contrast.test.t
 
 | Role | Face | Size token | Notes |
 |---|---|---|---|
-| Page title (`h1`) | Caprasimo 400 | `--t-title` 2rem | Display face |
-| Section heading (`h2`) | Caprasimo 400 | `--t-lead` 1.25rem | Display face; 2rem above |
+| Page title (`h1`) | Caprasimo 400 | `--t-title` 2rem | Line height 1.1, balanced wrapping, always `--fg` |
+| Section heading (`h2`) | Caprasimo 400 | `--t-lead` 1.25rem | As above; 2rem above |
+| Card and link titles, day labels, `h3` | Figtree 600 | the size each already uses | Fixture cards, past fixtures, timeline days, tool cards |
+| Answer headline (`.viewer-headline`) | Figtree 700 | `--t-lead` | Identical on the dashboard card and every fixture page |
 | Body | Figtree 400 | `--t-body` 1rem | Line height 1.6 |
-| Support, captions, hints | Figtree | `--t-support` 0.875rem | The most used size |
-| Counts, links to copy, team letters | IBM Plex Mono 400/500 | — | `--mono` |
+| Support, captions, hints, eyebrows | Figtree | `--t-support` 0.875rem | Eyebrows ("Jump to", "Result so far") are sentence case, 600, `--mut` |
+| Counts and scores | Figtree, `tabular-nums` | — | |
+| Copyable text (`.copyable`) | IBM Plex Mono | — | The invite link. The only mono surface |
 
 Four sizes and no others: `test/views/layout.test.ts` fails any `font-size` that is not a
-`var(--t-*)`. Fonts load from Google Fonts with `display=swap`; the CSP allows exactly
-`fonts.googleapis.com` and `fonts.gstatic.com`. There is no global `h3` style — each
-component sets its own.
+`var(--t-*)`. `test/views/design-lint.test.ts` fails any uppercase transform or letter-spacing
+above 0.02em, and any use of `--mono` outside `.copyable`. Titles are never coloured — the
+danger button, not a red heading, says a page is destructive. Fonts load from Google Fonts with
+`display=swap`; the CSP allows exactly `fonts.googleapis.com` and `fonts.gstatic.com`.
 
 ### Space, shape, layout
 
