@@ -109,9 +109,6 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
   .answer.answer-waiting { background: var(--warn-bg); }
   .answer.answer-going { background: var(--ok-bg); }
   .answer.answer-closed { background: var(--field); }
-  /* Inside an amber block the amber "waiting" button would disappear into its
-     own background, so it takes the stronger wait fill there. */
-  .answer.answer-waiting .button.chosen-waiting { background: var(--wait); color: var(--wait-fg); }
   /* The closed block is already the card, so the notice inside it drops the
      second panel it would otherwise draw. */
   .answer.answer-closed .read-only { margin-top: 0; padding: 0; background: none; }
@@ -141,31 +138,15 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
     .responses { flex-direction: row; }
   }
 
-  /* The answer, in the control that set it (M10 §3.1). Each state is a fill
-     plus a distinct label or glyph, never colour alone -- the tick on
-     "chosen-in" and the "· waiting" on "chosen-waiting" are what make the
-     three states tellable apart without seeing colour at all. */
-  /* The expected answer before any answer exists (M52). An outline, not the
-     .primary fill: .primary is the same var(--accent) ground as .chosen-in
-     below, so it would render "you have not answered" identically to "you said
-     yes". Three distinct treatments -- outline, accent fill plus tick, grey
-     fill -- keep the states tellable apart with colour ignored entirely. */
-  .button.expected {
-    background: transparent;
-    color: var(--accent);
-    box-shadow: inset 0 0 0 2px var(--accent);
-  }
-  .button.chosen-in {
-    background: var(--accent); color: var(--accent-fg);
-  }
-  .button.chosen-waiting {
-    background: var(--warn-bg); color: var(--warn);
-  }
-  /* Inverted, not a darker beige (M65): the recorded "no" has to be as
-     unmissable as the accent-filled "yes", or a player who just tapped it
-     cannot tell it took. Same pair the squad list's out chip uses. */
-  .button.chosen-out {
-    background: var(--fg); color: var(--bg);
+  /* One selected state across the product (M67): whatever the viewer chose is
+     the dark fill, whatever they did not sits on the field. The accent fill is
+     kept for the single committing action, which before an answer is the
+     expected "I'm in" -- so unanswered (accent) and answered (dark) never look
+     alike. The tick, the cross and the waiting label still carry each state
+     without colour. */
+  .button.expected { background: var(--accent); color: var(--accent-fg); }
+  .button.chosen-in, .button.chosen-waiting, .button.chosen-out {
+    background: var(--fg); color: var(--card-raised);
   }
   /* The "keep my answer" link in the change guard: a real button-sized
      target, but visibly the lesser of the two, so the emphasised confirm is
@@ -248,7 +229,7 @@ export const SQUAD_STYLES_CSS = `
      silently keeping the unhighlighted tint. Text stays the player's real
      name throughout; this is a colour cue only. */
   .chip-in.chip-you, .chip-waitlisted.chip-you, .chip-out.chip-you, .chip-pending.chip-you {
-    background: var(--fg); color: var(--bg); font-weight: 600;
+    background: var(--fg); color: var(--card-raised); font-weight: 600;
   }
   .set-by { display: block; margin: 0.4rem 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
@@ -700,12 +681,9 @@ export const FORM_CSS = `
     font: inherit; font-size: var(--t-support); font-weight: 600; cursor: pointer;
   }
   .segment .seg:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-  .segment .seg.on { background: var(--ok-fg); color: var(--ok-bg); }
-  /* Neutral by design (M20 §2.4): "out" is not a success state and gets no
-     colour family of its own, only a raised-card fill against the field
-     track so a pressed "Out" still reads as pressed next to the unpressed
-     segments beside it. */
-  .segment .seg.out { background: var(--card-raised); color: var(--fg); }
+  /* The pressed segment, In or Out alike, takes the one selected state (M67):
+     a verdict colour on "In" read as approval, which a pressed control is not. */
+  .segment .seg.on, .segment .seg.out { background: var(--fg); color: var(--card-raised); }
   .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
 `;
 
@@ -749,18 +727,28 @@ export const TEAM_PICKER_CSS = `
   .teams li { border-bottom: 1px solid var(--line); padding: 0.65rem 0; }
   .teams fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
   .teams legend { float: left; width: 100%; padding: 0; font-weight: 600; overflow-wrap: anywhere; }
-  .teams .sides { clear: both; display: flex; flex-wrap: wrap; gap: 0.2rem; padding-top: 0.45rem; }
+  /* Each player's side choice is the same segmented track as the squad's
+     In/Out control (M67). */
+  .teams .sides {
+    clear: both; display: inline-flex; gap: 4px; margin-top: 0.45rem; padding: 4px;
+    border-radius: 999px; background: var(--field);
+  }
   .teams .sides label {
-    position: relative; display: flex; flex: 1; align-items: center; justify-content: center;
-    min-width: 44px; min-height: 44px; border: 1px solid var(--mut); border-radius: 0.6rem;
-    background: var(--card-raised); color: var(--fg); cursor: pointer;
+    position: relative; display: flex; align-items: center; justify-content: center;
+    min-width: 52px; min-height: 44px; border-radius: 999px;
+    background: transparent; color: var(--mut); font-weight: 600; cursor: pointer;
   }
   /* Keep native radio focus, arrow keys and form values behind the compact labels. */
   .teams .sides input {
     position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; margin: 0;
     opacity: 0; cursor: pointer;
   }
-  .teams .sides label:has(input:checked) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .teams .sides label:has(input:checked) { background: var(--fg); color: var(--card-raised); }
+  /* The clear-this-side option stays quiet even when it is the checked one: an
+     unpicked player has nothing selected, and it is the only way to take a
+     player back off a side without script. */
+  .teams .sides label:has(input[value=""]) { min-width: 44px; }
+  .teams .sides label:has(input[value=""]:checked) { background: transparent; color: var(--mut); }
   .teams .sides label:has(input:focus-visible) { outline: 3px solid var(--link); outline-offset: 3px; }
   .team-columns { display: none; }
   .team-columns:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1.25rem 0; }
@@ -772,7 +760,6 @@ export const TEAM_PICKER_CSS = `
   .team-drop { min-height: 3.5rem; }
   .team-pool-heading { margin: 1rem 0 0; font-size: var(--t-body); }
   #team-pool { border-bottom: 1px dashed var(--line); }
-  #team-pool .sides { max-width: 16rem; }
   .teams li.dragging { opacity: 0.5; }
   .teams.over { outline: 2px dashed var(--link); outline-offset: 2px; }
   .team-draft-status { margin: 1rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }

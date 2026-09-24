@@ -83,6 +83,9 @@ Rules marked **(tested)** fail a test when broken. The rest are held by review.
 
 ### Status and colour
 
+- **One selected state:** what the viewer chose is `--fg` fill; what they did not is `--field`.
+  Accent means "the action to take", never "the thing you picked".
+
 - **Words carry meaning; colour reinforces it.** Selected side, your own answer, a fixture's
   status and an unsaved draft are each distinguishable without colour.
 - **Green is reserved for success and confirmation, amber for the waitlist and attention, red

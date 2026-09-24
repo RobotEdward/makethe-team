@@ -89,6 +89,10 @@ component sets its own.
 
 ## Components
 
+**One selected state.** Anything the viewer chose — an answer, a pressed segment, a picked
+side, their own chip — is `--fg` fill with `--card-raised` text. Anything not chosen sits on
+`--field`. The accent fill is reserved for the one committing action on a screen.
+
 Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES` in
 `layout.ts` for the global ones). A page only gets a block it lists in its `pageStyles`.
 
@@ -98,13 +102,13 @@ Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES
 | — primary | `.button.primary` | `STYLES` | Accent fill. The one committing action in a task |
 | — danger | `.button.danger` | `STYLES` | Danger fill. Irreversible actions only |
 | — back out | `.keep-link` | `CANCEL_STYLES_CSS` | The "No, keep it" link on a confirmation page, shaped as a button |
-| — answer states | `.expected`, `.chosen-in`, `.chosen-waiting`, `.chosen-out`, `.quiet` | `FIXTURE_STYLES_CSS` | The two response buttons, marked with a tick or label as well as colour |
+| — answer states | `.expected`, `.chosen-in`, `.chosen-waiting`, `.chosen-out`, `.quiet` | `FIXTURE_STYLES_CSS` | Unanswered: "I'm in" is accent-filled (`.expected`). Answered: the chosen button takes the selected state, with its tick, cross or waiting label |
 | Answer block | `.answer` (`-going`, `-waiting`, `-closed`), `.viewer-headline`, `.responses` | `FIXTURE_STYLES_CSS` | The tinted card holding "You're in." and the two buttons |
 | Status badge | `.status-badge.status-{confirmed,short,cancelled,open,played,scheduled}` | `FIXTURE_STYLES_CSS` | Pill naming a fixture's state in words |
 | Capacity bar | `.capacity .track .fill .count` | `FIXTURE_STYLES_CSS` | 6px groove plus "10 of 10 in · 2 waiting"; width from generated `.w-0`…`.w-100` classes |
 | Chips | `.chip-{in,waitlisted,out,pending}`, `.chip-you` | `SQUAD_STYLES_CSS` | The squad as grouped pills on player pages; you are inverted |
 | Squad rows | `ul.squad > li`, `.row-controls`, `.member-actions` | `FORM_CSS` (wins over `SQUAD_STYLES_CSS`) | The organiser's squad list: name left, controls right |
-| Segmented control | `.segment .seg` (`.on`, `.out`) | `FORM_CSS` | In/Out per member; 44px segments |
+| Segmented control | `.segment .seg` (`.on`, `.out`), `.teams .sides` | `FORM_CSS`, `TEAM_PICKER_CSS` | In/Out per member, and A/B per player on the picker: a `--field` pill track of 44px segments; the pressed one takes the selected state. The picker's "—" (clear) never fills |
 | Fixture card | `.fixture-list .fixture-card` | `DASHBOARD_STYLES_CSS` | One upcoming or past fixture on the dashboard, account and past-fixtures pages |
 | Form field | `.field` (+ `.error`, `.field-invalid`), `.row`, `.actions` | `FORM_CSS` | Label above input; `--field` ground, 1px line, 0.75rem radius |
 | Switch row | `.switch-row` + `.hint` | `FORM_CSS` | A checkbox with a label and a hint beneath, 52px |
