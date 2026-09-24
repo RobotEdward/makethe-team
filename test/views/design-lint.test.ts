@@ -17,7 +17,7 @@ const ENFORCE = {
   uppercase: false,
   mono: false,
   cardToken: false,
-  accentMutToken: false,
+  accentMutToken: true,
 };
 
 interface Rule {

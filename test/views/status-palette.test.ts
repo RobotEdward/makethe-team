@@ -32,13 +32,14 @@ import {
  * accent background with warn-coloured text, so matching anywhere in the rule
  * would put it in two families at once.
  */
-type Family = "ok" | "warn" | "muted" | "accent";
+type Family = "ok" | "warn" | "muted" | "danger";
 
+/** Every badge is a tint (M67): no family here is a solid fill. */
 const BACKGROUNDS: Record<Family, readonly string[]> = {
-  ok: ["--ok-bg", "--ok-fg"],
+  ok: ["--ok-bg"],
   warn: ["--warn-bg"],
   muted: ["--field"],
-  accent: ["--accent-mut"],
+  danger: ["--danger-bg"],
 };
 
 const BADGES: readonly { klass: string; family: Family; why: string }[] = [
@@ -56,13 +57,13 @@ const BADGES: readonly { klass: string; family: Family; why: string }[] = [
   },
   {
     klass: "status-open",
-    family: "ok",
-    why: "Open for answers and nothing is wrong. Neutral-positive, so green.",
+    family: "muted",
+    why: "Open for answers and nothing is wrong yet — not settled, so not green (M67).",
   },
   {
     klass: "status-cancelled",
-    family: "accent",
-    why: "Called off. Not a warning to act on — it has already happened.",
+    family: "danger",
+    why: "Called off: the one irreversible outcome a fixture has.",
   },
   {
     klass: "status-played",

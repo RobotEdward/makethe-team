@@ -57,7 +57,6 @@ const PAIRS: readonly [string, string, number][] = [
   ["--danger-fg", "--danger", 3],
   ["--ok-fg", "--ok-bg", 4.5],
   ["--warn", "--warn-bg", 4.5],
-  ["--warn", "--accent-mut", 4.5],
   ["--wait-fg", "--wait", 4.5],
   // M67: team sides and the cancelled tint.
   ["--side-a-fg", "--side-a-bg", 4.5],

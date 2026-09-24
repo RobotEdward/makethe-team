@@ -59,15 +59,17 @@ export const FIXTURE_STYLES_CSS = `
     padding: 0.3rem 0.85rem; border-radius: 999px; border: 1px solid var(--line);
     font-weight: 600; font-size: var(--t-support); color: var(--fg);
   }
-  .status-badge.status-confirmed { border: none; background: var(--ok-fg); color: var(--ok-bg); }
+  /* Every badge is a tint; none is solid (M67), so the viewer's own answer
+     above it is always the heaviest thing on the card. */
+  .status-badge.status-confirmed { border: none; background: var(--ok-bg); color: var(--ok-fg); }
   /* Amber, not the success pair. This wore --ok-bg/--ok-fg until M52 — byte
      for byte the same as .status-open below — so the badge meaning "this
      fixture may not happen, and it is your job to fix it" was indistinguishable
      from the healthy one on four pages. test/views/status-palette.test.ts
      enumerates every badge and the family it may draw on. */
   .status-badge.status-short { border: none; background: var(--warn-bg); color: var(--warn); }
-  .status-badge.status-cancelled { border: none; background: var(--accent-mut); color: var(--warn); }
-  .status-badge.status-open { border: none; background: var(--ok-bg); color: var(--ok-fg); }
+  .status-badge.status-cancelled { border: none; background: var(--danger-bg); color: var(--danger); }
+  .status-badge.status-open { border: none; background: var(--field); color: var(--fg); }
   .status-badge.status-played, .status-badge.status-scheduled { border: none; background: var(--field); color: var(--mut); }
   /* The headcount as a proportion rather than a countdown (M12 §3.1): a bar
      whose fill is who is there, with the numbers under it so nothing is lost
@@ -106,9 +108,8 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
   }
   .answer .viewer-headline { margin-top: 0; }
   .answer .responses { margin-top: 1rem; }
-  .answer.answer-waiting { background: var(--warn-bg); }
-  .answer.answer-going { background: var(--ok-bg); }
-  .answer.answer-closed { background: var(--field); }
+  /* The block is never tinted by state (M67): the headline and the chosen
+     button carry it, and a green or peach card competed with them. */
   /* The closed block is already the card, so the notice inside it drops the
      second panel it would otherwise draw. */
   .answer.answer-closed .read-only { margin-top: 0; padding: 0; background: none; }
@@ -167,7 +168,7 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
      player's own fixture page and the dashboard's cards — do not load it, so
      the line they were told they could not miss was rendering as an unstyled
      paragraph. Every page that renders it loads this block. */
-  .your-side { margin: 1rem 0 0.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--accent); }
+  .your-side { margin: 1rem 0 0.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--fg); }
 
   .full-warning { margin: 0.5rem 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
@@ -204,7 +205,7 @@ export const SQUAD_STYLES_CSS = `
   }
   .squad .name { color: var(--fg); }
   .squad .status { font-size: var(--t-support); color: var(--mut); white-space: nowrap; }
-  .squad .status-in { color: var(--accent); font-weight: 600; }
+  .squad .status-in { color: var(--fg); font-weight: 600; }
   .squad .status-waitlisted { color: var(--warn); font-weight: 600; }
   .squad .set-by { display: block; font-size: var(--t-support); color: var(--mut); }
 
@@ -218,7 +219,10 @@ export const SQUAD_STYLES_CSS = `
     padding: 0.3rem 0.65rem; border-radius: 999px;
     font-size: var(--t-support); background: var(--field); color: var(--mut);
   }
-  .chip-in { background: var(--accent-mut); color: var(--accent); }
+  /* Peach means attention and nothing else (M67), so only the waitlist chip
+     keeps it; in is neutral, and out and no-reply are outlines that recede. */
+  .chip-in { background: var(--field); color: var(--fg); }
+  .chip-out, .chip-pending { background: transparent; color: var(--mut); box-shadow: inset 0 0 0 1px var(--line); }
   .chip-waitlisted { background: var(--warn-bg); color: var(--warn); }
   /* The viewer's own chip (M10 §3.5): a solid fill of the group's own colour
      family, so "am I counted?" is answered by colour, not by hunting for a
@@ -725,12 +729,26 @@ export const TEAM_PICKER_CSS = `
   .team-workspace .team-counts { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 1rem 0; }
   .teams { list-style: none; margin: 0; padding: 0; }
   .teams li { border-bottom: 1px solid var(--line); padding: 0.65rem 0; }
-  .teams fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-  .teams legend { float: left; width: 100%; padding: 0; font-weight: 600; overflow-wrap: anywhere; }
+  /* Name and side on the left, the A/B track on the right (M67). */
+  .teams fieldset {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 0.75rem;
+    min-width: 0; margin: 0; padding: 0; border: 0;
+  }
+  .teams legend { float: left; padding: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .teams .row-side { grid-column: 1; display: none; align-items: center; gap: 6px; font-size: var(--t-support); }
+  .teams fieldset:has(input[value="a"]:checked) .row-side-a,
+  .teams fieldset:has(input[value="b"]:checked) .row-side-b,
+  .teams fieldset:has(input[value=""]:checked) .row-side-none { display: flex; }
+  .teams .row-side-a { color: var(--side-a-fg); }
+  .teams .row-side-b { color: var(--side-b-fg); }
+  .teams .row-side-none { color: var(--warn); }
+  /* With script the side columns and the unpicked pool already say which side
+     a row is on, so the per-row label would only repeat them. */
+  .team-workspace:has(#team-columns:not([hidden])) .teams .row-side { display: none; }
   /* Each player's side choice is the same segmented track as the squad's
      In/Out control (M67). */
   .teams .sides {
-    clear: both; display: inline-flex; gap: 4px; margin-top: 0.45rem; padding: 4px;
+    grid-column: 2; grid-row: 1 / span 2; display: inline-flex; gap: 4px; margin: 0; padding: 4px;
     border-radius: 999px; background: var(--field);
   }
   .teams .sides label {
@@ -752,7 +770,10 @@ export const TEAM_PICKER_CSS = `
   .teams .sides label:has(input:focus-visible) { outline: 3px solid var(--link); outline-offset: 3px; }
   .team-columns { display: none; }
   .team-columns:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1.25rem 0; }
-  .team-column { min-width: 0; padding: 0.75rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--card); }
+  .team-column { min-width: 0; padding: 0.75rem; border-radius: 0.75rem; }
+  .team-column.side-a { background: var(--side-a-bg); color: var(--side-a-fg); }
+  .team-column.side-b { background: var(--side-b-bg); color: var(--side-b-fg); }
+  .team-column .team-total, .team-column .team-total [data-count] { color: inherit; }
   .team-column h3 { margin: 0; font-size: var(--t-body); }
   .team-letter { font-family: var(--mono); font-size: var(--t-support); }
   .team-total { margin: 0.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
@@ -884,7 +905,7 @@ export const PUSH_STYLES_CSS = `
   }
   .this-device {
     display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.5rem;
-    border-radius: 1rem; background: var(--accent-mut); color: var(--accent);
+    border-radius: 1rem; background: var(--field); color: var(--fg);
     font-size: var(--t-support); font-weight: 600; white-space: nowrap;
   }
   .push label.device-name {
@@ -1039,7 +1060,7 @@ export const ADMIN_TOOLS_CSS = `
   .admin-summary { padding: 0.9rem 1rem; border: 1px solid var(--line); border-top: 0; border-radius: 0.9rem; background: var(--card); }
   ul.doors { list-style: none; padding: 0; margin: 1.1rem 0; }
   ul.doors > li { padding: 0.35rem 0; overflow-wrap: anywhere; }
-  ul.doors .door-open { color: var(--accent); font-weight: 600; }
+  ul.doors .door-open { color: var(--fg); font-weight: 600; }
   ul.doors .door-shut { color: var(--mut); }
   table.admin-log { width: 100%; border-collapse: collapse; margin: 1.1rem 0; }
   table.admin-log th, table.admin-log td {
@@ -1684,9 +1705,10 @@ export const LEAGUE_CSS = `
      position: sticky and a transparent cell lets the scrolled numbers slide
      under the name. */
   table.league tbody tr.you { font-weight: 600; }
-  table.league tbody tr.you td { background: var(--accent-mut); }
-  table.league tbody tr.you .rank { background: var(--accent-mut); }
-  table.league tbody tr.you .league-player { background: var(--accent-mut); }
+  table.league tbody tr.you td { border-top: 1px solid var(--fg); border-bottom: 1px solid var(--fg); }
+  /* In a collapsed table the upper cell's bottom border wins the shared edge,
+     so the row above has to draw the own row's top rule. */
+  table.league tbody tr:has(+ tr.you) td { border-bottom-color: var(--fg); }
   .league-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
 `;
 

@@ -88,12 +88,14 @@ Rules marked **(tested)** fail a test when broken. The rest are held by review.
 
 - **Words carry meaning; colour reinforces it.** Selected side, your own answer, a fixture's
   status and an unsaved draft are each distinguishable without colour.
-- **Green is reserved for success and confirmation, amber for the waitlist and attention, red
-  for irreversible actions.** Every status badge is enumerated with the family it may use,
-  and "needs more players" may never look like "open". **(tested)**
-- Team sides need their own identity, separate from status: a green side is not "correct" and
-  an amber side is not a warning. (Not built yet — see below.)
-- The viewer's own row in a table is **marked where it falls, never moved** to the top.
+- **Each colour family has one meaning.** Green (`--ok-*`) is confirmed or settled, on status
+  badges only. Peach (`--warn-*`) is needs attention — the waitlist, warnings, errors — and
+  nothing else. Red is irreversible. Team sides use only the `--side-*` tokens. Every badge
+  is a tint, never solid, is enumerated with its family, and "needs more players" may never
+  look like "open". **(tested)**
+- The answer card is never tinted by state; its headline and chosen button say it.
+- The viewer's own row in a table is **marked where it falls, never moved** to the top — in
+  Standings by weight and a `--fg` rule above and below. **(tested)**
 - An empty capacity track is a groove, not a bar that reads as full. **(tested)**
 - Font sizes come only from `--t-title`, `--t-lead`, `--t-body`, `--t-support`. **(tested)**
 - Text and surface pairs meet their contrast floors in both themes. **(tested, for the pairs
@@ -144,46 +146,40 @@ Known departures, found on 23 September 2026. Fixing one is welcome; copying one
 
 **Defects**
 
-1. **Accent text is below 4.5:1 in light mode** — `--accent` on `--bg` is 2.84:1, on
-   `--accent-mut` 2.91:1. Used as normal-size text by `.your-side`, `.chip-in`,
-   `.squad .status-in`, `.this-device`, `.door-open` and the `.button.expected` label. The
-   contrast test floors that pair at 2.5 only. Dark mode passes.
-
-2. **Squad visibility and the picker page — decision needed.** The picker page shows every
+1. **Squad visibility and the picker page — decision needed.** The picker page shows every
    name regardless of `Let players see who else is playing`: the "in" players to any picker
    since M29, and since M66 the whole roster to a named delegate. Picking sides needs names,
    so this may be intended, but it is not recorded as an exception anywhere.
-3. **Sorting Standings in `See this as a player` drops the preview.** The sort link replaces
+2. **Sorting Standings in `See this as a player` drops the preview.** The sort link replaces
    the query string, so `?as=player` is lost and the organiser view comes back. Read from the
    markup, not reproduced.
 
 **Inconsistencies**
 
-4. **Nine text-input treatments** instead of one. `.result-score`, the notification timing
+3. **Nine text-input treatments** instead of one. `.result-score`, the notification timing
    inputs and `.invite-link` are borderless; `.signin` and `.invite-add` use a 2px border on
    `--bg`; the cancel textarea, device-name input and invite selects use a 1px border on
    `--bg` with smaller radii.
-5. **Four warning boxes** that mean the same thing: `.nudge`, `.form-error`, `.problem` (the
+4. **Four warning boxes** that mean the same thing: `.nudge`, `.form-error`, `.problem` (the
    last two declared identically in two blocks) and `.usage-warning`.
-6. **Compact buttons are redefined locally** at least five times with different paddings and
+5. **Compact buttons are redefined locally** at least five times with different paddings and
    weights (update overlay, onboarding, squad rows, team workspace, device rows).
-7. **No shared card primitive.** About twenty card surfaces use four raised and four bordered
+6. **No shared card primitive.** About twenty card surfaces use four raised and four bordered
    radii and nearly as many paddings; the design-system radii are 999px, 1.25rem and 0.75rem,
    but nineteen distinct values exist.
-8. **No team identity tokens.** Sides are drawn with the `--fg` / `--bg` inversion.
-9. **Focus and touch-target gaps.** No custom focus style on plain links, the generic
+7. **Focus and touch-target gaps.** No custom focus style on plain links, the generic
    `summary`, checkboxes, `.invite-remove`, `.result-withdraw` and several invite inputs. No
    44px floor on `.invite-remove`, `.result-withdraw`, `.danger-link`, the generic summaries
    and the WhatsApp option checkboxes.
-10. **No global `h3`.** Each component sets its own, and `.team-workspace h3` gets the browser
+8. **No global `h3`.** Each component sets its own, and `.team-workspace h3` gets the browser
    default size.
-11. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
+9. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
     `background_color` (`#fbfaf8`, matching no surface), the app icon, the QR code, and the
     email templates' inline palette.
-12. **The invite-order counter asks for IBM Plex Mono at weight 600**, which is not loaded.
-13. **Stale CSS comments** describe a dashed `.read-only` border, an accent confirmed badge
+10. **The invite-order counter asks for IBM Plex Mono at weight 600**, which is not loaded.
+11. **Stale CSS comments** describe a dashed `.read-only` border, an accent confirmed badge
     and an outlined default button, none of which exist any more.
-14. **`.keep-link` lives in `CANCEL_STYLES_CSS`**, so three other confirmation pages load the
+12. **`.keep-link` lives in `CANCEL_STYLES_CSS`**, so three other confirmation pages load the
     whole cancel block for one rule.
 
 **Data seen only in the guide's captures**

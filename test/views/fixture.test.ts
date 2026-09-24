@@ -907,7 +907,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
     }));
 
     expect(html).toContain("You're on Reds.");
-    expect(html.indexOf("You're on Reds.")).toBeLessThan(html.indexOf("<h3>Reds"));
+    expect(html.indexOf("You're on Reds.")).toBeLessThan(html.indexOf(`aria-hidden="true"></span>Reds`));
   });
 
   it("lists both sides when the game shows players to each other", () => {
@@ -920,8 +920,8 @@ describe("fixture page — published teams (BR-35 §5)", () => {
 
     expect(html).toContain("Edward Cooper");
     expect(html).toContain("Sam Okonjo");
-    expect(html).toContain("<h3>Reds");
-    expect(html).toContain("<h3>Blues");
+    expect(html).toContain(`aria-hidden="true"></span>Reds`);
+    expect(html).toContain(`aria-hidden="true"></span>Blues`);
   });
 
   /**
@@ -939,7 +939,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
 
     expect(html).toContain("You're on Reds.");
     expect(html).not.toContain("Sam Okonjo");
-    expect(html).not.toContain("<h3>Blues");
+    expect(html).not.toContain(`aria-hidden="true"></span>Blues`);
   });
 
   it("renders no empty line-up for a hidden squad", () => {
@@ -983,7 +983,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
       teams: { names: NAMES, yourSide: "a", awaitingSide: false },
     }));
 
-    expect(html).toContain("<h3>Blues");
+    expect(html).toContain(`aria-hidden="true"></span>Blues`);
     // Still named in the squad list below, which is the honest record of who
     // answered what — but nowhere inside the teams section.
     const teamsSection = html.slice(html.indexOf("<h2>Teams</h2>"), html.indexOf("<h2>Squad</h2>"));
@@ -1001,7 +1001,7 @@ describe("fixture page — published teams (BR-35 §5)", () => {
     }));
 
     expect(html).toContain("Your side hasn't been picked yet.");
-    expect(html).toContain("<h3>Reds");
+    expect(html).toContain(`aria-hidden="true"></span>Reds`);
   });
 
   it("says nothing when nobody on the published pick is still in", () => {

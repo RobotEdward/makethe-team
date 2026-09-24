@@ -98,7 +98,7 @@ function renderCounts(names: Record<TeamId, string>, counts: { a: number; b: num
 /** The same player rows move between these columns; no duplicate controls. */
 function renderColumns(names: Record<TeamId, string>, counts: { a: number; b: number }): string {
   return `<div class="team-columns" id="team-columns" hidden>${TEAM_IDS.map((id) =>
-    `<div class="team-column">
+    `<div class="team-column side-${id}">
       <h3><span class="team-letter">${id.toUpperCase()}</span> ${escapeHtml(names[id])}</h3>
       <p class="team-total"><span data-count="${id}">${counts[id]}</span> picked</p>
       <ul class="teams team-drop" data-team="${id}" aria-label="${escapeHtml(names[id])}"></ul>
@@ -144,6 +144,8 @@ function renderRow(member: TeamPickerParams["members"][number], names: Record<Te
   return `<li data-player="${group}">
             <fieldset>
               <legend>${escapeHtml(rowName(member))}</legend>
+              ${TEAM_IDS.map((id) => `<span class="row-side row-side-${id} side-${id}"><span class="side-dot" aria-hidden="true"></span>${escapeHtml(names[id])}</span>`).join("")}
+              <span class="row-side row-side-none">Not picked yet</span>
               <span class="sides">
                 ${TEAM_IDS.map((id) => choice(id, names[id])).join("")}
                 ${choice("", "Not picked yet")}
@@ -350,7 +352,7 @@ export function renderTeamSides(
         : `<ul class="squad">${onIt
             .map((member) => `<li><span class="name">${escapeHtml(rowName(member))}</span></li>`)
             .join("")}</ul>`;
-    return `<h3>${escapeHtml(names[id])} <span class="count">${onIt.length}</span></h3>${list}`;
+    return `<h3 class="side-${id}"><span class="side-dot" aria-hidden="true"></span>${escapeHtml(names[id])} <span class="count">${onIt.length}</span></h3>${list}`;
   };
 
   return TEAM_IDS.map(side).join("");

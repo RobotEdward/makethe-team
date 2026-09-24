@@ -33,10 +33,9 @@ swapping the same names; there is no manual theme switch.
 | `--line` | `#d6c9b3` | `#3a352d` | Every 1px rule and border |
 | `--accent` | `#c67139` (`THEME_COLOR`) | `#d98a55` | Primary buttons, focus rings, the current-nav underline |
 | `--accent-fg` | `#fff7f0` | `#2a1608` | Text on an accent fill |
-| `--accent-mut` | `#ffe1d0` | `#3a2818` | Soft accent ground — "in" chips, your row in Standings |
 | `--link` | `#8c491a` | `#e0a878` | Links |
-| `--ok` / `--ok-bg` / `--ok-fg` | `#8fa073` / `#e1eecc` / `#3d472b` | `#a3b585` / `#2c3320` / `#cfe0b0` | Settled, going ahead, confirmed |
-| `--warn` / `--warn-bg` | `#8a4c14` / `#ffe1d0` | `#f0b285` / `#43301f` | Needs attention, waitlist, errors |
+| `--ok` / `--ok-bg` / `--ok-fg` | `#8fa073` / `#e1eecc` / `#3d472b` | `#a3b585` / `#2c3320` / `#cfe0b0` | Confirmed or settled — status badges and the capacity fill only |
+| `--warn` / `--warn-bg` | `#8a4c14` / `#ffe1d0` | `#f0b285` / `#43301f` | Needs attention — the waitlist, warnings, errors. Nothing else is peach |
 | `--wait` / `--wait-fg` | `#f6a06b` / `#402310` | same | Short capacity, waiting |
 | `--danger` / `--danger-fg` | `#a4321f` / `#fbfaf8` | `#e8705a` / `#1a0d0a` | Irreversible actions only |
 
@@ -103,10 +102,11 @@ Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES
 | — danger | `.button.danger` | `STYLES` | Danger fill. Irreversible actions only |
 | — back out | `.keep-link` | `CANCEL_STYLES_CSS` | The "No, keep it" link on a confirmation page, shaped as a button |
 | — answer states | `.expected`, `.chosen-in`, `.chosen-waiting`, `.chosen-out`, `.quiet` | `FIXTURE_STYLES_CSS` | Unanswered: "I'm in" is accent-filled (`.expected`). Answered: the chosen button takes the selected state, with its tick, cross or waiting label |
-| Answer block | `.answer` (`-going`, `-waiting`, `-closed`), `.viewer-headline`, `.responses` | `FIXTURE_STYLES_CSS` | The tinted card holding "You're in." and the two buttons |
-| Status badge | `.status-badge.status-{confirmed,short,cancelled,open,played,scheduled}` | `FIXTURE_STYLES_CSS` | Pill naming a fixture's state in words |
+| Answer block | `.answer` (`-going`, `-waiting`, `-closed`), `.viewer-headline`, `.responses` | `FIXTURE_STYLES_CSS` | The raised card holding "You're in." and the two buttons — never tinted; the headline and chosen button carry the state |
+| Team sides | `.side-a` / `.side-b`, `.side-dot`, `.row-side`, `.team-column.side-*` | `STYLES`, `TEAM_PICKER_CSS` | A side is an 8px dot in `--side-*` and its name in `--side-*-fg`; the picker's side tiles sit on `--side-*-bg` |
+| Status badge | `.status-badge.status-{confirmed,short,cancelled,open,played,scheduled}` | `FIXTURE_STYLES_CSS` | Pill naming a fixture's state in words, always a tint: confirmed `--ok-bg`, short `--warn-bg`, cancelled `--danger-bg`, open / played / scheduled `--field` |
 | Capacity bar | `.capacity .track .fill .count` | `FIXTURE_STYLES_CSS` | 6px groove plus "10 of 10 in · 2 waiting"; width from generated `.w-0`…`.w-100` classes |
-| Chips | `.chip-{in,waitlisted,out,pending}`, `.chip-you` | `SQUAD_STYLES_CSS` | The squad as grouped pills on player pages; you are inverted |
+| Chips | `.chip-{in,waitlisted,out,pending}`, `.chip-you` | `SQUAD_STYLES_CSS` | The squad as grouped pills: in on `--field`, waiting peach, out and no reply as outlines; yours takes the selected state |
 | Squad rows | `ul.squad > li`, `.row-controls`, `.member-actions` | `FORM_CSS` (wins over `SQUAD_STYLES_CSS`) | The organiser's squad list: name left, controls right |
 | Segmented control | `.segment .seg` (`.on`, `.out`), `.teams .sides` | `FORM_CSS`, `TEAM_PICKER_CSS` | In/Out per member, and A/B per player on the picker: a `--field` pill track of 44px segments; the pressed one takes the selected state. The picker's "—" (clear) never fills |
 | Fixture card | `.fixture-list .fixture-card` | `DASHBOARD_STYLES_CSS` | One upcoming or past fixture on the dashboard, account and past-fixtures pages |

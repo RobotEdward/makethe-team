@@ -167,7 +167,7 @@ ${escapeHtml(lead)}
 
 <p style="margin:0 0 16px; font-size:15px; line-height:1.5; color:#201e1d; background-color:#f9f4ed;">Hi ${escapeHtml(playerName)},</p>
 
-<p style="margin:0 0 16px; padding:12px 14px; font-size:15px; line-height:1.5; color:#a4321f; background-color:#ffe1d0; font-weight:700; border-radius:12px;">${escapeHtml(lead)}</p>
+<p style="margin:0 0 16px; padding:12px 14px; font-size:15px; line-height:1.5; color:#a4321f; background-color:#f6dcd5; font-weight:700; border-radius:12px;">${escapeHtml(lead)}</p>
 
 <h1 style="margin:0 0 4px; font-size:22px; line-height:1.3; color:#201e1d; background-color:#f9f4ed;">${escapeHtml(gameName)}</h1>
 <p style="margin:0 0 2px; font-size:15px; line-height:1.5; color:#645c50; background-color:#f9f4ed;">${escapeHtml(venueName)}</p>

@@ -185,7 +185,7 @@ ${escapeHtml(lead)}
 ${
   ceilingReached
     ? `
-<p style="margin:16px 0 0; padding:12px 14px; font-size:13px; line-height:1.5; color:#a4321f; background-color:#ffe1d0; border-radius:12px;">${escapeHtml(CEILING_LINE)}</p>`
+<p style="margin:16px 0 0; padding:12px 14px; font-size:13px; line-height:1.5; color:#a4321f; background-color:#f6dcd5; border-radius:12px;">${escapeHtml(CEILING_LINE)}</p>`
     : ""
 }
 

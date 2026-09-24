@@ -608,7 +608,7 @@ describe("GET /r/:token — published teams (BR-35 §5)", () => {
     expect(html).toContain("Your side hasn't been picked yet.");
     // The rest of the pick is still theirs to read — this is a missing line,
     // not a reason to hide the teams.
-    expect(html).toContain("<h3>Blues");
+    expect(html).toContain(`aria-hidden="true"></span>Blues`);
   });
 
   it("says nothing at all when the published squad has since emptied", async () => {

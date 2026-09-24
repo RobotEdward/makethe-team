@@ -131,7 +131,7 @@ export const STYLES = `
     --card: #f5ead8; --card-raised: #f9f4ed; --field: #ebddc5;
     /* Contrast floors for every pair are enforced by test/views/contrast.test.ts. */
     --mut: #645c50; --line: #d6c9b3;
-    --accent: ${THEME_COLOR}; --accent-fg: #fff7f0; --accent-mut: #ffe1d0;
+    --accent: ${THEME_COLOR}; --accent-fg: #fff7f0;
     --link: #8c491a;
     --ok: #8fa073; --ok-bg: #e1eecc; --ok-fg: #3d472b;
     --warn: #8a4c14; --warn-bg: #ffe1d0;
@@ -158,7 +158,7 @@ export const STYLES = `
       --fg: #ede5d8; --bg: #221f1b;
       --card: #2b2721; --card-raised: #322d26; --field: #3a342b;
       --mut: #a89e8f; --line: #3a352d;
-      --accent: #d98a55; --accent-fg: #2a1608; --accent-mut: #3a2818;
+      --accent: #d98a55; --accent-fg: #2a1608;
       --link: #e0a878;
       --ok: #a3b585; --ok-bg: #2c3320; --ok-fg: #cfe0b0;
       --warn: #f0b285; --warn-bg: #43301f;
@@ -175,6 +175,15 @@ export const STYLES = `
      element would silently un-hide it and show a button to someone whose
      browser cannot use it. This makes the attribute mean what it says. */
   [hidden] { display: none !important; }
+  /* Team sides (M67): a dot in the side's hue, and the side's name in its text
+     colour. Global because line-ups appear on player, organiser and email-link
+     pages alike. */
+  .side-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
+  .side-a .side-dot { background: var(--side-a); }
+  .side-b .side-dot { background: var(--side-b); }
+  h3.side-a { color: var(--side-a-fg); }
+  h3.side-b { color: var(--side-b-fg); }
+  h3.side-a, h3.side-b { display: flex; align-items: center; gap: 0.5rem; }
   body {
     /* An explicit minmax(0, 1fr) column, not the implicit auto track. An auto
        track sizes to its item max-content, so a child that cannot shrink — a
