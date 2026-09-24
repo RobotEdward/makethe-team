@@ -246,6 +246,13 @@ export const SQUAD_STYLES_CSS = `
  * never reaching that page, so the workaround is gone with it.
  */
 export const DASHBOARD_STYLES_CSS = `
+  /* A card's title link reads as a title, not a link: --fg, underlined only
+     on hover or focus (M67). A card that is one destination is itself the link. */
+  .fixture-card h2 a, .fixture-card h3 a { color: var(--fg); text-decoration: none; }
+  .fixture-card h2 a:hover, .fixture-card h2 a:focus-visible,
+  .fixture-card h3 a:hover, .fixture-card h3 a:focus-visible { text-decoration: underline; }
+  a.fixture-card { display: block; color: inherit; text-decoration: none; }
+  a.fixture-card:hover h2, a.fixture-card:focus-visible h2 { text-decoration: underline; }
   .fixture-list { list-style: none; margin: var(--s-4) 0 0; padding: 0; }
   .fixture-card {
     padding: var(--s-3) var(--s-3) var(--s-3); margin-bottom: var(--s-3);
@@ -1630,7 +1637,8 @@ export const LEAGUE_CSS = `
   /* On the support step like every other size in the product — the scale is
      enumerated by test/views/layout.test.ts, and an em fraction here was its
      one exception. */
-  table.league .sort-mark { margin-left: var(--s-0); font-size: var(--t-support); }
+  table.league .sort-mark { width: 14px; height: 14px; margin-left: var(--s-0); }
+  table.league .sort-mark.sort-up { transform: rotate(180deg); }
   /* The position column (M55). Sticky at the left edge with the name sticky
      directly after it: a rank that scrolls away from its own row is worse
      than none, and the two have to travel together. The 2rem offset on the

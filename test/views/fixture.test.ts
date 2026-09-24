@@ -1482,13 +1482,13 @@ describe("the recorded 'out' state is unmistakable (M65)", () => {
   it("marks the chosen out button with a cross, the way the in button carries a tick", () => {
     const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status: "out" }, intent: null }));
     const outButton = html.slice(html.indexOf(`class="button chosen-out"`));
-    expect(outButton.slice(0, 200)).toContain("✕");
+    expect(outButton.slice(0, 300)).toContain('href="#i-cross"');
   });
 
   it("puts no cross on the out button while it is not the answer", () => {
     for (const status of ["pending", "in", "waitlisted"] as const) {
       const html = renderFixturePage(optionsWith({ viewer: { playerId: "p1", status }, intent: null }));
-      expect(html).not.toContain("✕");
+      expect(html).not.toContain('href="#i-cross"');
     }
   });
 });

@@ -212,7 +212,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
   const lastResultLine =
     params.lastResult === null
       ? ""
-      : `<p class="result-final"><a href="${escapeHtml(fixturePath(gameId, params.lastResult.fixtureId))}">${escapeHtml(params.lastResult.words)}</a></p>`;
+      : `<p class="result-final"><a class="title-link" href="${escapeHtml(fixturePath(gameId, params.lastResult.fixtureId))}">${escapeHtml(params.lastResult.words)}</a></p>`;
 
   const body = `
     <h1>${escapeHtml(gameName)}</h1>

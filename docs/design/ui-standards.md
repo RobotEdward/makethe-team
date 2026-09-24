@@ -116,6 +116,12 @@ Rules marked **(tested)** fail a test when broken. The rest are held by review.
 - Values in a closed section survive validation and saving; keyboard and no-script use still
   work.
 
+### Icons and links
+
+- Icons come from the one sprite (tick, cross, chevron, alert, info); no text glyphs or emoji
+  in the interface. Decorative icons are `aria-hidden` beside text that says the same thing.
+- Underline links only inside prose. A card or row with one destination is the link itself.
+
 ### Feedback
 
 - Put a receipt beside the task that changed: "Draft saved. Nobody notified."
@@ -167,17 +173,15 @@ Known departures, found on 23 September 2026. Fixing one is welcome; copying one
    inputs and `.invite-link` are borderless; `.signin` and `.invite-add` use a 2px border on
    `--bg`; the cancel textarea, device-name input and invite selects use a 1px border on
    `--bg` with smaller radii.
-4. **Four warning boxes** that mean the same thing: `.nudge`, `.form-error`, `.problem` (the
-   last two declared identically in two blocks) and `.usage-warning`.
-5. **Focus and touch-target gaps.** No 44px floor on `.invite-remove`, `.result-withdraw`, `.danger-link` and the WhatsApp
+4. **Focus and touch-target gaps.** No 44px floor on `.invite-remove`, `.result-withdraw`, `.danger-link` and the WhatsApp
    option checkboxes. (Focus now has one global style.)
-6. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
+5. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
     `background_color` (`#fbfaf8`, matching no surface), the app icon, the QR code, and the
     email templates' inline palette.
-7. **Stale CSS comments** describe a dashed `.read-only` border, an accent confirmed badge
+6. **Stale CSS comments** describe a dashed `.read-only` border, an accent confirmed badge
     and an outlined default button, none of which exist any more.
 
 **Data seen only in the guide's captures**
 
-8. The fixture timeline shows every answer at the same minute because the guide's seed posts
+7. The fixture timeline shows every answer at the same minute because the guide's seed posts
     them within seconds. A capture artefact, not a product issue.

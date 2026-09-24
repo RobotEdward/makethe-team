@@ -125,7 +125,9 @@ Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES
 | Fixture card | `.fixture-list .fixture-card` | `DASHBOARD_STYLES_CSS` | One upcoming or past fixture on the dashboard, account and past-fixtures pages |
 | Form field | `.field` (+ `.error`, `.field-invalid`), `.row`, `.actions` | `FORM_CSS` | Label above input; `--field` ground, 1px line, 0.75rem radius |
 | Switch row | `.switch-row` + `.hint` | `FORM_CSS` | A checkbox with a label and a hint beneath, 52px |
-| Notices | `.nudge` (`.ok`), `.problem`, `.form-error`, `.read-only` | various | Attention box, error box, and a quiet "this can't be changed" box |
+| Notices | `.nudge` (`.ok`), `.problem`, `.form-error`, `.read-only` | `STYLES` and page blocks | All on the peach ground (`.ok` on green). A note (`.nudge`) leads with an "i" and a `--warn` first line; a problem (`.problem`, `.form-error`) with a "!" and a `--danger` first line — told apart by icon and colour, not position. `.read-only` is the quiet "can't be changed" box |
+| Icons | `icon(name)` → `svg.icon` | `STYLES` + sprite in `layout()` | tick, cross, chevron, alert, info: one inline sprite, 20px, 1.75px stroke, `currentColor`, always `aria-hidden` beside real text. Checkbox ticks, summary chevrons and notice marks are CSS-drawn |
+| Links | `a.title-link`, `.fixture-card h2 a`, `a.fixture-card`, `.back-link a`, `.freshness-refresh`, `.sign-in-offer a` | `STYLES`, `DASHBOARD_STYLES_CSS` | Underlined only inside prose. A title that navigates is `--fg` 600 and underlines on hover or focus; a card with one destination is itself the link; a standalone utility link is `--link`, support size 600 |
 | Jump-to index | `.fixture-index`, `.fixture-section` | `FIXTURE_STYLES_CSS` | The link strip at the top of the organiser's fixture page |
 | Workspaces | `.team-workspace`, `.timeline-workspace`, `.result-workspace` | own blocks | A contained task on a long page |
 | Result panel | `.result-workspace`, `.result-focus`, `.result-candidate`, `.result-alternate` | `RESULT_CSS` | One raised card: "Result so far", each candidate a ruled row with its backers, then the other-result disclosure |

@@ -5,7 +5,7 @@ import {
   type LeagueRow,
   type StandingsSort,
 } from "../domain/league-table.js";
-import { escapeHtml } from "./layout.js";
+import { escapeHtml, icon } from "./layout.js";
 
 /**
  * The goal difference as a league table writes it: signed, and nought when
@@ -88,8 +88,7 @@ function sortableHeading(
 ): string {
   const ascending = column === "player";
   if (column === active) {
-    const arrow = ascending ? "\u25b2" : "\u25bc";
-    return `<th scope="col" class="${escapeHtml(columnClass)}" aria-sort="${ascending ? "ascending" : "descending"}">${label}<span class="sort-mark" aria-hidden="true">${arrow}</span></th>`;
+    return `<th scope="col" class="${escapeHtml(columnClass)}" aria-sort="${ascending ? "ascending" : "descending"}">${label}${icon("chevron", ascending ? "sort-mark sort-up" : "sort-mark")}</th>`;
   }
   return `<th scope="col" class="${escapeHtml(columnClass)}"><a class="sort-link" href="${escapeHtml(`?sort=${column}`)}">${label}</a></th>`;
 }

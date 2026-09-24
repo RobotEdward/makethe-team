@@ -10,7 +10,7 @@ import { renderFreshness } from "./freshness.js";
 import { renderMuteControls, type MuteControlsOptions } from "./mute-controls.js";
 import { renderPushOffer } from "./install.js";
 import { SIGN_IN_PATH } from "../auth/paths.js";
-import { escapeHtml, layout, type PageNav } from "./layout.js";
+import { escapeHtml, icon, layout, type PageNav } from "./layout.js";
 import { FRESHNESS_JS, PUSH_SUBSCRIBE_JS } from "./scripts.js";
 import { ordinal } from "./squad-row.js";
 import { renderTeamSides } from "./team-picker.js";
@@ -651,12 +651,12 @@ export function renderResponseButtons(action: string, status: ResponseStatus, hi
   // they asked for, so nothing here may read as a confirmation.
   // `&nbsp;`, not a space: the button is a flex container, and a text node's
   // leading space is dropped there, so a plain space rendered "✓I'm in".
-  const tick = status === "in" ? `<span aria-hidden="true">✓</span>&nbsp;` : "";
+  const tick = status === "in" ? `${icon("tick")}&nbsp;` : "";
   // And a cross on a recorded "out" (M65). Before it, the only difference
   // between "you have not answered" and "you said no" was a slightly darker
   // beige on one button and the headline above — and two players who had
   // just tapped "Can't make it" tapped again, one of them on "I'm in".
-  const cross = status === "out" ? `<span aria-hidden="true">✕</span>&nbsp;` : "";
+  const cross = status === "out" ? `${icon("cross")}&nbsp;` : "";
 
   return `
     <form method="post" action="${escapeHtml(action)}" class="responses">${hidden}

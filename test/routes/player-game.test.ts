@@ -329,7 +329,7 @@ describe("GET /g/:id — last result", () => {
       // "Team A" is the schema's own default team name, left unset by
       // `insertGame`'s override-less call — see `insertResultClaim`'s
       // default outcome ("a") in `test/support/factories.ts`.
-      expect(html).toContain(`<p class="result-final"><a href="/g/${gameId}/f/${fixtureId}">Team A won</a></p>`);
+      expect(html).toContain(`<p class="result-final"><a class="title-link" href="/g/${gameId}/f/${fixtureId}">Team A won</a></p>`);
     },
   );
 

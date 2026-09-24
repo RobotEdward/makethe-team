@@ -101,6 +101,30 @@ export interface LayoutOptions {
  * extract from `STYLES` that would be less fragile than stating the value
  * once, here, and having both `STYLES` and this constant agree on it.
  */
+/**
+ * The product's icons (M67): one inline sprite, 20px, 1.75px stroke in the
+ * current text colour. Inline because the CSP allows images from this origin
+ * only, and a sprite referenced by id costs one copy per page.
+ */
+const ICON_PATHS: Record<IconName, string> = {
+  tick: `<path d="M4.5 10.5l3.5 3.5 7.5-8"/>`,
+  cross: `<path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/>`,
+  chevron: `<path d="M5.5 8l4.5 4.5 4.5-4.5"/>`,
+  alert: `<circle cx="10" cy="10" r="7.25"/><path d="M10 6.25v4.5M10 13.5v.25"/>`,
+  info: `<circle cx="10" cy="10" r="7.25"/><path d="M10 9.25v4.5M10 6.5v.25"/>`,
+};
+
+export type IconName = "tick" | "cross" | "chevron" | "alert" | "info";
+
+const ICON_SPRITE = `<svg class="icon-sprite" aria-hidden="true" focusable="false">${(Object.keys(ICON_PATHS) as IconName[])
+  .map((name) => `<symbol id="i-${name}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]}</symbol>`)
+  .join("")}</svg>`;
+
+/** A decorative icon from the sprite; the accessible text stays beside it. */
+export function icon(name: IconName, className = ""): string {
+  return `<svg class="icon${className ? ` ${className}` : ""}" aria-hidden="true" focusable="false"><use href="#i-${name}"/></svg>`;
+}
+
 export const THEME_COLOR = "#c67139";
 
 /**
@@ -163,7 +187,7 @@ export const STYLES = `
       --ok: #a3b585; --ok-bg: #2c3320; --ok-fg: #cfe0b0;
       --warn: #f0b285; --warn-bg: #43301f;
       --wait: #f6a06b; --wait-fg: #402310;
-      --danger: #e8705a; --danger-fg: #1a0d0a;
+      --danger: #f08068; --danger-fg: #1a0d0a;
       --side-a: #7d9cc0; --side-a-bg: #26303b; --side-a-fg: #b8cbe0;
       --side-b: #b77ca5; --side-b-bg: #3a2934; --side-b-fg: #e3bfd6;
       --danger-bg: #3d1f19;
@@ -294,6 +318,33 @@ export const STYLES = `
   input::-webkit-calendar-picker-indicator { opacity: 0.55; }
   textarea { resize: vertical; }
   th abbr { text-decoration: none; cursor: help; }
+  .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .icon { display: inline-block; flex: none; width: 20px; height: 20px; vertical-align: -0.25em; }
+  /* Links (M67): underlined only inside prose. A title that navigates is --fg
+     and underlines only on hover or focus; a standalone utility link is the
+     link colour at support size, likewise. */
+  a.title-link { color: var(--fg); font-weight: 600; text-decoration: none; }
+  a.title-link:hover, a.title-link:focus-visible { text-decoration: underline; }
+  .back-link a, .sign-in-offer a, a.freshness-refresh {
+    color: var(--link); font-size: var(--t-support); font-weight: 600; text-decoration: none;
+  }
+  .back-link a:hover, .sign-in-offer a:hover, a.freshness-refresh:hover { text-decoration: underline; }
+  /* Notices lead with an icon, drawn here so every page's notices get it:
+     "i" for a note, "!" for a problem, and the first line in the notice's
+     colour. Told apart by icon and colour, not only by where they sit. */
+  /* Doubled classes: each notice's own rule, here or in a page block that
+     loads later, sets a padding shorthand that would otherwise win back the
+     room the icon needs. */
+  .nudge.nudge, .problem.problem, .form-error.form-error { position: relative; padding-left: calc(var(--s-3) + 20px + var(--s-2)); }
+  .nudge::before, .problem::before, .form-error::before {
+    content: "i"; position: absolute; left: var(--s-3); top: calc(var(--s-2) + 0.1em);
+    display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+    border: 1.75px solid currentColor; font-size: var(--t-support); font-weight: 700; line-height: 1;
+  }
+  .problem::before, .form-error::before { content: "!"; color: var(--danger); }
+  .problem::first-line, .form-error::first-line { color: var(--danger); }
+  .nudge::before, .nudge::first-line { color: var(--warn); }
+  .nudge.ok::before, .nudge.ok::first-line { color: var(--ok-fg); }
   /* The one mono surface: text a person copies character for character. */
   .copyable { font-family: var(--mono); }
   p { color: var(--mut); margin: 0; }
@@ -492,7 +543,7 @@ export function layout({ title, body, pageStyles, pageScripts, centred, nav }: L
 <title>${escapeHtml(title)}</title>
 ${styleTags}
 </head>
-<body${nav === undefined ? "" : ` class="with-header"`}>${nav === undefined ? "" : renderHeader(nav)}<main${centred ? ` class="centred"` : ""}>${body}</main>${scriptTags}</body>
+<body${nav === undefined ? "" : ` class="with-header"`}>${ICON_SPRITE}${nav === undefined ? "" : renderHeader(nav)}<main${centred ? ` class="centred"` : ""}>${body}</main>${scriptTags}</body>
 </html>
 `;
 }

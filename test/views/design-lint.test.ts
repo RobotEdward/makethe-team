@@ -59,6 +59,25 @@ function declarations(rule: Rule): [string, string][] {
     });
 }
 
+/** Split a value on top-level spaces, keeping nested calc()/var() whole. */
+function parts(value: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const char of value.replace(/\s*!important/, "").trim()) {
+    if (char === "(") depth += 1;
+    if (char === ")") depth -= 1;
+    if (/\s/.test(char) && depth === 0) {
+      if (current) out.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  if (current) out.push(current);
+  return out;
+}
+
 function check(name: keyof typeof ENFORCE, offenders: string[]): void {
   if (ENFORCE[name]) {
     expect(offenders, offenders.join("\n")).toEqual([]);
@@ -90,7 +109,7 @@ describe("design-system lints (M67)", () => {
         ? []
         : declarations(rule)
             .filter(([prop]) => /^(margin|padding)(-(top|right|bottom|left|block|inline)(-(start|end))?)?$|^(row-|column-)?gap$/.test(prop))
-            .filter(([, value]) => !value.replace(/\s*!important/, "").split(/\s+(?![^(]*\))/).every((v) => v === "0" || v === "auto" || /^var\(--s-[0-6]\)$/.test(v) || /^calc\(.*var\(--s-[0-6]\).*\)$/.test(v) || /^calc\(\(1\.6em - 20px\) \/ 2\)$/.test(v)))
+            .filter(([, value]) => !parts(value).every((v) => v === "0" || v === "auto" || /^var\(--s-[0-6]\)$/.test(v) || /^calc\(.*var\(--s-[0-6]\).*\)$/.test(v) || /^calc\(\(1\.6em - 20px\) \/ 2\)$/.test(v)))
             .map(([prop, value]) => `${rule.selector} { ${prop}: ${value} }`),
     );
     check("spacing", offenders);

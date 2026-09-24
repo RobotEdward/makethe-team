@@ -56,12 +56,12 @@ export interface PastFixturesPageParams {
 
 function renderRow(gameId: string, row: PastFixtureRow): string {
   return `
-    <li class="fixture-card">
-      <h2><a href="${escapeHtml(fixturePath(gameId, row.fixtureId))}">${escapeHtml(row.kicksOffAtLocal)}</a></h2>
+    <li><a class="fixture-card" href="${escapeHtml(fixturePath(gameId, row.fixtureId))}">
+      <h2>${escapeHtml(row.kicksOffAtLocal)}</h2>
       <p class="status-badge status-${escapeHtml(row.lifecycle)}">${escapeHtml(fixtureStatusWords(row.lifecycle))}</p>
       <p class="venue">${escapeHtml(String(row.inCount))} in</p>
       ${row.resultWords === undefined ? "" : `<p class="result-final">${escapeHtml(row.resultWords)}</p>`}
-    </li>`;
+    </a></li>`;
 }
 
 /**
