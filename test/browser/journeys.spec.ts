@@ -745,9 +745,9 @@ test("picking with the keyboard keeps focus in the radio group as the row moves"
 /**
  * Dragging a name back off a side.
  *
- * The pool is the third drop target, carrying `data-team=""` — the same value
- * as the "Not picked yet" radio — so undoing a placement is a gesture and not
- * only a radio click. Worth its own test because the pool is the one drop
+ * The pool is the third drop target, carrying `data-team=""` — the value the
+ * row's hidden input posts once neither side is checked — so undoing a
+ * placement is a gesture as well as a second press. Worth its own test because the pool is the one drop
  * target that can be *empty*, and an empty list with no height is a target
  * nobody can hit: this fails if `.team-drop` is ever taken off it.
  */
@@ -763,8 +763,8 @@ test("dragging a name back to the unpicked list clears the side it had", async (
 
   await pickerRow(page, JOINER_NAME).dragTo(page.locator("#team-pool"));
 
-  await expect(sideRadio(page, JOINER_NAME, "Not picked yet")).toBeChecked();
   await expect(sideRadio(page, JOINER_NAME, "Team A")).not.toBeChecked();
+  await expect(sideRadio(page, JOINER_NAME, "Team B")).not.toBeChecked();
   await expect(page.locator('[data-count="a"]')).toHaveText("0");
   await expect(page.locator('[data-count="b"]')).toHaveText("1");
 
@@ -772,7 +772,8 @@ test("dragging a name back to the unpicked list clears the side it had", async (
   // player, which the route reads as "clear this player's side".
   await page.getByRole("button", { name: "Save teams" }).click();
   await page.waitForURL(new RegExp(`${fixturePath}$`));
-  await expect(sideRadio(page, JOINER_NAME, "Not picked yet")).toBeChecked();
+  await expect(sideRadio(page, JOINER_NAME, "Team A")).not.toBeChecked();
+  await expect(sideRadio(page, JOINER_NAME, "Team B")).not.toBeChecked();
   await expect(sideRadio(page, GUEST_NAME, "Team B")).toBeChecked();
 
   expect(await seen.violations()).toEqual([]);
@@ -801,6 +802,51 @@ test("the two identities never share a session", async ({ page, browser }) => {
  * names and left the form alone would save nothing, and a save that posts the
  * random pick is the whole point.
  */
+/**
+ * Unpicking by a second press on the side a player is on (M67). It replaced a
+ * third "no side" radio that overflowed the row on a phone, and it is script:
+ * the browser leaves a checked radio checked when it is pressed again. Both
+ * the pointer and Space must do it, and the clearing must be what the save
+ * stores — the row's hidden empty value, no longer overridden by a radio.
+ */
+test("pressing a player's side again unpicks them, by pointer or by Space", async ({ page, browser }) => {
+  const seen = observe(page);
+  const { fixturePath } = await seedTwoPlayersIn(page, browser, true);
+  await expect(page.locator("#team-columns")).toBeVisible();
+
+  // --- pointer ----------------------------------------------------------------
+  await sideRadio(page, JOINER_NAME, "Team A").click({ force: true });
+  await expect(page.locator('ul[data-team="a"] li[data-player]')).toContainText(JOINER_NAME);
+  await sideRadio(page, JOINER_NAME, "Team A").click({ force: true });
+
+  await expect(sideRadio(page, JOINER_NAME, "Team A")).not.toBeChecked();
+  await expect(sideRadio(page, JOINER_NAME, "Team B")).not.toBeChecked();
+  await expect(page.locator("#team-pool")).toContainText(JOINER_NAME);
+  await expect(page.locator('ul[data-team="a"] li[data-player]')).toHaveCount(0);
+  await expect(page.locator('[data-count="a"]')).toHaveText("0");
+
+  // --- Space -----------------------------------------------------------------
+  const guestOnB = sideRadio(page, GUEST_NAME, "Team B");
+  await guestOnB.focus();
+  await page.keyboard.press("Space");
+  await expect(guestOnB).toBeChecked();
+  await page.keyboard.press("Space");
+  await expect(guestOnB).not.toBeChecked();
+  await expect(page.locator("#team-pool")).toContainText(GUEST_NAME);
+  await expect(page.locator('ul[data-team="b"] li[data-player]')).toHaveCount(0);
+
+  // Put the joiner back on B, save, and the guest's clearing is what is stored.
+  await sideRadio(page, JOINER_NAME, "Team B").click({ force: true });
+  await page.getByRole("button", { name: "Save teams" }).click();
+  await page.waitForURL(new RegExp(`${fixturePath}$`));
+  await expect(sideRadio(page, JOINER_NAME, "Team B")).toBeChecked();
+  await expect(sideRadio(page, GUEST_NAME, "Team A")).not.toBeChecked();
+  await expect(sideRadio(page, GUEST_NAME, "Team B")).not.toBeChecked();
+
+  expect(await seen.violations()).toEqual([]);
+  expect(seen.errors()).toEqual([]);
+});
+
 test("randomise puts everyone on a side, evenly, through the radios the save posts", async ({ page, browser }) => {
   const seen = observe(page);
   const { fixturePath } = await seedTwoPlayersIn(page, browser, true);

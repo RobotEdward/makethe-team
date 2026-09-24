@@ -121,7 +121,7 @@ Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES
 | Capacity bar | `.capacity .track .fill .count` | `FIXTURE_STYLES_CSS` | 6px groove plus "10 of 10 in · 2 waiting"; width from generated `.w-0`…`.w-100` classes |
 | Chips | `.chip-{in,waitlisted,out,pending}`, `.chip-you` | `SQUAD_STYLES_CSS` | The squad as grouped pills: in on `--field`, waiting peach, out and no reply as outlines; yours takes the selected state |
 | Squad rows | `ul.squad > li`, `.row-controls`, `.member-actions` | `FORM_CSS` (wins over `SQUAD_STYLES_CSS`) | The organiser's squad list: name left, controls right |
-| Segmented control | `.segment .seg` (`.on`, `.out`), `.teams .sides` | `FORM_CSS`, `TEAM_PICKER_CSS` | In/Out per member, and A/B per player on the picker: a `--field` pill track of 44px segments; the pressed one takes the selected state. The picker's "—" (clear) never fills |
+| Segmented control | `.segment .seg` (`.on`, `.out`), `.teams .sides` | `FORM_CSS`, `TEAM_PICKER_CSS` | In/Out per member, and A/B per player on the picker: a `--field` pill track of 44px segments; the pressed one takes the selected state. A second press on the picker's chosen side unpicks the player (script) |
 | Fixture card | `.fixture-list .fixture-card` | `DASHBOARD_STYLES_CSS` | One upcoming or past fixture on the dashboard, account and past-fixtures pages |
 | Form field | `.field` (+ `.error`, `.field-invalid`), `.row`, `.actions` | `FORM_CSS` | Label above input; `--field` ground, 1px line, 0.75rem radius |
 | Switch row | `.switch-row` + `.hint` | `FORM_CSS` | A checkbox with a label and a hint beneath, 52px |

@@ -728,10 +728,14 @@ export const TEAM_PICKER_CSS = `
     min-width: 0; margin: 0; padding: 0; border: 0;
   }
   .teams legend { float: left; padding: 0; font-weight: 600; overflow-wrap: anywhere; }
+  /* Inside a half-width side column there is no room beside the name, so the
+     name takes the width and the A/B track sits beneath it. */
+  .teams.team-drop fieldset { grid-template-columns: minmax(0, 1fr); }
+  .teams.team-drop .sides { grid-column: 1; grid-row: auto; margin-top: var(--s-1); }
   .teams .row-side { grid-column: 1; display: none; align-items: center; gap: var(--s-0); font-size: var(--t-support); }
   .teams fieldset:has(input[value="a"]:checked) .row-side-a,
   .teams fieldset:has(input[value="b"]:checked) .row-side-b,
-  .teams fieldset:has(input[value=""]:checked) .row-side-none { display: flex; }
+  .teams fieldset:not(:has(input[type="radio"]:checked)) .row-side-none { display: flex; }
   .teams .row-side-a { color: var(--side-a-fg); }
   .teams .row-side-b { color: var(--side-b-fg); }
   .teams .row-side-none { color: var(--warn); }
@@ -755,11 +759,6 @@ export const TEAM_PICKER_CSS = `
     opacity: 0; cursor: pointer;
   }
   .teams .sides label:has(input:checked) { background: var(--fg); color: var(--card-raised); }
-  /* The clear-this-side option stays quiet even when it is the checked one: an
-     unpicked player has nothing selected, and it is the only way to take a
-     player back off a side without script. */
-  .teams .sides label:has(input[value=""]) { min-width: 44px; }
-  .teams .sides label:has(input[value=""]:checked) { background: transparent; color: var(--mut); }
   /* The radio is invisible under its label, so the label shows the ring. */
   .teams .sides label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .team-columns { display: none; }

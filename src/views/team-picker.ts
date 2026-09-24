@@ -122,21 +122,22 @@ function renderRandomise(): string {
 
 /**
  * One member's row: their name, and a radio group named exactly their player
- * id.
+ * id, with one radio per side.
  *
- * Three choices, not two. The empty-valued "Not picked yet" radio is what
- * makes a partial pick expressible without JavaScript — an organiser who has
- * placed six of fourteen players must be able to save and come back, and
- * with only two radios there would be no way to *undo* a placement once made
- * (a radio group cannot be unset by clicking it again). The route reads `""`
- * as "clear this player's side".
+ * An unpicked player is simply one with neither side checked. The hidden empty
+ * value before the radios is what the form posts for them — the route reads
+ * `""` as "clear this player's side", and a checked radio later in the row
+ * wins over it because the body keeps the last value for a name. Unpicking a
+ * placed player is a second press on their side, which takes script (a radio
+ * cannot be unset by the browser alone); until M67 a third "—" radio did it,
+ * and overflowed the row on a phone.
  */
 function renderRow(member: TeamPickerParams["members"][number], names: Record<TeamId, string>): string {
   const group = escapeHtml(member.playerId);
-  const choice = (value: string, label: string) =>
+  const choice = (value: TeamId, label: string) =>
     `<label aria-label="${escapeHtml(label)}"><input type="radio" name="${group}" value="${escapeHtml(value)}"${
-      (member.team ?? "") === value ? " checked" : ""
-    }><span aria-hidden="true">${value === "" ? "—" : escapeHtml(value.toUpperCase())}</span></label>`;
+      member.team === value ? " checked" : ""
+    }><span aria-hidden="true">${escapeHtml(value.toUpperCase())}</span></label>`;
 
   // `data-player` is what the drag-and-drop script identifies a row by. Not
   // `draggable`: that attribute is set by the script, so a browser that never
@@ -146,9 +147,9 @@ function renderRow(member: TeamPickerParams["members"][number], names: Record<Te
               <legend>${escapeHtml(rowName(member))}</legend>
               ${TEAM_IDS.map((id) => `<span class="row-side row-side-${id} side-${id}"><span class="side-dot" aria-hidden="true"></span>${escapeHtml(names[id])}</span>`).join("")}
               <span class="row-side row-side-none">Not picked yet</span>
+              <input type="hidden" name="${group}" value="">
               <span class="sides">
                 ${TEAM_IDS.map((id) => choice(id, names[id])).join("")}
-                ${choice("", "Not picked yet")}
               </span>
             </fieldset>
           </li>`;
@@ -283,7 +284,7 @@ export function renderTeamPicker(params: TeamPickerParams): string {
 
   return `<section class="team-workspace" aria-labelledby="team-heading">
           <h2 id="team-heading">Teams</h2>
-          <p class="team-note">Move players between sides until you’re happy with the balance. A and B match the team headings; — leaves a player unpicked.</p>
+          <p class="team-note">Move players between sides until you’re happy with the balance. A and B match the team headings; tap a player's side again to unpick them.</p>
           <p class="team-note">${params.correcting
             ? "Saving changes updates the teams on players’ pages and in the game’s history."
             : params.published

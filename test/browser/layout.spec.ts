@@ -217,3 +217,38 @@ test("notification settings become cards of channel pills at phone width", async
   // A channel a message never uses has no pill at all on a phone.
   await expect(page.locator("table.notify-matrix td.notify-none").first()).toBeHidden();
 });
+
+/**
+ * The team picker at phone width, with players placed on both sides (M67).
+ * Rows in a side column are half the screen wide; with the A/B track beside
+ * the name, the name got one or two letters per line, and a third "—" option
+ * overflowed the column outright. Measured on every row, in the pool and in
+ * both columns, because the shape of a row depends on where it sits.
+ */
+test("every team picker row fits its column at phone width", async ({ page, browser }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const world = await seedWorld(page, browser, { busy: true });
+  await page.goto(`/g/${world.busyGameId}/f/${world.busyFixtureId}`);
+  await expect(page.locator("#team-columns")).toBeVisible();
+
+  for (let i = 0; i < 4; i += 1) {
+    const row = page.locator("#team-pool li[data-player]").first();
+    if ((await row.count()) === 0) break;
+    await row.getByRole("radio").nth(i % 2).click({ force: true });
+  }
+  await expect(page.locator('ul[data-team="a"] li[data-player]').first()).toBeVisible();
+  await expect(page.locator('ul[data-team="b"] li[data-player]').first()).toBeVisible();
+
+  const problems: string[] = [];
+  const rows = page.locator("li[data-player]");
+  for (let r = 0; r < (await rows.count()); r += 1) {
+    const row = rows.nth(r);
+    const rowBox = (await row.boundingBox())!;
+    const name = (await row.locator("legend").textContent())?.trim() ?? `row ${r + 1}`;
+    const track = (await row.locator(".sides").boundingBox())!;
+    if (track.x + track.width > rowBox.x + rowBox.width + 1) problems.push(`${name}: the A/B track overflows its row`);
+    const legend = (await row.locator("legend").boundingBox())!;
+    if (legend.width < 80) problems.push(`${name}: the name is squeezed to ${Math.round(legend.width)}px`);
+  }
+  expect(problems, problems.join("\n")).toEqual([]);
+});

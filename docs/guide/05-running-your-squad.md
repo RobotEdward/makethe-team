@@ -270,6 +270,8 @@ rather drag, you can: the two sides are the columns above the list, and on a
 phone or computer that allows it you can drag a name straight into one.
 Dragging ticks the same button you would have tapped, so it's the same pick
 either way, and on a device that won't drag, tapping is all there ever was.
+To take someone back off a side, tap the side they're on again, or drag them
+back to **Not picked yet**.
 
 If you'd rather not pick at all, **Randomise teams** deals everyone who's in
 onto the two sides at random, as evenly as the numbers allow. It only sets the

@@ -142,9 +142,13 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
     for (const playerId of [ada, bram]) {
       expect(html).toContain(`<input type="radio" name="${playerId}" value="a"`);
       expect(html).toContain(`<input type="radio" name="${playerId}" value="b"`);
-      // The third choice is what makes a partial pick expressible, and
-      // undoable, without JavaScript.
-      expect(html).toContain(`<input type="radio" name="${playerId}" value=""`);
+      // No third "no side" radio (M67): an unpicked player has neither side
+      // checked, and the hidden empty value before the radios is what the form
+      // posts for them. It must come first, so a checked side overrides it.
+      expect(html).not.toContain(`<input type="radio" name="${playerId}" value=""`);
+      const hidden = html.indexOf(`<input type="hidden" name="${playerId}" value="">`);
+      expect(hidden).toBeGreaterThan(-1);
+      expect(hidden).toBeLessThan(html.indexOf(`<input type="radio" name="${playerId}" value="a"`));
     }
     // The game's own names for the sides, not "Team A"/"Team B".
     expect(html).toContain("Bibs");
@@ -306,11 +310,13 @@ describe("the team picker on GET /g/:id/f/:fixtureId", () => {
 
     // And the pick is still expressible from that reduced page: a radio for
     // every player and every side, plus the Save button they post through.
+    // Taking a player back off a side is a second press, which needs script
+    // (M67, the maintainer's call when the third radio overflowed on a phone).
     for (const playerId of [ada, bram]) {
-      for (const value of ["a", "b", ""]) {
+      for (const value of ["a", "b"]) {
         expect(
           withoutScript,
-          `${playerId} must still be placeable on "${value || "no side"}" with scripting off`,
+          `${playerId} must still be placeable on "${value}" with scripting off`,
         ).toContain(`<input type="radio" name="${playerId}" value="${value}"`);
       }
     }
@@ -337,12 +343,30 @@ describe("POST /g/:id/f/:fixtureId/teams", () => {
     const { cookie, viewerId } = await ownerSession();
     const { gameId, fixtureId, ada, bram } = await seedPickableFixture(viewerId);
 
-    // Exactly what the browser posts when an organiser has placed one player
-    // and left the other on "Not picked yet".
+    // An organiser who has placed one player and left the other unpicked.
     const response = await appPost(`/g/${gameId}/f/${fixtureId}/teams`, { [ada]: "a", [bram]: "" }, cookie);
 
     expect(response.status).toBe(303);
     expect(await teamOf(fixtureId, ada)).toBe("a");
+    expect(await teamOf(fixtureId, bram)).toBeNull();
+  });
+
+  it("lets a checked side override the row's hidden empty value (M67)", async () => {
+    // Exactly the body a browser builds from a picker row: the hidden empty
+    // value first, then the checked radio under the same name. The route must
+    // read the later one, or every placed player would be cleared on save.
+    const { cookie, viewerId } = await ownerSession();
+    const { gameId, fixtureId, ada, bram } = await seedPickableFixture(viewerId);
+
+    const response = await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}/teams`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN, cookie },
+      body: new URLSearchParams([[ada, ""], [ada, "b"], [bram, ""]]),
+      redirect: "manual",
+    });
+
+    expect(response.status).toBe(303);
+    expect(await teamOf(fixtureId, ada)).toBe("b");
     expect(await teamOf(fixtureId, bram)).toBeNull();
   });
 

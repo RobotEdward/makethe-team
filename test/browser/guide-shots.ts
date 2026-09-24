@@ -334,7 +334,7 @@ export const SHOTS: Shot[] = [
     route: "/g/:id/f/:fixtureId",
     shows:
       "The team picker below the squad on the same fixture page: the two sides " +
-      "named, and every player who is in with three choices beside their name.",
+      "named, and every player who is in with a choice of the two beside their name.",
     // The same fixture page as `owner-fixture` above, scoped to the picker
     // itself — an unscoped shot here would be a second photograph of a page
     // this chapter already shows, for the same reason `invite`/`invite-qr`

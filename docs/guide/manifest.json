@@ -190,7 +190,7 @@
       "title": "Picking the teams",
       "route": "/g/:id/f/:fixtureId",
       "image": "images/team-picker.png",
-      "shows": "The team picker below the squad on the same fixture page: the two sides named, and every player who is in with three choices beside their name."
+      "shows": "The team picker below the squad on the same fixture page: the two sides named, and every player who is in with a choice of the two beside their name."
     },
     {
       "id": "cancel",

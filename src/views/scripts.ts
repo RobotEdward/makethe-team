@@ -402,10 +402,10 @@ export const TEAM_PICKER_JS = `
   if (typeof window.DataTransfer !== "function") return;
 
   // Every drop target carries the value it stands for, including the pool of
-  // players nobody has placed yet (\`data-team=""\`, the "Not picked yet"
-  // radio). One attribute for all three means dragging a name back out of a
-  // side is the same code as dragging it in, rather than a case that has to
-  // be remembered.
+  // players nobody has placed yet (\`data-team=""\`, which no radio carries:
+  // unpicked means neither side checked). One attribute for all three means
+  // dragging a name back out of a side is the same code as dragging it in,
+  // rather than a case that has to be remembered.
   var lists = form.querySelectorAll("ul[data-team]");
   var rows = form.querySelectorAll("li[data-player]");
   if (lists.length === 0 || rows.length === 0) return;
@@ -454,13 +454,20 @@ export const TEAM_PICKER_JS = `
   }
 
   function place(row, team) {
-    var radio = radioFor(row, team);
+    var radio = team === "" ? null : radioFor(row, team);
     var list = listFor(team);
     // A row with no radio for this side, or a side with no column, is left
     // exactly where it is: half a move would put the picture and the form out
     // of step, which is the one thing this block must never do.
-    if (!radio || !list) return;
-    radio.checked = true;
+    if ((team !== "" && !radio) || !list) return;
+    if (radio) {
+      radio.checked = true;
+    } else {
+      var current = row.getElementsByTagName("input");
+      for (var c = 0; c < current.length; c++) {
+        if (current[c].type === "radio") current[c].checked = false;
+      }
+    }
     // \`appendChild\` detaches the row, and detaching blurs whatever inside it
     // held focus. Left alone that makes this block *worse than absent* for
     // anyone picking with a keyboard: Space checks the radio, the row moves,
@@ -553,6 +560,31 @@ export const TEAM_PICKER_JS = `
     if (!input || input.type !== "radio") return;
     var row = input.closest("li[data-player]");
     if (row) place(row, input.value);
+  });
+
+  // A second press on the side a player is already on unpicks them. The
+  // browser leaves a checked radio checked when it is pressed again and fires
+  // no change, so whether it was checked is read before the press lands.
+  var pressedWasChecked = null;
+  form.addEventListener("pointerdown", function (event) {
+    var input = event.target;
+    pressedWasChecked = input && input.type === "radio" && input.checked ? input : null;
+  });
+  form.addEventListener("click", function (event) {
+    var input = event.target;
+    if (!input || input.type !== "radio") return;
+    var was = pressedWasChecked;
+    pressedWasChecked = null;
+    if (was !== input) return;
+    var row = input.closest("li[data-player]");
+    if (row) place(row, "");
+  });
+  form.addEventListener("keydown", function (event) {
+    var input = event.target;
+    if (!input || input.type !== "radio" || event.key !== " " || !input.checked) return;
+    event.preventDefault();
+    var row = input.closest("li[data-player]");
+    if (row) place(row, "");
   });
 
   // Randomise: a Fisher-Yates shuffle of the rows, then alternate sides, so
