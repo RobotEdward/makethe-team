@@ -811,11 +811,11 @@ describe("the answer block's headline margin on a dashboard card (M20 B7)", () =
   }
 
   it("declares all three rules, so this guard cannot pass vacuously", () => {
-    // The 0.9rem rule is not dead weight to be tidied away: the account page's
+    // The var(--s-3) rule is not dead weight to be tidied away: the account page's
     // history row wears .fixture-card with a bare headline and no answer block
     // around it, and that rule is the only thing spacing it.
     expect(marginTopFor(FIXTURE_STYLES_CSS, ".answer .viewer-headline")).toBe("0");
-    expect(marginTopFor(DASHBOARD_STYLES_CSS, ".fixture-card .viewer-headline")).toBe("0.9rem");
+    expect(marginTopFor(DASHBOARD_STYLES_CSS, ".fixture-card .viewer-headline")).toBe("var(--s-3)");
     expect(marginTopFor(DASHBOARD_STYLES_CSS, ".fixture-card .answer .viewer-headline")).toBe("0");
   });
 

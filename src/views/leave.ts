@@ -48,6 +48,7 @@ function confirmBody(gameName: string, token: string, isOrganiser: boolean): str
     : "";
 
   return `
+    <div class="prose">
     <p>Leaving means you'll stop getting email about ${gameName}, and your place in any fixture that's still open is freed for someone else.</p>
     ${organiserWarning}
     <!-- The escape is a sentence, not a link (M52). This page is reached from
@@ -56,9 +57,12 @@ function confirmBody(gameName: string, token: string, isOrganiser: boolean): str
          who only wants to undo a mis-tap. Same idiom, and same reason, as the
          join-confirm page's "Not you?" line. -->
     <p class="read-only">Changed your mind? Just close this page — nothing happens unless you press the button.</p>
+    </div>
+    <div class="actions">
     <form method="post" action="/leave/${escapeHtml(token)}">
       <button class="button danger" type="submit">Leave this game</button>
     </form>
+    </div>
   `;
 }
 

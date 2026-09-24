@@ -74,12 +74,16 @@ export interface DeleteAccountPageParams {
  */
 function offerBody(): string {
   return `
+    <div class="prose">
     <p>This erases your name, your email address and every way of signing in, and takes you out of every squad you're in. It can't be undone.</p>
     <p>Fixtures you've already played still count you, as a former player with no name attached — that's what keeps a past game's numbers honest for everyone else who was there.</p>
     <p>It happens <strong>two days from now</strong>, not straight away. Nothing changes in the meantime: you stay in your squads, your answers stand, and you can stop it from this page at any point before then.</p>
+    </div>
+    <div class="actions">
     <form method="post" action="${escapeHtml(DELETE_ACCOUNT_PATH)}">
       <button class="button danger" type="submit">Delete my data</button>
     </form>
+    </div>
   `;
 }
 

@@ -467,7 +467,7 @@ function renderOnboardingCard(hints: OnboardingHints): string {
         ${hints.notifications ? `<li><a href="${ACCOUNT_PATH}">Turn on notifications</a></li>` : ""}
       </ul>
       <form method="post" action="${ONBOARDING_DISMISS_PATH}">
-        <button class="button" type="submit">Dismiss</button>
+        <button class="button compact" type="submit">Dismiss</button>
       </form>
     </section>
   `;

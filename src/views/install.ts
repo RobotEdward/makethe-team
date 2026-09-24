@@ -177,11 +177,11 @@ function renderPushDevice(device: PushDeviceRow): string {
       <td class="push-actions">
         <form method="post" action="${escapeHtml(PUSH_TEST_PATH)}">
           <input type="hidden" name="endpoint" value="${escapeHtml(device.endpoint)}">
-          <button class="button row-action" type="submit">Test</button>
+          <button class="button compact" type="submit">Test</button>
         </form>
         <form method="post" action="${escapeHtml(PUSH_UNSUBSCRIBE_PATH)}">
           <input type="hidden" name="endpoint" value="${escapeHtml(device.endpoint)}">
-          <button class="button row-action" type="submit">Remove</button>
+          <button class="button compact" type="submit">Remove</button>
         </form>
       </td>
     </tr>`;

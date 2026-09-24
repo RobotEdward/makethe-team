@@ -129,6 +129,7 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
   const body = `
     ${CANCEL_STYLES_TAG}
     <h1 class="cancel-heading">${escapeHtml(options.kicksOffAtLocal)} won't be played</h1>
+    <div class="prose">
     <p class="venue">${escapeHtml(options.gameName)}, ${escapeHtml(options.venueName)}</p>
     <p>Every other week carries on as normal.</p>
     <p class="spots">${options.inCount} ${plural(options.inCount, "player is", "players are")} in.</p>
@@ -144,6 +145,7 @@ export function renderCancelConfirmPage(options: CancelConfirmPageOptions): stri
          put it below the fold on many devices — a consequence disclosed after
          the decision point is not a disclosure. -->
     <p class="read-only">This can't be undone. Once it's cancelled, everyone who was in or on the waitlist gets an email, and nobody can respond to this fixture again.</p>
+    </div>
     <form class="cancel-form" method="post" action="/cancel/${escapeHtml(token)}">
       <label for="reason">Why is it off? (optional — this goes in the email)</label>
       <textarea id="reason" name="reason" rows="4" maxlength="${MAX_REASON_LENGTH}" placeholder="Pitch flooded">${escapeHtml(reason ?? "")}</textarea>

@@ -1,6 +1,6 @@
 import { gamePath, memberRemovePath } from "../auth/paths.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
-import { CANCEL_STYLES_CSS, FORM_CSS } from "./styles.js";
+import { FORM_CSS } from "./styles.js";
 
 export interface RemoveMemberPageParams {
   /** The signed-in header (M16); see PageNav in layout.ts. */
@@ -65,33 +65,27 @@ export function renderRemoveMemberPage(params: RemoveMemberPageParams): string {
 
   const body = `
     <h1>Remove ${name}?</h1>
+    <div class="prose">
     <p>They'll be taken out of the squad for ${escapeHtml(gameName)} and told by email.</p>
     ${ownerWarning}
     ${consequences.join("\n    ")}
     <p>They can join again themselves with the invite link. You can't put them back.</p>
+    </div>
+    <div class="actions">
     <form method="post" action="${escapeHtml(memberRemovePath(gameId, playerId))}">
       <button class="button danger" type="submit">Remove ${name}</button>
     </form>
     <a class="button keep-link" href="${escapeHtml(gamePath(gameId))}">No, leave the squad as it is</a>
+    </div>
   `;
 
   // The `— Make The Team` suffix every other view uses; without it this is the
   // one page whose browser tab and bookmark do not say what site it belongs to.
-  //
-  // CANCEL_STYLES_CSS is here for .keep-link alone — the rest of it styles a
-  // reason textarea this page does not have. Passed through `pageStyles`
-  // rather than inlined into the body the way `cancel.ts` does it: a block
-  // written at the call site is invisible to `PAGE_STYLE_BLOCKS`, which
-  // `src/security/csp.ts` hashes for style-src, and the browser would drop it
-  // with no fetch-level test noticing.
-  //
-  // Order is free here: no selector in CANCEL_STYLES_CSS is also declared in
-  // FORM_CSS, so neither block can overwrite the other. It follows
-  // PAGE_STYLE_BLOCKS' own order so nothing has to be re-derived to read it.
+
   return layout({
     nav: params.nav,
     title: `Remove ${memberName} — Make The Team`,
     body,
-    pageStyles: [CANCEL_STYLES_CSS, FORM_CSS],
+    pageStyles: [FORM_CSS],
   });
 }

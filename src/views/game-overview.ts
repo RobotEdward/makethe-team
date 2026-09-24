@@ -177,7 +177,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
           <p><a href="${escapeHtml(memberDetailPath(gameId, member.playerId))}">View details</a></p>
           <form method="post" action="${escapeHtml(memberRolePath(gameId, member.playerId))}">
             <input type="hidden" name="role" value="${nextRole}">
-            <button class="button" type="submit">${roleLabel}</button>
+            <button class="button compact" type="submit">${roleLabel}</button>
           </form>
           <a class="danger-link" href="${escapeHtml(memberRemovePath(gameId, member.playerId))}">Remove</a>
         </details>`}
@@ -244,7 +244,7 @@ export function renderGameOverviewPage(params: GameOverviewParams): string {
       <p>Share this link in your group chat, or let people scan the code.</p>
       <div class="invite-link">
         <input id="invite-url" class="copyable" type="text" readonly value="${escapeHtml(inviteUrl)}">
-        <button class="button" type="button" id="invite-copy" data-copy="invite-url" hidden>Copy</button>
+        <button class="button compact" type="button" id="invite-copy" data-copy="invite-url" hidden>Copy</button>
       </div>
       <details class="qr-toggle">
         <summary>Show the QR code</summary>

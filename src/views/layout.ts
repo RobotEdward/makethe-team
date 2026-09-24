@@ -145,7 +145,7 @@ export const STYLES = `
     --mono: "IBM Plex Mono", ui-monospace, monospace;
     /* Spacing 8 / 12 / 16 / 24 / 32 / 40 and the three radii: every margin,
        padding, gap and radius draws from these (test/views/design-lint.test.ts). */
-    --s-1: 0.5rem; --s-2: 0.75rem; --s-3: 1rem; --s-4: 1.5rem; --s-5: 2rem; --s-6: 2.5rem;
+    --s-0: 0.25rem; --s-1: 0.5rem; --s-2: 0.75rem; --s-3: 1rem; --s-4: 1.5rem; --s-5: 2rem; --s-6: 2.5rem;
     --r-pill: 999px; --r-card: 1.25rem; --r-field: 0.75rem;
     /* Team sides, kept apart from the status families: a side is not a
        verdict, so neither may read as confirmed or as a warning. */
@@ -183,7 +183,7 @@ export const STYLES = `
   .side-b .side-dot { background: var(--side-b); }
   h3.side-a { color: var(--side-a-fg); }
   h3.side-b { color: var(--side-b-fg); }
-  h3.side-a, h3.side-b { display: flex; align-items: center; gap: 0.5rem; }
+  h3.side-a, h3.side-b { display: flex; align-items: center; gap: var(--s-1); }
   body {
     /* An explicit minmax(0, 1fr) column, not the implicit auto track. An auto
        track sizes to its item max-content, so a child that cannot shrink — a
@@ -191,7 +191,7 @@ export const STYLES = `
        the whole page sideways instead of scrolling inside its own wrapper. The
        floor of 0 is what lets an overflowing child be clipped rather than
        obeyed; nothing that already fits changes width. */
-    margin: 0; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center;
+    margin: 0; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); place-items: start center;
     padding: 2rem 1.25rem; background: var(--bg); color: var(--fg);
     font: var(--t-body)/1.6 "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   }
@@ -209,7 +209,7 @@ export const STYLES = `
      rather than in a page block because there is no new block to register in
      PAGE_STYLE_BLOCKS, and forgetting that registration is the failure this
      codebase makes silently. */
-  main.centred p + p { margin-top: 0.9rem; }
+  main.centred p + p { margin-top: var(--s-3); }
   /* The signed-in header (M16). Shares main's 30rem column so the name and
      the page's own content keep one left edge. */
   /* Two rows, not the default equal split: the header's row hugs its content
@@ -229,14 +229,14 @@ export const STYLES = `
   body.with-header { grid-template-rows: auto 1fr; align-items: start; }
   .site-header {
     width: 100%; max-width: 30rem;
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    border-bottom: 1px solid var(--line); margin-bottom: 1.5rem;
+    display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
+    border-bottom: 1px solid var(--line); margin-bottom: var(--s-4);
   }
   .site-header .site-name {
     color: var(--fg); font-weight: 700; text-decoration: none;
     display: inline-flex; align-items: center; min-height: 44px;
   }
-  .site-header nav { display: flex; gap: 1.1rem; }
+  .site-header nav { display: flex; gap: var(--s-3); }
   /* min-height 44px: the link's whole padded box is the tap target — a bare
      text link is ~20px, well under the phone floor the buttons obey. */
   .site-header nav a {
@@ -251,8 +251,8 @@ export const STYLES = `
   /* The display face is for the page title and section headings only (M67).
      Titles inside cards, link-titles, day labels and the answer headline are
      Figtree, or every card competes with the page for the reader's eye. */
-  h1 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-title); letter-spacing: 0; margin: 0 0 0.5rem; }
-  h2 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-lead); margin: 2rem 0 0.6rem; }
+  h1 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-title); letter-spacing: 0; margin: 0 0 var(--s-1); }
+  h2 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-lead); margin: var(--s-5) 0 var(--s-1); }
   h1, h2 { line-height: 1.1; color: var(--fg); text-wrap: balance; }
   h3 { font-family: inherit; font-size: var(--t-body); font-weight: 600; line-height: 1.3; }
   /* Controls (M67). One focus ring for everything focusable, and in-house
@@ -277,7 +277,7 @@ export const STYLES = `
   }
   input[type="checkbox"]:checked { background: var(--fg); border-color: var(--fg); }
   input[type="checkbox"]:checked::after {
-    content: ""; width: 5px; height: 9px; margin-top: -2px;
+    content: ""; width: 5px; height: 9px; margin-top: 0;
     border-right: 2px solid var(--card-raised); border-bottom: 2px solid var(--card-raised);
     transform: rotate(45deg);
   }
@@ -285,7 +285,7 @@ export const STYLES = `
   /* The chevron sits under a transparent select, so a tap on it still opens
      the select; the wrapper carries the field ground instead. */
   .select { position: relative; display: block; border-radius: 0.75rem; background: var(--field); }
-  span.select select { position: relative; z-index: 1; appearance: none; padding-right: 2.5rem; background-color: transparent; }
+  span.select select { position: relative; z-index: 1; appearance: none; padding-right: var(--s-6); background-color: transparent; }
   .select::after {
     content: ""; position: absolute; z-index: 0; right: 1rem; top: 50%; width: 7px; height: 7px;
     border-right: 2px solid var(--mut); border-bottom: 2px solid var(--mut);
@@ -308,7 +308,7 @@ export const STYLES = `
      Deliberately not naming the block it came from: every word here is inlined
      into the holding page, which asserts a handful of operational words are
      absent, and that name contained one of them. */
-  .back-link { margin-top: 1.5rem; }
+  .back-link { margin-top: var(--s-4); }
 
   /* A label for a control whose meaning is obvious to a sighted reader from
      the row it sits in, and invisible to a screen reader without this.
@@ -319,12 +319,12 @@ export const STYLES = `
      the label as ordinary body text next to every control, which is exactly
      how this was found (M34). */
   .visually-hidden {
-    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
     overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
   }
 
   .nudge {
-    margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 1rem;
+    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 1rem;
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-support); text-align: left;
   }
   /* The one success notice shape. B4's broadcast receipt is the first to
@@ -338,16 +338,15 @@ export const STYLES = `
   .update-overlay {
     position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
     width: calc(100% - 2rem); max-width: 28rem;
-    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-    padding: 0.8rem 1rem; border: 1px solid var(--line); border-radius: 1rem;
+    display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
+    padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: 1rem;
     background: var(--card-raised); color: var(--fg);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   }
-  .update-overlay .button { flex: 0 0 auto; min-height: 44px; padding: 0.5rem 1rem; font-size: var(--t-body); margin: 0; }
 
   .button {
     flex: 1; display: flex; align-items: center; justify-content: center;
-    min-height: 52px; padding: 0.85rem 1.25rem;
+    min-height: 52px; padding: var(--s-2) var(--s-3);
     border: none; border-radius: 999px;
     background: var(--field); color: var(--fg);
     font: inherit; font-size: var(--t-lead); font-weight: 700;
@@ -361,6 +360,25 @@ export const STYLES = `
     text-decoration: none;
   }
   .button:active { transform: translateY(1px); }
+  /* One full-size button and one compact one (M67), and no other sizes. The
+     compact one is only for a control inline with what it acts on — Copy
+     beside a link, Remove on a row. */
+  .button { width: 100%; white-space: nowrap; }
+  .button.compact {
+    flex: 0 0 auto; width: auto; min-height: 44px; padding: 0 var(--s-3);
+    font-size: var(--t-support); font-weight: 600;
+  }
+  .button:disabled { background: var(--field); color: var(--mut); cursor: not-allowed; }
+  /* Actions stack; only a pair whose labels fit side by side at 320px sits in
+     two columns. A danger button and its escape are therefore always the
+     same width. */
+  .actions { display: grid; gap: var(--s-1); margin-top: var(--s-4); }
+  .actions.pair { grid-template-columns: 1fr 1fr; }
+  .actions form { margin: 0; }
+  /* Pages that are mostly explanation: one paragraph per point. */
+  .prose > * + * { margin-top: var(--s-2); }
+  /* A line after a form (the "Not you?" escape, a hint) never touches it. */
+  form + p { margin-top: var(--s-3); }
   /* A solid fill for the one action a page wants emphasised — unmistakable
      against the outlined default, in both themes, without relying on colour
      alone. No longer used to echo ?intent= on the two response-collecting
@@ -392,13 +410,13 @@ export const STYLES = `
 
   /* Sign-out is a real action but never the point of the page it sits on, so
      it gets the plain filled default rather than the primary fill. */
-  .signout { margin: 1.25rem 0; }
+  .signout { margin: var(--s-3) 0; }
 
   /* Breathing room around a page's one call to action, for a page that has no
      pageStyles at all and so cannot reach FORM_CSS's .actions. Needed because
      the reset sets p { margin: 0 }, which leaves a button flush against
      whatever follows it. */
-  .lone-action { margin: 1.25rem 0; }
+  .lone-action { margin: var(--s-3) 0; }
 `;
 
 /**

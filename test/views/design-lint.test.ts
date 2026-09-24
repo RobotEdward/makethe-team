@@ -13,7 +13,7 @@ import { STYLE_BLOCKS } from "../../src/views/styles.js";
  */
 const ENFORCE = {
   radii: false,
-  spacing: false,
+  spacing: true,
   uppercase: true,
   mono: true,
   cardToken: false,
@@ -86,7 +86,7 @@ describe("design-system lints (M67)", () => {
         ? []
         : declarations(rule)
             .filter(([prop]) => /^(margin|padding)(-(top|right|bottom|left|block|inline)(-(start|end))?)?$|^(row-|column-)?gap$/.test(prop))
-            .filter(([, value]) => !value.replace(/\s*!important/, "").split(/\s+(?![^(]*\))/).every((v) => v === "0" || v === "auto" || /^var\(--s-[1-6]\)$/.test(v) || /^calc\(.*var\(--s-[1-6]\).*\)$/.test(v) || /^calc\(\(1\.6em - 20px\) \/ 2\)$/.test(v)))
+            .filter(([, value]) => !value.replace(/\s*!important/, "").split(/\s+(?![^(]*\))/).every((v) => v === "0" || v === "auto" || /^var\(--s-[0-6]\)$/.test(v) || /^calc\(.*var\(--s-[0-6]\).*\)$/.test(v) || /^calc\(\(1\.6em - 20px\) \/ 2\)$/.test(v)))
             .map(([prop, value]) => `${rule.selector} { ${prop}: ${value} }`),
     );
     check("spacing", offenders);

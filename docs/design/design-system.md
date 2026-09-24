@@ -69,6 +69,7 @@ danger button, not a red heading, says a page is destructive. Fonts load from Go
 
 | Token | Value | | Token | Value |
 |---|---|---|---|---|
+| `--s-0` | 0.25rem (4px) | | | |
 | `--s-1` | 0.5rem (8px) | | `--r-pill` | 999px — buttons, chips, badges, segments |
 | `--s-2` | 0.75rem (12px) | | `--r-card` | 1.25rem — raised cards |
 | `--s-3` | 1rem (16px) | | `--r-field` | 0.75rem — fields, tiles |
@@ -81,7 +82,10 @@ danger button, not a red heading, says a page is destructive. Fonts load from Go
 
 - **Column:** `main` is 30rem; form and privacy pages widen it to 40rem; `WIDE_COLUMN_CSS`
   takes it to 52rem at ≥64rem. Body padding 2rem 1.25rem.
-- **Spacing:** no token. The recurring vertical rhythm is 1.25 / 1.5 / 2 / 2.5rem.
+- **Spacing:** tokens only (table above). Label to input `--s-1`; paragraph to paragraph
+  `--s-2`; field to field `--s-3`; prose to actions `--s-4`; section to section and title
+  block to first section `--s-5`. `--s-0` (4px) is for control internals — track padding,
+  chip and pill padding.
 - **Radii:** `999px` for every pill (buttons, chips, badges, segments); 1.25rem for raised
   cards; 0.75rem for fields. (Nineteen distinct values exist in practice — see
   [UI standards](ui-standards.md#where-the-app-does-not-meet-them-yet).)
@@ -101,10 +105,13 @@ Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES
 
 | Component | Classes | Block | What it is |
 |---|---|---|---|
-| Button | `.button` | `STYLES` | Full-width pill, 52px tall, `--field` fill, bold lead-size label |
+| Button | `.button` | `STYLES` | Full-width pill, 52px tall, `--field` fill, bold lead-size label, never wraps. Disabled: `--field` with `--mut` text |
+| — compact | `.button.compact` | `STYLES` | 44px, content width, support size 600 — only for a control inline with what it acts on (Copy beside the invite link, Remove on a row, Dismiss, device Test/Remove, the update toast). No other sizes |
 | — primary | `.button.primary` | `STYLES` | Accent fill. The one committing action in a task |
 | — danger | `.button.danger` | `STYLES` | Danger fill. Irreversible actions only |
-| — back out | `.keep-link` | `CANCEL_STYLES_CSS` | The "No, keep it" link on a confirmation page, shaped as a button |
+| — back out | `.keep-link` | — | The "No, keep it" link on a confirmation page: a plain full-width `.button` in the same `.actions` stack as the danger button, so both are one width |
+| Actions | `.actions`, `.actions.pair` | `STYLES` | Buttons stack with an 8px gap, 24px below the prose above; `.pair` puts two side by side only when neither label wraps at 320px |
+| Prose | `.prose` | `STYLES` | One point per paragraph, 12px apart — confirmation pages and explanations |
 | — answer states | `.expected`, `.chosen-in`, `.chosen-waiting`, `.chosen-out`, `.quiet` | `FIXTURE_STYLES_CSS` | Unanswered: "I'm in" is accent-filled (`.expected`). Answered: the chosen button takes the selected state, with its tick, cross or waiting label |
 | Answer block | `.answer` (`-going`, `-waiting`, `-closed`), `.viewer-headline`, `.responses` | `FIXTURE_STYLES_CSS` | The raised card holding "You're in." and the two buttons — never tinted; the headline and chosen button carry the state |
 | Team sides | `.side-a` / `.side-b`, `.side-dot`, `.row-side`, `.team-column.side-*` | `STYLES`, `TEAM_PICKER_CSS` | A side is an 8px dot in `--side-*` and its name in `--side-*-fg`; the picker's side tiles sit on `--side-*-bg` |

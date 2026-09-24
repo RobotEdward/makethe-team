@@ -676,7 +676,7 @@ export const SERVICE_WORKER_JS = `
     text.textContent = "A new version is available.";
     var button = document.createElement("button");
     button.type = "button";
-    button.className = "button primary";
+    button.className = "button primary compact";
     button.textContent = "Refresh";
     button.addEventListener("click", function () {
       button.disabled = true;

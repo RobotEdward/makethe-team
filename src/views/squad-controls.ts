@@ -56,7 +56,7 @@ export function renderMemberControls(
   // the rule that prevents it depending on how many controls a row happens to
   // have, which is how it would come back.
   if (member.isGuest) {
-    return `<span class="row-controls"><form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Remove</button></form></span>`;
+    return `<span class="row-controls"><form method="post" action="${escapeHtml(ownerGuestRemovePath(gameId, fixtureId, member.playerId))}"><button class="button compact" type="submit">Remove</button></form></span>`;
   }
   // A waitlisted member is neither in nor out, and the first half of the
   // segment says so rather than offering a pressed "In" (M46). It used to:
@@ -74,7 +74,7 @@ export function renderMemberControls(
   // with two answers, and a third button that does something else entirely
   // would read as a third answer to it.
   const invite = canInvite
-    ? `<form method="post" action="${escapeHtml(inviteMemberPath(gameId, fixtureId, member.playerId))}"><button class="button" type="submit">Invite now</button></form>`
+    ? `<form method="post" action="${escapeHtml(inviteMemberPath(gameId, fixtureId, member.playerId))}"><button class="button compact" type="submit">Invite now</button></form>`
     : "";
   return `<span class="row-controls">${invite}<form method="post" action="${escapeHtml(ownerResponsePath(gameId, fixtureId, member.playerId))}" class="segment">
              <button class="seg${isIn ? " on" : ""}" type="submit" name="intent" value="in" aria-pressed="${isIn}">${waiting ? "Promote" : "In"}</button>

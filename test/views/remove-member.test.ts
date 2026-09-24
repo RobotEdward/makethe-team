@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { memberRemovePath, memberRolePath } from "../../src/auth/paths.js";
 import { renderRemoveMemberPage } from "../../src/views/remove-member.js";
-import { CANCEL_STYLES_CSS, FORM_CSS } from "../../src/views/styles.js";
+import { FORM_CSS } from "../../src/views/styles.js";
 
 const BASE = {
   nav: { isAdmin: false, current: "games" } as const,
@@ -92,17 +92,13 @@ describe("renderRemoveMemberPage", () => {
     expect(html).not.toMatch(/<a class="button keep-link"[\s\S]*<\/form>/);
   });
 
-  it("ships the block .keep-link is declared in", () => {
-    // Without it the escape renders as an underlined, unstyled anchor rather
-    // than the outlined button the class names.
+  it("stacks the danger button and its escape in one actions group, so they are the same width", () => {
+    // M67: the escape is a plain full-width .button, not a separately styled
+    // .keep-link, and both sit in the one .actions grid — a heavy red button
+    // beside a narrower escape reads as one choice and a footnote.
     const html = renderRemoveMemberPage({ ...BASE, commitments: { in: 0, waitlisted: 0 } });
-    const cancelAt = html.indexOf(CANCEL_STYLES_CSS);
-    const formAt = html.indexOf(FORM_CSS);
-    // -1 is less than everything, so an order assertion alone would pass on a
-    // page carrying neither block. These two are what make it mean something.
-    expect(cancelAt).toBeGreaterThan(-1);
-    expect(formAt).toBeGreaterThan(-1);
-    expect(cancelAt).toBeLessThan(formAt);
+    expect(html).toMatch(/<div class="actions">\s*<form[\s\S]*?class="button danger"[\s\S]*?<\/form>\s*<a class="button keep-link"[^>]*>[^<]*<\/a>\s*<\/div>/);
+    expect(html).toContain(FORM_CSS);
   });
 
   it("escapes a name containing markup", () => {

@@ -1,6 +1,6 @@
 import { gameArchivePath, gamePath } from "../auth/paths.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
-import { CANCEL_STYLES_CSS, FORM_CSS } from "./styles.js";
+import { FORM_CSS } from "./styles.js";
 
 export interface ArchiveGamePageParams {
   nav: PageNav;
@@ -33,14 +33,18 @@ export function renderArchiveGamePage(params: ArchiveGamePageParams): string {
 
   const body = `
     <h1>Archive ${name}?</h1>
+    <div class="prose">
     <p>No more fixtures will be scheduled, the invite link stops working, and nothing about the game can be changed. Everyone in the squad can still see its history.</p>
     ${consequence}
     <p>You can unarchive it later from the game page.</p>
+    </div>
+    <div class="actions">
     <form method="post" action="${escapeHtml(gameArchivePath(gameId))}">
       <button class="button danger" type="submit">Archive ${name}</button>
     </form>
     <a class="button keep-link" href="${escapeHtml(gamePath(gameId))}">No, keep it going</a>
+    </div>
   `;
 
-  return layout({ nav: params.nav, title: `Archive ${gameName} — Make The Team`, body, pageStyles: [CANCEL_STYLES_CSS, FORM_CSS] });
+  return layout({ nav: params.nav, title: `Archive ${gameName} — Make The Team`, body, pageStyles: [FORM_CSS] });
 }

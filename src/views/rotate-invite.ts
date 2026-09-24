@@ -1,6 +1,6 @@
 import { gameInviteRotatePath, gamePath } from "../auth/paths.js";
 import { escapeHtml, layout, type PageNav } from "./layout.js";
-import { CANCEL_STYLES_CSS, FORM_CSS } from "./styles.js";
+import { FORM_CSS } from "./styles.js";
 
 export interface RotateInvitePageParams {
   nav: PageNav;
@@ -46,22 +46,24 @@ export function renderRotateInvitePage(params: RotateInvitePageParams): string {
         } not affected — they stay in, and nothing about their place changes.</p>`;
 
   const body = `
-    <div class="prose">
     <h1>Replace the invite link for ${name}?</h1>
+    <div class="prose">
     <p>The link you have now stops working the moment you press this, and there is no way to bring it back.</p>
     <p>Anyone holding it — in a group chat, in a forwarded message, or on a printed QR code — will not be able to join with it. You will need to share the new link with anybody still waiting to join.</p>
     ${unaffected}
     </div>
+    <div class="actions">
     <form method="post" action="${escapeHtml(gameInviteRotatePath(gameId))}">
       <button class="button danger" type="submit">Replace the link</button>
     </form>
     <a class="button keep-link" href="${escapeHtml(gamePath(gameId))}">No, keep the link I have</a>
+    </div>
   `;
 
   return layout({
     nav: params.nav,
     title: `Replace the invite link for ${gameName} — Make The Team`,
     body,
-    pageStyles: [CANCEL_STYLES_CSS, FORM_CSS],
+    pageStyles: [FORM_CSS],
   });
 }

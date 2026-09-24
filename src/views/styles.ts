@@ -40,10 +40,10 @@ import { STYLES } from "./layout.js";
 export const FIXTURE_STYLES_CSS = `
   /* The reset zeroes p margins, so without this the offer sits flush under
      the mute disclosure and reads as part of it (M63). */
-  .sign-in-offer { margin-top: 1.5rem; font-size: var(--t-support); }
+  .sign-in-offer { margin-top: var(--s-4); font-size: var(--t-support); }
   .fixture-index {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem .8rem;
-    margin: 1.1rem 0 1.5rem; padding: .65rem .8rem;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-0) var(--s-2);
+    margin: var(--s-3) 0 var(--s-4); padding: var(--s-2) var(--s-2);
     border: 1px solid var(--line); border-radius: .8rem; background: var(--card);
     font-size: var(--t-support);
   }
@@ -52,11 +52,11 @@ export const FIXTURE_STYLES_CSS = `
   .fixture-section { scroll-margin-top: 1rem; }
   .fixture-section > h2 { scroll-margin-top: 1rem; }
   .venue, .kickoff { font-size: var(--t-body); }
-  .kickoff { margin-bottom: 0.75rem; }
+  .kickoff { margin-bottom: var(--s-2); }
 
   .status-badge {
-    display: inline-block; margin-top: 0.5rem;
-    padding: 0.3rem 0.85rem; border-radius: 999px; border: 1px solid var(--line);
+    display: inline-block; margin-top: var(--s-1);
+    padding: var(--s-0) var(--s-2); border-radius: 999px; border: 1px solid var(--line);
     font-weight: 600; font-size: var(--t-support); color: var(--fg);
   }
   /* Every badge is a tint; none is solid (M67), so the viewer's own answer
@@ -74,7 +74,7 @@ export const FIXTURE_STYLES_CSS = `
   /* The headcount as a proportion rather than a countdown (M12 §3.1): a bar
      whose fill is who is there, with the numbers under it so nothing is lost
      when the CSS does not load. */
-  .capacity { margin-top: 0.6rem; }
+  .capacity { margin-top: var(--s-1); }
   /* A recessed groove, not a solid bar in the section-rule grey. At 0 of 14
      the fill has no width, so the track was the only mark on screen and it
      read as full -- two of the M52 design reviewers said so independently, and
@@ -85,7 +85,7 @@ export const FIXTURE_STYLES_CSS = `
   }
   .capacity .fill { display: block; height: 100%; background: var(--ok); }
   .capacity .fill.short { background: var(--wait); }
-  .capacity .spots { margin-top: 0.35rem; font-size: var(--t-support); color: var(--mut); }
+  .capacity .spots { margin-top: var(--s-0); font-size: var(--t-support); color: var(--mut); }
   .capacity .count { font-variant-numeric: tabular-nums; }
 
   /* The width is a class, never a style attribute. style-src is hashes plus
@@ -103,21 +103,21 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
      waiting is amber, going is the settled green, closed is the quiet field
      grey, and open and declined keep the plain raised card. */
   .answer {
-    margin: 1rem 0; padding: 1.1rem 1.25rem;
+    margin: var(--s-3) 0; padding: var(--s-3) var(--s-3);
     border-radius: 1.25rem; background: var(--card-raised);
   }
   .answer .viewer-headline { margin-top: 0; }
-  .answer .responses { margin-top: 1rem; }
+  .answer .responses { margin-top: var(--s-3); }
   /* The block is never tinted by state (M67): the headline and the chosen
      button carry it, and a green or peach card competed with them. */
   /* The closed block is already the card, so the notice inside it drops the
      second panel it would otherwise draw. */
   .answer.answer-closed .read-only { margin-top: 0; padding: 0; background: none; }
 
-  .viewer-headline { margin-top: 1.5rem; color: var(--fg); font-family: inherit; font-weight: 700; font-size: var(--t-lead); line-height: 1.3; }
+  .viewer-headline { margin-top: var(--s-4); color: var(--fg); font-family: inherit; font-weight: 700; font-size: var(--t-lead); line-height: 1.3; }
 
   .read-only {
-    margin-top: 1.25rem; padding: 0.85rem 1rem; border-radius: 1.25rem;
+    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 1.25rem;
     border: none; background: var(--card-raised); color: var(--mut); font-size: var(--t-body); text-align: left;
   }
 
@@ -125,8 +125,8 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
   /* Two big, unmistakable tap targets: stacked on a phone, side by side once
      there is room for both without cramping. */
   .responses {
-    display: flex; flex-direction: column; gap: 0.75rem;
-    margin: 1.5rem 0 0.5rem;
+    display: flex; flex-direction: column; gap: var(--s-2);
+    margin: var(--s-4) 0 var(--s-1);
   }
   @media (min-width: 30rem) {
     .responses { flex-direction: row; }
@@ -149,7 +149,7 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
     background: transparent; color: var(--mut); font-weight: 500;
     box-shadow: inset 0 0 0 1px var(--line);
   }
-  .change-guard { margin: 0.5rem 0 0; font-size: var(--t-body); color: var(--fg); }
+  .change-guard { margin: var(--s-1) 0 0; font-size: var(--t-body); color: var(--fg); }
 
   /* The one line a player must not be able to miss: which side they are on
      (BR-35 §5). Given the accent colour and the weight the response headline
@@ -161,9 +161,9 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
      player's own fixture page and the dashboard's cards — do not load it, so
      the line they were told they could not miss was rendering as an unstyled
      paragraph. Every page that renders it loads this block. */
-  .your-side { margin: 1rem 0 0.5rem; font-size: var(--t-lead); font-weight: 700; color: var(--fg); }
+  .your-side { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-lead); font-weight: 700; color: var(--fg); }
 
-  .full-warning { margin: 0.5rem 0 0; font-size: var(--t-support); color: var(--mut); }
+  .full-warning { margin: var(--s-1) 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
 
 /**
@@ -193,8 +193,8 @@ export const SQUAD_STYLES_CSS = `
      this row's flex/justify-content/border layout. Scoped to ul.squad > li so
      only the organiser's rows are ever selected. */
   ul.squad > li {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
-    padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3);
+    padding: var(--s-1) 0; border-bottom: 1px solid var(--line);
   }
   .squad .name { color: var(--fg); }
   .squad .status { font-size: var(--t-support); color: var(--mut); white-space: nowrap; }
@@ -203,13 +203,13 @@ export const SQUAD_STYLES_CSS = `
   .squad .set-by { display: block; font-size: var(--t-support); color: var(--mut); }
 
   /* Chips: the player's fixture page (M10 §3.5). */
-  .squad-group { margin: 0 0 1.1rem; }
-  .group-head { display: flex; align-items: baseline; gap: 0.5rem; margin: 0 0 0.4rem; }
+  .squad-group { margin: 0 0 var(--s-3); }
+  .group-head { display: flex; align-items: baseline; gap: var(--s-1); margin: 0 0 var(--s-1); }
   .group-label { font-weight: 600; color: var(--fg); font-size: var(--t-support); }
   .group-count { font-variant-numeric: tabular-nums; font-size: var(--t-support); color: var(--mut); }
-  .chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; padding: 0; }
+  .chips { list-style: none; display: flex; flex-wrap: wrap; gap: var(--s-0); margin: 0; padding: 0; }
   .chip {
-    padding: 0.3rem 0.65rem; border-radius: 999px;
+    padding: var(--s-0) var(--s-2); border-radius: 999px;
     font-size: var(--t-support); background: var(--field); color: var(--mut);
   }
   /* Peach means attention and nothing else (M67), so only the waitlist chip
@@ -228,7 +228,7 @@ export const SQUAD_STYLES_CSS = `
   .chip-in.chip-you, .chip-waitlisted.chip-you, .chip-out.chip-you, .chip-pending.chip-you {
     background: var(--fg); color: var(--card-raised); font-weight: 600;
   }
-  .set-by { display: block; margin: 0.4rem 0 0; font-size: var(--t-support); color: var(--mut); }
+  .set-by { display: block; margin: var(--s-1) 0 0; font-size: var(--t-support); color: var(--mut); }
 `;
 
 /**
@@ -246,15 +246,15 @@ export const SQUAD_STYLES_CSS = `
  * never reaching that page, so the workaround is gone with it.
  */
 export const DASHBOARD_STYLES_CSS = `
-  .fixture-list { list-style: none; margin: 1.5rem 0 0; padding: 0; }
+  .fixture-list { list-style: none; margin: var(--s-4) 0 0; padding: 0; }
   .fixture-card {
-    padding: 1.1rem 1rem 1.25rem; margin-bottom: 1rem;
+    padding: var(--s-3) var(--s-3) var(--s-3); margin-bottom: var(--s-3);
     border: none; border-radius: 1.25rem; background: var(--card-raised);
   }
-  .fixture-card h2 { margin: 0 0 0.25rem; font-size: var(--t-lead); font-family: inherit; font-weight: 600; line-height: 1.3; }
+  .fixture-card h2 { margin: 0 0 var(--s-0); font-size: var(--t-lead); font-family: inherit; font-weight: 600; line-height: 1.3; }
   /* Still 0.9rem for the account page's history row, which wears this same
      card class with a bare headline and no answer block around it. */
-  .fixture-card .viewer-headline { margin-top: 0.9rem; font-size: var(--t-lead); }
+  .fixture-card .viewer-headline { margin-top: var(--s-3); font-size: var(--t-lead); }
   /* The dashboard's own card puts that headline inside the answer block, whose
      padding is the gap — so the block's reset must win here. It cannot win on
      order: this file's rule above and the .answer .viewer-headline rule in
@@ -310,7 +310,7 @@ export const DASHBOARD_STYLES_CSS = `
      against the last row's bottom border and reads as a fourth row of this
      list. */
   .owned-games {
-    list-style: none; margin: 0.4rem 0 1.1rem; padding: 0; text-align: left;
+    list-style: none; margin: var(--s-1) 0 var(--s-3); padding: 0; text-align: left;
     border-top: 1px solid var(--line);
   }
   ul.owned-games > li {
@@ -319,29 +319,28 @@ export const DASHBOARD_STYLES_CSS = `
   }
   ul.owned-games > li > a {
     display: flex; align-items: center; min-height: 44px; flex: 1;
-    padding: 0.4rem 0.1rem; font-size: var(--t-body);
+    padding: var(--s-1) 0; font-size: var(--t-body);
   }
-  ul.owned-games > li > .detail { white-space: nowrap; padding: 0 0.1rem; }
+  ul.owned-games > li > .detail { white-space: nowrap; padding: 0 0; }
   /* The archived fold (M41). FORM_CSS's details rule is not on this page, so
      without these the summary sits flush against "Set up a game". */
-  .archived-games { margin: 1.25rem 0; }
+  .archived-games { margin: var(--s-3) 0; }
   .archived-games > summary { color: var(--mut); }
-  .archived-games > ul.owned-games { margin-top: 0.5rem; }
+  .archived-games > ul.owned-games { margin-top: var(--s-1); }
 
   /* The onboarding card (M19). Its own idiom, not .fixture-card: a card up
      there is a fixture with buttons, and this is a short list of links with a
      dismiss control. */
   .onboarding {
-    margin-top: 1.25rem; padding: 1rem 1rem 0.75rem;
+    margin-top: var(--s-3); padding: var(--s-3) var(--s-3) var(--s-2);
     border: none; border-radius: 1.25rem; background: var(--card-raised);
   }
-  .onboarding h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.25rem; font-size: var(--t-lead); }
+  .onboarding h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-0); font-size: var(--t-lead); }
   .onboarding ul { list-style: none; margin: 0; padding: 0; }
   .onboarding li a {
     display: flex; align-items: center; min-height: 44px; font-size: var(--t-body);
   }
-  .onboarding form { display: flex; justify-content: flex-end; margin-top: 0.25rem; }
-  .onboarding .button { flex: 0 0 auto; min-height: 44px; padding: 0.4rem 1rem; font-size: var(--t-support); font-weight: 400; }
+  .onboarding form { display: flex; justify-content: flex-end; margin-top: var(--s-0); }
   /* The install hint is pointless inside the installed app itself. This is
      the server's only way to know: no script runs on this page, but the
      display mode is a pure CSS fact. */
@@ -361,14 +360,14 @@ export const DASHBOARD_STYLES_CSS = `
  * introducing a second control style.
  */
 export const SIGNIN_STYLES_CSS = `
-  .signin { display: flex; flex-direction: column; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
+  .signin { display: flex; flex-direction: column; gap: var(--s-1); margin: var(--s-4) 0 var(--s-1); }
   .signin label { text-align: left; font-size: var(--t-body); color: var(--mut); }
   .signin input {
-    width: 100%; min-height: 52px; padding: 0.85rem 1rem;
+    width: 100%; min-height: 52px; padding: var(--s-2) var(--s-3);
     border-radius: 0.65rem; border: 2px solid var(--line);
     background: var(--bg); color: var(--fg); font: inherit; font-size: var(--t-lead);
   }
-  .signin .button { margin-top: 0.25rem; }
+  .signin .button { margin-top: var(--s-0); }
 `;
 
 /**
@@ -389,15 +388,15 @@ export const SIGNIN_STYLES_CSS = `
  * exactly the people who cannot use it.
  */
 export const PASSKEY_STYLES_CSS = `
-  .passkey { display: flex; flex-direction: column; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
+  .passkey { display: flex; flex-direction: column; gap: var(--s-1); margin: var(--s-4) 0 var(--s-1); }
   .passkey p { font-size: var(--t-body); }
 
   .passkey-list {
-    list-style: none; margin: 1.25rem 0 0; padding: 0; text-align: left;
+    list-style: none; margin: var(--s-3) 0 0; padding: 0; text-align: left;
     border-top: 1px solid var(--line);
   }
   .passkey-list li {
-    padding: 0.6rem 0.1rem; border-bottom: 1px solid var(--line); color: var(--fg);
+    padding: var(--s-1) 0; border-bottom: 1px solid var(--line); color: var(--fg);
   }
 `;
 
@@ -415,15 +414,16 @@ export const PASSKEY_STYLES_CSS = `
  * renders rather than the header string.
  */
 export const CANCEL_STYLES_CSS = `
-  .cancel-form { margin-top: 1.5rem; text-align: left; }
-  .cancel-form label { display: block; margin-bottom: 0.4rem; color: var(--fg); font-weight: 600; }
+  .cancel-form { margin-top: var(--s-4); text-align: left; }
+  .cancel-form label { display: block; margin-bottom: var(--s-1); color: var(--fg); font-weight: 600; }
   .cancel-form textarea {
-    width: 100%; min-height: 6rem; padding: 0.7rem 0.85rem;
+    width: 100%; min-height: 6rem; padding: var(--s-2) var(--s-2);
     border-radius: 0.6rem; border: 1px solid var(--line);
     background: var(--bg); color: var(--fg); font: inherit; font-size: var(--t-body);
   }
-  .cancel-form .hint { margin-top: 0.4rem; font-size: var(--t-support); }
-  .cancel-form .button.danger { margin-top: 1.25rem; width: 100%; }
+  .cancel-form .hint { margin-top: var(--s-1); font-size: var(--t-support); }
+  .cancel-form .button.danger { margin-top: var(--s-3); width: 100%; }
+  .cancel-form + .keep-link { margin-top: var(--s-1); }
   /* The back-out link (M10 §3.7, restored by the whole-branch review's
      Important 3). .button is shared with real button elements, which get no
      underline from the user agent in the first place; every other anchor in
@@ -435,9 +435,8 @@ export const CANCEL_STYLES_CSS = `
      centres its label regardless of the element it is applied to, and margin
      here is the same 1.25rem the danger button above gets so the two read as
      a matched pair. */
-  .keep-link { margin-top: 0.75rem; text-decoration: none; }
   .form-error {
-    margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem;
+    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 0.6rem;
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left;
   }
   .cancel-heading { margin-top: 0; }
@@ -456,23 +455,20 @@ export const FORM_CSS = `
      p { margin: 0 } so that cards and rows control their own gaps; a page that
      is several paragraphs of explanation needs it back, or the whole thing
      reads as one block. */
-  .prose p + p { margin-top: 0.9rem; }
-  .prose h1 + p { margin-top: 0.9rem; }
-  .prose form, .prose ul { margin-top: 1.1rem; }
-  .field { margin: 1.1rem 0; }
-  .field label { display: block; font-weight: 600; margin-bottom: 0.3rem; }
+  .field { margin: var(--s-3) 0; }
+  .field label { display: block; font-weight: 600; margin-bottom: var(--s-0); }
   /* A resting border, not border: none. A select keeps the browser's own
      border and chevron whatever this says, so a borderless text input beside
      one reads as the disabled half of a pair -- worst on the account page,
      where the editable Name field sits directly above the read-only email
      printed as plain text and the two looked equally uneditable. */
   .field input, .field select, .field textarea {
-    width: 100%; padding: 0.6rem 0.7rem; font: inherit;
+    width: 100%; padding: var(--s-1) var(--s-2); font: inherit;
     color: var(--fg); background: var(--field);
     border: 1px solid var(--line); border-radius: 0.75rem;
   }
   .field textarea { min-height: 8rem; }
-  .field .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
+  .field .error { display: block; margin-top: var(--s-0); color: var(--warn); font-size: var(--t-support); }
   /* The caption above a value the page is only reading out to the viewer, and
      the value itself — the paragraph immediately after it, so the pair carries
      one class between them rather than two names for one idea.
@@ -486,10 +482,10 @@ export const FORM_CSS = `
      the same muted grey as the caption, and a caption indistinguishable from
      its own value is no caption at all. The bottom margin is here rather than
      on whatever follows because what follows differs per page. */
-  .readout-label { margin-top: 1.1rem; font-size: var(--t-support); color: var(--mut); }
-  .readout-label + p { color: var(--fg); margin-bottom: 1.1rem; }
+  .readout-label { margin-top: var(--s-3); font-size: var(--t-support); color: var(--mut); }
+  .readout-label + p { color: var(--fg); margin-bottom: var(--s-3); }
   .field-invalid input, .field-invalid select, .field-invalid textarea { outline: 2px solid var(--warn); outline-offset: 1px; }
-  .row { display: flex; gap: 1rem; }
+  .row { display: flex; gap: var(--s-3); }
   .row .field { flex: 1; }
   /* A checkbox with a label and an explanatory hint. Written as a grid with
      the control spanning both rows rather than as a .field: a .field puts its
@@ -502,12 +498,12 @@ export const FORM_CSS = `
   /* The checkbox leads and the text follows (M67), the box centred on the
      label's first line so a hint of any length wraps under the label. */
   .switch-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start;
-    gap: 0.25rem 0.75rem; min-height: 52px; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+    gap: var(--s-0) var(--s-2); min-height: 52px; padding: var(--s-1) 0; border-bottom: 1px solid var(--line); }
   .switch-row label { grid-column: 2; grid-row: 1; font-weight: 600; }
   .switch-row .hint { grid-column: 2; grid-row: 2; font-size: var(--t-support); color: var(--mut); }
   .switch-row input { grid-column: 1; grid-row: 1 / span 2; margin-top: calc((1.6em - 20px) / 2); }
-  .notify-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 1rem; margin: 1.5rem 0; }
-  .notify-group legend { font-weight: 600; padding: 0 0.3rem; }
+  .notify-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 var(--s-3); margin: var(--s-4) 0; }
+  .notify-group legend { font-weight: 600; padding: 0 var(--s-0); }
   /* The fixture-message audience radios (audienceFields in broadcast.ts).
      Without this, .field input above turns each radio into a full-width
      bordered box that centres its own dot, while .field label stacks the
@@ -522,12 +518,12 @@ export const FORM_CSS = `
      ((0,2,1) vs (0,1,1)), so that half doesn't depend on order. 52px matches
      .switch-row's touch-target floor: the whole row is the label's hit
      area, not just the 1.4rem dot. */
-  .audience-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 1rem; }
+  .audience-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 var(--s-3); }
   .audience-group.field-invalid { border-color: var(--warn); }
-  .audience-group legend { font-weight: 600; padding: 0 0.3rem; }
+  .audience-group legend { font-weight: 600; padding: 0 var(--s-0); }
   .audience-group label {
-    display: flex; align-items: center; gap: 0.75rem;
-    min-height: 52px; padding: 0.4rem 0; margin-bottom: 0; font-weight: 400;
+    display: flex; align-items: center; gap: var(--s-2);
+    min-height: 52px; padding: var(--s-1) 0; margin-bottom: 0; font-weight: 400;
     border-bottom: 1px solid var(--line);
   }
   .audience-group label:last-of-type { border-bottom: none; }
@@ -541,22 +537,21 @@ export const FORM_CSS = `
      Opacity only — they stay focusable and submittable, because turning the
      switch on and setting the fallback in one save is the ordinary case. A
      browser without :has() simply shows them as before. */
-  .gated-note { color: var(--mut); font-size: var(--t-support); margin: 0.75rem 0 0; }
+  .gated-note { color: var(--mut); font-size: var(--t-support); margin: var(--s-2) 0 0; }
   fieldset:has(input[name="gatedInvitesEnabled"]:not(:checked)) .gated-dependants {
     opacity: 0.55;
   }
-  .audience-empty { color: var(--warn); font-size: var(--t-support); margin: 0.75rem 0 0.25rem; }
+  .audience-empty { color: var(--warn); font-size: var(--t-support); margin: var(--s-2) 0 var(--s-0); }
   .audience-group input[type="radio"] {
     flex: 0 0 auto; width: 1.4rem; height: 1.4rem; padding: 0; border: none;
     accent-color: var(--accent);
   }
-  details { margin: 1.5rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
-  .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
+  details { margin: var(--s-4) 0; border-top: 1px solid var(--line); padding-top: var(--s-3); }
   /* The archive link under the edit form (M41): apart from Save, so a hand
      reaching for the primary action does not land on the irreversible one. */
-  .archive-link { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-  .qr { margin: 1rem 0; max-width: 240px; }
-  .invite-link { display: flex; gap: 0.5rem; align-items: center; }
+  .archive-link { margin-top: var(--s-6); padding-top: var(--s-3); border-top: 1px solid var(--line); }
+  .qr { margin: var(--s-3) 0; max-width: 240px; }
+  .invite-link { display: flex; gap: var(--s-1); align-items: center; }
   .invite-link input {
     flex: 1; font-size: var(--t-support);
     background: var(--field); border: none; border-radius: 0.75rem;
@@ -567,7 +562,6 @@ export const FORM_CSS = `
      purpose is this URL, truncating it to a fragment like
      "https://makethe.team/j" (M10 whole-branch review, Minor 9). Fixed size,
      content-sized, so the input takes whatever room the button does not need. */
-  .invite-link .button { flex: 0 0 auto; }
   .squad { list-style: none; padding: 0; }
   /* Scoped to ul.squad > li, matching SQUAD_STYLES_CSS's identically-shaped
      row rule (see the comment there) — not the bare ".squad li" this used to
@@ -576,7 +570,7 @@ export const FORM_CSS = `
      it; a bare ".squad li" beats a chip's own (0,1,0) ".chip" on specificity
      regardless of which <style> block comes later, and did exactly that until
      this was scoped (M10 whole-branch review, Critical 1). */
-  ul.squad > li { padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+  ul.squad > li { padding: var(--s-1) 0; border-bottom: 1px solid var(--line); }
   /* A squad row is a name plus two controls, one of which is a block-level
      form element. Without a layout they stack into three lines per member and
      the list reads as a mess. The form's own margin is zeroed because it is a
@@ -594,7 +588,7 @@ export const FORM_CSS = `
      columns, so every row has the same shape whatever the name. */
   ul.squad > li {
     display: grid; grid-template-columns: 1fr auto;
-    align-items: center; gap: 0.4rem 0.75rem;
+    align-items: center; gap: var(--s-1) var(--s-2);
   }
   /* Placement, not auto-placement — the half of the grid this rule was
      missing, and the reason a two-part row looked right while a three-part
@@ -645,12 +639,11 @@ export const FORM_CSS = `
   ul.squad > li > .row-controls {
     grid-column: 2; grid-row: 1;
     display: flex; align-items: center; justify-content: flex-end;
-    gap: 0.4rem; flex-wrap: wrap;
+    gap: var(--s-1); flex-wrap: wrap;
   }
   ul.squad > li form { margin: 0; }
   /* The shared 52px tap target is kept — this only stops the button growing
      to the row's full width the way it does inside .responses / .actions. */
-  ul.squad > li .button { width: auto; font-size: var(--t-body); padding: 0.6rem 1rem; }
   /* The per-member disclosure (M10 §3.8). Deliberately not the general
      details rule above, which is for the game form's optional sections and
      carries a top border and a 1.5rem margin — fourteen of those would be a
@@ -658,7 +651,7 @@ export const FORM_CSS = `
   .member-actions { margin: 0; border: 0; padding: 0; }
   .member-actions summary { min-height: 44px; font-weight: 500; font-size: var(--t-support); color: var(--mut); }
   .member-actions[open] { grid-column: 1 / -1; }
-  .member-actions form { margin: 0.5rem 0; }
+  .member-actions form { margin: var(--s-1) 0; }
   /* The segmented mark-in/mark-out (M10 §3.3). A shared rounded track with two
      halves, sized to content — the .button primitive is a 52px full-width tap
      target and two of them per row is what made a fourteen-person squad
@@ -667,16 +660,16 @@ export const FORM_CSS = `
      is shared with the player's own fixture page, which has no controls at
      all (it only ever reads squad state) and must not carry rules for a
      control it can never render. */
-  .segment { display: flex; margin: 0; padding: 3px; gap: 3px; border-radius: 999px; background: var(--field); }
+  .segment { display: flex; margin: 0; padding: var(--s-0); gap: var(--s-0); border-radius: 999px; background: var(--field); }
   .segment .seg {
-    min-height: 44px; padding: 0.5rem 0.9rem; border: 0; border-radius: 999px;
+    min-height: 44px; padding: var(--s-1) var(--s-3); border: 0; border-radius: 999px;
     background: transparent; color: var(--mut);
     font: inherit; font-size: var(--t-support); font-weight: 600; cursor: pointer;
   }
   /* The pressed segment, In or Out alike, takes the one selected state (M67):
      a verdict colour on "In" read as approval, which a pressed control is not. */
   .segment .seg.on, .segment .seg.out { background: var(--fg); color: var(--card-raised); }
-  .problem { margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
+  .problem { margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
 `;
 
 /**
@@ -699,31 +692,31 @@ export const TEAM_PICKER_CSS = `
      against test/views/style-cascade.test.ts's enumeration — so it lives
      here rather than in a block of its own, and there is nothing new to
      register in PAGE_STYLE_BLOCKS (src/security/csp.ts). */
-  .picker-control { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
+  .picker-control { display: flex; flex-direction: column; gap: var(--s-0); align-items: flex-start; }
   /* The same 44px hit area every other radio row on this page gets, for the
      same reason: these are chosen on a phone, standing on a touchline. */
   .picker-choice {
-    display: flex; align-items: center; gap: 0.5rem;
+    display: flex; align-items: center; gap: var(--s-1);
     min-height: 44px; font-size: var(--t-body); color: var(--mut);
   }
   .picker-choice input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
-  .team-note { margin: 0.5rem 0; color: var(--mut); font-size: var(--t-body); }
+  .team-note { margin: var(--s-1) 0; color: var(--mut); font-size: var(--t-body); }
   .team-workspace {
-    margin: 2rem 0; padding: 1.25rem; border-radius: 1.5rem; background: var(--card-raised);
+    margin: var(--s-5) 0; padding: var(--s-3); border-radius: 1.5rem; background: var(--card-raised);
   }
-  .team-workspace h2 { margin: 0 0 0.75rem; }
+  .team-workspace h2 { margin: 0 0 var(--s-2); }
   .team-workspace h3 { overflow-wrap: anywhere; }
-  .team-workspace .team-note { margin: 0.5rem 0; color: var(--mut); font-size: var(--t-support); }
-  .team-workspace .team-counts { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 1rem 0; }
+  .team-workspace .team-note { margin: var(--s-1) 0; color: var(--mut); font-size: var(--t-support); }
+  .team-workspace .team-counts { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); margin: var(--s-3) 0; }
   .teams { list-style: none; margin: 0; padding: 0; }
-  .teams li { border-bottom: 1px solid var(--line); padding: 0.65rem 0; }
+  .teams li { border-bottom: 1px solid var(--line); padding: var(--s-2) 0; }
   /* Name and side on the left, the A/B track on the right (M67). */
   .teams fieldset {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 0.75rem;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--s-2);
     min-width: 0; margin: 0; padding: 0; border: 0;
   }
   .teams legend { float: left; padding: 0; font-weight: 600; overflow-wrap: anywhere; }
-  .teams .row-side { grid-column: 1; display: none; align-items: center; gap: 6px; font-size: var(--t-support); }
+  .teams .row-side { grid-column: 1; display: none; align-items: center; gap: var(--s-0); font-size: var(--t-support); }
   .teams fieldset:has(input[value="a"]:checked) .row-side-a,
   .teams fieldset:has(input[value="b"]:checked) .row-side-b,
   .teams fieldset:has(input[value=""]:checked) .row-side-none { display: flex; }
@@ -736,7 +729,7 @@ export const TEAM_PICKER_CSS = `
   /* Each player's side choice is the same segmented track as the squad's
      In/Out control (M67). */
   .teams .sides {
-    grid-column: 2; grid-row: 1 / span 2; display: inline-flex; gap: 4px; margin: 0; padding: 4px;
+    grid-column: 2; grid-row: 1 / span 2; display: inline-flex; gap: var(--s-0); margin: 0; padding: var(--s-0);
     border-radius: 999px; background: var(--field);
   }
   .teams .sides label {
@@ -758,31 +751,27 @@ export const TEAM_PICKER_CSS = `
   /* The radio is invisible under its label, so the label shows the ring. */
   .teams .sides label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .team-columns { display: none; }
-  .team-columns:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1.25rem 0; }
-  .team-column { min-width: 0; padding: 0.75rem; border-radius: 0.75rem; }
+  .team-columns:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); margin: var(--s-3) 0; }
+  .team-column { min-width: 0; padding: var(--s-2); border-radius: 0.75rem; }
   .team-column.side-a { background: var(--side-a-bg); color: var(--side-a-fg); }
   .team-column.side-b { background: var(--side-b-bg); color: var(--side-b-fg); }
   .team-column .team-total, .team-column .team-total [data-count] { color: inherit; }
   .team-column h3 { margin: 0; font-size: var(--t-body); }
   .team-letter { font-weight: 600; font-size: var(--t-support); }
-  .team-total { margin: 0.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
+  .team-total { margin: var(--s-0) 0 var(--s-1); font-size: var(--t-support); color: var(--mut); }
   .team-total [data-count] { font-weight: 700; color: var(--fg); }
   .team-drop { min-height: 3.5rem; }
-  .team-pool-heading { margin: 1rem 0 0; font-size: var(--t-body); }
+  .team-pool-heading { margin: var(--s-3) 0 0; font-size: var(--t-body); }
   #team-pool { border-bottom: 1px dashed var(--line); }
   .teams li.dragging { opacity: 0.5; }
   .teams.over { outline: 2px dashed var(--link); outline-offset: 2px; }
-  .team-draft-status { margin: 1rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
-  .team-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem; }
-  .team-workspace .button { min-height: 44px; font-size: var(--t-body); padding: 0.75rem 1rem; }
-  .team-actions .button { white-space: nowrap; border: 1px solid var(--mut); }
-  #team-publish { border-top: 1px solid var(--line); margin-top: 1.25rem; padding-top: 1rem; }
-  #team-publish .button { width: 100%; font-size: var(--t-lead); }
-  #team-publish .button:disabled { background: var(--field); color: var(--mut); cursor: not-allowed; }
+  .team-draft-status { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-support); color: var(--mut); }
+  .team-actions { display: grid; gap: var(--s-1); margin-top: var(--s-2); }
+  #team-publish { border-top: 1px solid var(--line); margin-top: var(--s-3); padding-top: var(--s-3); }
   @media (max-width: 40rem) {
-    .team-workspace { padding: 0.75rem; }
-    .team-columns:not([hidden]) { gap: 0.5rem; }
-    .team-column { padding: 0.4rem; }
+    .team-workspace { padding: var(--s-2); }
+    .team-columns:not([hidden]) { gap: var(--s-1); }
+    .team-column { padding: var(--s-1); }
     .teams legend { font-size: var(--t-support); }
   }
 
@@ -803,7 +792,7 @@ export const TEAM_PICKER_CSS = `
  */
 export const PRIVACY_STYLES_CSS = `
   main { max-width: 40rem; }
-  .lede { font-size: var(--t-lead); color: var(--fg); margin-bottom: 1.5rem; }
+  .lede { font-size: var(--t-lead); color: var(--fg); margin-bottom: var(--s-4); }
   /* The contents (M55). A run of links separated by middots rather than a
      bulleted list: eight bullets is a screenful on a phone, and the reader
      would meet a table of contents before the sentence that tells them what
@@ -814,14 +803,14 @@ export const PRIVACY_STYLES_CSS = `
      at 390px, and at the default 1.6 the wrapped rows sit close enough that a
      thumb aimed at one lands on its neighbour. */
   .contents {
-    margin: 0 0 2rem; padding: 0.6rem 0;
+    margin: 0 0 var(--s-5); padding: var(--s-1) 0;
     border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
     font-size: var(--t-support); line-height: 2;
   }
-  .held { margin: 0 0 1.1rem; }
+  .held { margin: 0 0 var(--s-3); }
   .held-what { color: var(--fg); font-weight: 600; }
-  .held-why { margin-top: 0.15rem; }
-  .updated { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); font-size: var(--t-support); }
+  .held-why { margin-top: var(--s-0); }
+  .updated { margin-top: var(--s-6); padding-top: var(--s-3); border-top: 1px solid var(--line); font-size: var(--t-support); }
 `;
 
 /**
@@ -829,7 +818,7 @@ export const PRIVACY_STYLES_CSS = `
  * shown at a size that reads as an illustration rather than a favicon.
  */
 export const OFFLINE_STYLES_CSS = `
-  .offline-mark { width: 88px; height: 88px; border-radius: 22%; margin: 0 auto 1.5rem; display: block; }
+  .offline-mark { width: 88px; height: 88px; border-radius: 22%; margin: 0 auto var(--s-4); display: block; }
 `;
 
 /**
@@ -841,20 +830,20 @@ export const OFFLINE_STYLES_CSS = `
  * stylesheet every owner page also carries.
  */
 export const INSTALL_STYLES_CSS = `
-  .device-panel { margin-top: 2rem; padding: 1.2rem 1.1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  .device-panel { margin-top: var(--s-5); padding: var(--s-3) var(--s-3) var(--s-3); border: none; border-radius: 1.25rem; background: var(--card-raised); }
   .device-panel h2 { margin: 0; }
-  .device-intro { margin: 0.35rem 0 0; color: var(--mut); font-size: var(--t-support); }
-  .device-task { margin-top: 1.25rem; padding-top: 1.1rem; border-top: 1px solid var(--line); }
+  .device-intro { margin: var(--s-0) 0 0; color: var(--mut); font-size: var(--t-support); }
+  .device-task { margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--line); }
   .device-task h3 { margin: 0; font-size: var(--t-body); }
-  .install { margin-top: 0.55rem; }
+  .install { margin-top: var(--s-1); }
   .install > p:first-child, .install > [data-install-instructions] { margin-top: 0; }
-  .install ol { margin: 0.5rem 0 0; padding-left: 1.2rem; color: var(--mut); font-size: var(--t-support); }
-  .install li + li { margin-top: 0.35rem; }
-  .account-history { margin-top: 1rem; }
-  .account-history .fixture-card { padding: 0.85rem 0.9rem; margin-bottom: 0.65rem; border-radius: 0.9rem; }
-  .account-history .fixture-card h3 { margin: 0 0 0.15rem; font-size: var(--t-body); }
-  .account-history .fixture-card p { margin: 0.15rem 0 0; font-size: var(--t-support); }
-  .account-history .fixture-card .viewer-headline { margin-top: 0.45rem; font-size: var(--t-support); }
+  .install ol { margin: var(--s-1) 0 0; padding-left: var(--s-3); color: var(--mut); font-size: var(--t-support); }
+  .install li + li { margin-top: var(--s-0); }
+  .account-history { margin-top: var(--s-3); }
+  .account-history .fixture-card { padding: var(--s-2) var(--s-3); margin-bottom: var(--s-2); border-radius: 0.9rem; }
+  .account-history .fixture-card h3 { margin: 0 0 var(--s-0); font-size: var(--t-body); }
+  .account-history .fixture-card p { margin: var(--s-0) 0 0; font-size: var(--t-support); }
+  .account-history .fixture-card .viewer-headline { margin-top: var(--s-1); font-size: var(--t-support); }
 `;
 
 /**
@@ -871,38 +860,31 @@ export const INSTALL_STYLES_CSS = `
  * and the account page's `div` need them.
  */
 export const PUSH_STYLES_CSS = `
-  section.push { margin-top: 2rem; padding: 1rem 1.1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  section.push { margin-top: var(--s-5); padding: var(--s-3) var(--s-3); border: none; border-radius: 1.25rem; background: var(--card-raised); }
   section.push h2 { margin-top: 0; }
-  .push h3 { margin: 1.25rem 0 0.5rem; font-size: var(--t-support); color: var(--mut); }
-  .push .button { margin-top: 0.5rem; }
+  .push h3 { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-support); color: var(--mut); }
+  .push .button { margin-top: var(--s-1); }
 
   table.push-devices { width: 100%; border-collapse: collapse; text-align: left; font-size: var(--t-support); }
   table.push-devices th {
-    color: var(--mut); font-weight: 600; padding: 0.3rem 0.5rem 0.3rem 0;
+    color: var(--mut); font-weight: 600; padding: var(--s-0) var(--s-1) var(--s-0) 0;
     border-bottom: 1px solid var(--line);
   }
-  table.push-devices td { padding: 0.55rem 0.5rem 0.55rem 0; border-bottom: 1px solid var(--line); color: var(--fg); vertical-align: middle; }
-  table.push-devices td.push-actions { display: flex; gap: 0.5rem; justify-content: flex-end; padding-right: 0; }
+  table.push-devices td { padding: var(--s-1) var(--s-1) var(--s-1) 0; border-bottom: 1px solid var(--line); color: var(--fg); vertical-align: middle; }
+  table.push-devices td.push-actions { display: flex; gap: var(--s-1); justify-content: flex-end; padding-right: 0; }
   table.push-devices form { margin: 0; }
   .push .device-when { color: var(--mut); }
-  /* Row controls, not page actions: the 52px floor .button sets is for the
-     one thing a page asks you to do, and two of those per row would drown
-     the names the table exists to show. 44px keeps the tap-target floor. */
-  .push .button.row-action {
-    flex: 0 0 auto; min-height: 44px; padding: 0.35rem 0.8rem;
-    font-size: var(--t-support); font-weight: 600; margin-top: 0;
-  }
   .this-device {
-    display: inline-block; margin-left: 0.4rem; padding: 0.05rem 0.5rem;
+    display: inline-block; margin-left: var(--s-1); padding: 0 var(--s-1);
     border-radius: 1rem; background: var(--field); color: var(--fg);
     font-size: var(--t-support); font-weight: 600; white-space: nowrap;
   }
   .push label.device-name {
-    display: block; margin-top: 1rem; text-align: left;
+    display: block; margin-top: var(--s-3); text-align: left;
     color: var(--mut); font-size: var(--t-support); font-weight: 600;
   }
   .push input.device-name-input {
-    display: block; width: 100%; margin-top: 0.3rem; padding: 0.6rem 0.75rem;
+    display: block; width: 100%; margin-top: var(--s-0); padding: var(--s-1) var(--s-2);
     border: 1px solid var(--line); border-radius: 0.6rem;
     background: var(--bg); color: var(--fg); font: inherit;
   }
@@ -941,9 +923,9 @@ export const PUSH_STYLES_CSS = `
  * game form's optional sections and read as a page division here.
  */
 export const INVITE_CSS = `
-  .card { margin: 1.1rem 0; padding: 1rem; border: none; border-radius: 1.25rem; background: var(--card-raised); }
-  .card h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.6rem; font-size: var(--t-body); }
-  .card .actions { margin-top: 0.75rem; }
+  .card { margin: var(--s-3) 0; padding: var(--s-3); border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  .card h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-1); font-size: var(--t-body); }
+  .card .actions { margin-top: var(--s-2); }
   .qr-toggle { margin: 0; border: 0; padding: 0; }
   /* The padding is the tap target, and it is not decoration. At the support
      size this control's line box is 1.4rem — 0.875rem against the body's
@@ -983,8 +965,8 @@ export const INVITE_CSS = `
      state, which has no anchor to carry a height, and the row keeps the ~45px
      it already had instead of stacking 44px on top of 19px of padding. */
   ul.fixtures > li {
-    display: flex; align-items: center; gap: 0.75rem; min-height: 44px;
-    padding: 0 0.1rem; border-bottom: 1px solid var(--line); font-size: var(--t-body);
+    display: flex; align-items: center; gap: var(--s-2); min-height: 44px;
+    padding: 0 0; border-bottom: 1px solid var(--line); font-size: var(--t-body);
   }
   /* Constraint 9's 44px floor, the same shape as ul.owned-games > li > a. An
      anchor is inline by default and min-height does nothing to an inline box,
@@ -1007,10 +989,10 @@ export const INVITE_CSS = `
  * failure test/views/style-cascade.test.ts exists to catch.
  */
 export const ADMIN_ALLOWLIST_CSS = `
-  ul.allowlist { list-style: none; padding: 0; margin: 1.1rem 0; }
+  ul.allowlist { list-style: none; padding: 0; margin: var(--s-3) 0; }
   ul.allowlist > li {
     display: flex; align-items: center; justify-content: space-between;
-    gap: 1rem; padding: 0.55rem 0; border-bottom: 1px solid var(--line);
+    gap: var(--s-3); padding: var(--s-1) 0; border-bottom: 1px solid var(--line);
     overflow-wrap: anywhere;
   }
   /* Secret-sourced entries have no remove button; mark them so the asymmetry
@@ -1019,38 +1001,38 @@ export const ADMIN_ALLOWLIST_CSS = `
   /* The open-sign-ups switch (M30). Namespaced under .signup-mode so these
      rules cannot collide with another block at equal specificity. */
   .signup-mode {
-    margin: 1.1rem 0; padding: 0.9rem 1rem; border-radius: 1.25rem;
+    margin: var(--s-3) 0; padding: var(--s-3) var(--s-3); border-radius: 1.25rem;
     background: var(--card-raised);
   }
-  .signup-mode h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.2rem; font-size: var(--t-body); }
-  .signup-mode p { margin: 0 0 0.7rem; color: var(--mut); font-size: var(--t-support); }
+  .signup-mode h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-0); font-size: var(--t-body); }
+  .signup-mode p { margin: 0 0 var(--s-2); color: var(--mut); font-size: var(--t-support); }
   .signup-mode .state { color: var(--fg); font-weight: 600; }
-  .allowlist-add { display: flex; gap: 0.75rem; align-items: flex-end; }
+  .allowlist-add { display: flex; gap: var(--s-2); align-items: flex-end; }
   .allowlist-add .field { flex: 1; margin: 0; }
 `;
 
 export const ADMIN_TOOLS_CSS = `
-  .admin-intro { color: var(--mut); font-size: var(--t-support); margin: -0.15rem 0 1rem; }
-  ul.admin-tools { list-style: none; padding: 0; margin: 1.1rem 0; }
+  .admin-intro { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-3); }
+  ul.admin-tools { list-style: none; padding: 0; margin: var(--s-3) 0; }
   ul.admin-tools > li {
-    padding: 0.8rem 0.9rem; margin: 0 0 0.55rem;
+    padding: var(--s-2) var(--s-3); margin: 0 0 var(--s-1);
     border: 1px solid var(--line); border-radius: 0.9rem; background: var(--card);
   }
   ul.admin-tools > li > a { font-weight: 600; }
-  ul.admin-tools .tool-note { color: var(--mut); font-size: var(--t-support); margin: 0.15rem 0 0; }
+  ul.admin-tools .tool-note { color: var(--mut); font-size: var(--t-support); margin: var(--s-0) 0 0; }
   .admin-tool-section {
-    margin: 1.5rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line);
+    margin: var(--s-4) 0 0; padding-top: var(--s-3); border-top: 1px solid var(--line);
   }
-  .admin-tool-section h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.45rem; font-size: var(--t-body); }
+  .admin-tool-section h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-1); font-size: var(--t-body); }
   .admin-tool-section > p { color: var(--mut); font-size: var(--t-support); }
-  .admin-summary { padding: 0.9rem 1rem; border: 1px solid var(--line); border-top: 0; border-radius: 0.9rem; background: var(--card); }
-  ul.doors { list-style: none; padding: 0; margin: 1.1rem 0; }
-  ul.doors > li { padding: 0.35rem 0; overflow-wrap: anywhere; }
+  .admin-summary { padding: var(--s-3) var(--s-3); border: 1px solid var(--line); border-top: 0; border-radius: 0.9rem; background: var(--card); }
+  ul.doors { list-style: none; padding: 0; margin: var(--s-3) 0; }
+  ul.doors > li { padding: var(--s-0) 0; overflow-wrap: anywhere; }
   ul.doors .door-open { color: var(--fg); font-weight: 600; }
   ul.doors .door-shut { color: var(--mut); }
-  table.admin-log { width: 100%; border-collapse: collapse; margin: 1.1rem 0; }
+  table.admin-log { width: 100%; border-collapse: collapse; margin: var(--s-3) 0; }
   table.admin-log th, table.admin-log td {
-    text-align: left; padding: 0.45rem 0.6rem 0.45rem 0;
+    text-align: left; padding: var(--s-1) var(--s-1) var(--s-1) 0;
     border-bottom: 1px solid var(--line); overflow-wrap: anywhere;
     font-size: var(--t-support); vertical-align: top;
   }
@@ -1061,10 +1043,10 @@ export const ADMIN_TOOLS_CSS = `
     /* The shared cell rule sets overflow-wrap to anywhere, which hyphenates a
        header like "Fixtures" mid-word once the column is narrow enough. These
        columns hold short labels and short numbers; neither may break. */
-    white-space: nowrap; padding: 0.45rem 0 0.45rem 0.8rem;
+    white-space: nowrap; padding: var(--s-1) 0 var(--s-1) var(--s-2);
   }
   table.admin-log th.usage-day, table.admin-log td.usage-day {
-    white-space: nowrap; padding-left: 0.9rem;
+    white-space: nowrap; padding-left: var(--s-3);
   }
   /* The per-game table is the widest thing on the page; this box lets it
      scroll rather than the whole page, if it ever outgrows the column. */
@@ -1075,20 +1057,20 @@ export const ADMIN_TOOLS_CSS = `
   table.admin-log td.usage-name { overflow-wrap: normal; }
   /* The owners, on their own line under the game name. Block so it breaks the
      line without a <br>, and muted so the game name still leads the row. */
-  span.usage-owner { display: block; color: var(--mut); margin-top: 0.15rem; }
+  span.usage-owner { display: block; color: var(--mut); margin-top: var(--s-0); }
   dl.usage-figures {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-    gap: 0.9rem; margin: 1.1rem 0;
+    gap: var(--s-3); margin: var(--s-3) 0;
   }
-  dl.usage-figures > div { border-bottom: 1px solid var(--line); padding-bottom: 0.5rem; }
+  dl.usage-figures > div { border-bottom: 1px solid var(--line); padding-bottom: var(--s-1); }
   dl.usage-figures dt { color: var(--mut); font-size: var(--t-support); }
   dl.usage-figures dd {
-    margin: 0.15rem 0 0; font-size: var(--t-lead); font-weight: 600;
+    margin: var(--s-0) 0 0; font-size: var(--t-lead); font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
   p.usage-warning {
     background: var(--warn-bg); color: var(--warn);
-    padding: 0.6rem 0.8rem; border-radius: 6px; margin: 1.1rem 0;
+    padding: var(--s-1) var(--s-2); border-radius: 6px; margin: var(--s-3) 0;
   }
 `;
 
@@ -1101,33 +1083,32 @@ export const ADMIN_TOOLS_CSS = `
 export const WHATSAPP_CSS = `
   /* text-align: left because the cancelled page is a centred layout and a
      centred message would centre every line of the textarea too. */
-  .whatsapp { margin: 1.1rem 0; padding: 1rem; border-radius: 1.25rem; background: var(--card-raised); text-align: left; }
-  .whatsapp h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 0.35rem; font-size: var(--t-body); }
-  .whatsapp h3 { margin: 0.9rem 0 0.35rem; font-size: var(--t-support); color: var(--mut); }
-  .whatsapp p { margin: 0 0 0.6rem; color: var(--mut); font-size: var(--t-support); }
+  .whatsapp { margin: var(--s-3) 0; padding: var(--s-3); border-radius: 1.25rem; background: var(--card-raised); text-align: left; }
+  .whatsapp h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-0); font-size: var(--t-body); }
+  .whatsapp h3 { margin: var(--s-3) 0 var(--s-0); font-size: var(--t-support); color: var(--mut); }
+  .whatsapp p { margin: 0 0 var(--s-1); color: var(--mut); font-size: var(--t-support); }
   /* Its own field rules rather than FORM_CSS's .field textarea: this is not a
      form field, it is the message on show, and FORM_CSS is not on every page
      the card appears on. */
   .whatsapp textarea {
     display: block; width: 100%; box-sizing: border-box; margin: 0;
-    padding: 0.6rem 0.75rem; border: 1px solid var(--line); border-radius: 0.75rem;
+    padding: var(--s-1) var(--s-2); border: 1px solid var(--line); border-radius: 0.75rem;
     background: var(--field); color: inherit; font: inherit; font-size: var(--t-body);
     line-height: 1.45; resize: vertical;
   }
   /* "Open in WhatsApp" wrapped onto two lines beside Copy at 390px (the
      capture showed it); nowrap keeps each label on one line and flex-wrap
      drops Copy to its own row if there really is no room. */
-  .whatsapp-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.6rem; }
-  .whatsapp-actions .button { white-space: nowrap; }
+  .whatsapp-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-1); }
   /* The "Include" switches (M38). A fieldset carries the browser's default
      border and padding, both of which would box the switches off from the
      textarea they belong to — stripped, and the legend does the grouping
      visually as well as for a screen reader. */
-  .whatsapp-options { border: 0; margin: 0.6rem 0 0; padding: 0; }
+  .whatsapp-options { border: 0; margin: var(--s-1) 0 0; padding: 0; }
   .whatsapp-options legend { padding: 0; color: var(--mut); font-size: var(--t-support); }
   /* Each switch is its own row: at 390px two of these side by side wrap
      mid-label, which reads as one long sentence with stray boxes in it. */
-  .whatsapp-option { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; font-size: var(--t-support); }
+  .whatsapp-option { display: flex; align-items: center; gap: var(--s-1); margin-top: var(--s-0); font-size: var(--t-support); }
   /* Big enough to hit with a thumb — the browser default is around 13px. */
   .whatsapp-option input { margin: 0; flex: none; }
 `;
@@ -1143,14 +1124,14 @@ export const WHATSAPP_CSS = `
  * SQUAD_STYLES_CSS and FORM_CSS already have.
  */
 export const RESULT_CSS = `
-  .result-workspace { margin-top: 1.5rem; }
-  .result-workspace h2 { margin-bottom: 0.75rem; }
-  .result-focus { margin: 1rem 0 1.25rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--card-raised); }
-  .result-kicker { margin: 0 0 0.5rem; font-size: var(--t-support); font-weight: 600; color: var(--mut); }
-  .result-candidates { list-style: none; margin: 0.8rem 0 0; padding: 0; display: grid; gap: 0.6rem; }
+  .result-workspace { margin-top: var(--s-4); }
+  .result-workspace h2 { margin-bottom: var(--s-2); }
+  .result-focus { margin: var(--s-3) 0 var(--s-3); padding: var(--s-3); border: 1px solid var(--line); border-radius: 1rem; background: var(--card-raised); }
+  .result-kicker { margin: 0 0 var(--s-1); font-size: var(--t-support); font-weight: 600; color: var(--mut); }
+  .result-candidates { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: var(--s-1); }
   .result-candidate {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem 0.9rem;
-    padding: 0.7rem 0.9rem; border: 1px solid var(--line); border-radius: 0.5rem;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3);
+    padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: 0.5rem;
   }
   .result-claim { font-weight: 600; }
   .result-backers { font-size: var(--t-support); color: var(--mut); }
@@ -1158,10 +1139,10 @@ export const RESULT_CSS = `
   .result-candidate form { margin: 0 0 0 auto; }
   .result-candidate:first-child { border-color: var(--accent); background: var(--card); }
   .result-candidate:first-child .result-claim { font-size: var(--t-lead); }
-  .result-alternate { margin: 1.25rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
+  .result-alternate { margin: var(--s-3) 0; border-top: 1px solid var(--line); padding-top: var(--s-3); }
   .result-alternate summary { min-height: 44px; display: flex; align-items: center; }
-  .result-alternate form { margin-top: 1rem; }
-  .result-final { font-size: var(--t-lead); font-weight: 600; margin: 0.4rem 0 0.2rem; }
+  .result-alternate form { margin-top: var(--s-3); }
+  .result-final { font-size: var(--t-lead); font-weight: 600; margin: var(--s-1) 0 var(--s-0); }
   /* Two of these render back to back in the locked view -- "Result 2 of 2"
      then "Score 2 of 2" -- and margin: 0 on both left them touching with no
      line gap at all, which a capture at 390px (M25 Task 14) showed reading as
@@ -1170,10 +1151,10 @@ export const RESULT_CSS = `
      .result-final's own bottom margin above the first line, widening a space
      that was already right. */
   .result-confidence { font-size: var(--t-support); color: var(--mut); margin: 0; }
-  .result-confidence + .result-confidence { margin-top: 0.3rem; }
+  .result-confidence + .result-confidence { margin-top: var(--s-0); }
   .result-note { font-size: var(--t-support); color: var(--mut); }
-  .result-score { display: flex; flex-wrap: wrap; align-items: end; gap: 0.9rem; }
-  .result-score label { display: grid; gap: 0.3rem; }
+  .result-score { display: flex; flex-wrap: wrap; align-items: end; gap: var(--s-3); }
+  .result-score label { display: grid; gap: var(--s-0); }
   /* Bare width only, before this fix -- every other text input on the site
      gets .field input's padding/background/radius, but these two aren't
      inside a .field, so a capture at 390px (M25 Task 14) showed a stock
@@ -1183,7 +1164,7 @@ export const RESULT_CSS = `
      "Team A" above its input and break the side-by-side layout
      .result-score exists for. */
   .result-score input {
-    width: 4.5rem; padding: 0.6rem 0.7rem; font: inherit;
+    width: 4.5rem; padding: var(--s-1) var(--s-2); font: inherit;
     color: var(--fg); background: var(--field);
     border: none; border-radius: 0.75rem;
   }
@@ -1218,8 +1199,8 @@ export const RESULT_CSS = `
  */
 export const FRESHNESS_CSS = `
   .freshness {
-    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.9rem;
-    margin: 2.5rem 0 0; padding-top: 0.9rem;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-3);
+    margin: var(--s-6) 0 0; padding-top: var(--s-3);
     border-top: 1px solid var(--line);
     font-size: var(--t-support); color: var(--mut);
   }
@@ -1243,7 +1224,7 @@ export const FRESHNESS_CSS = `
  * renders this panel already loads.
  */
 export const MUTE_CSS = `
-  .mute { margin-top: 1.5rem; font-size: var(--t-support); }
+  .mute { margin-top: var(--s-4); font-size: var(--t-support); }
   /* A summary on its own is ruled above and below, so it reads as a row. */
   .mute > summary {
     color: var(--fg); font-size: var(--t-body);
@@ -1251,7 +1232,7 @@ export const MUTE_CSS = `
     -webkit-tap-highlight-color: transparent;
   }
   .mute-panel {
-    margin-top: 0.9rem; padding: 0.9rem 1rem;
+    margin-top: var(--s-3); padding: var(--s-3) var(--s-3);
     background: var(--card-raised); border-radius: 0.75rem;
   }
   /* The "it is on right now" state, which is never inside a disclosure. The
@@ -1259,23 +1240,23 @@ export const MUTE_CSS = `
      edge reads as "something is deliberately switched on here" without
      borrowing .warn, whose colour belongs to the waitlist. */
   .mute-on {
-    margin-top: 1.5rem; padding: 0.9rem 1rem;
+    margin-top: var(--s-4); padding: var(--s-3) var(--s-3);
     background: var(--card-raised); border-radius: 0.75rem;
     border-left: 4px solid var(--accent);
     font-size: var(--t-support);
   }
-  .mute-on p, .mute-panel p { margin: 0 0 0.6rem; }
+  .mute-on p, .mute-panel p { margin: 0 0 var(--s-1); }
   .mute-on form, .mute-panel form { margin: 0; }
-  .mute-legend { font-weight: 600; margin-bottom: 0.4rem; }
-  .mute-durations { display: grid; gap: 0.4rem; margin: 0 0 0.9rem; border: none; padding: 0; }
-  .mute-durations label { display: flex; align-items: center; gap: 0.5rem; }
+  .mute-legend { font-weight: 600; margin-bottom: var(--s-1); }
+  .mute-durations { display: grid; gap: var(--s-1); margin: 0 0 var(--s-3); border: none; padding: 0; }
+  .mute-durations label { display: flex; align-items: center; gap: var(--s-1); }
   /* The organiser's marker on a squad row — auto-declining (M28), or a
      legacy member whose email was never confirmed (M39, BR-52). A quiet
      pill rather than a colour on the name: the fact is about the member's
      answers or address, not about the member, and nothing here is a
      warning. --mut on --card-raised clears 4.5:1 (test/views/contrast.test.ts). */
   .member-muted, .member-unconfirmed {
-    display: inline-block; padding: 0.1rem 0.5rem;
+    display: inline-block; padding: 0 var(--s-1);
     background: var(--card-raised); border-radius: 0.6rem;
     font-size: var(--t-support); color: var(--mut); white-space: nowrap;
   }
@@ -1297,7 +1278,7 @@ export const SQUAD_SIGNALS_CSS = `
      disclosure, and a third child would auto-place into whichever cell was
      free — the defect FORM_CSS's placement rules exist to prevent. Flowing
      with the name costs nothing and cannot move the controls. */
-  .member-signals { display: inline-flex; gap: 0.3rem; margin-left: 0.4rem; vertical-align: middle; }
+  .member-signals { display: inline-flex; gap: var(--s-0); margin-left: var(--s-1); vertical-align: middle; }
   .signal { display: inline-flex; align-items: center; }
   .signal svg { display: block; width: 1rem; height: 1rem; }
   /* Not a fault: a player reachable by email who has installed nothing is the
@@ -1310,7 +1291,7 @@ export const SQUAD_SIGNALS_CSS = `
      tree too, and the label is the only thing a screen reader has here: a
      title attribute reaches a mouse and nothing else. */
   .signal-label {
-    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    position: absolute; width: 1px; height: 1px; margin: 0; padding: 0;
     overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
   }
   /* On the member's own page the words are the point (M52). The markers moved
@@ -1321,8 +1302,8 @@ export const SQUAD_SIGNALS_CSS = `
 
      More specific than the clip above, so it wins wherever the blocks land in
      a page's cascade. */
-  .signals-said .member-signals { display: flex; flex-direction: column; gap: 0.4rem; margin-left: 0; }
-  .signals-said .signal { gap: 0.45rem; }
+  .signals-said .member-signals { display: flex; flex-direction: column; gap: var(--s-1); margin-left: 0; }
+  .signals-said .signal { gap: var(--s-1); }
   .signals-said .signal-label {
     position: static; width: auto; height: auto; margin: 0;
     overflow: visible; clip-path: none; white-space: normal;
@@ -1340,17 +1321,17 @@ export const SQUAD_SIGNALS_CSS = `
  * already covers the pairs and nothing here introduces a new one to floor.
  */
 export const INVITE_ORDER_CSS = `
-  .invite-sub { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
+  .invite-sub { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-3); }
   .invite-box {
     background: var(--card-raised); border-radius: 1.25rem;
-    padding: 0.85rem 0.9rem; margin-bottom: 0.7rem;
+    padding: var(--s-2) var(--s-3); margin-bottom: var(--s-2);
   }
-  .invite-cap { font-weight: 600; font-size: var(--t-support); margin: 0 0 0.45rem; }
+  .invite-cap { font-weight: 600; font-size: var(--t-support); margin: 0 0 var(--s-1); }
   .invite-empty { color: var(--mut); font-size: var(--t-support); margin: 0; }
   .invite-members { list-style: none; margin: 0; padding: 0; }
   .invite-members > li {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.45rem 0; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: var(--s-1);
+    padding: var(--s-1) 0; border-bottom: 1px solid var(--line);
   }
   .invite-members > li:last-child { border-bottom: none; }
   /* Both given an explicit shrink budget and min-width: 0. Without it the
@@ -1361,13 +1342,13 @@ export const INVITE_ORDER_CSS = `
   .invite-select, .invite-pos {
     font: inherit; font-size: var(--t-support); color: var(--fg);
     background: var(--field); border: 1px solid var(--line);
-    border-radius: 0.55rem; padding: 0.25rem 0.55rem;
+    border-radius: 0.55rem; padding: var(--s-0) var(--s-1);
   }
   .invite-pos { width: 3.5rem; }
   .invite-ord { list-style: none; margin: 0; padding: 0; counter-reset: invite-tier; }
   .invite-ord > li {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.45rem 0; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: var(--s-1);
+    padding: var(--s-1) 0; border-bottom: 1px solid var(--line);
   }
   .invite-ord > li:last-child { border-bottom: none; }
   .invite-ord > li::before {
@@ -1383,30 +1364,30 @@ export const INVITE_ORDER_CSS = `
   .invite-remove {
     font: inherit; font-size: var(--t-support); cursor: pointer;
     border: 1px solid var(--line); border-radius: 999px;
-    background: transparent; color: var(--danger); padding: 0.2rem 0.7rem;
+    background: transparent; color: var(--danger); padding: var(--s-0) var(--s-2);
   }
-  .invite-add { margin-top: 1.25rem; display: flex; align-items: end; gap: 0.5rem; flex-wrap: wrap; }
+  .invite-add { margin-top: var(--s-3); display: flex; align-items: end; gap: var(--s-1); flex-wrap: wrap; }
   .invite-add label { font-size: var(--t-support); color: var(--mut); display: block; width: 100%; }
   .invite-add input {
     flex: 1; font: inherit; border-radius: 0.65rem; border: 2px solid var(--line);
-    background: var(--bg); color: var(--fg); padding: 0.5rem 0.7rem; min-width: 8rem;
+    background: var(--bg); color: var(--fg); padding: var(--s-1) var(--s-2); min-width: 8rem;
   }
-  .invite-progress { margin-top: 1.5rem; }
-  .invite-progress h2 { font-family: inherit; font-weight: 600; line-height: 1.3; font-size: var(--t-body); margin: 0 0 0.6rem; }
+  .invite-progress { margin-top: var(--s-4); }
+  .invite-progress h2 { font-family: inherit; font-weight: 600; line-height: 1.3; font-size: var(--t-body); margin: 0 0 var(--s-1); }
   .invite-states { list-style: none; margin: 0; padding: 0; }
   .invite-state {
     background: var(--card-raised); border-radius: 1.25rem;
-    padding: 0.7rem 0.85rem; margin-bottom: 0.5rem;
+    padding: var(--s-2) var(--s-2); margin-bottom: var(--s-1);
     border-left: 4px solid var(--line);
   }
   .invite-state-sent { border-left-color: var(--ok); }
   .invite-state-next { border-left-color: var(--wait); }
   .invite-state-held { opacity: 0.72; }
-  .invite-state-top { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+  .invite-state-top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-1); }
   .invite-state-label { font-weight: 600; font-size: var(--t-support); }
-  .invite-meter { display: block; margin-top: 0.15rem; color: var(--mut); font-size: var(--t-support); }
+  .invite-meter { display: block; margin-top: var(--s-0); color: var(--mut); font-size: var(--t-support); }
   .invite-badge {
-    font-size: var(--t-support); padding: 0.12rem 0.55rem;
+    font-size: var(--t-support); padding: 0 var(--s-1);
     border-radius: 999px; white-space: nowrap;
   }
   .invite-badge-ok { background: var(--ok-bg); color: var(--ok-fg); }
@@ -1426,31 +1407,31 @@ export const INVITE_ORDER_CSS = `
  * test/views/game-form-notifications.test.ts pins the block order regardless.
  */
 export const NOTIFY_MATRIX_CSS = `
-  .notify-intro { margin: 0.25rem 0 1rem; color: var(--mut); font-size: var(--t-support); }
+  .notify-intro { margin: var(--s-0) 0 var(--s-3); color: var(--mut); font-size: var(--t-support); }
   table.notify-matrix { width: 100%; border-collapse: separate; border-spacing: 0 0.7rem; }
-  table.notify-matrix th { text-align: center; font-size: var(--t-support); color: var(--mut); font-weight: 600; padding: 0 0.5rem 0.25rem; }
+  table.notify-matrix th { text-align: center; font-size: var(--t-support); color: var(--mut); font-weight: 600; padding: 0 var(--s-1) var(--s-0); }
   table.notify-matrix th.notify-what { text-align: left; padding-left: 0; }
-  table.notify-matrix td { padding: 0.9rem 0.65rem; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: top; background: var(--card); }
+  table.notify-matrix td { padding: var(--s-3) var(--s-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: top; background: var(--card); }
   table.notify-matrix td:first-child { border-left: 1px solid var(--line); border-radius: 0.9rem 0 0 0.9rem; }
   table.notify-matrix td:last-child { border-right: 1px solid var(--line); border-radius: 0 0.9rem 0.9rem 0; }
-  table.notify-matrix td.notify-what { padding-right: 0.75rem; }
+  table.notify-matrix td.notify-what { padding-right: var(--s-2); }
   table.notify-matrix .notify-label { display: block; font-weight: 600; }
   table.notify-matrix .hint { display: block; font-size: var(--t-support); color: var(--mut); }
   table.notify-matrix td.notify-cell { width: 76px; text-align: center; vertical-align: middle; }
   .notify-channel { display: none; font-size: var(--t-support); color: var(--mut); }
   table.notify-matrix label.channel-toggle { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; cursor: pointer; }
   table.notify-matrix td.notify-none { color: var(--mut); }
-  .notify-admin-off { margin: 0.3rem 0 0; font-size: var(--t-support); color: var(--warn); }
-  table.notify-matrix .notify-timing { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
-  table.notify-matrix .notify-timing-field { display: flex; flex-direction: column; gap: 0.2rem; }
+  .notify-admin-off { margin: var(--s-0) 0 0; font-size: var(--t-support); color: var(--warn); }
+  table.notify-matrix .notify-timing { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-1); }
+  table.notify-matrix .notify-timing-field { display: flex; flex-direction: column; gap: var(--s-0); }
   table.notify-matrix .notify-timing label { font-weight: 400; font-size: var(--t-support); color: var(--mut); }
   /* The filled-field treatment .field input gives every other control, restated
      because these inputs sit in a table cell, not a .field. */
   table.notify-matrix .notify-timing input {
-    max-width: 9rem; width: 100%; padding: 0.6rem 0.7rem; font: inherit;
+    max-width: 9rem; width: 100%; padding: var(--s-1) var(--s-2); font: inherit;
     color: var(--fg); background: var(--field); border: none; border-radius: 0.75rem;
   }
-  table.notify-matrix .notify-timing .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
+  table.notify-matrix .notify-timing .error { display: block; margin-top: var(--s-0); color: var(--warn); font-size: var(--t-support); }
   /* On a phone each message is a card: its title and timing, then one
      labelled pill per channel in a row beneath (M67). */
   @media (max-width: 40rem) {
@@ -1458,7 +1439,7 @@ export const NOTIFY_MATRIX_CSS = `
     table.notify-matrix, table.notify-matrix tbody { display: block; width: 100%; }
     /* Rows are blocks here, so border-spacing no longer separates them. */
     table.notify-matrix tr {
-      display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem; padding: 0.85rem 0.9rem;
+      display: flex; flex-wrap: wrap; gap: var(--s-1); margin-bottom: var(--s-2); padding: var(--s-2) var(--s-3);
       border: 1px solid var(--line); border-radius: 1rem; background: var(--card);
     }
     /* The desktop cell rules are more specific than a bare td, so their
@@ -1470,19 +1451,19 @@ export const NOTIFY_MATRIX_CSS = `
     table.notify-matrix td.notify-what { flex-basis: 100%; }
     table.notify-matrix td.notify-none { display: none; }
     table.notify-matrix label.channel-toggle {
-      gap: 0.6rem; padding: 0 1rem 0 0.75rem; border-radius: 999px; background: var(--field);
+      gap: var(--s-1); padding: 0 var(--s-3) 0 var(--s-2); border-radius: 999px; background: var(--field);
     }
     .notify-channel { display: inline; font-size: var(--t-support); font-weight: 600; color: var(--fg); }
-    table.notify-matrix .notify-timing { gap: 0.5rem; }
+    table.notify-matrix .notify-timing { gap: var(--s-1); }
   }
 `;
 
 /** The administrator's notification grid (M37) — `src/views/admin-notifications.ts`. Namespaced under `.admin-notify`. */
 export const ADMIN_NOTIFICATIONS_CSS = `
-  table.admin-notify { width: 100%; border-collapse: collapse; margin: 0.6rem 0 1.4rem; }
-  table.admin-notify th { text-align: center; font-size: var(--t-support); color: var(--mut); padding: 0.4rem 0; }
+  table.admin-notify { width: 100%; border-collapse: collapse; margin: var(--s-1) 0 var(--s-4); }
+  table.admin-notify th { text-align: center; font-size: var(--t-support); color: var(--mut); padding: var(--s-1) 0; }
   table.admin-notify th.notify-what { text-align: left; }
-  table.admin-notify td { padding: 0.5rem 0; border-top: 1px solid var(--line); vertical-align: middle; }
+  table.admin-notify td { padding: var(--s-1) 0; border-top: 1px solid var(--line); vertical-align: middle; }
   table.admin-notify .notify-label { font-weight: 600; }
   table.admin-notify .hint { display: block; font-size: var(--t-support); color: var(--mut); }
   table.admin-notify td.notify-cell { width: 6rem; text-align: center; }
@@ -1505,14 +1486,14 @@ export const ADMIN_NOTIFICATIONS_CSS = `
  */
 export const TIMELINE_CSS = `
   .timeline-workspace {
-    margin-top: 1.5rem; padding: 1rem 1.1rem;
+    margin-top: var(--s-4); padding: var(--s-3) var(--s-3);
     border: 1px solid var(--line); border-radius: 1.1rem; background: var(--card);
   }
-  .timeline-workspace h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 .65rem; font-size: var(--t-body); }
-  .timeline-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
+  .timeline-workspace h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-2); font-size: var(--t-body); }
+  .timeline-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-3); }
   ol.timeline { list-style: none; margin: 0; padding: 0; }
   ol.timeline > li {
-    padding: 0.7rem 0 0.7rem 0.9rem;
+    padding: var(--s-2) 0 var(--s-2) var(--s-3);
     border-left: 2px solid var(--line);
   }
   ol.timeline > li:last-child { padding-bottom: 0; }
@@ -1523,7 +1504,7 @@ export const TIMELINE_CSS = `
      covers, and the row carries the clock time only, inline with who did it. */
   .timeline-day {
     font-family: inherit; font-weight: 600; line-height: 1.3; font-size: var(--t-body); color: var(--mut); font-weight: 600;
-    margin: 1.5rem 0 0.35rem; padding-left: 0.9rem;
+    margin: var(--s-4) 0 var(--s-0); padding-left: var(--s-3);
   }
   .timeline-day:first-of-type { margin-top: 0; }
   .timeline-what { display: block; color: var(--fg); font-weight: 600; }
@@ -1531,7 +1512,7 @@ export const TIMELINE_CSS = `
   /* Inline, not a block of its own: the time belongs with the attribution
      rather than above the event, and a dot separates them without a glyph
      that a screen reader would read out. */
-  .timeline-when { margin-right: 0.4rem; font-variant-numeric: tabular-nums; }
+  .timeline-when { margin-right: var(--s-1); font-variant-numeric: tabular-nums; }
   .timeline-when::after { content: " ·"; }
   .timeline-empty { color: var(--mut); }
   /* A dot per entry on the rail, so an entry attaches to the line instead of
@@ -1558,10 +1539,10 @@ export const TIMELINE_CSS = `
  * nothing and its position in `PAGE_STYLE_BLOCKS` is not load-bearing.
  */
 export const RECORD_CSS = `
-  .record-scroll { overflow-x: auto; margin-bottom: 1.25rem; }
+  .record-scroll { overflow-x: auto; margin-bottom: var(--s-3); }
   table.record { border-collapse: collapse; width: 100%; font-size: var(--t-body); }
   table.record th, table.record td {
-    padding: 0.5rem 0.4rem;
+    padding: var(--s-1) var(--s-1);
     border-bottom: 1px solid var(--line);
     text-align: left;
     white-space: nowrap;
@@ -1579,7 +1560,7 @@ export const RECORD_CSS = `
   table.record tfoot th, table.record tfoot td {
     font-weight: 600; border-bottom: none; border-top: 2px solid var(--line);
   }
-  .record-note { color: var(--mut); font-size: var(--t-support); margin: -0.75rem 0 1.25rem; }
+  .record-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-3); }
 `;
 
 /**
@@ -1599,10 +1580,10 @@ export const RECORD_CSS = `
  * nothing and its position in `PAGE_STYLE_BLOCKS` is not load-bearing.
  */
 export const LEAGUE_CSS = `
-  .league-scroll { overflow-x: auto; margin-bottom: 0.75rem; }
+  .league-scroll { overflow-x: auto; margin-bottom: var(--s-2); }
   table.league { border-collapse: collapse; width: 100%; font-size: var(--t-body); }
   table.league th, table.league td {
-    padding: 0.5rem 0.25rem;
+    padding: var(--s-1) var(--s-0);
     border-bottom: 1px solid var(--line);
     text-align: right;
     white-space: nowrap;
@@ -1636,7 +1617,7 @@ export const LEAGUE_CSS = `
   /* On the support step like every other size in the product — the scale is
      enumerated by test/views/layout.test.ts, and an em fraction here was its
      one exception. */
-  table.league .sort-mark { margin-left: 0.2rem; font-size: var(--t-support); }
+  table.league .sort-mark { margin-left: var(--s-0); font-size: var(--t-support); }
   /* The position column (M55). Sticky at the left edge with the name sticky
      directly after it: a rank that scrolls away from its own row is worse
      than none, and the two have to travel together. The 2rem offset on the
@@ -1697,7 +1678,7 @@ export const LEAGUE_CSS = `
   /* In a collapsed table the upper cell's bottom border wins the shared edge,
      so the row above has to draw the own row's top rule. */
   table.league tbody tr:has(+ tr.you) td { border-bottom-color: var(--fg); }
-  .league-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 1.25rem; }
+  .league-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-3); }
 `;
 
 /**
