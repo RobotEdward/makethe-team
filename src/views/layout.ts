@@ -128,7 +128,7 @@ export const STYLES = `
   :root {
     color-scheme: light dark;
     --fg: #201e1d; --bg: #efe3cd;
-    --card: #f5ead8; --card-raised: #f9f4ed; --field: #ebddc5;
+    --card-raised: #f9f4ed; --field: #ebddc5;
     /* Contrast floors for every pair are enforced by test/views/contrast.test.ts. */
     --mut: #645c50; --line: #d6c9b3;
     --accent: ${THEME_COLOR}; --accent-fg: #fff7f0;
@@ -156,7 +156,7 @@ export const STYLES = `
   @media (prefers-color-scheme: dark) {
     :root {
       --fg: #ede5d8; --bg: #221f1b;
-      --card: #2b2721; --card-raised: #322d26; --field: #3a342b;
+      --card-raised: #322d26; --field: #3a342b;
       --mut: #a89e8f; --line: #3a352d;
       --accent: #d98a55; --accent-fg: #2a1608;
       --link: #e0a878;
@@ -284,7 +284,7 @@ export const STYLES = `
   input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
   /* The chevron sits under a transparent select, so a tap on it still opens
      the select; the wrapper carries the field ground instead. */
-  .select { position: relative; display: block; border-radius: 0.75rem; background: var(--field); }
+  .select { position: relative; display: block; border-radius: var(--r-field); background: var(--field); }
   span.select select { position: relative; z-index: 1; appearance: none; padding-right: var(--s-6); background-color: transparent; }
   .select::after {
     content: ""; position: absolute; z-index: 0; right: 1rem; top: 50%; width: 7px; height: 7px;
@@ -324,7 +324,7 @@ export const STYLES = `
   }
 
   .nudge {
-    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 1rem;
+    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r-card);
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-support); text-align: left;
   }
   /* The one success notice shape. B4's broadcast receipt is the first to
@@ -339,7 +339,7 @@ export const STYLES = `
     position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%);
     width: calc(100% - 2rem); max-width: 28rem;
     display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
-    padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: 1rem;
+    padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--r-card);
     background: var(--card-raised); color: var(--fg);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
   }
@@ -347,7 +347,7 @@ export const STYLES = `
   .button {
     flex: 1; display: flex; align-items: center; justify-content: center;
     min-height: 52px; padding: var(--s-2) var(--s-3);
-    border: none; border-radius: 999px;
+    border: none; border-radius: var(--r-pill);
     background: var(--field); color: var(--fg);
     font: inherit; font-size: var(--t-lead); font-weight: 700;
     cursor: pointer; -webkit-tap-highlight-color: transparent;

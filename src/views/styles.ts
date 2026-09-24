@@ -43,8 +43,8 @@ export const FIXTURE_STYLES_CSS = `
   .sign-in-offer { margin-top: var(--s-4); font-size: var(--t-support); }
   .fixture-index {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-0) var(--s-2);
-    margin: var(--s-3) 0 var(--s-4); padding: var(--s-2) var(--s-2);
-    border: 1px solid var(--line); border-radius: .8rem; background: var(--card);
+    margin: var(--s-3) 0 var(--s-4); padding: var(--s-2) 0;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
     font-size: var(--t-support);
   }
   .fixture-index-label { color: var(--mut); font-weight: 600; font-size: var(--t-support); }
@@ -56,7 +56,7 @@ export const FIXTURE_STYLES_CSS = `
 
   .status-badge {
     display: inline-block; margin-top: var(--s-1);
-    padding: var(--s-0) var(--s-2); border-radius: 999px; border: 1px solid var(--line);
+    padding: var(--s-0) var(--s-2); border-radius: var(--r-pill); border: 1px solid var(--line);
     font-weight: 600; font-size: var(--t-support); color: var(--fg);
   }
   /* Every badge is a tint; none is solid (M67), so the viewer's own answer
@@ -80,7 +80,7 @@ export const FIXTURE_STYLES_CSS = `
      read as full -- two of the M52 design reviewers said so independently, and
      it sits exactly where a player checks whether there is still a place. */
   .capacity .track {
-    height: 6px; border-radius: 3px; overflow: hidden;
+    height: 6px; border-radius: var(--r-pill); overflow: hidden;
     background: var(--field); box-shadow: inset 0 0 0 1px var(--line);
   }
   .capacity .fill { display: block; height: 100%; background: var(--ok); }
@@ -104,7 +104,7 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
      grey, and open and declined keep the plain raised card. */
   .answer {
     margin: var(--s-3) 0; padding: var(--s-3) var(--s-3);
-    border-radius: 1.25rem; background: var(--card-raised);
+    border-radius: var(--r-card); background: var(--card-raised);
   }
   .answer .viewer-headline { margin-top: 0; }
   .answer .responses { margin-top: var(--s-3); }
@@ -117,7 +117,7 @@ ${Array.from({ length: 21 }, (_, i) => `  .capacity .fill.w-${i * 5} { width: ${
   .viewer-headline { margin-top: var(--s-4); color: var(--fg); font-family: inherit; font-weight: 700; font-size: var(--t-lead); line-height: 1.3; }
 
   .read-only {
-    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 1.25rem;
+    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r-card);
     border: none; background: var(--card-raised); color: var(--mut); font-size: var(--t-body); text-align: left;
   }
 
@@ -209,7 +209,7 @@ export const SQUAD_STYLES_CSS = `
   .group-count { font-variant-numeric: tabular-nums; font-size: var(--t-support); color: var(--mut); }
   .chips { list-style: none; display: flex; flex-wrap: wrap; gap: var(--s-0); margin: 0; padding: 0; }
   .chip {
-    padding: var(--s-0) var(--s-2); border-radius: 999px;
+    padding: var(--s-0) var(--s-2); border-radius: var(--r-pill);
     font-size: var(--t-support); background: var(--field); color: var(--mut);
   }
   /* Peach means attention and nothing else (M67), so only the waitlist chip
@@ -249,7 +249,7 @@ export const DASHBOARD_STYLES_CSS = `
   .fixture-list { list-style: none; margin: var(--s-4) 0 0; padding: 0; }
   .fixture-card {
     padding: var(--s-3) var(--s-3) var(--s-3); margin-bottom: var(--s-3);
-    border: none; border-radius: 1.25rem; background: var(--card-raised);
+    border: none; border-radius: var(--r-card); background: var(--card-raised);
   }
   .fixture-card h2 { margin: 0 0 var(--s-0); font-size: var(--t-lead); font-family: inherit; font-weight: 600; line-height: 1.3; }
   /* Still 0.9rem for the account page's history row, which wears this same
@@ -333,7 +333,7 @@ export const DASHBOARD_STYLES_CSS = `
      dismiss control. */
   .onboarding {
     margin-top: var(--s-3); padding: var(--s-3) var(--s-3) var(--s-2);
-    border: none; border-radius: 1.25rem; background: var(--card-raised);
+    border: none; border-radius: var(--r-card); background: var(--card-raised);
   }
   .onboarding h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-0); font-size: var(--t-lead); }
   .onboarding ul { list-style: none; margin: 0; padding: 0; }
@@ -364,7 +364,7 @@ export const SIGNIN_STYLES_CSS = `
   .signin label { text-align: left; font-size: var(--t-body); color: var(--mut); }
   .signin input {
     width: 100%; min-height: 52px; padding: var(--s-2) var(--s-3);
-    border-radius: 0.65rem; border: 2px solid var(--line);
+    border-radius: var(--r-field); border: 2px solid var(--line);
     background: var(--bg); color: var(--fg); font: inherit; font-size: var(--t-lead);
   }
   .signin .button { margin-top: var(--s-0); }
@@ -418,7 +418,7 @@ export const CANCEL_STYLES_CSS = `
   .cancel-form label { display: block; margin-bottom: var(--s-1); color: var(--fg); font-weight: 600; }
   .cancel-form textarea {
     width: 100%; min-height: 6rem; padding: var(--s-2) var(--s-2);
-    border-radius: 0.6rem; border: 1px solid var(--line);
+    border-radius: var(--r-field); border: 1px solid var(--line);
     background: var(--bg); color: var(--fg); font: inherit; font-size: var(--t-body);
   }
   .cancel-form .hint { margin-top: var(--s-1); font-size: var(--t-support); }
@@ -436,7 +436,7 @@ export const CANCEL_STYLES_CSS = `
      here is the same 1.25rem the danger button above gets so the two read as
      a matched pair. */
   .form-error {
-    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 0.6rem;
+    margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r-field);
     background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left;
   }
   .cancel-heading { margin-top: 0; }
@@ -465,7 +465,7 @@ export const FORM_CSS = `
   .field input, .field select, .field textarea {
     width: 100%; padding: var(--s-1) var(--s-2); font: inherit;
     color: var(--fg); background: var(--field);
-    border: 1px solid var(--line); border-radius: 0.75rem;
+    border: 1px solid var(--line); border-radius: var(--r-field);
   }
   .field textarea { min-height: 8rem; }
   .field .error { display: block; margin-top: var(--s-0); color: var(--warn); font-size: var(--t-support); }
@@ -502,8 +502,13 @@ export const FORM_CSS = `
   .switch-row label { grid-column: 2; grid-row: 1; font-weight: 600; }
   .switch-row .hint { grid-column: 2; grid-row: 2; font-size: var(--t-support); color: var(--mut); }
   .switch-row input { grid-column: 1; grid-row: 1 / span 2; margin-top: calc((1.6em - 20px) / 2); }
-  .notify-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 var(--s-3); margin: var(--s-4) 0; }
-  .notify-group legend { font-weight: 600; padding: 0 var(--s-0); }
+  /* A section, not a box (M67): the fieldset stays for the grouping and its
+     legend reads as the section heading. */
+  .notify-group { border: 0; padding: 0; margin: var(--s-5) 0 0; min-width: 0; }
+  .notify-group legend {
+    padding: 0; margin-bottom: var(--s-1);
+    font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-lead); line-height: 1.1; color: var(--fg);
+  }
   /* The fixture-message audience radios (audienceFields in broadcast.ts).
      Without this, .field input above turns each radio into a full-width
      bordered box that centres its own dot, while .field label stacks the
@@ -518,7 +523,7 @@ export const FORM_CSS = `
      ((0,2,1) vs (0,1,1)), so that half doesn't depend on order. 52px matches
      .switch-row's touch-target floor: the whole row is the label's hit
      area, not just the 1.4rem dot. */
-  .audience-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 var(--s-3); }
+  .audience-group { border: 1px solid var(--line); border-radius: var(--r-field); padding: 0 var(--s-3); }
   .audience-group.field-invalid { border-color: var(--warn); }
   .audience-group legend { font-weight: 600; padding: 0 var(--s-0); }
   .audience-group label {
@@ -554,7 +559,7 @@ export const FORM_CSS = `
   .invite-link { display: flex; gap: var(--s-1); align-items: center; }
   .invite-link input {
     flex: 1; font-size: var(--t-support);
-    background: var(--field); border: none; border-radius: 0.75rem;
+    background: var(--field); border: none; border-radius: var(--r-field);
   }
   /* Without this, .button's own flex: 1 (from STYLES) matches .invite-link
      input's flex: 1 above, so the field and the Copy button split the row
@@ -660,16 +665,16 @@ export const FORM_CSS = `
      is shared with the player's own fixture page, which has no controls at
      all (it only ever reads squad state) and must not carry rules for a
      control it can never render. */
-  .segment { display: flex; margin: 0; padding: var(--s-0); gap: var(--s-0); border-radius: 999px; background: var(--field); }
+  .segment { display: flex; margin: 0; padding: var(--s-0); gap: var(--s-0); border-radius: var(--r-pill); background: var(--field); }
   .segment .seg {
-    min-height: 44px; padding: var(--s-1) var(--s-3); border: 0; border-radius: 999px;
+    min-height: 44px; padding: var(--s-1) var(--s-3); border: 0; border-radius: var(--r-pill);
     background: transparent; color: var(--mut);
     font: inherit; font-size: var(--t-support); font-weight: 600; cursor: pointer;
   }
   /* The pressed segment, In or Out alike, takes the one selected state (M67):
      a verdict colour on "In" read as approval, which a pressed control is not. */
   .segment .seg.on, .segment .seg.out { background: var(--fg); color: var(--card-raised); }
-  .problem { margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: 0.6rem; background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
+  .problem { margin-top: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r-field); background: var(--warn-bg); color: var(--warn); font-size: var(--t-body); text-align: left; }
 `;
 
 /**
@@ -702,7 +707,7 @@ export const TEAM_PICKER_CSS = `
   .picker-choice input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); }
   .team-note { margin: var(--s-1) 0; color: var(--mut); font-size: var(--t-body); }
   .team-workspace {
-    margin: var(--s-5) 0; padding: var(--s-3); border-radius: 1.5rem; background: var(--card-raised);
+    margin: var(--s-5) 0; padding: var(--s-3); border-radius: var(--r-card); background: var(--card-raised);
   }
   .team-workspace h2 { margin: 0 0 var(--s-2); }
   .team-workspace h3 { overflow-wrap: anywhere; }
@@ -730,11 +735,11 @@ export const TEAM_PICKER_CSS = `
      In/Out control (M67). */
   .teams .sides {
     grid-column: 2; grid-row: 1 / span 2; display: inline-flex; gap: var(--s-0); margin: 0; padding: var(--s-0);
-    border-radius: 999px; background: var(--field);
+    border-radius: var(--r-pill); background: var(--field);
   }
   .teams .sides label {
     position: relative; display: flex; align-items: center; justify-content: center;
-    min-width: 52px; min-height: 44px; border-radius: 999px;
+    min-width: 52px; min-height: 44px; border-radius: var(--r-pill);
     background: transparent; color: var(--mut); font-weight: 600; cursor: pointer;
   }
   /* Keep native radio focus, arrow keys and form values behind the compact labels. */
@@ -752,7 +757,7 @@ export const TEAM_PICKER_CSS = `
   .teams .sides label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .team-columns { display: none; }
   .team-columns:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2); margin: var(--s-3) 0; }
-  .team-column { min-width: 0; padding: var(--s-2); border-radius: 0.75rem; }
+  .team-column { min-width: 0; padding: var(--s-2); border-radius: var(--r-field); }
   .team-column.side-a { background: var(--side-a-bg); color: var(--side-a-fg); }
   .team-column.side-b { background: var(--side-b-bg); color: var(--side-b-fg); }
   .team-column .team-total, .team-column .team-total [data-count] { color: inherit; }
@@ -830,7 +835,7 @@ export const OFFLINE_STYLES_CSS = `
  * stylesheet every owner page also carries.
  */
 export const INSTALL_STYLES_CSS = `
-  .device-panel { margin-top: var(--s-5); padding: var(--s-3) var(--s-3) var(--s-3); border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  .device-panel { margin-top: var(--s-5); padding: var(--s-3) var(--s-3) var(--s-3); border: none; border-radius: var(--r-card); background: var(--card-raised); }
   .device-panel h2 { margin: 0; }
   .device-intro { margin: var(--s-0) 0 0; color: var(--mut); font-size: var(--t-support); }
   .device-task { margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--line); }
@@ -840,7 +845,7 @@ export const INSTALL_STYLES_CSS = `
   .install ol { margin: var(--s-1) 0 0; padding-left: var(--s-3); color: var(--mut); font-size: var(--t-support); }
   .install li + li { margin-top: var(--s-0); }
   .account-history { margin-top: var(--s-3); }
-  .account-history .fixture-card { padding: var(--s-2) var(--s-3); margin-bottom: var(--s-2); border-radius: 0.9rem; }
+  .account-history .fixture-card { padding: var(--s-2) var(--s-3); margin-bottom: var(--s-2); border-radius: var(--r-card); }
   .account-history .fixture-card h3 { margin: 0 0 var(--s-0); font-size: var(--t-body); }
   .account-history .fixture-card p { margin: var(--s-0) 0 0; font-size: var(--t-support); }
   .account-history .fixture-card .viewer-headline { margin-top: var(--s-1); font-size: var(--t-support); }
@@ -860,7 +865,7 @@ export const INSTALL_STYLES_CSS = `
  * and the account page's `div` need them.
  */
 export const PUSH_STYLES_CSS = `
-  section.push { margin-top: var(--s-5); padding: var(--s-3) var(--s-3); border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  section.push { margin-top: var(--s-5); padding: var(--s-3) var(--s-3); border: none; border-radius: var(--r-card); background: var(--card-raised); }
   section.push h2 { margin-top: 0; }
   .push h3 { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-support); color: var(--mut); }
   .push .button { margin-top: var(--s-1); }
@@ -876,7 +881,7 @@ export const PUSH_STYLES_CSS = `
   .push .device-when { color: var(--mut); }
   .this-device {
     display: inline-block; margin-left: var(--s-1); padding: 0 var(--s-1);
-    border-radius: 1rem; background: var(--field); color: var(--fg);
+    border-radius: var(--r-card); background: var(--field); color: var(--fg);
     font-size: var(--t-support); font-weight: 600; white-space: nowrap;
   }
   .push label.device-name {
@@ -885,7 +890,7 @@ export const PUSH_STYLES_CSS = `
   }
   .push input.device-name-input {
     display: block; width: 100%; margin-top: var(--s-0); padding: var(--s-1) var(--s-2);
-    border: 1px solid var(--line); border-radius: 0.6rem;
+    border: 1px solid var(--line); border-radius: var(--r-field);
     background: var(--bg); color: var(--fg); font: inherit;
   }
 `;
@@ -923,7 +928,7 @@ export const PUSH_STYLES_CSS = `
  * game form's optional sections and read as a page division here.
  */
 export const INVITE_CSS = `
-  .card { margin: var(--s-3) 0; padding: var(--s-3); border: none; border-radius: 1.25rem; background: var(--card-raised); }
+  .card { margin: var(--s-3) 0; padding: var(--s-3); border: none; border-radius: var(--r-card); background: var(--card-raised); }
   .card h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-1); font-size: var(--t-body); }
   .card .actions { margin-top: var(--s-2); }
   .qr-toggle { margin: 0; border: 0; padding: 0; }
@@ -1001,7 +1006,7 @@ export const ADMIN_ALLOWLIST_CSS = `
   /* The open-sign-ups switch (M30). Namespaced under .signup-mode so these
      rules cannot collide with another block at equal specificity. */
   .signup-mode {
-    margin: var(--s-3) 0; padding: var(--s-3) var(--s-3); border-radius: 1.25rem;
+    margin: var(--s-3) 0; padding: var(--s-3) var(--s-3); border-radius: var(--r-card);
     background: var(--card-raised);
   }
   .signup-mode h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-0); font-size: var(--t-body); }
@@ -1015,8 +1020,7 @@ export const ADMIN_TOOLS_CSS = `
   .admin-intro { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-3); }
   ul.admin-tools { list-style: none; padding: 0; margin: var(--s-3) 0; }
   ul.admin-tools > li {
-    padding: var(--s-2) var(--s-3); margin: 0 0 var(--s-1);
-    border: 1px solid var(--line); border-radius: 0.9rem; background: var(--card);
+    padding: var(--s-2) 0; margin: 0; border-top: 1px solid var(--line);
   }
   ul.admin-tools > li > a { font-weight: 600; }
   ul.admin-tools .tool-note { color: var(--mut); font-size: var(--t-support); margin: var(--s-0) 0 0; }
@@ -1025,7 +1029,7 @@ export const ADMIN_TOOLS_CSS = `
   }
   .admin-tool-section h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-1); font-size: var(--t-body); }
   .admin-tool-section > p { color: var(--mut); font-size: var(--t-support); }
-  .admin-summary { padding: var(--s-3) var(--s-3); border: 1px solid var(--line); border-top: 0; border-radius: 0.9rem; background: var(--card); }
+  .admin-summary { padding: var(--s-3) var(--s-3); border-radius: var(--r-card); background: var(--card-raised); }
   ul.doors { list-style: none; padding: 0; margin: var(--s-3) 0; }
   ul.doors > li { padding: var(--s-0) 0; overflow-wrap: anywhere; }
   ul.doors .door-open { color: var(--fg); font-weight: 600; }
@@ -1070,7 +1074,7 @@ export const ADMIN_TOOLS_CSS = `
   }
   p.usage-warning {
     background: var(--warn-bg); color: var(--warn);
-    padding: var(--s-1) var(--s-2); border-radius: 6px; margin: var(--s-3) 0;
+    padding: var(--s-1) var(--s-2); border-radius: var(--r-field); margin: var(--s-3) 0;
   }
 `;
 
@@ -1083,7 +1087,7 @@ export const ADMIN_TOOLS_CSS = `
 export const WHATSAPP_CSS = `
   /* text-align: left because the cancelled page is a centred layout and a
      centred message would centre every line of the textarea too. */
-  .whatsapp { margin: var(--s-3) 0; padding: var(--s-3); border-radius: 1.25rem; background: var(--card-raised); text-align: left; }
+  .whatsapp { margin: var(--s-3) 0; padding: var(--s-3); border-radius: var(--r-card); background: var(--card-raised); text-align: left; }
   .whatsapp h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-0); font-size: var(--t-body); }
   .whatsapp h3 { margin: var(--s-3) 0 var(--s-0); font-size: var(--t-support); color: var(--mut); }
   .whatsapp p { margin: 0 0 var(--s-1); color: var(--mut); font-size: var(--t-support); }
@@ -1092,7 +1096,7 @@ export const WHATSAPP_CSS = `
      the card appears on. */
   .whatsapp textarea {
     display: block; width: 100%; box-sizing: border-box; margin: 0;
-    padding: var(--s-1) var(--s-2); border: 1px solid var(--line); border-radius: 0.75rem;
+    padding: var(--s-1) var(--s-2); border: 1px solid var(--line); border-radius: var(--r-field);
     background: var(--field); color: inherit; font: inherit; font-size: var(--t-body);
     line-height: 1.45; resize: vertical;
   }
@@ -1124,20 +1128,21 @@ export const WHATSAPP_CSS = `
  * SQUAD_STYLES_CSS and FORM_CSS already have.
  */
 export const RESULT_CSS = `
-  .result-workspace { margin-top: var(--s-4); }
+  /* One raised card; everything inside it is ruled, never boxed (M67). */
+  .result-workspace { margin-top: var(--s-4); padding: var(--s-3); border-radius: var(--r-card); background: var(--card-raised); }
+  .result-workspace > h2 { margin-top: 0; }
   .result-workspace h2 { margin-bottom: var(--s-2); }
-  .result-focus { margin: var(--s-3) 0 var(--s-3); padding: var(--s-3); border: 1px solid var(--line); border-radius: 1rem; background: var(--card-raised); }
+  .result-focus { margin: var(--s-3) 0 0; }
   .result-kicker { margin: 0 0 var(--s-1); font-size: var(--t-support); font-weight: 600; color: var(--mut); }
   .result-candidates { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: var(--s-1); }
   .result-candidate {
     display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3);
-    padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: 0.5rem;
+    padding: var(--s-2) 0; border-top: 1px solid var(--line);
   }
   .result-claim { font-weight: 600; }
   .result-backers { font-size: var(--t-support); color: var(--mut); }
   .result-yours { font-size: var(--t-support); color: var(--mut); }
   .result-candidate form { margin: 0 0 0 auto; }
-  .result-candidate:first-child { border-color: var(--accent); background: var(--card); }
   .result-candidate:first-child .result-claim { font-size: var(--t-lead); }
   .result-alternate { margin: var(--s-3) 0; border-top: 1px solid var(--line); padding-top: var(--s-3); }
   .result-alternate summary { min-height: 44px; display: flex; align-items: center; }
@@ -1166,7 +1171,7 @@ export const RESULT_CSS = `
   .result-score input {
     width: 4.5rem; padding: var(--s-1) var(--s-2); font: inherit;
     color: var(--fg); background: var(--field);
-    border: none; border-radius: 0.75rem;
+    border: none; border-radius: var(--r-field);
   }
   /* A single class, not .danger-link plus a reset: a <button> and STYLES's
      .danger-link (colour and weight only, its only other user an <a>) would
@@ -1233,7 +1238,7 @@ export const MUTE_CSS = `
   }
   .mute-panel {
     margin-top: var(--s-3); padding: var(--s-3) var(--s-3);
-    background: var(--card-raised); border-radius: 0.75rem;
+    background: var(--card-raised); border-radius: var(--r-field);
   }
   /* The "it is on right now" state, which is never inside a disclosure. The
      left rule is the whole visual difference from the panel above: an amber
@@ -1241,7 +1246,7 @@ export const MUTE_CSS = `
      borrowing .warn, whose colour belongs to the waitlist. */
   .mute-on {
     margin-top: var(--s-4); padding: var(--s-3) var(--s-3);
-    background: var(--card-raised); border-radius: 0.75rem;
+    background: var(--card-raised); border-radius: var(--r-field);
     border-left: 4px solid var(--accent);
     font-size: var(--t-support);
   }
@@ -1257,7 +1262,7 @@ export const MUTE_CSS = `
      warning. --mut on --card-raised clears 4.5:1 (test/views/contrast.test.ts). */
   .member-muted, .member-unconfirmed {
     display: inline-block; padding: 0 var(--s-1);
-    background: var(--card-raised); border-radius: 0.6rem;
+    background: var(--card-raised); border-radius: var(--r-field);
     font-size: var(--t-support); color: var(--mut); white-space: nowrap;
   }
 `;
@@ -1323,7 +1328,7 @@ export const SQUAD_SIGNALS_CSS = `
 export const INVITE_ORDER_CSS = `
   .invite-sub { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-3); }
   .invite-box {
-    background: var(--card-raised); border-radius: 1.25rem;
+    background: var(--card-raised); border-radius: var(--r-card);
     padding: var(--s-2) var(--s-3); margin-bottom: var(--s-2);
   }
   .invite-cap { font-weight: 600; font-size: var(--t-support); margin: 0 0 var(--s-1); }
@@ -1342,7 +1347,7 @@ export const INVITE_ORDER_CSS = `
   .invite-select, .invite-pos {
     font: inherit; font-size: var(--t-support); color: var(--fg);
     background: var(--field); border: 1px solid var(--line);
-    border-radius: 0.55rem; padding: var(--s-0) var(--s-1);
+    border-radius: var(--r-field); padding: var(--s-0) var(--s-1);
   }
   .invite-pos { width: 3.5rem; }
   .invite-ord { list-style: none; margin: 0; padding: 0; counter-reset: invite-tier; }
@@ -1354,7 +1359,7 @@ export const INVITE_ORDER_CSS = `
   .invite-ord > li::before {
     counter-increment: invite-tier; content: counter(invite-tier);
     font-variant-numeric: tabular-nums; font-size: var(--t-support); font-weight: 600;
-    color: var(--mut); background: var(--field); border-radius: 999px;
+    color: var(--mut); background: var(--field); border-radius: var(--r-pill);
     width: 1.5rem; height: 1.5rem; display: grid; place-items: center; flex: none;
   }
   .invite-implicit { opacity: 0.72; }
@@ -1363,20 +1368,20 @@ export const INVITE_ORDER_CSS = `
   .invite-pinned { color: var(--mut); font-size: var(--t-support); white-space: nowrap; }
   .invite-remove {
     font: inherit; font-size: var(--t-support); cursor: pointer;
-    border: 1px solid var(--line); border-radius: 999px;
+    border: 1px solid var(--line); border-radius: var(--r-pill);
     background: transparent; color: var(--danger); padding: var(--s-0) var(--s-2);
   }
   .invite-add { margin-top: var(--s-3); display: flex; align-items: end; gap: var(--s-1); flex-wrap: wrap; }
   .invite-add label { font-size: var(--t-support); color: var(--mut); display: block; width: 100%; }
   .invite-add input {
-    flex: 1; font: inherit; border-radius: 0.65rem; border: 2px solid var(--line);
+    flex: 1; font: inherit; border-radius: var(--r-field); border: 2px solid var(--line);
     background: var(--bg); color: var(--fg); padding: var(--s-1) var(--s-2); min-width: 8rem;
   }
   .invite-progress { margin-top: var(--s-4); }
   .invite-progress h2 { font-family: inherit; font-weight: 600; line-height: 1.3; font-size: var(--t-body); margin: 0 0 var(--s-1); }
   .invite-states { list-style: none; margin: 0; padding: 0; }
   .invite-state {
-    background: var(--card-raised); border-radius: 1.25rem;
+    background: var(--card-raised); border-radius: var(--r-card);
     padding: var(--s-2) var(--s-2); margin-bottom: var(--s-1);
     border-left: 4px solid var(--line);
   }
@@ -1388,7 +1393,7 @@ export const INVITE_ORDER_CSS = `
   .invite-meter { display: block; margin-top: var(--s-0); color: var(--mut); font-size: var(--t-support); }
   .invite-badge {
     font-size: var(--t-support); padding: 0 var(--s-1);
-    border-radius: 999px; white-space: nowrap;
+    border-radius: var(--r-pill); white-space: nowrap;
   }
   .invite-badge-ok { background: var(--ok-bg); color: var(--ok-fg); }
   .invite-badge-wait { background: var(--warn-bg); color: var(--warn); }
@@ -1408,12 +1413,19 @@ export const INVITE_ORDER_CSS = `
  */
 export const NOTIFY_MATRIX_CSS = `
   .notify-intro { margin: var(--s-0) 0 var(--s-3); color: var(--mut); font-size: var(--t-support); }
-  table.notify-matrix { width: 100%; border-collapse: separate; border-spacing: 0 0.7rem; }
+  table.notify-matrix {
+    width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden;
+    border-radius: var(--r-card); background: var(--card-raised);
+  }
   table.notify-matrix th { text-align: center; font-size: var(--t-support); color: var(--mut); font-weight: 600; padding: 0 var(--s-1) var(--s-0); }
   table.notify-matrix th.notify-what { text-align: left; padding-left: 0; }
-  table.notify-matrix td { padding: var(--s-3) var(--s-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); vertical-align: top; background: var(--card); }
-  table.notify-matrix td:first-child { border-left: 1px solid var(--line); border-radius: 0.9rem 0 0 0.9rem; }
-  table.notify-matrix td:last-child { border-right: 1px solid var(--line); border-radius: 0 0.9rem 0.9rem 0; }
+  table.notify-matrix td { padding: var(--s-3) var(--s-2); border-top: 1px solid var(--line); vertical-align: top; }
+  table.notify-matrix tbody tr:first-child td { border-top: 0; }
+  table.notify-matrix td.notify-what { padding-left: var(--s-3); }
+  table.notify-matrix .notify-summary { display: block; margin-top: var(--s-0); font-size: var(--t-support); color: var(--mut); }
+  /* Not one of the game form's optional sections, so none of their rule and margin. */
+  .notify-timing-toggle { margin: 0; padding: 0; border: 0; }
+  .notify-timing-toggle > summary { font-size: var(--t-support); color: var(--link); }
   table.notify-matrix td.notify-what { padding-right: var(--s-2); }
   table.notify-matrix .notify-label { display: block; font-weight: 600; }
   table.notify-matrix .hint { display: block; font-size: var(--t-support); color: var(--mut); }
@@ -1429,7 +1441,7 @@ export const NOTIFY_MATRIX_CSS = `
      because these inputs sit in a table cell, not a .field. */
   table.notify-matrix .notify-timing input {
     max-width: 9rem; width: 100%; padding: var(--s-1) var(--s-2); font: inherit;
-    color: var(--fg); background: var(--field); border: none; border-radius: 0.75rem;
+    color: var(--fg); background: var(--field); border: none; border-radius: var(--r-field);
   }
   table.notify-matrix .notify-timing .error { display: block; margin-top: var(--s-0); color: var(--warn); font-size: var(--t-support); }
   /* On a phone each message is a card: its title and timing, then one
@@ -1439,9 +1451,10 @@ export const NOTIFY_MATRIX_CSS = `
     table.notify-matrix, table.notify-matrix tbody { display: block; width: 100%; }
     /* Rows are blocks here, so border-spacing no longer separates them. */
     table.notify-matrix tr {
-      display: flex; flex-wrap: wrap; gap: var(--s-1); margin-bottom: var(--s-2); padding: var(--s-2) var(--s-3);
-      border: 1px solid var(--line); border-radius: 1rem; background: var(--card);
+      display: flex; flex-wrap: wrap; gap: var(--s-1); padding: var(--s-3);
+      border-top: 1px solid var(--line);
     }
+    table.notify-matrix tbody tr:first-child { border-top: 0; }
     /* The desktop cell rules are more specific than a bare td, so their
        width, edges and ground are undone at their own specificity. */
     table.notify-matrix td, table.notify-matrix td:first-child, table.notify-matrix td:last-child,
@@ -1451,7 +1464,7 @@ export const NOTIFY_MATRIX_CSS = `
     table.notify-matrix td.notify-what { flex-basis: 100%; }
     table.notify-matrix td.notify-none { display: none; }
     table.notify-matrix label.channel-toggle {
-      gap: var(--s-1); padding: 0 var(--s-3) 0 var(--s-2); border-radius: 999px; background: var(--field);
+      gap: var(--s-1); padding: 0 var(--s-3) 0 var(--s-2); border-radius: var(--r-pill); background: var(--field);
     }
     .notify-channel { display: inline; font-size: var(--t-support); font-weight: 600; color: var(--fg); }
     table.notify-matrix .notify-timing { gap: var(--s-1); }
@@ -1487,7 +1500,7 @@ export const ADMIN_NOTIFICATIONS_CSS = `
 export const TIMELINE_CSS = `
   .timeline-workspace {
     margin-top: var(--s-4); padding: var(--s-3) var(--s-3);
-    border: 1px solid var(--line); border-radius: 1.1rem; background: var(--card);
+    border-radius: var(--r-card); background: var(--card-raised);
   }
   .timeline-workspace h2 { font-family: inherit; font-weight: 600; line-height: 1.3; margin: 0 0 var(--s-2); font-size: var(--t-body); }
   .timeline-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-3); }

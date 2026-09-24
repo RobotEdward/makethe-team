@@ -60,7 +60,8 @@ Rules marked **(tested)** fail a test when broken. The rest are held by review.
 - Every margin, padding and gap is a `--s-*` token (4 / 8 / 12 / 16 / 24 / 32 / 40px):
   24–32px between tasks, 12–16px inside one, 16px card padding. **(tested)**
 - Pages without the site header start at the top, like every other page.
-- A card encloses a task; a rule separates rows in a list. No card inside a card.
+- A card encloses a task; a rule separates rows in a list. No card inside a card, and raised
+  cards have no border. Radii come from the three `--r-*` tokens. **(tested)**
 - A reader should be able to name each task on a page without reading its form fields.
 
 ### Action hierarchy
@@ -168,18 +169,15 @@ Known departures, found on 23 September 2026. Fixing one is welcome; copying one
    `--bg` with smaller radii.
 4. **Four warning boxes** that mean the same thing: `.nudge`, `.form-error`, `.problem` (the
    last two declared identically in two blocks) and `.usage-warning`.
-5. **No shared card primitive.** About twenty card surfaces use four raised and four bordered
-   radii and nearly as many paddings; the design-system radii are 999px, 1.25rem and 0.75rem,
-   but nineteen distinct values exist.
-6. **Focus and touch-target gaps.** No 44px floor on `.invite-remove`, `.result-withdraw`, `.danger-link` and the WhatsApp
+5. **Focus and touch-target gaps.** No 44px floor on `.invite-remove`, `.result-withdraw`, `.danger-link` and the WhatsApp
    option checkboxes. (Focus now has one global style.)
-7. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
+6. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
     `background_color` (`#fbfaf8`, matching no surface), the app icon, the QR code, and the
     email templates' inline palette.
-8. **Stale CSS comments** describe a dashed `.read-only` border, an accent confirmed badge
+7. **Stale CSS comments** describe a dashed `.read-only` border, an accent confirmed badge
     and an outlined default button, none of which exist any more.
 
 **Data seen only in the guide's captures**
 
-9. The fixture timeline shows every answer at the same minute because the guide's seed posts
+8. The fixture timeline shows every answer at the same minute because the guide's seed posts
     them within seconds. A capture artefact, not a product issue.

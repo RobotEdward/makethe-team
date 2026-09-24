@@ -12,11 +12,11 @@ import { STYLE_BLOCKS } from "../../src/views/styles.js";
  * remaining work is always visible.
  */
 const ENFORCE = {
-  radii: false,
+  radii: true,
   spacing: true,
   uppercase: true,
   mono: true,
-  cardToken: false,
+  cardToken: true,
   accentMutToken: true,
 };
 
@@ -69,8 +69,12 @@ function check(name: keyof typeof ENFORCE, offenders: string[]): void {
 
 describe("design-system lints (M67)", () => {
   it("draws every border radius from the three radius tokens, or 50% for dots", () => {
+    // The two shapes that are not surfaces: the checkbox's small square
+    // corner, and the offline page's app-icon silhouette.
+    const EXEMPT: Record<string, string> = { 'input[type="checkbox"]': "6px", ".offline-mark": "22%" };
     const offenders = rules().flatMap((rule) =>
       declarations(rule)
+        .filter(([, value]) => EXEMPT[rule.selector.split(" » ").pop() ?? ""] !== value)
         .filter(([prop]) => prop === "border-radius" || /^border-(top|bottom)-(left|right)-radius$/.test(prop))
         .filter(([, value]) => !value.replace(/\s*!important/, "").split(/\s+/).every((v) => v === "0" || v === "50%" || /^var\(--r-(pill|card|field)\)$/.test(v)))
         .map(([prop, value]) => `${rule.selector} { ${prop}: ${value} }`),

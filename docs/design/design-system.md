@@ -25,8 +25,7 @@ swapping the same names; there is no manual theme switch.
 | Token | Light | Dark | Use |
 |---|---|---|---|
 | `--bg` | `#efe3cd` | `#221f1b` | Page ground |
-| `--card` | `#f5ead8` | `#2b2721` | Bordered secondary surfaces — workspaces, tiles, the jump-to index |
-| `--card-raised` | `#f9f4ed` | `#322d26` | Borderless raised cards — fixture cards, the answer block, panels |
+| `--card-raised` | `#f9f4ed` | `#322d26` | The one raised surface: borderless cards — fixture cards, the answer block, workspaces, panels |
 | `--field` | `#ebddc5` | `#3a342b` | Default button fill, inputs, segment tracks, muted badges |
 | `--fg` | `#201e1d` | `#ede5d8` | Body text; also the "inverted" fill for a selected chip or side |
 | `--mut` | `#645c50` | `#a89e8f` | Default paragraph colour, support text, captions |
@@ -86,9 +85,12 @@ danger button, not a red heading, says a page is destructive. Fonts load from Go
   `--s-2`; field to field `--s-3`; prose to actions `--s-4`; section to section and title
   block to first section `--s-5`. `--s-0` (4px) is for control internals — track padding,
   chip and pill padding.
-- **Radii:** `999px` for every pill (buttons, chips, badges, segments); 1.25rem for raised
-  cards; 0.75rem for fields. (Nineteen distinct values exist in practice — see
-  [UI standards](ui-standards.md#where-the-app-does-not-meet-them-yet).)
+- **Radii:** the three `--r-*` tokens only, plus `50%` for dots. Two shapes are exempt by name
+  in the lint: the checkbox's 6px corner and the offline page's app-icon silhouette.
+- **Surfaces:** two grounds — `--bg` and `--card-raised` — plus `--field` for controls. Raised
+  cards have no border and use `--r-card`. A card never contains another card: inside one,
+  content is separated by `1px var(--line)` rules. The jump-to index and tool lists sit on
+  `--bg` between rules, with no fill.
 - **Borders:** `1px solid var(--line)`, nearly everywhere.
 - **Shadow:** one — the update toast. Everything else is flat.
 - **Breakpoints:** `min-width: 30rem` (answer buttons go side by side), `max-width: 40rem`
@@ -126,8 +128,8 @@ Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES
 | Notices | `.nudge` (`.ok`), `.problem`, `.form-error`, `.read-only` | various | Attention box, error box, and a quiet "this can't be changed" box |
 | Jump-to index | `.fixture-index`, `.fixture-section` | `FIXTURE_STYLES_CSS` | The link strip at the top of the organiser's fixture page |
 | Workspaces | `.team-workspace`, `.timeline-workspace`, `.result-workspace` | own blocks | A contained task on a long page |
-| Result panel | `.result-focus`, `.result-candidate`, `.result-alternate` | `RESULT_CSS` | The result so far, its backers, and the other-result form |
-| Tables | `table.record`, `table.league`, `table.notify-matrix` | `RECORD_CSS`, `LEAGUE_CSS`, `NOTIFY_MATRIX_CSS` | Your record; Standings (sticky columns, sortable); notification settings (cards on a phone) |
+| Result panel | `.result-workspace`, `.result-focus`, `.result-candidate`, `.result-alternate` | `RESULT_CSS` | One raised card: "Result so far", each candidate a ruled row with its backers, then the other-result disclosure |
+| Tables | `table.record`, `table.league`, `table.notify-matrix` | `RECORD_CSS`, `LEAGUE_CSS`, `NOTIFY_MATRIX_CSS` | Your record; Standings (sticky columns, sortable); notification settings — one raised card, a ruled row per message with its timing as a summary line and a "Change timing" disclosure |
 | Freshness bar | `.freshness`, `.freshness-refresh` | `FRESHNESS_CSS` | "Updated just now · Refresh" at the foot of live pages |
 | Site header | `.site-header`, `nav a[aria-current=page]` | `STYLES` | Signed-in pages only |
 | Disclosure | `summary` (every one) | `STYLES` | 44px row, 600 weight, a CSS-drawn chevron on the right that turns when open; no browser marker. A summary alone in a list is ruled above and below |

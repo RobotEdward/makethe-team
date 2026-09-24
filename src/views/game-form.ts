@@ -333,20 +333,65 @@ export function renderGameFormPage(params: GameFormPageParams): string {
    * with no `values`/`errorFor` to build a `timing()` input from, so the three
    * rows that fire on a schedule get their strip attached here instead.
    */
+  /**
+   * The timing as one line (M67), with the fields behind a "Change timing"
+   * disclosure — opened whenever one of them has an error, so a rejected value
+   * is never hidden. The line reads the same values the fields hold.
+   */
+  const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+  const count = (name: string): number | null => {
+    const parsed = Number.parseInt(values[name] ?? "", 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const timingSummary: Partial<Record<NotificationType, () => string>> = {
+    n1: () => {
+      const days = count("reminderDaysBefore");
+      const at = values["reminderLocalTime"] ?? "";
+      if (days === null) return "";
+      const when = days === 0 ? "On the day" : `${plural(days, "day", "days")} before`;
+      return at ? `${when}, at ${at}` : when;
+    },
+    n4: () => {
+      const hours = count("shortWarningOffsetHours");
+      return hours === null ? "" : `${plural(hours, "hour", "hours")} before kickoff`;
+    },
+    n12: () => {
+      const hours = count("resultPromptOffsetHours");
+      if (hours === null) return "";
+      return hours === 0 ? "Straight after full time" : `${plural(hours, "hour", "hours")} after full time`;
+    },
+  };
+  const timingFields: Partial<Record<NotificationType, readonly string[]>> = {
+    n1: ["reminderDaysBefore", "reminderLocalTime"],
+    n4: ["shortWarningOffsetHours"],
+    n12: ["resultPromptOffsetHours"],
+  };
+  const timingStrip = (type: NotificationType, fields: string): string => {
+    const summary = timingSummary[type]?.() ?? "";
+    const open = (timingFields[type] ?? []).some((name) => errorFor(name) !== undefined);
+    return `
+        ${summary ? `<span class="notify-summary">${escapeHtml(summary)}</span>` : ""}
+        <details class="notify-timing-toggle"${open ? " open" : ""}>
+          <summary>Change timing</summary>
+          <div class="notify-timing">${fields}
+          </div>
+        </details>`;
+  };
+
+  /**
+   * Timing controls per row, keyed by type rather than carried on
+   * `NotificationRowView`: `ownerNotificationRows` only sees `EffectiveSettings`,
+   * with no `values`/`errorFor` to build a `timing()` input from, so the three
+   * rows that fire on a schedule get their strip attached here instead.
+   */
   const notificationTimings: Partial<Record<NotificationType, string>> = {
-    n1: `
-        <div class="notify-timing">
+    n1: timingStrip("n1", `
           ${timing("reminderDaysBefore", "Days before", "number", ` min="0" max="7"`)}
-          ${timing("reminderLocalTime", "At", "time", "")}
-        </div>`,
-    n4: `
-        <div class="notify-timing">
-          ${timing("shortWarningOffsetHours", "Hours before kickoff", "number", ` min="1" max="168"`)}
-        </div>`,
-    n12: `
-        <div class="notify-timing">
-          ${timing("resultPromptOffsetHours", "Hours after full time", "number", ` min="0" max="48"`)}
-        </div>`,
+          ${timing("reminderLocalTime", "At", "time", "")}`),
+    n4: timingStrip("n4", `
+          ${timing("shortWarningOffsetHours", "Hours before kickoff", "number", ` min="1" max="168"`)}`),
+    n12: timingStrip("n12", `
+          ${timing("resultPromptOffsetHours", "Hours after full time", "number", ` min="0" max="48"`)}`),
   };
 
   const cell = (row: NotificationRowView, channel: Channel): string => {

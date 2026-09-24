@@ -35,20 +35,17 @@ function tokens(theme: "light" | "dark"): Record<string, string> {
 /** [foreground token, ground token, minimum ratio]. 4.5 for text, 3 for large/UI. */
 const PAIRS: readonly [string, string, number][] = [
   ["--fg", "--bg", 4.5],
-  ["--fg", "--card", 4.5],
   ["--fg", "--card-raised", 4.5],
   ["--fg", "--field", 4.5],
   // The going answer block (M20 B7) is an --ok-bg card holding the viewer's
   // headline, which is --fg.
   ["--fg", "--ok-bg", 4.5],
   ["--mut", "--bg", 4.5],
-  ["--mut", "--card", 4.5],
   ["--mut", "--card-raised", 4.5],
   // The closed answer block (M20 B7) is a --field card holding the read-only
   // sentence, which is --mut small text.
   ["--mut", "--field", 4.5],
   ["--link", "--bg", 4.5],
-  ["--link", "--card", 4.5],
   ["--link", "--card-raised", 4.5],
   // Button text renders at var(--t-lead) bold — WCAG large text, 3:1 floor.
   // Never put small text in these two fills; small text uses the -bg/-fg
