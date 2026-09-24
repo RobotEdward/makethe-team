@@ -268,8 +268,9 @@ export const SHOTS: Shot[] = [
     title: "Choosing what your game sends",
     route: "/g/:id/edit",
     shows:
-      "The Notifications section of the edit form: one switch per message the game sends, " +
-      "each with the timing it governs, all on by default.",
+      "The Notifications section of the edit form on a phone: one row per message the game " +
+      "sends, its timing in words with a Change timing disclosure, and an Email and a Push " +
+      "box for each, all on by default.",
     path: (w) => `/g/${w.gameId}/edit`,
     persona: "organiser",
     // Not a bare `.notify-group`: M44's "Invites" fieldset carries the same

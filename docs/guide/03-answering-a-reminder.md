@@ -72,8 +72,7 @@ don't see who anyone else is.
 The Meadow Park Kickabout has room for ten. If you tap **I'm in** after the
 tenth person has, you go on the waitlist instead and the page tells you your
 position — here, second. The **I'm in** button changes to say so too: it now
-reads **I'm in · waiting**, in amber rather than the green a confirmed place
-gets, so it never looks like a place you don't have.
+reads **I'm in · waiting**, so it never looks like a place you don't have.
 
 You do not need to do anything else. If someone drops out, the person at the
 top of the waitlist is moved in automatically and emailed. Nobody else is

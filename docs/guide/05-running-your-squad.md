@@ -85,13 +85,14 @@ takes effect straight away, including on a fixture you have already played.
 
 ## Choosing what your game sends
 
-![The Notifications section of the edit form: one row per message the game sends, an Email box and a Push box for each, and the timing it governs](images/notification-settings.png)
+![The Notifications section of the edit form on a phone: one row per message the game sends, its timing in a line of its own, and an Email and a Push switch for each](images/notification-settings.png)
 
-**Notifications**, on the same form, is a table: one row per message the game
-sends by itself, an **Email** box and a **Push** box beside it, and the
-timing underneath where the message has one. A row with a dash instead of a
-box has no version on that channel — there's nothing to switch on there.
-Every box starts checked.
+**Notifications**, on the same form, lists every message the game sends by
+itself, one row each, with an **Email** box and a **Push** box to tick. Where a
+message has a timing, the row says it in words — "1 day before, at 09:00" —
+and **Change timing** opens the fields that set it. A message with no version
+on a channel has no box for it: on a phone it simply isn't there, and on a
+wider screen there's a dash. Every box starts checked.
 
 - **Remind players before kickoff** is the message that asks people if they're
   in, and **Days before** and **At** decide when it goes. Turning it off stops
@@ -105,8 +106,7 @@ Every box starts checked.
   just sends nothing, and the fixture page says so.
 - **Nudge me to post it to the group chat** is the phone notification that
   reminds you to share the fixture. It rides with the reminder above, so it
-  has no time of its own, and no Email box — it's push only, so that row shows
-  a dash under Email.
+  has no time of its own, and no Email box — it's push only.
 - **Ask players how it went** is the prompt for the score after full time.
   **Hours after full time** holds it back if you'd rather it landed the next
   morning; zero means as soon as we can.
