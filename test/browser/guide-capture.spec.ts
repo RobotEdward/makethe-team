@@ -22,7 +22,13 @@ import { signIn } from "./sign-in.js";
  * Tagged `@guide`, so it is excluded from the default browser run and from CI.
  */
 
-const IMAGES = "docs/guide/images";
+/**
+ * `GUIDE_SCHEME=dark` captures the same shots in dark mode into
+ * `GUIDE_IMAGES_DIR` (required then) for review. The guide itself ships light
+ * images only, so a dark run never touches `docs/guide/` or the manifest.
+ */
+const DARK = process.env.GUIDE_SCHEME === "dark";
+const IMAGES = DARK ? process.env.GUIDE_IMAGES_DIR ?? "" : "docs/guide/images";
 const MANIFEST = "docs/guide/manifest.json";
 
 test("@guide capture every screen the guide shows", async ({ page, browser }) => {
@@ -33,7 +39,9 @@ test("@guide capture every screen the guide shows", async ({ page, browser }) =>
   // minutes the run died part-way through the third world, and a timeout in
   // the middle of seeding reads like a hang rather than a budget.
   test.setTimeout(900_000);
+  if (IMAGES === "") throw new Error("GUIDE_SCHEME=dark needs GUIDE_IMAGES_DIR, outside docs/guide");
   mkdirSync(IMAGES, { recursive: true });
+  if (DARK) await page.emulateMedia({ colorScheme: "dark" });
 
   await page.setViewportSize({ width: 390, height: 844 });
   const world: GuideWorld = await buildGuideWorld(page, browser);
@@ -157,6 +165,6 @@ test("@guide capture every screen the guide shows", async ({ page, browser }) =>
 
   // No timestamp in the manifest: a captured-at field would churn the file on
   // every run for no reader's benefit.
-  writeFileSync(MANIFEST, `${JSON.stringify({ shots: entries }, null, 2)}\n`);
+  if (!DARK) writeFileSync(MANIFEST, `${JSON.stringify({ shots: entries }, null, 2)}\n`);
   console.log(`captured ${SHOTS.length} shots, ${written.length} changed`);
 });
