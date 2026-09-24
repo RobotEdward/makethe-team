@@ -123,7 +123,11 @@ Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES
 | Tables | `table.record`, `table.league`, `table.notify-matrix` | `RECORD_CSS`, `LEAGUE_CSS`, `NOTIFY_MATRIX_CSS` | Your record; Standings (sticky columns, sortable); notification settings (cards on a phone) |
 | Freshness bar | `.freshness`, `.freshness-refresh` | `FRESHNESS_CSS` | "Updated just now · Refresh" at the foot of live pages |
 | Site header | `.site-header`, `nav a[aria-current=page]` | `STYLES` | Signed-in pages only |
-| Disclosure | `details > summary`, `.qr-toggle` | `FORM_CSS`, `INVITE_CSS` | Secondary tools, collapsed |
+| Disclosure | `summary` (every one) | `STYLES` | 44px row, 600 weight, a CSS-drawn chevron on the right that turns when open; no browser marker. A summary alone in a list is ruled above and below |
+| Checkbox | `input[type="checkbox"]` | `STYLES` | 20px box, 6px radius, 1.5px `--mut` edge on `--card-raised`; checked is `--fg` with a drawn tick. Leads its label in `.switch-row` |
+| Channel pill | `label.channel-toggle` | `NOTIFY_MATRIX_CSS` | On a phone, each notification channel is a 44px `--field` pill: checkbox, then the channel name |
+| Select | `.select` wrapper | `STYLES` | Native select with the chevron drawn by the wrapper |
+| Focus | `:focus-visible` | `STYLES` | One ring for everything: 2px `--accent`, 2px offset |
 
 ![The organiser's squad rows: each member's name with a Manage disclosure at the right](../guide/images/squad-controls.png)
 

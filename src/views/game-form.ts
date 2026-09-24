@@ -351,19 +351,21 @@ export function renderGameFormPage(params: GameFormPageParams): string {
 
   const cell = (row: NotificationRowView, channel: Channel): string => {
     const found = row.cells.find((c) => c.channel === channel);
-    // A dash on desktop, where the column heading names the channel; on a
-    // phone the headings are gone, so the card row names it instead.
+    // A dash on desktop, where the column heading names the channel. On a
+    // phone the headings are gone and each channel is its own labelled pill,
+    // so a channel the message never uses simply has no pill.
     if (!found) {
-      return `<td class="notify-cell notify-none"><span class="notify-channel">${escapeHtml(CHANNEL_LABEL[channel])}</span><span class="notify-unavailable">Not available</span><span class="notify-dash">—</span></td>`;
+      return `<td class="notify-cell notify-none"><span class="notify-dash">—</span></td>`;
     }
     const name = cellFieldName(row.type, channel);
+    const pill = (input: string) =>
+      `<label class="channel-toggle">${input}<span class="notify-channel">${escapeHtml(CHANNEL_LABEL[channel])}</span></label>`;
     if (!found.adminAllows) {
-      return `<td class="notify-cell"><span class="notify-channel">${escapeHtml(CHANNEL_LABEL[channel])}</span><input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox" disabled aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}" aria-describedby="${escapeHtml(name)}-note"></td>`;
+      return `<td class="notify-cell">${pill(`<input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox" disabled aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}" aria-describedby="${escapeHtml(name)}-note">`)}</td>`;
     }
     return `<td class="notify-cell">
-        <span class="notify-channel">${escapeHtml(CHANNEL_LABEL[channel])}</span>
         <input type="hidden" name="${escapeHtml(cellMarkerName(row.type, channel))}" value="1">
-        <input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox"${found.ownerWants ? " checked" : ""} aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}">
+        ${pill(`<input id="${escapeHtml(name)}" name="${escapeHtml(name)}" type="checkbox"${found.ownerWants ? " checked" : ""} aria-label="${escapeHtml(`${row.label} — ${CHANNEL_LABEL[channel]}`)}">`)}
       </td>`;
   };
 
@@ -427,7 +429,7 @@ export function renderGameFormPage(params: GameFormPageParams): string {
           ${field(
             "gatedFallbackHoursBefore",
             "If we're still short of the minimum, ask the next group",
-            `<select id="gatedFallbackHoursBefore" name="gatedFallbackHoursBefore">${fallbackOptions}</select>`,
+            `<span class="select"><select id="gatedFallbackHoursBefore" name="gatedFallbackHoursBefore">${fallbackOptions}</select></span>`,
           )}
           ${gameId === undefined ? "" : `<p><a href="${escapeHtml(inviteOrderPath(gameId))}">Edit the invite order &rarr;</a></p>`}
         </div>
@@ -447,12 +449,12 @@ export function renderGameFormPage(params: GameFormPageParams): string {
     ? `
       <details>
         <summary>Advanced</summary>
-        ${field("timezone", "Time zone", `<select id="timezone" name="timezone">${timezoneOptions}</select>`)}
+        ${field("timezone", "Time zone", `<span class="select"><select id="timezone" name="timezone">${timezoneOptions}</select></span>`)}
         ${field("venueUrl", "Venue link", textInput("venueUrl", "url"))}
         ${field(
           "resultLockHoursAfter",
           "How long the result stays open to argument",
-          `<select id="resultLockHoursAfter" name="resultLockHoursAfter">${lockOptions}</select>`,
+          `<span class="select"><select id="resultLockHoursAfter" name="resultLockHoursAfter">${lockOptions}</select></span>`,
         )}
       </details>`
     : "";
@@ -467,8 +469,8 @@ export function renderGameFormPage(params: GameFormPageParams): string {
       ${field("venueName", "Where you play", textInput("venueName"))}
       ${field("venueAddress", "Address (optional)", textInput("venueAddress"))}
       <div class="row">
-        ${field("weekday", "Day", `<select id="weekday" name="weekday">${weekdayOptions}</select>`)}
-        ${field("interval", "How often", `<select id="interval" name="interval">${intervalOptions}</select>`)}
+        ${field("weekday", "Day", `<span class="select"><select id="weekday" name="weekday">${weekdayOptions}</select></span>`)}
+        ${field("interval", "How often", `<span class="select"><select id="interval" name="interval">${intervalOptions}</select></span>`)}
       </div>
       <div class="row">
         ${field("kickoffTime", "Kickoff", textInput("kickoffTime", "time"))}

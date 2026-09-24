@@ -77,7 +77,10 @@ Rules marked **(tested)** fail a test when broken. The rest are held by review.
 - Native inputs, a visible label above each, and one field treatment: `--field` ground, 1px
   resting border, 0.75rem radius. A text input always has a resting border — beside a select
   a borderless input reads as disabled. **(tested, M52)**
-- Visible focus on everything focusable; the whole label activates its control.
+- One focus ring for everything focusable (2px accent, 2px offset); no per-component focus
+  styles. The whole label activates its control.
+- No browser-default disclosure markers, checkboxes or select arrows: use the shared
+  treatments in [Design system → Components](design-system.md#components).
 - Touch targets at least 44px; primary buttons and switch rows 52px.
 - Result inputs and team choices should look like the rest of the app, not a separate kit.
 
@@ -169,10 +172,8 @@ Known departures, found on 23 September 2026. Fixing one is welcome; copying one
 6. **No shared card primitive.** About twenty card surfaces use four raised and four bordered
    radii and nearly as many paddings; the design-system radii are 999px, 1.25rem and 0.75rem,
    but nineteen distinct values exist.
-7. **Focus and touch-target gaps.** No custom focus style on plain links, the generic
-   `summary`, checkboxes, `.invite-remove`, `.result-withdraw` and several invite inputs. No
-   44px floor on `.invite-remove`, `.result-withdraw`, `.danger-link`, the generic summaries
-   and the WhatsApp option checkboxes.
+7. **Focus and touch-target gaps.** No 44px floor on `.invite-remove`, `.result-withdraw`, `.danger-link` and the WhatsApp
+   option checkboxes. (Focus now has one global style.)
 8. **Hard-coded colours** outside the tokens: the update toast's shadow, the manifest's
     `background_color` (`#fbfaf8`, matching no surface), the app icon, the QR code, and the
     email templates' inline palette.

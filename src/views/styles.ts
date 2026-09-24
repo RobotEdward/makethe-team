@@ -325,7 +325,7 @@ export const DASHBOARD_STYLES_CSS = `
   /* The archived fold (M41). FORM_CSS's details rule is not on this page, so
      without these the summary sits flush against "Set up a game". */
   .archived-games { margin: 1.25rem 0; }
-  .archived-games > summary { cursor: pointer; font-weight: 600; color: var(--mut); }
+  .archived-games > summary { color: var(--mut); }
   .archived-games > ul.owned-games { margin-top: 0.5rem; }
 
   /* The onboarding card (M19). Its own idiom, not .fixture-card: a card up
@@ -368,7 +368,6 @@ export const SIGNIN_STYLES_CSS = `
     border-radius: 0.65rem; border: 2px solid var(--line);
     background: var(--bg); color: var(--fg); font: inherit; font-size: var(--t-lead);
   }
-  .signin input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .signin .button { margin-top: 0.25rem; }
 `;
 
@@ -423,7 +422,6 @@ export const CANCEL_STYLES_CSS = `
     border-radius: 0.6rem; border: 1px solid var(--line);
     background: var(--bg); color: var(--fg); font: inherit; font-size: var(--t-body);
   }
-  .cancel-form textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .cancel-form .hint { margin-top: 0.4rem; font-size: var(--t-support); }
   .cancel-form .button.danger { margin-top: 1.25rem; width: 100%; }
   /* The back-out link (M10 §3.7, restored by the whole-branch review's
@@ -473,10 +471,7 @@ export const FORM_CSS = `
     color: var(--fg); background: var(--field);
     border: 1px solid var(--line); border-radius: 0.75rem;
   }
-  .field textarea { min-height: 8rem; resize: vertical; }
-  .field input:focus-visible, .field select:focus-visible, .field textarea:focus-visible {
-    outline: 3px solid var(--accent); outline-offset: 1px;
-  }
+  .field textarea { min-height: 8rem; }
   .field .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
   /* The caption above a value the page is only reading out to the viewer, and
      the value itself — the paragraph immediately after it, so the pair carries
@@ -504,11 +499,13 @@ export const FORM_CSS = `
      lines of text at every width, so the hint can wrap to three lines without
      the tick moving. 52px because the whole row is the label's hit area — a
      bare checkbox is about 22px, well under the phone floor. */
-  .switch-row { display: grid; grid-template-columns: 1fr auto; align-items: center;
-    gap: 0.25rem 1rem; min-height: 52px; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
-  .switch-row label { font-weight: 600; }
-  .switch-row .hint { grid-column: 1; font-size: var(--t-support); color: var(--mut); }
-  .switch-row input { grid-column: 2; grid-row: 1 / span 2; width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
+  /* The checkbox leads and the text follows (M67), the box centred on the
+     label's first line so a hint of any length wraps under the label. */
+  .switch-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start;
+    gap: 0.25rem 0.75rem; min-height: 52px; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  .switch-row label { grid-column: 2; grid-row: 1; font-weight: 600; }
+  .switch-row .hint { grid-column: 2; grid-row: 2; font-size: var(--t-support); color: var(--mut); }
+  .switch-row input { grid-column: 1; grid-row: 1 / span 2; margin-top: calc((1.6em - 20px) / 2); }
   .notify-group { border: 1px solid var(--line); border-radius: 0.5rem; padding: 0 1rem; margin: 1.5rem 0; }
   .notify-group legend { font-weight: 600; padding: 0 0.3rem; }
   /* The fixture-message audience radios (audienceFields in broadcast.ts).
@@ -554,7 +551,6 @@ export const FORM_CSS = `
     accent-color: var(--accent);
   }
   details { margin: 1.5rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
-  summary { cursor: pointer; font-weight: 600; }
   .actions { display: flex; gap: 0.75rem; margin-top: 1.75rem; }
   /* The archive link under the edit form (M41): apart from Save, so a hand
      reaching for the primary action does not land on the irreversible one. */
@@ -660,7 +656,7 @@ export const FORM_CSS = `
      carries a top border and a 1.5rem margin — fourteen of those would be a
      worse page than the fourteen buttons this replaces. */
   .member-actions { margin: 0; border: 0; padding: 0; }
-  .member-actions summary { font-weight: 500; font-size: var(--t-support); color: var(--mut); }
+  .member-actions summary { min-height: 44px; font-weight: 500; font-size: var(--t-support); color: var(--mut); }
   .member-actions[open] { grid-column: 1 / -1; }
   .member-actions form { margin: 0.5rem 0; }
   /* The segmented mark-in/mark-out (M10 §3.3). A shared rounded track with two
@@ -677,7 +673,6 @@ export const FORM_CSS = `
     background: transparent; color: var(--mut);
     font: inherit; font-size: var(--t-support); font-weight: 600; cursor: pointer;
   }
-  .segment .seg:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   /* The pressed segment, In or Out alike, takes the one selected state (M67):
      a verdict colour on "In" read as approval, which a pressed control is not. */
   .segment .seg.on, .segment .seg.out { background: var(--fg); color: var(--card-raised); }
@@ -760,7 +755,8 @@ export const TEAM_PICKER_CSS = `
      player back off a side without script. */
   .teams .sides label:has(input[value=""]) { min-width: 44px; }
   .teams .sides label:has(input[value=""]:checked) { background: transparent; color: var(--mut); }
-  .teams .sides label:has(input:focus-visible) { outline: 3px solid var(--link); outline-offset: 3px; }
+  /* The radio is invisible under its label, so the label shows the ring. */
+  .teams .sides label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .team-columns { display: none; }
   .team-columns:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 1.25rem 0; }
   .team-column { min-width: 0; padding: 0.75rem; border-radius: 0.75rem; }
@@ -959,10 +955,7 @@ export const INVITE_CSS = `
      obvious way to clear the floor: flex on a summary strips WebKit's native
      disclosure triangle, and that triangle is the only thing that says this
      line opens rather than being another piece of grey supporting text. */
-  .qr-toggle summary {
-    padding: 0.75rem 0;
-    font-weight: 600; font-size: var(--t-support); color: var(--mut); cursor: pointer;
-  }
+  .qr-toggle summary { font-size: var(--t-support); color: var(--mut); }
 
   /* "Coming up" on the owner's game page: one line per fixture, each a link
      to it. Its own list rather than DASHBOARD_STYLES_CSS's .fixture-list /
@@ -1121,7 +1114,6 @@ export const WHATSAPP_CSS = `
     background: var(--field); color: inherit; font: inherit; font-size: var(--t-body);
     line-height: 1.45; resize: vertical;
   }
-  .whatsapp textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   /* "Open in WhatsApp" wrapped onto two lines beside Copy at 390px (the
      capture showed it); nowrap keeps each label on one line and flex-wrap
      drops Copy to its own row if there really is no room. */
@@ -1137,7 +1129,7 @@ export const WHATSAPP_CSS = `
      mid-label, which reads as one long sentence with stray boxes in it. */
   .whatsapp-option { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.35rem; font-size: var(--t-support); }
   /* Big enough to hit with a thumb — the browser default is around 13px. */
-  .whatsapp-option input { width: 1.15rem; height: 1.15rem; margin: 0; accent-color: var(--accent); flex: none; }
+  .whatsapp-option input { margin: 0; flex: none; }
 `;
 
 /**
@@ -1195,7 +1187,6 @@ export const RESULT_CSS = `
     color: var(--fg); background: var(--field);
     border: none; border-radius: 0.75rem;
   }
-  .result-score input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
   /* A single class, not .danger-link plus a reset: a <button> and STYLES's
      .danger-link (colour and weight only, its only other user an <a>) would
      both land on this element at equal specificity, and STYLE_BLOCKS always
@@ -1253,11 +1244,12 @@ export const FRESHNESS_CSS = `
  */
 export const MUTE_CSS = `
   .mute { margin-top: 1.5rem; font-size: var(--t-support); }
+  /* A summary on its own is ruled above and below, so it reads as a row. */
   .mute > summary {
-    cursor: pointer; color: var(--mut); font-weight: 600;
+    color: var(--fg); font-size: var(--t-body);
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
     -webkit-tap-highlight-color: transparent;
   }
-  .mute > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .mute-panel {
     margin-top: 0.9rem; padding: 0.9rem 1rem;
     background: var(--card-raised); border-radius: 0.75rem;
@@ -1446,8 +1438,7 @@ export const NOTIFY_MATRIX_CSS = `
   table.notify-matrix .hint { display: block; font-size: var(--t-support); color: var(--mut); }
   table.notify-matrix td.notify-cell { width: 76px; text-align: center; vertical-align: middle; }
   .notify-channel { display: none; font-size: var(--t-support); color: var(--mut); }
-  table.notify-matrix td.notify-cell input { width: 1.4rem; height: 1.4rem; accent-color: var(--accent); }
-  table.notify-matrix td.notify-cell input:disabled { opacity: 0.45; }
+  table.notify-matrix label.channel-toggle { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; cursor: pointer; }
   table.notify-matrix td.notify-none { color: var(--mut); }
   .notify-admin-off { margin: 0.3rem 0 0; font-size: var(--t-support); color: var(--warn); }
   table.notify-matrix .notify-timing { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
@@ -1459,25 +1450,29 @@ export const NOTIFY_MATRIX_CSS = `
     max-width: 9rem; width: 100%; padding: 0.6rem 0.7rem; font: inherit;
     color: var(--fg); background: var(--field); border: none; border-radius: 0.75rem;
   }
-  table.notify-matrix .notify-timing input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
   table.notify-matrix .notify-timing .error { display: block; margin-top: 0.3rem; color: var(--warn); font-size: var(--t-support); }
-  .notify-unavailable { display: none; }
+  /* On a phone each message is a card: its title and timing, then one
+     labelled pill per channel in a row beneath (M67). */
   @media (max-width: 40rem) {
     table.notify-matrix thead { display: none; }
-    table.notify-matrix, table.notify-matrix tbody, table.notify-matrix tr, table.notify-matrix td { display: block; width: 100%; }
+    table.notify-matrix, table.notify-matrix tbody { display: block; width: 100%; }
     /* Rows are blocks here, so border-spacing no longer separates them. */
-    table.notify-matrix tr { border: 1px solid var(--line); border-radius: 1rem; overflow: hidden; background: var(--card); margin-bottom: 0.85rem; }
-    table.notify-matrix td { border: 0; border-radius: 0 !important; padding: 0.85rem 0.9rem; }
-    /* The desktop cell rules above are more specific than a bare td, so the
-       width and the side edges they set have to be undone at their own
-       specificity or they win on a phone. */
-    table.notify-matrix td:first-child, table.notify-matrix td:last-child { border-left: 0; border-right: 0; }
-    table.notify-matrix td.notify-what { border-bottom: 1px solid var(--line); }
-    table.notify-matrix td.notify-cell { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 52px; border-bottom: 1px solid var(--line); }
-    table.notify-matrix td.notify-cell:last-child { border-bottom: 0; }
-    .notify-channel { display: inline; font-weight: 600; }
-    .notify-unavailable { display: inline; margin-left: auto; margin-right: 0.5rem; font-size: var(--t-support); color: var(--mut); }
-    table.notify-matrix td.notify-none .notify-dash { display: none; }
+    table.notify-matrix tr {
+      display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem; padding: 0.85rem 0.9rem;
+      border: 1px solid var(--line); border-radius: 1rem; background: var(--card);
+    }
+    /* The desktop cell rules are more specific than a bare td, so their
+       width, edges and ground are undone at their own specificity. */
+    table.notify-matrix td, table.notify-matrix td:first-child, table.notify-matrix td:last-child,
+    table.notify-matrix td.notify-cell {
+      display: block; width: auto; padding: 0; border: 0; border-radius: 0; background: none;
+    }
+    table.notify-matrix td.notify-what { flex-basis: 100%; }
+    table.notify-matrix td.notify-none { display: none; }
+    table.notify-matrix label.channel-toggle {
+      gap: 0.6rem; padding: 0 1rem 0 0.75rem; border-radius: 999px; background: var(--field);
+    }
+    .notify-channel { display: inline; font-size: var(--t-support); font-weight: 600; color: var(--fg); }
     table.notify-matrix .notify-timing { gap: 0.5rem; }
   }
 `;

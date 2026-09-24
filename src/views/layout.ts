@@ -255,6 +255,45 @@ export const STYLES = `
   h2 { font-family: "Caprasimo", "Figtree", serif; font-weight: 400; font-size: var(--t-lead); margin: 2rem 0 0.6rem; }
   h1, h2 { line-height: 1.1; color: var(--fg); text-wrap: balance; }
   h3 { font-family: inherit; font-size: var(--t-body); font-weight: 600; line-height: 1.3; }
+  /* Controls (M67). One focus ring for everything focusable, and in-house
+     disclosure, checkbox and select treatments in place of each browser's own,
+     so a control looks the same on every page and in both themes. */
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  summary {
+    list-style: none; display: flex; align-items: center; justify-content: space-between;
+    min-height: 44px; gap: var(--s-2); cursor: pointer; font-weight: 600;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::after {
+    content: ""; width: 7px; height: 7px; flex: none; margin-right: var(--s-1);
+    border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg); transition: transform .15s;
+  }
+  details[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
+  input[type="checkbox"] {
+    appearance: none; display: inline-grid; place-content: center; flex: none;
+    width: 20px; height: 20px; margin: 0; border-radius: 6px;
+    border: 1.5px solid var(--mut); background: var(--card-raised); cursor: pointer;
+  }
+  input[type="checkbox"]:checked { background: var(--fg); border-color: var(--fg); }
+  input[type="checkbox"]:checked::after {
+    content: ""; width: 5px; height: 9px; margin-top: -2px;
+    border-right: 2px solid var(--card-raised); border-bottom: 2px solid var(--card-raised);
+    transform: rotate(45deg);
+  }
+  input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
+  /* The chevron sits under a transparent select, so a tap on it still opens
+     the select; the wrapper carries the field ground instead. */
+  .select { position: relative; display: block; border-radius: 0.75rem; background: var(--field); }
+  span.select select { position: relative; z-index: 1; appearance: none; padding-right: 2.5rem; background-color: transparent; }
+  .select::after {
+    content: ""; position: absolute; z-index: 0; right: 1rem; top: 50%; width: 7px; height: 7px;
+    border-right: 2px solid var(--mut); border-bottom: 2px solid var(--mut);
+    transform: translateY(-70%) rotate(45deg);
+  }
+  input::-webkit-calendar-picker-indicator { opacity: 0.55; }
+  textarea { resize: vertical; }
+  th abbr { text-decoration: none; cursor: help; }
   /* The one mono surface: text a person copies character for character. */
   .copyable { font-family: var(--mono); }
   p { color: var(--mut); margin: 0; }
@@ -321,7 +360,6 @@ export const STYLES = `
        one such button since M16; this is that fix generalised. */
     text-decoration: none;
   }
-  .button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .button:active { transform: translateY(1px); }
   /* A solid fill for the one action a page wants emphasised — unmistakable
      against the outlined default, in both themes, without relying on colour
@@ -351,7 +389,6 @@ export const STYLES = `
   .button.danger {
     background: var(--danger); color: var(--danger-fg);
   }
-  .button.danger:focus-visible { outline: 3px solid var(--danger); outline-offset: 2px; }
 
   /* Sign-out is a real action but never the point of the page it sits on, so
      it gets the plain filled default rather than the primary fill. */

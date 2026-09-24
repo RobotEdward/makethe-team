@@ -274,7 +274,7 @@ function renderPickerControl(gameId: string, fixtureId: string, params: OwnerFix
             ${radios}
             <div class="field">
               <label for="picker-delegate">Hand it to</label>
-              <select id="picker-delegate" name="delegate">${options}</select>
+              <span class="select"><select id="picker-delegate" name="delegate">${options}</select></span>
             </div>
             <button class="button" type="submit">Save who picks</button>
           </form>

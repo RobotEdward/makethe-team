@@ -191,7 +191,7 @@ function renderMemberRow(member: OrderMember, tier: OrderTier, allTiers: OrderTi
     <li>
       <span class="invite-name">${escapeHtml(member.name)}</span>
       <label class="visually-hidden" for="${escapeHtml(field)}">Group for ${escapeHtml(member.name)}</label>
-      <select id="${escapeHtml(field)}" name="${escapeHtml(field)}" class="invite-select">${options}</select>
+      <span class="select"><select id="${escapeHtml(field)}" name="${escapeHtml(field)}" class="invite-select">${options}</select></span>
     </li>`;
 }
 
