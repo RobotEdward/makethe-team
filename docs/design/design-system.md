@@ -40,6 +40,10 @@ swapping the same names; there is no manual theme switch.
 | `--wait` / `--wait-fg` | `#f6a06b` / `#402310` | same | Short capacity, waiting |
 | `--danger` / `--danger-fg` | `#a4321f` / `#fbfaf8` | `#e8705a` / `#1a0d0a` | Irreversible actions only |
 
+| `--side-a` / `--side-a-bg` / `--side-a-fg` | `#4a6a8f` / `#dde5ee` / `#2c4560` | `#7d9cc0` / `#26303b` / `#b8cbe0` | Team side A (slate): dot, tile ground, text. Never a status |
+| `--side-b` / `--side-b-bg` / `--side-b-fg` | `#8a4a78` / `#efdfe9` / `#5f2f52` | `#b77ca5` / `#3a2934` / `#e3bfd6` | Team side B (plum) |
+| `--danger-bg` | `#f6dcd5` | `#3d1f19` | Tint behind danger text — the cancelled badge |
+
 `THEME_COLOR` also feeds the `theme-color` meta tag and the web manifest. Contrast floors for
 the important pairs, in both themes, are enforced by `test/views/contrast.test.ts`.
 
@@ -59,6 +63,18 @@ Four sizes and no others: `test/views/layout.test.ts` fails any `font-size` that
 component sets its own.
 
 ### Space, shape, layout
+
+| Token | Value | | Token | Value |
+|---|---|---|---|---|
+| `--s-1` | 0.5rem (8px) | | `--r-pill` | 999px — buttons, chips, badges, segments |
+| `--s-2` | 0.75rem (12px) | | `--r-card` | 1.25rem — raised cards |
+| `--s-3` | 1rem (16px) | | `--r-field` | 0.75rem — fields, tiles |
+| `--s-4` | 1.5rem (24px) | | | |
+| `--s-5` | 2rem (32px) | | | |
+| `--s-6` | 2.5rem (40px) | | | |
+
+`test/views/design-lint.test.ts` holds every margin, padding, gap and radius to these tokens
+(M67).
 
 - **Column:** `main` is 30rem; form and privacy pages widen it to 40rem; `WIDE_COLUMN_CSS`
   takes it to 52rem at ≥64rem. Body padding 2rem 1.25rem.

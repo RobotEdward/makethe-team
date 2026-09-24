@@ -59,6 +59,10 @@ const PAIRS: readonly [string, string, number][] = [
   ["--warn", "--warn-bg", 4.5],
   ["--warn", "--accent-mut", 4.5],
   ["--wait-fg", "--wait", 4.5],
+  // M67: team sides and the cancelled tint.
+  ["--side-a-fg", "--side-a-bg", 4.5],
+  ["--side-b-fg", "--side-b-bg", 4.5],
+  ["--danger", "--danger-bg", 4.5],
   // Accent fills are identified by their AA-passing label text (the
   // --accent-fg/--accent pair above), so WCAG 1.4.11 does not require the
   // fill/ground boundary itself to clear a floor. This pair stays only as a

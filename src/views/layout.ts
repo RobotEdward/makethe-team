@@ -143,6 +143,15 @@ export const STYLES = `
     --danger: #a4321f; --danger-fg: #fbfaf8;
     --t-title: 2rem; --t-lead: 1.25rem; --t-body: 1rem; --t-support: 0.875rem;
     --mono: "IBM Plex Mono", ui-monospace, monospace;
+    /* Spacing 8 / 12 / 16 / 24 / 32 / 40 and the three radii: every margin,
+       padding, gap and radius draws from these (test/views/design-lint.test.ts). */
+    --s-1: 0.5rem; --s-2: 0.75rem; --s-3: 1rem; --s-4: 1.5rem; --s-5: 2rem; --s-6: 2.5rem;
+    --r-pill: 999px; --r-card: 1.25rem; --r-field: 0.75rem;
+    /* Team sides, kept apart from the status families: a side is not a
+       verdict, so neither may read as confirmed or as a warning. */
+    --side-a: #4a6a8f; --side-a-bg: #dde5ee; --side-a-fg: #2c4560;
+    --side-b: #8a4a78; --side-b-bg: #efdfe9; --side-b-fg: #5f2f52;
+    --danger-bg: #f6dcd5;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -155,6 +164,9 @@ export const STYLES = `
       --warn: #f0b285; --warn-bg: #43301f;
       --wait: #f6a06b; --wait-fg: #402310;
       --danger: #e8705a; --danger-fg: #1a0d0a;
+      --side-a: #7d9cc0; --side-a-bg: #26303b; --side-a-fg: #b8cbe0;
+      --side-b: #b77ca5; --side-b-bg: #3a2934; --side-b-fg: #e3bfd6;
+      --danger-bg: #3d1f19;
     }
   }
   * { box-sizing: border-box; }
