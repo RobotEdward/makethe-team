@@ -5,6 +5,7 @@ import type { CancellationEmailPayload } from "./templates/cancellation.js";
 import type { ErasureScheduledEmailPayload } from "./templates/erasure-scheduled.js";
 import type { MagicLinkEmailPayload } from "./templates/magic-link.js";
 import type { PickerHandoverEmailPayload } from "./templates/picker-handover.js";
+import type { PotmEmailPayload } from "./templates/potm.js";
 import type { PromotionEmailPayload } from "./templates/promotion.js";
 import type { RemovedEmailPayload } from "./templates/removed.js";
 import type { ReminderEmailPayload } from "./templates/reminder.js";
@@ -343,6 +344,22 @@ function pickerHandover({
 }
 
 /**
+ * N-15: player of the match.
+ *
+ * What happened: the reader won — the title says only that. When/where: the
+ * game and the fixture's date, since a squad playing weekly needs to know
+ * which evening it was for. The tag carries both, like N-13's, so two awards
+ * in a row do not collapse into one.
+ */
+function potm({ gameName, whenLocal }: Pick<PotmEmailPayload, "gameName" | "whenLocal">): PushCopy {
+  return {
+    title: "You're player of the match",
+    body: `${gameName}, ${whenLocal}.`,
+    tag: `n15:${gameName}:${whenLocal}`,
+  };
+}
+
+/**
  * The push-copy catalogue, one builder per `NotificationType`
  * (`NOTIFICATION_TYPES` in `./dedupe-key.ts`). Indexed by type rather than
  * exported as nine loose functions so that a type added to the catalogue
@@ -364,6 +381,7 @@ export const PUSH_COPY: {
   n11: typeof groupNudge;
   n12: typeof resultNudge;
   n13: typeof pickerHandover;
+  n15: typeof potm;
 } = {
   n1: reminder,
   n2: promotion,
@@ -378,6 +396,7 @@ export const PUSH_COPY: {
   n11: groupNudge,
   n12: resultNudge,
   n13: pickerHandover,
+  n15: potm,
 };
 
 // Referenced only for the mapped type above; re-exported so callers can

@@ -613,6 +613,34 @@ export const fixtureResultClaims = sqliteTable(
 );
 
 /**
+ * One player's player-of-the-match vote on a played fixture (M68).
+ *
+ * The same one-row-per-(fixture, voter) shape as `fixture_result_claims`, for
+ * the same reason: the unique index makes "one person, one vote" a property of
+ * the database, and changing your mind updates the row in place.
+ *
+ * **No cache table, and no audit rows.** The winner is a plain plurality with
+ * no tie-break to change under old fixtures, so there is nothing a cache would
+ * pin; and the ballot is secret until it closes, which an audit trail readable
+ * by organisers would undo.
+ *
+ * Ids only — no stored text indexes a lookup here, so nothing belongs in
+ * `test/stored-lookups.test.ts`. An erased player keeps their rows, as they
+ * keep their claims; the name is shown through `displayName`.
+ */
+export const fixturePotmVotes = sqliteTable(
+  "fixture_potm_votes",
+  {
+    id: text("id").primaryKey(),
+    fixtureId: text("fixture_id").notNull().references(() => fixtures.id),
+    voterId: text("voter_id").notNull().references(() => players.id),
+    candidateId: text("candidate_id").notNull().references(() => players.id),
+    votedAt: integer("voted_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [uniqueIndex("fixture_potm_votes_fixture_voter_unique").on(t.fixtureId, t.voterId)],
+);
+
+/**
  * The derived result of a fixture, materialised once at the instant it froze
  * (BR-37, M25).
  *

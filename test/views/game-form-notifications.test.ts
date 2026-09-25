@@ -38,7 +38,7 @@ describe("the owner notifications matrix", () => {
     const html = renderGameFormPage({ ...BASE, notifications: rows() });
     expect(html).toContain("<th>Email</th>");
     expect(html).toContain("<th>Push</th>");
-    for (const type of ["n1", "n4", "n9", "n11", "n12", "n13"]) expect(html).toContain(`data-notification="${type}"`);
+    for (const type of ["n1", "n4", "n9", "n11", "n12", "n13", "n15"]) expect(html).toContain(`data-notification="${type}"`);
   });
 
   it("renders a dash, not a control, for a channel a notification has no version of", () => {

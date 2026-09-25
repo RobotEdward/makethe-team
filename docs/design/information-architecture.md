@@ -243,6 +243,13 @@ A separate renderer from the organiser's, so organiser capability cannot leak in
   the winner's score first ("Skins won 3–2"); "Score not agreed." when locked without one.
   The result window is the game's own, from full time: 12 hours to a week, 24 hours by
   default.
+- **Player of the match** (M68), directly under the result panel as a plain section, never a
+  second card: while the result window runs, a voter sees `Who played best?` and a radio per
+  player who was in (guests included, themselves left out) and `Vote`; once voted, "You voted
+  for <name>." with the ballot behind `Change my vote`. No counts while open — "Votes are secret
+  until voting closes on <date>." Closes at the result deadline even if nothing was filed; then
+  "<name>" and "<n> votes" (ties are joint), or nothing at all below two votes. Absent when the
+  squad is hidden from players. Same voters as the result.
 - Out that week: read, but not file. Not a member: 404.
 
 ![The result panel as a second player sees it](../guide/images/result-panel.png)
@@ -296,7 +303,8 @@ change the role or remove them.
 ### 3.5 A fixture, as organiser — `GET /g/:id/f/:fixtureId`
 The busiest screen. In order: game (h1); `Jump to`; notices; kickoff, venue; `See this as a
 player`; status and capacity; `Open it now` (scheduled only); over-capacity; the over-limit
-confirmation ("<game> is full (10 of 10). Add Nadia anyway?"); **result panel** (played only);
+confirmation ("<game> is full (10 of 10). Add Nadia anyway?"); **result panel** and player of the
+match (played only, §2.6);
 **`Squad`** — In/Out segments per member (`Promote` for the waitlisted, `Invite now` for the
 not-yet-asked), guests with `Remove`, "marked in by …" lines; `Invite progress` (gated games);
 **`Teams`**; `Who picks the teams?`; `Add a guest`; `Post to WhatsApp`; `Message players` and

@@ -12,7 +12,7 @@
  * from `NOTIFICATION_TYPES` below, so adding or renaming a type is a
  * typecheck error rather than silent drift.
  */
-export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11", "n12", "n13", "n14"] as const;
+export const NOTIFICATION_TYPES = ["n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8", "n9", "n10", "n11", "n12", "n13", "n14", "n15"] as const;
 
 /**
  * N-14 join confirmation (M39): **no `notification_log` row and no key
@@ -167,6 +167,16 @@ export function groupNudgeKey(fixtureId: string, playerId: string): string {
  */
 export function resultNudgeKey(fixtureId: string, playerId: string): string {
   return `n12:${fixtureId}:${playerId}`;
+}
+
+/**
+ * N-15 player of the match (M68): once per winner per fixture, ever.
+ *
+ * No timestamp: a fixture's vote closes once and never reopens, so there is
+ * one award to tell anybody about.
+ */
+export function potmKey(fixtureId: string, playerId: string): string {
+  return `n15:${fixtureId}:${playerId}`;
 }
 
 /**

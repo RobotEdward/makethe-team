@@ -125,9 +125,11 @@ describe("push copy", () => {
     // Same banned list the email templates and views are held to
     // (test/notify/templates/reminder.test.ts, test/views/fixture.test.ts):
     // "fixture", never "event"; no "rsvp", "match" or "user" either.
+    // "Player of the match" (M68) is the award's name, not a synonym for a
+    // fixture, and is the one phrase let through.
     for (const type of PUSHABLE_TYPES) {
       const { title, body, tag } = PUSH_COPY[type]({ ...sampleContext });
-      for (const rendition of [title.toLowerCase(), body.toLowerCase(), tag.toLowerCase()]) {
+      for (const rendition of [title, body, tag].map((s) => s.toLowerCase().replaceAll("player of the match", ""))) {
         for (const word of ["rsvp", "event", "match", "user", "team list"]) {
           expect(rendition, `${type}: "${rendition}" contains "${word}"`).not.toContain(word);
         }

@@ -113,6 +113,9 @@ wider screen there's a dash. Every box starts checked.
 - **Tell a player when I hand them the team pick** is the message sent when
   you give the team-pick decision to one player rather than opening it to the
   whole squad. Nothing is sent for the whole-squad case.
+- **Tell the player of the match** is the email and phone notification sent
+  to whoever the squad voted best, once voting closes. The fixture page still
+  shows everyone who won.
 
 An organiser can switch any of these off, but not always on: the site
 administrator can switch a channel off for everyone, for one notification or

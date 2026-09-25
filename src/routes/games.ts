@@ -15,6 +15,7 @@ import {
   gameUnmutePath,
   fixturePath,
   pickerPagePath,
+  potmPath,
   resultClearPath,
   resultPath,
 } from "../auth/paths.js";
@@ -44,6 +45,8 @@ import {
 import { listPlayerPastFixturesInGame } from "../db/dashboard-queries.js";
 import { getSquadPresence } from "../db/presence-queries.js";
 import { listResultClaims, resultElectorate } from "../db/result-queries.js";
+import { loadPotmState, potmEnabled } from "../db/potm-queries.js";
+import type { PotmPanelParams } from "../views/potm.js";
 import { resultWordsForLockedRows } from "../db/result-summary.js";
 import { auditLog, fixtures, games, notificationLog, players, responses } from "../db/schema.js";
 import { changeMemberRole, parseRole } from "../domain/change-role.js";
@@ -1486,6 +1489,36 @@ async function loadFixtureTarget(c: Context<AppEnv>, gameId: string, fixtureId: 
 type FixtureRenderExtras = Partial<Pick<OwnerFixtureParams, "confirm" | "problem" | "unassignedProblem">>;
 
 /**
+ * The player-of-the-match section's params (M68), shared by both fixture
+ * pages through the result panel. Undefined where the game does not run the
+ * vote. Names reach the page only once voting has closed, so a running count
+ * cannot leak through any page.
+ */
+async function potmPanelParams(
+  db: Db,
+  game: typeof games.$inferSelect,
+  fixture: typeof fixtures.$inferSelect,
+  viewerPlayerId: string,
+  now: Date,
+): Promise<PotmPanelParams | undefined> {
+  if (!potmEnabled(game)) return undefined;
+  const state = await loadPotmState(db, game, fixture, now);
+  const names = new Map(state.candidates.map((candidate) => [candidate.playerId, candidate.name]));
+  return {
+    open: state.open,
+    canVote: state.open && state.voterIds.has(viewerPlayerId),
+    candidates: state.candidates.filter((candidate) => candidate.playerId !== viewerPlayerId),
+    yourVote: state.votes.find((vote) => vote.voterId === viewerPlayerId)?.candidateId ?? null,
+    closesLocal: formatLocalDateTime(state.deadline, game.timezone),
+    actionPath: potmPath(game.id, fixture.id),
+    winners:
+      state.outcome === null
+        ? null
+        : { names: state.outcome.winnerIds.map((id) => names.get(id) ?? ""), votes: state.outcome.votes },
+  };
+}
+
+/**
  * The result panel's params for the organiser's own fixture page (M25 Task
  * 10) — the same shape `renderPlayerFixture` below builds for a member, so
  * the tally an organiser sees can never drift from the one a player sees.
@@ -1502,12 +1535,14 @@ async function ownerResultParams(
   viewerPlayerId: string,
   now: Date,
 ): Promise<ResultPanelParams> {
-  const [claims, electorate] = await Promise.all([
+  const [claims, electorate, potm] = await Promise.all([
     listResultClaims(db, fixture.id),
     resultElectorate(db, game.id, fixture.id),
+    potmPanelParams(db, game, fixture, viewerPlayerId, now),
   ]);
   const deadline = resultDeadline(fixture, game.resultLockHoursAfter);
   return {
+    potm,
     names: outcomeNames(game),
     candidates: tally(claims),
     derived: deriveResult(claims, electorate.organiserIds),
@@ -1844,12 +1879,14 @@ export async function renderPlayerFixture(
   const result =
     fixture.lifecycle === "played"
       ? await (async () => {
-          const [claims, electorate] = await Promise.all([
+          const [claims, electorate, potm] = await Promise.all([
             listResultClaims(db, fixtureId),
             resultElectorate(db, game.id, fixtureId),
+            potmPanelParams(db, game, fixture, viewerPlayerId, now),
           ]);
           const deadline = resultDeadline(fixture, game.resultLockHoursAfter);
           return {
+            potm,
             names: outcomeNames(game),
             candidates: tally(claims),
             derived: deriveResult(claims, electorate.organiserIds),

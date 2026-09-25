@@ -74,6 +74,22 @@ teams were never picked in the app, the locked result says so rather than
 guessing who played on which side. Your organiser can give you longer: the
 fixture page says when this one closes.
 
+## Player of the match
+
+Under the result there's a second, smaller question: **Who played best?**
+Pick anyone who played — guests count, you don't — and tap **Vote**. You can
+change your mind with **Change my vote** until voting closes, at the same time
+the result locks.
+
+Votes are secret until then, so nobody piles in behind whoever's ahead. When
+voting closes, the fixture page names the player of the match and how many
+votes they got, and they get an email and a notification to say so. A tie
+makes joint winners. It takes at least two votes to name anybody, so one vote
+on a quiet week doesn't count.
+
+If your organiser has hidden the squad from players, there's no vote, because
+the ballot would list everyone who played.
+
 ## Games you've already played
 
 ![A game's past fixtures: one row per game played, most recent first, each with its score and a link to the fixture in full](images/past-fixtures.png)

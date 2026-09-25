@@ -43,6 +43,7 @@ export const NOTIFICATION_CONTROLS: Record<NotificationType, Control> = {
   n12: { scope: "owner", channels: BOTH },
   n13: { scope: "owner", channels: BOTH },
   n14: { scope: "admin", channels: ["email"] },
+  n15: { scope: "owner", channels: BOTH },
 };
 
 export interface ControlCell {

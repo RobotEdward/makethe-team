@@ -370,6 +370,11 @@ export function resultPath(gameId: string, fixtureId: string): string {
   return `${fixturePath(gameId, fixtureId)}/result`;
 }
 
+/** Where a player-of-the-match vote posts (M68). */
+export function potmPath(gameId: string, fixtureId: string): string {
+  return `${fixturePath(gameId, fixtureId)}/potm`;
+}
+
 /** Where "withdraw my answer" posts (BR-37). */
 export function resultClearPath(gameId: string, fixtureId: string): string {
   return `${fixturePath(gameId, fixtureId)}/result/clear`;

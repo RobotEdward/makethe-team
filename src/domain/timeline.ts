@@ -73,6 +73,7 @@ const NOTIFICATION_NAMES: Record<NotificationType, string> = {
   n12: "Result prompt",
   n13: "Team-pick handover",
   n14: "Join confirmation",
+  n15: "Player-of-the-match notice",
 };
 
 /** How many recipients a send names before it starts counting them instead. */

@@ -4,6 +4,7 @@ import type { Bindings } from "../env.js";
 import { createNotifier, emailCeilingTotal } from "../notify/factory.js";
 import type { Notifier } from "../notify/notifier.js";
 import { sendResultNudges, type ResultNudgeResult } from "../notify/send-result-nudge.js";
+import { sendPotmAwards, type PotmNotifyResult } from "../notify/send-potm.js";
 import { notifyPromotedPlayer } from "../routes/respond.js";
 import { sendOwnerAttention, type AttentionResult } from "../sweep/attention.js";
 import { sendGroupNudges, type GroupNudgeResult } from "../sweep/group-nudge.js";
@@ -138,6 +139,11 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
       // for the same reason attention and materialise-results are.
       const resultNudgeResult = await runResultNudgeStep(db, notifier, now, env.RESPONSE_TOKEN_SECRET);
 
+      // Step 4c (M68, N-15): tell each player of the match once their
+      // fixture's vote has closed. Before the erasures for the same reason as
+      // 4b, and wrapped the same way.
+      const potmResult = await runPotmStep(db, notifier, now, env.RESPONSE_TOKEN_SECRET);
+
       // Step 5: perform every erasure whose 48-hour window has elapsed
       // (BR-34). Last, and deliberately so, in both directions: an erasure
       // walks a player's whole squad and every open fixture behind it, so
@@ -206,6 +212,7 @@ export async function handleScheduled(cron: string, env: Bindings, now: Date): P
         attentionResult.failures.length +
         materialiseResultsOutcome.failures.length +
         resultNudgeResult.failures.length +
+        potmResult.failures.length +
         erasureResult.failures.length;
       if (failed > 0) {
         throw new Error(
@@ -359,6 +366,41 @@ async function runMaterialiseResultsStep(db: Db, now: Date): Promise<Materialise
  * would escape that isolation entirely, and the erasures that follow this
  * step must run regardless of whether a nudge went out.
  */
+async function runPotmStep(
+  db: Db,
+  notifier: Notifier,
+  now: Date,
+  responseTokenSecret: string,
+): Promise<PotmNotifyResult> {
+  try {
+    const result = await sendPotmAwards(db, notifier, now, responseTokenSecret);
+    console.log("potm-awards", JSON.stringify(result));
+    for (const failure of result.failures) {
+      console.error(
+        `potm-awards failed for fixture ${failure.fixtureId} (game ${failure.gameId ?? "unknown"}) at stage ${failure.stage}: ${failure.message}`,
+      );
+    }
+    if (result.emailDeferred > 0) {
+      console.warn(
+        `DAILY EMAIL CEILING REACHED: ${result.emailDeferred} player-of-the-match email(s) deferred on this sweep run; they will be retried on the next one`,
+      );
+    }
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`potm-awards step failed outright and no winner was told: ${message}`);
+    return {
+      fixturesConsidered: 0,
+      emailSent: 0,
+      emailFailed: 0,
+      emailDeferred: 0,
+      pushSent: 0,
+      pushFailed: 0,
+      failures: [{ fixtureId: "", gameId: null, stage: "prepare", message }],
+    };
+  }
+}
+
 async function runResultNudgeStep(
   db: Db,
   notifier: Notifier,

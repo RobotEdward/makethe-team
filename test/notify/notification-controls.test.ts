@@ -18,7 +18,7 @@ describe("NOTIFICATION_CONTROLS", () => {
   it("splits the catalogue as the spec does", () => {
     const byScope = (scope: "owner" | "admin" | "none") =>
       NOTIFICATION_TYPES.filter((t) => NOTIFICATION_CONTROLS[t].scope === scope);
-    expect(byScope("owner")).toEqual(["n1", "n4", "n9", "n11", "n12", "n13"]);
+    expect(byScope("owner")).toEqual(["n1", "n4", "n9", "n11", "n12", "n13", "n15"]);
     expect(byScope("admin")).toEqual(["n6", "n7", "n10", "n14"]);
     expect(byScope("none")).toEqual(["n2", "n3", "n5", "n8"]);
   });
@@ -45,6 +45,7 @@ describe("NOTIFICATION_CONTROLS", () => {
       "n11.push",
       "n12.email", "n12.push",
       "n13.email", "n13.push",
+      "n15.email", "n15.push",
     ]);
   });
 

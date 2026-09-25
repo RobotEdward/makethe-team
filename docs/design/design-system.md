@@ -131,6 +131,7 @@ Each lives in a named, exported style block in `src/views/styles.ts` (or `STYLES
 | Jump-to index | `.fixture-index`, `.fixture-section` | `FIXTURE_STYLES_CSS` | The link strip at the top of the organiser's fixture page |
 | Workspaces | `.team-workspace`, `.timeline-workspace`, `.result-workspace` | own blocks | A contained task on a long page |
 | Result panel | `.result-workspace`, `.result-focus`, `.result-candidate`, `.result-alternate` | `RESULT_CSS` | One raised card: "Result so far", each candidate a ruled row with its backers, then the other-result disclosure |
+| Player of the match | `.potm`, `.potm-choices`, `.potm-change`, `.potm-winner`, `.potm-note` | `RESULT_CSS` | A plain section under the result card, never a second card: radios, `Vote`, and the ballot behind a disclosure once voted |
 | Tables | `table.record`, `table.league`, `table.notify-matrix` | `RECORD_CSS`, `LEAGUE_CSS`, `NOTIFY_MATRIX_CSS` | Your record; Standings (sticky columns, sortable); notification settings — one raised card, a ruled row per message with its timing as a summary line and a "Change timing" disclosure |
 | Freshness bar | `.freshness`, `.freshness-refresh` | `FRESHNESS_CSS` | "Updated just now · Refresh" at the foot of live pages |
 | Site header | `.site-header`, `nav a[aria-current=page]` | `STYLES` | Signed-in pages only |

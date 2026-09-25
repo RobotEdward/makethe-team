@@ -211,6 +211,10 @@ const OWNER_NOTIFICATION_COPY: Record<NotificationType, { label: string; hint: s
     label: "Tell a player when I hand them the team pick",
     hint: "Nothing is sent when you open the pick to the whole squad.",
   },
+  n15: {
+    label: "Tell the player of the match",
+    hint: "Sent to the winner when voting closes. The squad still sees who won on the fixture page.",
+  },
 } as Record<NotificationType, { label: string; hint: string }>;
 
 /**

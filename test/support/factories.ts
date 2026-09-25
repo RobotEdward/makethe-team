@@ -97,6 +97,7 @@ const RESET_TABLES = [
   "push_subscriptions",
   "fixture_results",
   "fixture_result_claims",
+  "fixture_potm_votes",
   "responses",
   "memberships",
   "invite_tiers",

@@ -8,6 +8,7 @@ import {
   pushKey,
   reminderKey,
   removalKey,
+  potmKey,
   resultNudgeKey,
   welcomeKey,
 } from "../../src/notify/dedupe-key.js";
@@ -117,5 +118,11 @@ describe("resultNudgeKey", () => {
     // than a second nag.
     expect(resultNudgeKey("fix-1", "ply-1")).toBe("n12:fix-1:ply-1");
     expect(resultNudgeKey("fix-1", "ply-1")).toBe(resultNudgeKey("fix-1", "ply-1"));
+  });
+});
+
+describe("potmKey", () => {
+  it("n15 player of the match: n15:<fixture_id>:<player_id>, no timestamp", () => {
+    expect(potmKey("fix-1", "ply-1")).toBe("n15:fix-1:ply-1");
   });
 });

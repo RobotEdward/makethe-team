@@ -13,6 +13,8 @@ import { sendPickerHandover } from "../../src/notify/send-picker-handover.js";
 import { sendRemovedEmail } from "../../src/notify/send-removed.js";
 import { sendJoinConfirmation } from "../../src/notify/send-join-confirmation.js";
 import { sendResultNudges } from "../../src/notify/send-result-nudge.js";
+import { sendPotmAwards } from "../../src/notify/send-potm.js";
+import { fixturePotmVotes } from "../../src/db/schema.js";
 import { sendWelcomeEmail } from "../../src/notify/send-welcome.js";
 import type { Channel, Message, Notifier, SendResult } from "../../src/notify/notifier.js";
 import { sendTeamsEmails } from "../../src/notify/send-teams.js";
@@ -438,6 +440,51 @@ const n10Driver: Driver = {
   },
 };
 
+// --- n15: sendPotmAwards (test/notify/send-potm.test.ts) ---
+
+// 60-minute fixture, default 24-hour window: voting closed at 19:00Z on the
+// 14th, an hour before N15_NOW.
+const N15_KICKOFF = new Date("2026-08-13T18:00:00Z");
+const N15_NOW = new Date("2026-08-14T20:00:00Z");
+
+const n15Driver: Driver = {
+  async seed(db) {
+    const gameId = await insertGame(db);
+    const fixtureId = crypto.randomUUID();
+    await db.insert(fixtures).values({
+      id: fixtureId,
+      gameId,
+      kicksOffAt: N15_KICKOFF,
+      lifecycle: "played",
+      minPlayers: 2,
+      maxPlayers: 14,
+      prefersEvenNumbers: true,
+      shortWarningOffsetHours: 12,
+      durationMinutes: 60,
+    });
+    const ids = ["n15-winner", "n15-voter-a", "n15-voter-b"];
+    for (const id of ids) {
+      await db.insert(players).values({ id, name: id, email: `${id}@example.com` });
+      await db.insert(memberships).values({ id: `${id}-m`, gameId, playerId: id, active: true });
+      await db.insert(responses).values({ id: `${id}-r`, fixtureId, playerId: id, status: "in", source: "token" });
+    }
+    for (const voter of ["n15-voter-a", "n15-voter-b"]) {
+      await db.insert(fixturePotmVotes).values({
+        id: `${voter}-v`,
+        fixtureId,
+        voterId: voter,
+        candidateId: "n15-winner",
+        votedAt: N15_KICKOFF,
+      });
+    }
+    await insertSubscription(db, "n15-winner", "https://push.example.com/n15-winner");
+    return gameId;
+  },
+  async send(db, _gameId, notifier) {
+    await sendPotmAwards(db, notifier, N15_NOW, SECRET);
+  },
+};
+
 const DRIVERS: Partial<Record<NotificationType, Driver>> = {
   n1: n1Driver,
   n4: n4Driver,
@@ -449,6 +496,7 @@ const DRIVERS: Partial<Record<NotificationType, Driver>> = {
   n12: n12Driver,
   n13: n13Driver,
   n14: n14Driver,
+  n15: n15Driver,
 };
 
 function driverFor(type: NotificationType): Driver {

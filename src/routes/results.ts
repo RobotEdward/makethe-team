@@ -14,6 +14,7 @@ import {
   putResultClaim,
   resultElectorate,
 } from "../db/result-queries.js";
+import { loadPotmState, potmEnabled, putPotmVote } from "../db/potm-queries.js";
 import { fixtures } from "../db/schema.js";
 import { parseClaim } from "../domain/result.js";
 import { resultWritable } from "../domain/result-lock.js";
@@ -213,5 +214,43 @@ resultsRoutes.post("/g/:id/f/:fixtureId/result/clear", requirePlayer, async (c) 
     });
   }
 
+  return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
+});
+
+/**
+ * Cast or change a player-of-the-match vote (M68).
+ *
+ * The result route's check order, for its reason: entitlement, then played,
+ * then standing, all 404 (TR-18) before anything reveals the ballot. A game
+ * that does not run the vote (`potmEnabled`) 404s too — the endpoint does not
+ * exist for it. Not audited: the ballot is secret until it closes, and the
+ * audit trail is readable by organisers.
+ */
+resultsRoutes.post("/g/:id/f/:fixtureId/potm", requirePlayer, async (c) => {
+  if (wrongOrigin(c)) return c.text("Forbidden", 403);
+
+  const player = c.get("player")!;
+  const target = await loadEntitledFixture(c, c.req.param("id"), c.req.param("fixtureId"), player.id);
+  if (target === null) return c.text("Not found", 404);
+  if (target.fixture.lifecycle !== "played" || !potmEnabled(target.game)) return c.text("Not found", 404);
+
+  const now = new Date(Date.now());
+  const state = await loadPotmState(target.db, target.game, target.fixture, now);
+  if (!state.voterIds.has(player.id)) return c.text("Not found", 404);
+
+  if (!state.open) {
+    return renderRefusal(c, target, player.id, now, "Voting for player of the match has closed.");
+  }
+
+  const form = await c.req.parseBody();
+  const candidateId = typeof form["candidateId"] === "string" ? form["candidateId"] : "";
+  if (candidateId === player.id) {
+    return renderRefusal(c, target, player.id, now, "You can't vote for yourself.");
+  }
+  if (!state.candidates.some((candidate) => candidate.playerId === candidateId)) {
+    return renderRefusal(c, target, player.id, now, "Pick somebody who played.");
+  }
+
+  await putPotmVote(target.db, { fixtureId: target.fixture.id, voterId: player.id, candidateId, now });
   return c.redirect(fixturePath(target.game.id, target.fixture.id), 303);
 });

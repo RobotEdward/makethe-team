@@ -1,6 +1,7 @@
 import type { DerivedResult, OutcomeCandidate, ResultOutcome } from "../domain/result.js";
 import { MAX_SCORE } from "../domain/result.js";
 import { escapeHtml } from "./layout.js";
+import { renderPotmPanel, type PotmPanelParams } from "./potm.js";
 
 /**
  * What this game calls each of the three things that can have happened.
@@ -80,6 +81,12 @@ export interface ResultPanelParams {
   deadlineLocal: string;
   actionPath: string;
   clearPath: string;
+  /**
+   * Player of the match (M68), rendered after the result card so it rides on
+   * both fixture pages without either one placing it. Absent where the game
+   * does not run the vote (`potmEnabled`).
+   */
+  potm?: PotmPanelParams;
 }
 
 function renderAgreeForm(
@@ -225,8 +232,9 @@ function renderLocked(params: ResultPanelParams): string {
  * open.
  */
 export function renderResultPanel(params: ResultPanelParams): string {
+  const potm = params.potm === undefined ? "" : renderPotmPanel(params.potm);
   if (params.locked) {
-    return `<section class="result-workspace"><h2>Result</h2>${renderLocked(params)}</section>`;
+    return `<section class="result-workspace"><h2>Result</h2>${renderLocked(params)}</section>${potm}`;
   }
 
   const nothingYet =
@@ -244,5 +252,6 @@ export function renderResultPanel(params: ResultPanelParams): string {
       ${renderFileForm(params)}
       ${renderClearForm(params)}
     </section>
+    ${potm}
   `;
 }

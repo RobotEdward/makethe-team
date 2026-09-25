@@ -1192,6 +1192,18 @@ export const RESULT_CSS = `
     font-family: inherit; font-size: var(--t-support); font-weight: 600;
     color: var(--danger); cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
+  /* The M68 ballot section: plain, after the result card, never
+     a second raised card -- the score is what the page is for. */
+  .potm { margin-top: var(--s-5); }
+  .potm h2 { margin-bottom: var(--s-2); }
+  .potm p { margin: 0 0 var(--s-2); }
+  .potm-choices { display: grid; gap: var(--s-1); margin: 0 0 var(--s-3); border: none; padding: 0; }
+  .potm-choices label { display: flex; align-items: center; gap: var(--s-2); min-height: 44px; }
+  .potm-choices input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); }
+  .potm-change > summary { min-height: 44px; display: flex; align-items: center; }
+  .potm-change form { margin: var(--s-2) 0 var(--s-3); }
+  .potm-winner { font-size: var(--t-lead); font-weight: 600; color: var(--fg); }
+  .potm-note { font-size: var(--t-support); color: var(--mut); }
 `;
 
 /**

@@ -1816,6 +1816,10 @@ function pinRoutesToPages(capturedPageNames: readonly string[]): void {
       "plain-text 403 (wrong origin), a plain-text 404 (entitlement " +
       "failure) or a 303 redirect (src/routes/broadcast.ts); its own " +
       "status-code coverage lives in test/routes/broadcast-post.test.ts.",
+    "POST /g/:id/f/:fixtureId/potm":
+      "its 422 refusals re-render through the same renderRefusal as " +
+      "POST …/result, so the fixture pages already enumerated here; every " +
+      "other branch is a plain-text 403/404 or a 303 (test/routes/potm.test.ts).",
     "POST /g/:id/f/:fixtureId/result":
       "on its two HTML-returning branches (the not-writable refusal and the " +
       "bad-claim refusal, both 422) it renders through the same " +
