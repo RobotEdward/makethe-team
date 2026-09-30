@@ -198,6 +198,8 @@ export interface OrderedMember {
   /** Null when this member holds no live response row on the fixture, or when no fixture was asked for. */
   status: string | null;
   invitedAt: Date | null;
+  /** See `responses.invitedIndividually`: a hand invite does not release the tier. */
+  invitedIndividually: boolean;
 }
 
 /** One rung of a Game's invite order, named, with its members. */
@@ -240,6 +242,7 @@ export async function loadInviteOrder(
       inviteTierId: memberships.inviteTierId,
       status: responses.status,
       invitedAt: responses.invitedAt,
+      invitedIndividually: responses.invitedIndividually,
     })
     .from(memberships)
     .innerJoin(players, eq(players.id, memberships.playerId))
@@ -270,6 +273,7 @@ export async function loadInviteOrder(
       name: member.name,
       status: member.status ?? null,
       invitedAt: member.invitedAt ?? null,
+      invitedIndividually: member.invitedIndividually ?? false,
     });
   }
 

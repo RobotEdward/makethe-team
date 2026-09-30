@@ -1743,7 +1743,11 @@ async function inviteProgressParams(
   }
 
   const rendered = tiers.map((tier) => {
+    // Hand invites (M46) are skipped for the reason `planReleases` skips
+    // them: one sub invited out of turn does not release their tier. Reading
+    // it as released hid the button that releases the rest of it.
     const stamps = tier.members
+      .filter((member) => !member.invitedIndividually)
       .map((member) => member.invitedAt)
       .filter((invitedAt): invitedAt is Date => invitedAt !== null);
     const askedAt =

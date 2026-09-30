@@ -279,6 +279,24 @@ describe("the invite-progress panel and the manual release", () => {
     expect(html).toContain("Invite Subs now");
   });
 
+  it("still reads a tier as held when one of its members was invited by hand (M46)", async () => {
+    // The shape Wednesday Night Football was in on 30 September 2026: the
+    // owner hand-invited one sub, the panel read the whole tier as asked,
+    // and the button to release the rest of it disappeared.
+    const { cookie, gameId, fixtureId, subId } = await openGatedFixture();
+    await db
+      .update(responses)
+      .set({ invitedAt: NOW, invitedIndividually: true })
+      .where(eq(responses.playerId, subId));
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })
+    ).text();
+
+    expect(html).toContain("next up");
+    expect(html).toContain("Invite Subs now");
+  });
+
   it("renders no panel at all for an ungated game (BR-39)", async () => {
     const { cookie, gameId, fixtureId } = await openGatedFixture({ gated: false });
 
