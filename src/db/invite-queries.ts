@@ -4,14 +4,14 @@ import { chunk, INSERT_CHUNK_SIZE } from "./chunk.js";
 import type { Db } from "./client.js";
 import { fixtures, games, inviteTiers, memberships, notificationLog, players, responses } from "./schema.js";
 
-const HOUR_MS = 3_600_000;
-
 /** Everything `planReleases` needs about one fixture. */
 export interface InviteState {
   gated: boolean;
   maxPlayers: number;
-  minPlayers: number;
-  fallbackDue: boolean;
+  timeZone: string;
+  /** Null only for a fixture that has not opened, which the release path never reaches. */
+  openedAt: Date | null;
+  kicksOffAt: Date;
   tiers: TierState[];
   guestInCount: number;
 }
@@ -28,7 +28,6 @@ export interface InviteState {
 export async function loadInviteState(
   db: Db,
   fixtureId: string,
-  now: Date,
 ): Promise<InviteState | null> {
   const [row] = await db
     .select({ fixture: fixtures, game: games })
@@ -38,26 +37,24 @@ export async function loadInviteState(
   if (!row) return null;
 
   const { fixture, game } = row;
-  const fallbackDue =
-    game.gatedFallbackHoursBefore !== null &&
-    now.getTime() >= fixture.kicksOffAt.getTime() - game.gatedFallbackHoursBefore * HOUR_MS;
 
   const base = {
     gated: game.gatedInvitesEnabled,
     maxPlayers: fixture.maxPlayers,
-    minPlayers: fixture.minPlayers,
-    fallbackDue,
+    timeZone: game.timezone,
+    openedAt: fixture.openedAt,
+    kicksOffAt: fixture.kicksOffAt,
   };
 
   // An ungated fixture never reaches the rule, so the three remaining queries
   // are skipped outright rather than run and thrown away (BR-39). The single
   // empty implicit tier keeps the shape non-optional for callers.
   if (!game.gatedInvitesEnabled) {
-    return { ...base, tiers: [{ tierId: null, members: [] }], guestInCount: 0 };
+    return { ...base, tiers: [{ tierId: null, askAfterHours: null, members: [] }], guestInCount: 0 };
   }
 
   const tierRows = await db
-    .select({ id: inviteTiers.id })
+    .select({ id: inviteTiers.id, askAfterHours: inviteTiers.askAfterHours })
     .from(inviteTiers)
     .where(eq(inviteTiers.gameId, fixture.gameId))
     .orderBy(asc(inviteTiers.position), asc(inviteTiers.createdAt));
@@ -80,7 +77,7 @@ export async function loadInviteState(
   const memberIds = memberRows.map((member) => member.playerId);
   // A guest holds a response row and no membership, so they fall out of the
   // join above entirely. They still occupy a slot, which is exactly what
-  // `potential` has to know about (BR-43).
+  // `planReleases` counts toward whether the game can fill (M69).
   const guestRows = await db
     .select({ playerId: responses.playerId })
     .from(responses)
@@ -95,8 +92,10 @@ export async function loadInviteState(
     );
 
   const byTier = new Map<string | null, TierState>();
-  for (const tier of tierRows) byTier.set(tier.id, { tierId: tier.id, members: [] });
-  byTier.set(null, { tierId: null, members: [] });
+  for (const tier of tierRows) {
+    byTier.set(tier.id, { tierId: tier.id, askAfterHours: tier.askAfterHours, members: [] });
+  }
+  byTier.set(null, { tierId: null, askAfterHours: game.everyoneElseAskAfterHours, members: [] });
 
   for (const member of memberRows) {
     // A membership pointing at another Game's tier arrives here as an unknown
@@ -208,6 +207,8 @@ export interface OrderedTier {
   name: string;
   /** Ascending. Zero for the implicit tier, which has no stored row to carry one. */
   position: number;
+  /** See `TierState.askAfterHours`; the implicit tier's comes from `games`. */
+  askAfterHours: number | null;
   members: OrderedMember[];
 }
 
@@ -230,10 +231,20 @@ export async function loadInviteOrder(
   fixtureId?: string,
 ): Promise<OrderedTier[]> {
   const tierRows = await db
-    .select({ id: inviteTiers.id, name: inviteTiers.name, position: inviteTiers.position })
+    .select({
+      id: inviteTiers.id,
+      name: inviteTiers.name,
+      position: inviteTiers.position,
+      askAfterHours: inviteTiers.askAfterHours,
+    })
     .from(inviteTiers)
     .where(eq(inviteTiers.gameId, gameId))
     .orderBy(asc(inviteTiers.position), asc(inviteTiers.createdAt));
+
+  const [game] = await db
+    .select({ everyoneElseAskAfterHours: games.everyoneElseAskAfterHours })
+    .from(games)
+    .where(eq(games.id, gameId));
 
   const memberRows = await db
     .select({
@@ -259,9 +270,21 @@ export async function loadInviteOrder(
 
   const byTier = new Map<string | null, OrderedTier>();
   for (const tier of tierRows) {
-    byTier.set(tier.id, { tierId: tier.id, name: tier.name, position: tier.position, members: [] });
+    byTier.set(tier.id, {
+      tierId: tier.id,
+      name: tier.name,
+      position: tier.position,
+      askAfterHours: tier.askAfterHours,
+      members: [],
+    });
   }
-  byTier.set(null, { tierId: null, name: "Everyone else", position: 0, members: [] });
+  byTier.set(null, {
+    tierId: null,
+    name: "Everyone else",
+    position: 0,
+    askAfterHours: game?.everyoneElseAskAfterHours ?? null,
+    members: [],
+  });
 
   for (const member of memberRows) {
     // An unknown key means a membership pointing at another Game's tier. It

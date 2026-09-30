@@ -135,7 +135,7 @@ export async function openAndRemind(
  *
  * Runs against every *open* fixture, not just those past their reminder
  * instant, because neither trigger is tied to that instant: a decline can
- * arrive at any hour, and BR-44's fallback is measured from kickoff. The claim
+ * arrive at any hour, and head starts run on their own clock (M69). The claim
  * is cheap and idempotent — `claimInviteReleases` returns `skipped` for an
  * ungated Game, and the query below never selects one in the first place.
  *

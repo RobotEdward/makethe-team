@@ -2,7 +2,7 @@ import { SELF, env } from "cloudflare:test";
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { getDb } from "../../src/db/client.js";
-import { inviteTiers, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
+import { games, inviteTiers, memberships, notificationLog, players, responses } from "../../src/db/schema.js";
 import { openFixture } from "../../src/domain/open-fixture.js";
 import { ALLOWED, ORIGIN, signIn } from "../support/sign-in.js";
 import {
@@ -297,6 +297,22 @@ describe("the invite-progress panel and the manual release", () => {
     expect(html).toContain("Invite Subs now");
   });
 
+  it("says when the next group is due, and who in it is already in (M69)", async () => {
+    const { cookie, gameId, fixtureId, subId } = await openGatedFixture();
+    await db
+      .update(responses)
+      .set({ invitedAt: NOW, invitedIndividually: true, status: "in" })
+      .where(eq(responses.playerId, subId));
+
+    const html = await (
+      await SELF.fetch(`${ORIGIN}/g/${gameId}/f/${fixtureId}`, { headers: { cookie } })
+    ).text();
+
+    expect(html).toMatch(/due (now · asked (within the hour|at 06:00)|\w+ \d{1,2} \w+, \d\d:\d\d)/);
+    expect(html).toContain("1 in already");
+    expect(html).toContain("Nobody is asked between 23:00 and 06:00.");
+  });
+
   it("renders no panel at all for an ungated game (BR-39)", async () => {
     const { cookie, gameId, fixtureId } = await openGatedFixture({ gated: false });
 
@@ -379,7 +395,8 @@ describe("the player's not-yet-asked state (BR-40)", () => {
     ).text();
 
     expect(html).toContain("You haven't been asked yet");
-    expect(html).toContain("The core group is being asked first");
+    // 12 waking hours after the core, and well before the cut-off.
+    expect(html).toContain("Your group is due to be asked");
   });
 
   it("says nothing of the sort once they have been asked", async () => {
@@ -420,7 +437,7 @@ describe("the player's not-yet-asked state (BR-40)", () => {
 
     // "You haven't been asked yet" would read as though their answer had gone
     // nowhere. It went somewhere: they hold a place in the queue.
-    expect(html).toContain("You're in as soon as the core group has been asked");
+    expect(html).toContain("You're in line. Your group is due to be asked");
     expect(html).not.toContain("You haven't been asked yet");
   });
 });
@@ -647,5 +664,104 @@ describe("saving the invite order promotes whoever it releases", () => {
     // did start, and the stamp must still be absent afterwards.
     await drainSends();
     expect((await rowFor(fixtureId, viewer!.id))?.invitedAt).toBeNull();
+  });
+});
+
+describe("head starts and the schedule preview (M69)", () => {
+  /**
+   * Regulars (the owner), Standby (one player, 12 hours) and Everyone else
+   * (one player), against a game kicking off at 19:00 a week out and opening
+   * at 09:00 the day before — so the cut-off is 16:00 on the day.
+   */
+  async function orderedGame() {
+    const { cookie, ownerId, gameId } = await ownedGatedGame();
+    const regulars = await insertInviteTier(db, gameId, { name: "Regulars", position: 1 });
+    const standby = await insertInviteTier(db, gameId, { name: "Standby", position: 2, askAfterHours: 12 });
+    await db.update(memberships).set({ inviteTierId: regulars }).where(eq(memberships.playerId, ownerId));
+    const sub = await insertPlayer(db, { name: "Sam Sub", email: "sam@example.com" });
+    await insertMembership(db, gameId, sub, { inviteTierId: standby });
+    const other = await insertPlayer(db, { name: "Olly Other", email: "olly@example.com" });
+    await insertMembership(db, gameId, other);
+    await insertFixture(db, gameId, { kicksOffAt: kickoffIn(24 * 7) });
+    return { cookie, gameId, standby };
+  }
+
+  const page = async (gameId: string, cookie: string) =>
+    (await SELF.fetch(`${ORIGIN}/g/${gameId}/invites`, { headers: { cookie } })).text();
+
+  it("lays out when each group is asked, pausing overnight", async () => {
+    const { cookie, gameId } = await orderedGame();
+
+    const html = await page(gameId, cookie);
+
+    expect(html).toContain("When each group is asked");
+    expect(html).toContain("09:00 · when the game opens");
+    expect(html).toContain("21:00</span>");
+    // 21:00 + 12 waking hours: two before 23:00, ten from 06:00.
+    expect(html).toContain("16:00 · paused overnight");
+    expect(html).toContain("every timed group asked by 16:00");
+  });
+
+  it("saves a head start, and a final group asked only when needed", async () => {
+    const { cookie, gameId, standby } = await orderedGame();
+
+    const response = await appPost(
+      `/g/${gameId}/invites`,
+      { [`after-${standby}`]: "6", "everyone-mode": "needed", "after-everyone": "12" },
+      cookie,
+    );
+
+    expect(response.status).toBe(303);
+    const [tier] = await db.select().from(inviteTiers).where(eq(inviteTiers.id, standby));
+    expect(tier?.askAfterHours).toBe(6);
+    const [game] = await db.select().from(games).where(eq(games.id, gameId));
+    expect(game?.everyoneElseAskAfterHours).toBeNull();
+    expect(await page(gameId, cookie)).toContain("only if the groups above can&#39;t fill the game");
+  });
+
+  it("shows the proposed times on Check schedule, and saves nothing", async () => {
+    const { cookie, gameId, standby } = await orderedGame();
+
+    const response = await appPost(
+      `/g/${gameId}/invites`,
+      { [`after-${standby}`]: "2", "everyone-mode": "timed", "after-everyone": "2", intent: "preview" },
+      cookie,
+    );
+
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    // The ripple: Standby at 11:00 moves Everyone else to 13:00.
+    expect(html).toContain("11:00</span>");
+    expect(html).toContain("13:00</span>");
+    expect(html).toContain('value="2"');
+    const [tier] = await db.select().from(inviteTiers).where(eq(inviteTiers.id, standby));
+    expect(tier?.askAfterHours).toBe(12);
+  });
+
+  it("refuses a schedule that asks a group after the cut-off, naming what fits", async () => {
+    const { cookie, gameId, standby } = await orderedGame();
+
+    const response = await appPost(
+      `/g/${gameId}/invites`,
+      { [`after-${standby}`]: "12", "everyone-mode": "timed", "after-everyone": "20" },
+      cookie,
+    );
+
+    expect(response.status).toBe(422);
+    const html = await response.text();
+    expect(html).toContain("Everyone else would be asked");
+    expect(html).toContain("The longest head start that fits is 12 hours.");
+    expect(html).toContain('value="20"');
+    const [game] = await db.select().from(games).where(eq(games.id, gameId));
+    expect(game?.everyoneElseAskAfterHours).toBe(12);
+  });
+
+  it("refuses a head start that is not a whole number of hours", async () => {
+    const { cookie, gameId, standby } = await orderedGame();
+
+    const response = await appPost(`/g/${gameId}/invites`, { [`after-${standby}`]: "1.5" }, cookie);
+
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("Give Standby a head start in whole hours");
   });
 });

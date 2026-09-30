@@ -307,12 +307,11 @@ describe("parseGameForm — gated invites (M34)", () => {
     return body({
       gatedInvitesEnabledSubmitted: "1",
       gatedInvitesEnabled: "on",
-      gatedFallbackHoursBefore: "12",
       ...overrides,
     });
   }
 
-  it("defaults a new game to ungated with no fallback (BR-39)", () => {
+  it("defaults a new game to ungated (BR-39)", () => {
     // The create form has no gating section, so nothing about it is submitted.
     // Unlike the notification switches, absent must read as off: a Game nobody
     // has configured asks its whole squad at once.
@@ -320,7 +319,6 @@ describe("parseGameForm — gated invites (M34)", () => {
     if (!result.ok) throw new Error("expected ok");
 
     expect(result.values.gatedInvitesEnabled).toBe(false);
-    expect(result.values.gatedFallbackHoursBefore).toBeNull();
   });
 
   it("reads the gating switch back when the section was submitted", () => {
@@ -328,7 +326,6 @@ describe("parseGameForm — gated invites (M34)", () => {
     if (!result.ok) throw new Error("expected ok");
 
     expect(result.values.gatedInvitesEnabled).toBe(true);
-    expect(result.values.gatedFallbackHoursBefore).toBe(12);
   });
 
   it("treats an unticked gating box in a submitted section as off", () => {
@@ -338,26 +335,5 @@ describe("parseGameForm — gated invites (M34)", () => {
     if (!result.ok) throw new Error("expected ok");
 
     expect(result.values.gatedInvitesEnabled).toBe(false);
-  });
-
-  it("parses the fallback as null when the owner chooses never (BR-44)", () => {
-    const result = parseGameForm(gatedBody({ gatedFallbackHoursBefore: "never" }));
-    if (!result.ok) throw new Error("expected ok");
-
-    expect(result.values.gatedFallbackHoursBefore).toBeNull();
-  });
-
-  it("accepts a fallback of zero hours", () => {
-    const result = parseGameForm(gatedBody({ gatedFallbackHoursBefore: "0" }));
-    if (!result.ok) throw new Error("expected ok");
-
-    expect(result.values.gatedFallbackHoursBefore).toBe(0);
-  });
-
-  it("rejects a fallback that is not a whole number of hours", () => {
-    expect(errorsFor({ gatedFallbackHoursBefore: "half" })).toContain("gatedFallbackHoursBefore");
-    expect(errorsFor({ gatedFallbackHoursBefore: "1.5" })).toContain("gatedFallbackHoursBefore");
-    expect(errorsFor({ gatedFallbackHoursBefore: "-1" })).toContain("gatedFallbackHoursBefore");
-    expect(errorsFor({ gatedFallbackHoursBefore: "169" })).toContain("gatedFallbackHoursBefore");
   });
 });

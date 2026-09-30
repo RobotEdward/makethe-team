@@ -799,12 +799,16 @@ describe("the invite order gates who takes a slot (BR-40a)", () => {
   async function gatedOpenFixture(opts: { core: number; subs: number; maxPlayers?: number }) {
     const gameId = await insertGame(db, {
       gatedInvitesEnabled: true,
-      maxPlayers: opts.maxPlayers ?? 14,
+      // The core fills the fixture by default: a core smaller than the game
+      // cannot fill it, so auto-advance (M69) would ask the subs at once.
+      maxPlayers: opts.maxPlayers ?? opts.core,
     });
     const fixtureId = crypto.randomUUID();
     await db.insert(fixtures).values({
       id: fixtureId, gameId, kicksOffAt: KICKOFF, minPlayers: 2,
-      maxPlayers: opts.maxPlayers ?? 14, prefersEvenNumbers: true,
+      // The core fills the fixture by default: a core smaller than the game
+      // cannot fill it, so auto-advance (M69) would ask the subs at once.
+      maxPlayers: opts.maxPlayers ?? opts.core, prefersEvenNumbers: true,
       shortWarningOffsetHours: 12, durationMinutes: 60,
     });
     const coreTier = crypto.randomUUID();
@@ -835,7 +839,7 @@ describe("the invite order gates who takes a slot (BR-40a)", () => {
   it("waitlists an uninvited player even with the fixture nearly empty", async () => {
     const fixtureId = await gatedOpenFixture({ core: 2, subs: 2 });
 
-    // Thirteen slots free, and they still do not get one.
+    // Both slots free, and they still do not get one.
     expect(await accept(fixtureId, "g-2")).toMatchObject({ kind: "waitlisted", waitlistPosition: 1 });
     expect((await rowFor(fixtureId, "g-2"))?.status).toBe("waitlisted");
     expect(await counts(fixtureId)).toEqual({ inCount: 0, cached: 0 });

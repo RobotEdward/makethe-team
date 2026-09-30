@@ -1,18 +1,38 @@
 import { describe, expect, it } from "vitest";
-import { planReleases, type ReleaseInput, type TierState } from "../../src/domain/invite-tiers.js";
+import {
+  planReleases,
+  whenGroupIsAsked,
+  type ReleaseInput,
+  type TierState,
+} from "../../src/domain/invite-tiers.js";
 import type { ResponseStatus } from "../../src/domain/response-status.js";
 
-const INVITED = new Date("2026-08-24T09:00:00Z");
+const TZ = "Europe/London";
+// Wednesday Night Football's shape: opens Tue 09:00 BST, kicks off Wed 21:00 BST.
+const OPENED = new Date("2026-09-29T08:00:00Z");
+const KICKOFF = new Date("2026-09-30T20:00:00Z");
+const bst = (day: 29 | 30, hour: number, minute = 0): Date =>
+  new Date(Date.UTC(2026, 8, day, hour - 1, minute));
 
 /**
  * A tier of members, written compactly: each string is a response status, `-`
  * for a member holding no live row, a leading `*` for one already invited by
  * a tier release, and a leading `~` for one the owner invited on their own
  * (M46) — invited either way, but only `*` releases the tier they sit in.
+ *
+ * `askAfterHours` is how many waking hours after the previous group this one
+ * is asked, or null for "only when the groups above cannot fill the game".
+ * `stampedAt` is when a `*` member was stamped.
  */
-function tier(id: string | null, ...members: string[]): TierState {
+function tier(
+  id: string | null,
+  askAfterHours: number | null,
+  members: string[],
+  stampedAt: Date = OPENED,
+): TierState {
   return {
     tierId: id,
+    askAfterHours,
     members: members.map((member, index) => {
       const individually = member.startsWith("~");
       const invited = individually || member.startsWith("*");
@@ -20,368 +40,333 @@ function tier(id: string | null, ...members: string[]): TierState {
       return {
         playerId: `${id ?? "implicit"}-${index}`,
         status: raw === "-" ? null : (raw as ResponseStatus),
-        invitedAt: invited ? INVITED : null,
+        invitedAt: invited ? stampedAt : null,
         invitedIndividually: individually,
       };
     }),
   };
 }
 
+const n = (count: number, status: string): string[] => Array.from({ length: count }, () => status);
+
 function input(tiers: TierState[], over: Partial<ReleaseInput> = {}): ReleaseInput {
   return {
     tiers,
     guestInCount: 0,
-    maxPlayers: 10,
-    minPlayers: 8,
-    fallbackDue: false,
+    maxPlayers: 16,
+    now: bst(29, 9),
+    timeZone: TZ,
+    openedAt: OPENED,
+    kicksOffAt: KICKOFF,
     force: false,
     ...over,
   };
 }
 
-describe("planReleases — the worked example from the spec", () => {
-  // Core of 5, Regulars of 3, Ida, then the implicit tier. max 10, min 8.
-  const CORE = ["pending", "pending", "pending", "pending", "pending"];
-  const REGULARS = ["pending", "pending", "pending"];
+describe("planReleases — the first group", () => {
+  it("asks the first group when the game opens, and nobody else", () => {
+    const plan = planReleases(
+      input([tier("regulars", null, n(16, "pending")), tier("standby", 12, n(3, "pending"))]),
+    );
 
-  it("keeps releasing when every member of a released tier has left the squad", () => {
-    // Not the reminder instant — BR-1 writes a `pending` row for every active
-    // member, so an all-absent squad means they have since been removed. Each
-    // absence is a shortfall, so the order is walked to the end and nobody is
-    // stranded on the bench behind a tier of ghosts.
+    expect(plan.releasedTierIds).toEqual(["regulars"]);
+    expect(plan.toInvite).toHaveLength(16);
+  });
+
+  it("asks the first group even when the game opens at night", () => {
+    // The owner chose the opening time; waking hours govern only the groups
+    // that follow on their own.
+    const plan = planReleases(
+      input([tier("regulars", null, n(16, "pending")), tier(null, 12, ["pending"])], { now: bst(30, 2) }),
+    );
+
+    expect(plan.releasedTierIds).toEqual(["regulars"]);
+  });
+
+  it("treats a gated Game with no groups defined as everyone at once", () => {
+    const plan = planReleases(input([tier(null, 12, n(3, "pending"))]));
+
+    expect(plan.toInvite).toEqual(["implicit-0", "implicit-1", "implicit-2"]);
+  });
+});
+
+describe("planReleases — auto-advance: the groups asked so far cannot fill the game", () => {
+  it("asks the next group at once when in + not answered falls below the maximum", () => {
+    // 29 September 2026: Mark's mute declined for him at open, leaving 14 of
+    // 15 regulars able to play against 16 places.
     const plan = planReleases(
       input([
-        tier("core", "-", "-", "-", "-", "-"),
-        tier("regulars", "-", "-", "-"),
-        tier("ida", "-"),
-        tier(null, "-", "-", "-", "-", "-"),
+        tier("regulars", null, [...n(14, "*pending"), "*out"]),
+        tier("standby", 12, n(3, "pending")),
+        tier(null, 12, n(8, "pending")),
       ]),
     );
 
-    expect(plan.releasedCount).toBe(4);
-    expect(plan.toInvite).toHaveLength(0);
+    expect(plan.releasedTierIds).toEqual(["regulars", "standby"]);
+    expect(plan.toInvite).toEqual(["standby-0", "standby-1", "standby-2"]);
   });
 
-  it("releases the core and stamps every live row in it", () => {
-    const plan = planReleases(
-      input([tier("core", ...CORE), tier("regulars", ...REGULARS), tier("ida", "pending"), tier(null, "pending")]),
-    );
-
-    expect(plan.releasedCount).toBe(1);
-    expect(plan.toInvite).toEqual(["core-0", "core-1", "core-2", "core-3", "core-4"]);
-  });
-
-  it("releases the second tier in the same pass when a core member is muted out (M28)", () => {
-    const plan = planReleases(
-      input([
-        tier("core", "*pending", "*pending", "*pending", "*pending", "*out"),
-        tier("regulars", ...REGULARS),
-        tier("ida", "pending"),
-        tier(null, "pending"),
-      ]),
-    );
-
-    expect(plan.releasedCount).toBe(2);
-    expect(plan.toInvite).toEqual(["regulars-0", "regulars-1", "regulars-2"]);
-  });
-
-  it("releases a third tier when a core member declines", () => {
-    const plan = planReleases(
-      input([
-        tier("core", "*pending", "*pending", "*pending", "*out", "*out"),
-        tier("regulars", "*pending", "*pending", "*pending"),
-        tier("ida", "pending"),
-        tier(null, "pending"),
-      ]),
-    );
-
-    expect(plan.releasedCount).toBe(3);
-    expect(plan.toInvite).toEqual(["ida-0"]);
-  });
-
-  it("lets a sub's decline release the tier after it", () => {
-    const plan = planReleases(
-      input([
-        tier("core", "*pending", "*pending", "*pending", "*out", "*out"),
-        tier("regulars", "*out", "*pending", "*pending"),
-        tier("ida", "*pending"),
-        tier(null, "pending", "pending"),
-      ]),
-    );
-
-    expect(plan.releasedCount).toBe(4);
-    expect(plan.toInvite).toEqual(["implicit-0", "implicit-1"]);
-  });
-});
-
-describe("planReleases — the BR-43 veto", () => {
-  // A core of 12 against max_players 10, which is what it takes for the
-  // fixture to be full while tiers are still owed.
-  const core = (outs: number) => Array.from({ length: 12 }, (_, i) => (i < outs ? "*out" : "*pending"));
-
-  it("holds a tier back while the fixture is full", () => {
-    const plan = planReleases(input([tier("core", ...core(1)), tier("subs", "pending")]));
-
-    expect(plan.releasedCount).toBe(1);
-    expect(plan.toInvite).toHaveLength(0);
-  });
-
-  it("releases the held-back tier once potential drops below max", () => {
-    const plan = planReleases(input([tier("core", ...core(3)), tier("subs", "pending")]));
-
-    expect(plan.releasedCount).toBe(2);
-    expect(plan.toInvite).toEqual(["subs-0"]);
-  });
-});
-
-describe("planReleases — potential counts everyone holding a slot", () => {
-  const shortCore = [tier("core", "*out", "*out", "*pending"), tier("subs", "pending"), tier(null, "pending")];
-
-  it("counts a guest, so a guest reduces how many tiers are released", () => {
-    const withoutGuests = planReleases(input(shortCore, { maxPlayers: 3 }));
-    const withGuests = planReleases(input(shortCore, { maxPlayers: 3, guestInCount: 2 }));
-
-    // Two declines owe two further tiers and there is room for both; the two
-    // guests fill the same room, so the veto holds everything back.
-    expect(withoutGuests.releasedCount).toBe(3);
-    expect(withGuests.releasedCount).toBe(1);
-  });
-
-  it("counts an early volunteer from an unreleased tier (BR-40)", () => {
-    const plan = planReleases(
-      input([tier("core", "*out", "*pending"), tier("subs", "in", "pending")], { maxPlayers: 2 }),
-    );
-
-    // potential = 1 pending in the core + 1 `in` volunteer = 2, which is max.
-    expect(plan.releasedCount).toBe(1);
-  });
-
-  it("counts a waitlisted member, so keenness never releases a tier", () => {
-    const plan = planReleases(
-      input([tier("core", "*in", "*waitlisted"), tier("subs", "pending")], { maxPlayers: 2 }),
-    );
-
-    expect(plan.releasedCount).toBe(1);
-  });
-});
-
-/**
- * The invariant this milestone turns on. A gate-waitlisted player — one who
- * volunteered from a tier that has not been released — is waiting *on the
- * gate*, not holding a slot. Counting them in `potential` makes their own
- * answer the thing that vetoes the release they are waiting for, and the
- * fixture then kicks off short with a willing player stuck on the bench.
- *
- * Enumerating rather than spot-checking: every status a member can hold is
- * asserted on both sides of the release line, so a future edit to `measure`
- * cannot quietly restore the deadlock for one of them.
- */
-describe("planReleases — an unreleased waitlisted member never vetoes their own tier", () => {
-  it("does not count a gate-waitlisted volunteer toward potential", () => {
-    const plan = planReleases(
-      input([tier("core", "*out", "*pending"), tier("subs", "waitlisted", "pending")], { maxPlayers: 2 }),
-    );
-
-    // The decline owes a tier. potential is the one remaining core `pending`
-    // and nothing from the unreleased sub, so 1 < 2 and the subs tier opens —
-    // which is what promotes the volunteer waiting on it.
-    //
-    // `maxPlayers` is 2 to make this discriminate: counting the volunteer, as
-    // the rule did before BR-40a, puts potential at exactly 2, vetoing the
-    // release they are themselves waiting for. That is the deadlock.
-    expect(plan.releasedCount).toBe(2);
-    expect(plan.toInvite).toEqual(["subs-0", "subs-1"]);
-  });
-
-  it("still counts a waitlisted member once their own tier is released", () => {
-    const plan = planReleases(
-      input([tier("core", "*in", "*pending"), tier("subs", "*waitlisted", "*pending")], { maxPlayers: 3 }),
-    );
-
-    // The same two people, now invited: they hold their places and the
-    // implicit tier behind them stays shut.
-    expect(plan.releasedCount).toBe(2);
-  });
-
-  it("counts an owner's override of an unreleased player, who really does hold a slot", () => {
-    const plan = planReleases(
-      input([tier("core", "*in", "*pending"), tier("subs", "in", "pending")], { maxPlayers: 3 }),
-    );
-
-    // BR-40a exempts the owner, so an unreleased `in` is a real occupant and
-    // must veto exactly as before. Contrast the first case: same shape, and
-    // only the status differs.
-    expect(plan.releasedCount).toBe(1);
-  });
-
-  it("stops the cascade at the volunteer's own tier once it is open", () => {
-    // The mirror of the first case. Releasing the subs tier makes the
-    // volunteer count, and that is what must hold the implicit tier shut:
-    // the decline is answered by the person already waiting for it, so the
-    // whole squad does not get dragged in behind them.
-    const plan = planReleases(
-      input([tier("core", "*out", "*pending"), tier("subs", "waitlisted"), tier(null, "pending")], {
-        maxPlayers: 10,
-      }),
-    );
-
-    expect(plan.releasedCount).toBe(2);
-    expect(plan.toInvite).toEqual(["subs-0"]);
-  });
-
-  it("does not let a gate-waitlisted volunteer hold back the BR-44 fallback", () => {
-    const plan = planReleases(
-      input([tier("core", "*pending", "*pending"), tier("subs", "waitlisted", "pending")], {
-        maxPlayers: 10,
-        minPlayers: 3,
-        fallbackDue: true,
-      }),
-    );
-
-    // potential = 2 released pendings, one short of the 3 the fallback needs,
-    // so it must walk on. Counting the volunteer as the third body is exactly
-    // what would stop it here at 1 — which is what this pins.
-    expect(plan.releasedCount).toBe(2);
-  });
-});
-
-describe("planReleases — shortfall counts from the membership side", () => {
-  it("treats a member with no live row as missing, as withdrawMember deletes it", () => {
-    const plan = planReleases(input([tier("core", "*pending", "*pending", "-"), tier("subs", "pending")]));
-
-    expect(plan.releasedCount).toBe(2);
-  });
-
-  it("never invites a withdrawn player back", () => {
-    const plan = planReleases(input([tier("core", "pending", "withdrawn")]));
-
-    expect(plan.toInvite).toEqual(["core-0"]);
-  });
-});
-
-describe("planReleases — the fallback and the manual release", () => {
-  it("releases nothing extra before the fallback instant", () => {
-    const plan = planReleases(
-      input([tier("core", "*pending", "*pending"), tier("subs", "pending")], { minPlayers: 8 }),
-    );
-
-    expect(plan.releasedCount).toBe(1);
-  });
-
-  it("releases until minPlayers is reachable once the fallback is due (BR-44)", () => {
+  it("holds while in + not answered exactly reaches the maximum", () => {
+    // The evening of 29 September: 16 of 16 are in or have not answered.
     const plan = planReleases(
       input(
         [
-          tier("core", "*pending", "*pending"),
-          tier("subs", "pending", "pending"),
-          tier(null, "pending", "pending", "pending", "pending"),
+          tier("regulars", null, [...n(9, "*in"), ...n(3, "*out"), ...n(3, "*pending")]),
+          tier("standby", 12, ["*in", "*pending", "*pending"]),
+          tier(null, 12, ["~in", "waitlisted", ...n(6, "pending")]),
         ],
-        { minPlayers: 8, fallbackDue: true },
+        { now: bst(29, 20) },
       ),
     );
 
-    expect(plan.releasedCount).toBe(3);
-  });
-
-  it("stops at the last tier rather than looping", () => {
-    const plan = planReleases(input([tier("core", "*pending")], { minPlayers: 99, fallbackDue: true }));
-
-    expect(plan.releasedCount).toBe(1);
-  });
-
-  it("releases exactly one tier on force, ignoring the veto", () => {
-    const plan = planReleases(
-      input([tier("core", "*in", "*in"), tier("subs", "pending"), tier(null, "pending")], {
-        maxPlayers: 2,
-        force: true,
-      }),
-    );
-
-    expect(plan.releasedCount).toBe(2);
-    expect(plan.toInvite).toEqual(["subs-0"]);
-  });
-});
-
-describe("planReleases — degenerate shapes", () => {
-  it("treats a gated Game with no tiers defined as ungated (the implicit tier is tier one)", () => {
-    const plan = planReleases(input([tier(null, "pending", "pending", "pending")]));
-
-    expect(plan.releasedCount).toBe(1);
-    expect(plan.toInvite).toEqual(["implicit-0", "implicit-1", "implicit-2"]);
-  });
-
-  it("is a no-op on a second run — the same state plans the same releases", () => {
-    const state = input([
-      tier("core", "*pending", "*out"),
-      tier("subs", "*pending"),
-      tier(null, "pending"),
-    ]);
-
-    const first = planReleases(state);
-    const second = planReleases(state);
-
-    expect(second).toEqual(first);
-    // One decline, and the tier it owed is already released — so the implicit
-    // tier stays held and there is nobody new to stamp.
-    expect(first).toEqual({ releasedCount: 2, toInvite: [] });
-  });
-
-  it("skips an empty tier without stalling", () => {
-    const plan = planReleases(input([tier("core", "*out"), tier("empty"), tier("subs", "pending")]));
-
-    expect(plan.releasedCount).toBe(3);
-    expect(plan.toInvite).toEqual(["subs-0"]);
-  });
-
-  it("returns nothing for a Game with no members at all", () => {
-    const plan = planReleases(input([tier(null)]));
-
-    expect(plan).toEqual({ releasedCount: 1, toInvite: [] });
-  });
-});
-
-describe("an owner's one-off invite does not release the tier it lands in (M46)", () => {
-  it("leaves a tier held when its only stamp is an individual one", () => {
-    // A sub invited by hand is genuinely invited — they can answer, and the
-    // gate lets them in. But the release count is derived from the stamps,
-    // so counting this one would read tiers 1 and 2 as released and hand the
-    // next decline tier 3.
-    const plan = planReleases(
-      input([
-        tier("core", "*in", "*in"),
-        tier("subs", "~pending", "pending"),
-        tier(null),
-      ]),
-    );
-
-    expect(plan.releasedCount).toBe(1);
-    // And nobody else in that tier is invited on the back of it.
     expect(plan.toInvite).toEqual([]);
   });
 
-  it("still releases the tier when a real release stamp joins the individual one", () => {
-    // A full fixture, so nothing beyond the derivation moves the count.
+  it("counts a guest as holding a place", () => {
+    const plan = planReleases(
+      input([tier("regulars", null, n(15, "*pending")), tier(null, 12, ["pending"])], { guestInCount: 1 }),
+    );
+
+    expect(plan.toInvite).toEqual([]);
+  });
+
+  it("counts somebody waiting for a place in a full game", () => {
+    const plan = planReleases(
+      input([tier("regulars", null, [...n(15, "*in"), "*waitlisted"]), tier(null, 12, ["pending"])]),
+    );
+
+    expect(plan.toInvite).toEqual([]);
+  });
+
+  it("does not count an early yes from a group not yet asked", () => {
+    // Counting them would let their own keenness keep their group waiting.
+    // They are named in `toInvite` with the rest; the capacity object promotes
+    // them and leaves them out of the mail.
+    const plan = planReleases(
+      input([tier("regulars", null, n(15, "*in")), tier(null, 12, ["waitlisted", "pending"])]),
+    );
+
+    expect(plan.toInvite).toEqual(["implicit-0", "implicit-1"]);
+  });
+
+  it("treats a member with no live row as unable to play", () => {
+    const plan = planReleases(
+      input([tier("regulars", null, [...n(15, "*pending"), "-"]), tier(null, 12, ["pending"])]),
+    );
+
+    expect(plan.toInvite).toEqual(["implicit-0"]);
+  });
+
+  it("waits for 06:00 rather than asking at night", () => {
+    const tiers = [tier("regulars", null, [...n(14, "*pending"), "*out", "*out"]), tier(null, 12, ["pending"])];
+
+    expect(planReleases(input(tiers, { now: bst(30, 2) })).toInvite).toEqual([]);
+    expect(planReleases(input(tiers, { now: bst(30, 6) })).toInvite).toEqual(["implicit-0"]);
+  });
+
+  it("cascades through several groups in one pass when none can fill the game", () => {
+    const plan = planReleases(
+      input([
+        tier("regulars", null, n(4, "*pending")),
+        tier("standby", 12, n(3, "pending")),
+        tier(null, 12, ["pending"]),
+      ]),
+    );
+
+    expect(plan.releasedTierIds).toEqual(["regulars", "standby", null]);
+  });
+});
+
+describe("planReleases — the head start", () => {
+  const full = (): TierState[] => [
+    tier("regulars", null, n(16, "*pending")),
+    tier("standby", 12, n(3, "pending")),
+    tier(null, 6, n(8, "pending")),
+  ];
+
+  it("holds the next group until its head start has run out", () => {
+    expect(planReleases(input(full(), { now: bst(29, 20) })).toInvite).toEqual([]);
+  });
+
+  it("asks the next group once the previous one has had its waking hours", () => {
+    const plan = planReleases(input(full(), { now: bst(29, 21) }));
+
+    expect(plan.releasedTierIds).toEqual(["regulars", "standby"]);
+  });
+
+  it("counts from when the previous group was actually asked, so an early ask ripples on", () => {
+    // Standby was asked at 11:00 by auto-advance; Everyone else's 6 waking
+    // hours then run from 11:00, not from Standby's scheduled 21:00.
+    const tiers = [
+      tier("regulars", null, n(16, "*pending")),
+      tier("standby", 12, n(3, "*pending"), bst(29, 11)),
+      tier(null, 6, n(8, "pending")),
+    ];
+
+    expect(planReleases(input(tiers, { now: bst(29, 16) })).toInvite).toEqual([]);
+    expect(planReleases(input(tiers, { now: bst(29, 17) })).toInvite).toHaveLength(8);
+  });
+
+  it("pauses overnight: asked 21:00 with a 6-hour head start, the next group is due 10:00", () => {
+    const tiers = [
+      tier("regulars", null, n(16, "*pending")),
+      tier("standby", 12, n(3, "*pending"), bst(29, 21)),
+      tier(null, 6, n(8, "pending")),
+    ];
+
+    expect(planReleases(input(tiers, { now: bst(30, 9) })).toInvite).toEqual([]);
+    expect(planReleases(input(tiers, { now: bst(30, 10) })).toInvite).toHaveLength(8);
+  });
+
+  it("does not ask a due group while the game is full", () => {
+    const tiers = [tier("regulars", null, n(16, "*in")), tier(null, 12, ["pending"])];
+
+    expect(planReleases(input(tiers, { now: bst(30, 12) })).toInvite).toEqual([]);
+  });
+
+  it("asks a due group even though silence still fills the count", () => {
+    // In + not answered reaches 16, so auto-advance holds — silence is exactly
+    // what the head start exists to stop waiting on.
+    const tiers = [tier("regulars", null, [...n(8, "*in"), ...n(8, "*pending")]), tier(null, 12, ["pending"])];
+
+    expect(planReleases(input(tiers, { now: bst(29, 20) })).toInvite).toEqual([]);
+    expect(planReleases(input(tiers, { now: bst(29, 21) })).toInvite).toEqual(["implicit-0"]);
+  });
+});
+
+describe("planReleases — the three-hour cut-off", () => {
+  it("asks a timed group no later than three hours before kickoff", () => {
+    const tiers = [
+      tier("regulars", null, [...n(8, "*in"), ...n(8, "*pending")]),
+      tier("standby", 40, n(3, "pending")),
+    ];
+
+    expect(planReleases(input(tiers, { now: bst(30, 17) })).toInvite).toEqual([]);
+    expect(planReleases(input(tiers, { now: bst(30, 18) })).toInvite).toHaveLength(3);
+  });
+
+  it("does not ask at the cut-off when the game is already full", () => {
+    const tiers = [tier("regulars", null, n(16, "*in")), tier("standby", 40, n(3, "pending"))];
+
+    expect(planReleases(input(tiers, { now: bst(30, 18) })).toInvite).toEqual([]);
+  });
+});
+
+describe("planReleases — a final group asked only when needed", () => {
+  const tiers = (regulars: string[]): TierState[] => [
+    tier("regulars", null, regulars),
+    tier(null, null, n(8, "pending")),
+  ];
+
+  it("is never asked by the clock or the cut-off", () => {
+    const plan = planReleases(input(tiers([...n(8, "*in"), ...n(8, "*pending")]), { now: bst(30, 19) }));
+
+    expect(plan.toInvite).toEqual([]);
+  });
+
+  it("is asked by auto-advance", () => {
+    const plan = planReleases(input(tiers([...n(8, "*in"), ...n(7, "*pending"), "*out"])));
+
+    expect(plan.toInvite).toHaveLength(8);
+  });
+});
+
+describe("planReleases — the owner's manual release", () => {
+  it("asks exactly one more group, whatever the clock and the count say", () => {
     const plan = planReleases(
       input(
-        [tier("core", "*in", "*in"), tier("subs", "~pending", "*pending"), tier(null)],
-        { maxPlayers: 2 },
+        [tier("regulars", null, n(16, "*in")), tier("standby", 12, ["pending"]), tier(null, null, ["pending"])],
+        { force: true, now: bst(30, 2) },
       ),
     );
 
-    expect(plan.releasedCount).toBe(2);
+    expect(plan.releasedTierIds).toEqual(["regulars", "standby"]);
+  });
+});
+
+describe("planReleases — hand invites, withdrawals and empty groups", () => {
+  it("does not read a hand invite as its group being asked (M46)", () => {
+    const plan = planReleases(
+      input([
+        tier("regulars", null, n(16, "*in")),
+        tier("standby", 12, ["~in", "pending"]),
+        tier(null, 12, ["pending"]),
+      ]),
+    );
+
+    expect(plan.releasedTierIds).toEqual(["regulars"]);
+    expect(plan.toInvite).toEqual([]);
   });
 
   it("does not re-stamp the player the owner already invited", () => {
-    // Their tier releases for everyone else; `toInvite` naming them again
-    // would be a second invitation to somebody already holding one.
     const plan = planReleases(
-      input(
-        [tier("core", "*out", "*out", "*out"), tier("subs", "~pending", "pending", "pending"), tier(null)],
-        { maxPlayers: 2 },
-      ),
+      input([tier("regulars", null, n(4, "*pending")), tier(null, 12, ["~pending", "pending"])]),
     );
 
-    expect(plan.releasedCount).toBe(2);
-    expect(plan.toInvite).toEqual(["subs-1", "subs-2"]);
+    expect(plan.toInvite).toEqual(["implicit-1"]);
+  });
+
+  it("never invites a withdrawn player back", () => {
+    const plan = planReleases(
+      input([tier("regulars", null, ["*pending"]), tier(null, 12, ["withdrawn", "pending"])]),
+    );
+
+    expect(plan.toInvite).toEqual(["implicit-1"]);
+  });
+
+  it("skips a group with nobody in it, without spending a head start on it", () => {
+    const tiers = [
+      tier("regulars", null, n(16, "*pending")),
+      tier("empty", 12, []),
+      tier(null, 12, ["pending"]),
+    ];
+
+    expect(planReleases(input(tiers, { now: bst(29, 20) })).toInvite).toEqual([]);
+    expect(planReleases(input(tiers, { now: bst(29, 21) })).toInvite).toEqual(["implicit-0"]);
+  });
+
+  it("returns nothing for a Game with no members at all", () => {
+    expect(planReleases(input([tier(null, 12, [])])).toInvite).toEqual([]);
+  });
+
+  it("is a no-op on a second run over the same state", () => {
+    const state = input([
+      tier("regulars", null, [...n(14, "*pending"), "*out"]),
+      tier("standby", 12, ["*pending"]),
+      tier(null, 12, ["pending"]),
+    ]);
+
+    expect(planReleases(state)).toEqual(planReleases(state));
+  });
+});
+
+describe("whenGroupIsAsked — what a waiting player is told", () => {
+  const tiers = (): TierState[] => [
+    tier("regulars", null, n(16, "*pending")),
+    tier("standby", 12, ["pending"]),
+    tier(null, 6, ["waitlisted"]),
+  ];
+
+  it("chains the head starts from the last group asked", () => {
+    // Standby 21:00 Tue; Everyone else 6 waking hours later, 10:00 Wed.
+    expect(whenGroupIsAsked(input(tiers()), "standby-0")).toEqual({ kind: "at", at: bst(29, 21) });
+    expect(whenGroupIsAsked(input(tiers()), "implicit-0")).toEqual({ kind: "at", at: bst(30, 10) });
+  });
+
+  it("never promises a time after the cut-off", () => {
+    const late = [tier("regulars", null, n(16, "*pending")), tier(null, 60, ["waitlisted"])];
+
+    expect(whenGroupIsAsked(input(late), "implicit-0")).toEqual({ kind: "at", at: bst(30, 18) });
+  });
+
+  it("says a when-needed group has no time", () => {
+    const needed = [tier("regulars", null, n(16, "*pending")), tier(null, null, ["waitlisted"])];
+
+    expect(whenGroupIsAsked(input(needed), "implicit-0")).toEqual({ kind: "when-needed" });
+  });
+
+  it("reports a group already asked, and nothing for a stranger", () => {
+    expect(whenGroupIsAsked(input(tiers()), "regulars-0")).toEqual({ kind: "asked" });
+    expect(whenGroupIsAsked(input(tiers()), "nobody")).toBeNull();
   });
 });

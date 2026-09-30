@@ -177,10 +177,34 @@ goes at its usual time, and the fixture is simply open for anyone who looks. If
 you ask in priority order, your first group is invited straight away and the
 rest wait their turn as usual.
 
+## Asking in priority order
+
+Switch on **Ask in priority order** in the game's settings, then put your squad
+into groups on **Edit the invite order**. Your first group is asked when the
+fixture opens. Every group after it has a head start: the number of hours the
+groups above get before it is asked.
+
+A group is asked sooner than that if the groups already asked can no longer
+fill the game — counting everyone who is in or hasn't answered yet. It is not
+asked while the game is full; it is asked as soon as a place frees up. You can
+set the last group to be asked *only* when the others can't fill the game,
+never by the clock.
+
+Head starts only count between 06:00 and 23:00, and nobody is asked overnight,
+so a six-hour head start that begins at 21:00 runs out at 10:00 the next
+morning. The invite order page shows when each group will be asked for your
+next game — press **Check schedule** after changing a number to see how the
+groups below it move. It won't let you save a schedule that asks a group less
+than three hours before kickoff, and changing the kickoff or opening time is
+checked the same way.
+
+On the fixture page, **Invite progress** shows when each group was asked, and
+when the next one is due. Someone who says yes before their group is asked is
+told when that will be, and gets a place then if one is still free.
+
 ## Asking someone out of turn
 
-If you ask in priority order, each group is invited as places come free, and
-the fixture page shows an **Invite now** button beside anybody the order hasn't
+If you ask in priority order, the fixture page shows an **Invite now** button beside anybody the order hasn't
 reached yet. Pressing it asks that one person now, without disturbing the order
 for everyone else — for the friend who always plays and happens to be low down
 the list, or the goalkeeper you'd rather not be short of.

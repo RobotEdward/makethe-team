@@ -45,7 +45,9 @@ async function scheduledFixture(opts: { gated?: boolean } = {}) {
   const subId = await insertPlayer(db, { name: "Sub Stitute", email: "sub@example.com" });
   await insertMembership(db, gameId, subId, { role: "player", inviteTierId: subs });
 
-  const fixtureId = await insertFixture(db, gameId, { kicksOffAt: kickoffIn(24 * 7) });
+  // The core of two fills the fixture, so auto-advance (M69) has no reason
+  // to ask the sub.
+  const fixtureId = await insertFixture(db, gameId, { kicksOffAt: kickoffIn(24 * 7), maxPlayers: 2 });
   return { cookie, ownerId, gameId, fixtureId, regularId, subId };
 }
 

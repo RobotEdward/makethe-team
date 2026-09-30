@@ -8,7 +8,14 @@ import { COPY_BUTTON_JS, SCRIPT_BLOCKS } from "../../src/views/scripts.js";
 import { cellsWithScope } from "../../src/notify/notification-controls.js";
 import { loadNotificationSettings } from "../../src/notify/notification-settings.js";
 import { interferingBinding } from "../support/interference.js";
-import { insertGame, insertMembership, insertPlayer, resetDatabase, testDb } from "../support/factories.js";
+import {
+  insertGame,
+  insertInviteTier,
+  insertMembership,
+  insertPlayer,
+  resetDatabase,
+  testDb,
+} from "../support/factories.js";
 import { bindings, ORIGIN, signIn } from "../support/sign-in.js";
 
 async function post(path: string, cookie: string, fields: Record<string, string>) {
@@ -635,6 +642,31 @@ describe("editing a game", () => {
     expect(response.status).toBe(303);
     const [game] = await testDb().select().from(games).where(eq(games.id, gameId));
     expect(game?.name).toBe("Friday 7-a-side");
+  });
+
+  it("refuses new times that would ask an invite group after the cut-off (M69)", async () => {
+    const { cookie, gameId } = await ownedGame();
+    // Regulars is the owner; Everyone else is one player, 20 waking hours
+    // after the Regulars open at 09:00 the day before — so 12:00 on the day.
+    const regulars = await insertInviteTier(testDb(), gameId, { name: "Regulars", position: 1 });
+    await testDb().update(memberships).set({ inviteTierId: regulars }).where(eq(memberships.gameId, gameId));
+    const other = await insertPlayer(testDb(), { name: "Olly Other", email: "olly@example.com" });
+    await insertMembership(testDb(), gameId, other);
+    await testDb()
+      .update(games)
+      .set({ gatedInvitesEnabled: true, everyoneElseAskAfterHours: 20 })
+      .where(eq(games.id, gameId));
+    const gated = { gatedInvitesEnabledSubmitted: "1", gatedInvitesEnabled: "on" };
+
+    // A 14:00 kickoff puts the cut-off at 11:00, an hour before Everyone else.
+    const refused = await post(`/g/${gameId}/edit`, cookie, { ...VALID, ...gated, kickoffTime: "14:00" });
+    expect(refused.status).toBe(422);
+    const html = await refused.text();
+    expect(html).toContain("Everyone else would be asked");
+    expect(html).toContain("shorten a head start in the invite order");
+
+    // 20:00 leaves room, so it saves.
+    expect((await post(`/g/${gameId}/edit`, cookie, { ...VALID, ...gated, kickoffTime: "20:00" })).status).toBe(303);
   });
 
   it("404s for a non-owner", async () => {

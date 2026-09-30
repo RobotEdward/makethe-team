@@ -21,7 +21,9 @@ async function gatedFixture(opts: { core: number; subs: number; maxPlayers?: num
   const fixtureId = await insertFixture(db, gameId, {
     lifecycle: "open",
     minPlayers: 2,
-    maxPlayers: opts.maxPlayers ?? 10,
+    // The core fills the fixture exactly by default, so auto-advance (M69)
+    // holds the subs until a core member drops out.
+    maxPlayers: opts.maxPlayers ?? opts.core,
   });
   const coreTier = await insertInviteTier(db, gameId, { name: "Core", position: 1 });
   const subTier = await insertInviteTier(db, gameId, { name: "Subs", position: 2 });
@@ -206,13 +208,13 @@ describe("releasing a tier promotes the players it was holding", () => {
   };
 
   it("puts a gate-waitlisted volunteer straight in, and does not also invite them", async () => {
-    const { fixtureId } = await gatedFixture({ core: 2, subs: 2, maxPlayers: 4 });
+    const { fixtureId } = await gatedFixture({ core: 2, subs: 2 });
     await claim(fixtureId);
 
     // A sub volunteers before being asked, and is held.
     expect(await say(fixtureId, "p-2", "in")).toMatchObject({ kind: "waitlisted" });
 
-    // A core member drops out, which owes the subs tier.
+    // A core member drops out, so the core can no longer fill the game.
     await say(fixtureId, "p-0", "out");
     const outcome = await claim(fixtureId);
 
@@ -261,7 +263,7 @@ describe("releasing a tier promotes the players it was holding", () => {
     // crash between them is possible. A pass that only promoted players it
     // had *just* stamped would never look at this player again; this one
     // reconciles the state it finds.
-    const { fixtureId } = await gatedFixture({ core: 1, subs: 1, maxPlayers: 4 });
+    const { fixtureId } = await gatedFixture({ core: 1, subs: 1 });
     await claim(fixtureId);
     await say(fixtureId, "p-1", "in");
     await db

@@ -1370,7 +1370,7 @@ export const INVITE_ORDER_CSS = `
   .invite-pos { width: 3.5rem; }
   .invite-ord { list-style: none; margin: 0; padding: 0; counter-reset: invite-tier; }
   .invite-ord > li {
-    display: flex; align-items: center; gap: var(--s-1);
+    display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1);
     padding: var(--s-1) 0; border-bottom: 1px solid var(--line);
   }
   .invite-ord > li:last-child { border-bottom: none; }
@@ -1380,7 +1380,7 @@ export const INVITE_ORDER_CSS = `
     color: var(--mut); background: var(--field); border-radius: var(--r-pill);
     width: 1.5rem; height: 1.5rem; display: grid; place-items: center; flex: none;
   }
-  .invite-implicit { opacity: 0.72; }
+  .invite-implicit .invite-grp, .invite-implicit .invite-pinned { opacity: 0.72; }
   .invite-grp { flex: 1; }
   .invite-who { display: block; color: var(--mut); font-size: var(--t-support); }
   .invite-pinned { color: var(--mut); font-size: var(--t-support); white-space: nowrap; }
@@ -1395,6 +1395,31 @@ export const INVITE_ORDER_CSS = `
     flex: 1; font: inherit; border-radius: var(--r-field); border: 2px solid var(--line);
     background: var(--bg); color: var(--fg); padding: var(--s-1) var(--s-2); min-width: 8rem;
   }
+  /* A full-width second line under the group, indented past the number badge. */
+  .invite-when {
+    flex-basis: 100%; display: flex; flex-direction: column; gap: var(--s-1);
+    padding-left: calc(1.5rem + var(--s-1)); color: var(--mut); font-size: var(--t-support);
+  }
+  .invite-when-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-0) var(--s-1); }
+  .invite-hours {
+    width: 4rem; font: inherit; font-size: var(--t-support); color: var(--fg);
+    background: var(--field); border: 1px solid var(--line);
+    border-radius: var(--r-field); padding: var(--s-0) var(--s-1);
+  }
+  .invite-choice { display: inline-flex; align-items: center; gap: var(--s-0); }
+  .invite-choice input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; margin: 0; }
+  .invite-note { color: var(--mut); font-size: var(--t-support); margin: 0 0 var(--s-1); }
+  .invite-plan { list-style: none; margin: 0; padding: 0; }
+  .invite-plan > li {
+    display: flex; justify-content: space-between; align-items: baseline; gap: var(--s-2);
+    padding: var(--s-1) 0; border-bottom: 1px solid var(--line); font-size: var(--t-support);
+  }
+  .invite-plan > li:last-child { border-bottom: none; }
+  .invite-plan-name { font-weight: 600; }
+  .invite-plan-when { text-align: right; font-variant-numeric: tabular-nums; }
+  .invite-plan-late .invite-plan-when { color: var(--warn); font-weight: 600; }
+  .invite-plan-kickoff { color: var(--mut); }
+  .invite-actions { display: flex; flex-wrap: wrap; gap: var(--s-1); }
   .invite-progress { margin-top: var(--s-4); }
   .invite-progress h2 { font-family: inherit; font-weight: 600; line-height: 1.3; font-size: var(--t-body); margin: 0 0 var(--s-1); }
   .invite-states { list-style: none; margin: 0; padding: 0; }

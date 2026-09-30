@@ -8,6 +8,7 @@ import {
   muteStateFor,
 } from "../db/queries.js";
 import { isHeldByInviteOrder } from "../db/invite-queries.js";
+import { inviteDuePhrase } from "./invite-due.js";
 import { tokenMutePath, tokenUnmutePath } from "../auth/paths.js";
 import { muteDurationsSentence, parseMuteDuration } from "../domain/mute.js";
 import { clearMute, setMute } from "../domain/set-mute.js";
@@ -145,7 +146,11 @@ async function renderFixtureForViewer(params: {
         playerId,
         gatedInvitesEnabled: game.gatedInvitesEnabled,
       })),
+    inviteDue: null as string | null,
   };
+  if (viewer.heldByInviteOrder) {
+    viewer.inviteDue = await inviteDuePhrase(db, fixtureId, playerId, new Date(Date.now()));
+  }
 
   // An organiser who also plays gets a response row like everyone else when a
   // fixture opens, so they are mailed a reminder carrying their own link and

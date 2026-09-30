@@ -161,7 +161,7 @@ export type AddGuestOutcome =
 export interface ClaimInviteReleasesInput {
   /** Passed in rather than read from the clock — domain code stays testable. */
   now: number;
-  /** Release one tier regardless of BR-43's veto. The owner's button, only. */
+  /** Release one tier whatever the clock and the count say. The owner's button, only. */
   force?: boolean;
 }
 

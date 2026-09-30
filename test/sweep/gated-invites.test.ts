@@ -33,7 +33,9 @@ async function dueGatedGame(coreSize: number, subSize: number) {
   const fixtureId = await insertFixture(db, gameId, {
     kicksOffAt: KICKOFF,
     minPlayers: 2,
-    maxPlayers: 10,
+    // The core fills the fixture, so only a decline or the head start asks
+    // the subs (M69).
+    maxPlayers: coreSize,
   });
   const core = await insertInviteTier(db, gameId, { name: "Core", position: 1 });
   const subs = await insertInviteTier(db, gameId, { name: "Subs", position: 2 });
@@ -99,6 +101,19 @@ describe("the sweep and gated invites", () => {
     await openAndRemind(db, notifier, new Date("2026-08-24T10:30:00Z"), SECRET, env.FIXTURE_CAPACITY);
 
     expect(await emailedN1(fixtureId)).toContain("p-2");
+  });
+
+  it("mails the next group when its head start runs out, and not before (M69)", async () => {
+    const { fixtureId } = await dueGatedGame(3, 2);
+    // Opened on the 10:30 BST tick, so the subs' 12 waking hours run from
+    // 10:00 BST to 22:00 BST.
+    await openAndRemind(db, notifier, NOW, SECRET, env.FIXTURE_CAPACITY);
+
+    await openAndRemind(db, notifier, new Date("2026-08-24T20:30:00Z"), SECRET, env.FIXTURE_CAPACITY);
+    expect((await emailedN1(fixtureId)).sort()).toEqual(["p-0", "p-1", "p-2"]);
+
+    await openAndRemind(db, notifier, new Date("2026-08-24T21:00:00Z"), SECRET, env.FIXTURE_CAPACITY);
+    expect((await emailedN1(fixtureId)).sort()).toEqual(["p-0", "p-1", "p-2", "p-3", "p-4"]);
   });
 
   it("counts what it claimed", async () => {
@@ -189,7 +204,7 @@ describe("switching gating on after a fixture has already been mailed", () => {
     const fixtureId = await insertFixture(db, gameId, {
       kicksOffAt: KICKOFF,
       minPlayers: 2,
-      maxPlayers: 10,
+      maxPlayers: 2,
     });
 
     await openAndRemind(db, notifier, NOW, SECRET, env.FIXTURE_CAPACITY);

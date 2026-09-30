@@ -21,6 +21,7 @@ const implicitOnly: OrderTier[] = [
     tierId: null,
     name: "Everyone else",
     position: 0,
+    askAfterHours: 12,
     members: [
       { playerId: "p-1", name: "Alex Morgan" },
       { playerId: "p-2", name: "Lauren Legacy" },
@@ -33,12 +34,14 @@ const withGroup: OrderTier[] = [
     tierId: "t-1",
     name: "Regulars",
     position: 1,
+    askAfterHours: 12,
     members: [{ playerId: "p-1", name: "Alex Morgan" }],
   },
   {
     tierId: null,
     name: "Everyone else",
     position: 0,
+    askAfterHours: 12,
     members: [{ playerId: "p-2", name: "Lauren Legacy" }],
   },
 ];
@@ -50,6 +53,7 @@ const render = (tiers: OrderTier[]) =>
     gameName: "Thursday 7-a-side",
     squadSize: tiers.reduce((n, t) => n + t.members.length, 0),
     tiers,
+    schedule: null,
   });
 
 describe("invite order with no groups defined", () => {

@@ -3,7 +3,6 @@ import type { FieldError } from "../domain/game-form.js";
 import {
   cellFieldName,
   cellMarkerName,
-  GATED_FALLBACK_NEVER,
   NOTIFICATION_SWITCHES,
   RESULT_LOCK_CHOICES,
   supportedTimezones,
@@ -115,36 +114,11 @@ function markerFor(field: string): string {
 }
 
 /**
- * What the fallback select offers, coarsest first, with "never" at the head.
- *
- * Ordered that way because a value the list does not carry leaves no option
- * selected and the browser falls back to the first one — and the safe landing
- * for an unrecognised fallback is BR-44's "never", not a release the owner
- * never asked for.
- */
-const FALLBACK_OPTIONS: readonly (readonly [string, string])[] = [
-  [GATED_FALLBACK_NEVER, "Never"],
-  ["3", "3 hours before"],
-  ["6", "6 hours before"],
-  ["12", "12 hours before"],
-  ["24", "24 hours before"],
-  ["48", "48 hours before"],
-];
-
-/**
- * What the select shows when the caller said nothing, matching the default
- * `shortWarningOffsetHours` carries (spec, "games (two new columns)"). It is a
- * rendering default only: an owner who never opens this section saves a null
- * fallback, because the section is edit-only and submits nothing on create.
- */
-const OFFERED_FALLBACK_HOURS = "12";
-
-/**
  * How long a result stays open to argument, worded from the whistle (M57).
  *
  * Built from `RESULT_LOCK_CHOICES` so the select cannot offer a length the
- * parser refuses — the trap `GATED_FALLBACK_NEVER` exists to avoid, and the
- * one the mute routes' hand-typed error strings fell into.
+ * parser refuses — the trap the mute routes' hand-typed error strings fell
+ * into.
  */
 const LOCK_LABELS: Record<number, string> = {
   12: "12 hours after full time",
@@ -448,12 +422,6 @@ export function renderGameFormPage(params: GameFormPageParams): string {
       </fieldset>`
     : "";
 
-  const fallbackOptions = FALLBACK_OPTIONS.map(([code, label]) =>
-    `<option value="${escapeHtml(code)}"${
-      (values["gatedFallbackHoursBefore"] ?? OFFERED_FALLBACK_HOURS) === code ? " selected" : ""
-    }>${escapeHtml(label)}</option>`,
-  ).join("");
-
   const invites = showAdvanced
     ? `
       <fieldset class="notify-group">
@@ -462,24 +430,15 @@ export function renderGameFormPage(params: GameFormPageParams): string {
           name: "gatedInvitesEnabled",
           submitted: markerFor("gatedInvitesEnabled"),
           label: "Ask in priority order",
-          hint: "Off — everyone is asked at once. On, only the core group is asked first, and the rest as spots come free.",
+          hint: "Off — everyone is asked at once. On, the core group is asked first, and each group after it when its head start runs out — or sooner, if the groups already asked can't fill the game.",
           checked: gatedChecked(values),
         })}
-        <!-- Grouped so their state can follow the switch above (M52). With
-             priority order off these two are inert — the order is not
-             consulted at all — but they rendered at full contrast, which reads
-             as a live setting. Dimmed by CSS keyed off the checkbox, and still
-             fully operable: locking them out would stop an owner turning the
-             switch on and choosing its fallback in the same save, which is the
-             only save most owners will make. See the styles for why this needs
-             no script. -->
+        <!-- Grouped so its state can follow the switch above (M52): with
+             priority order off the order is not consulted at all, and a link
+             at full contrast reads as a live setting. Dimmed by CSS keyed off
+             the checkbox, so it needs no script. -->
         <div class="gated-dependants">
-          <p class="gated-note">These apply only while priority order is on.</p>
-          ${field(
-            "gatedFallbackHoursBefore",
-            "If we're still short of the minimum, ask the next group",
-            `<span class="select"><select id="gatedFallbackHoursBefore" name="gatedFallbackHoursBefore">${fallbackOptions}</select></span>`,
-          )}
+          <p class="gated-note">This applies only while priority order is on. Groups and head starts are set in the invite order.</p>
           ${gameId === undefined ? "" : `<p><a href="${escapeHtml(inviteOrderPath(gameId))}">Edit the invite order &rarr;</a></p>`}
         </div>
       </fieldset>`

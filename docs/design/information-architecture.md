@@ -132,7 +132,7 @@ is what saves.
   line (no session only); freshness bar.
 - **The answer block** is one tinted card: the headline, the two buttons, and any warning.
   Headlines: `Can you make it?`, `You're in.`, `You're on the waitlist — 3rd in line.`,
-  `You said you can't make it.`, `You're in as soon as the core group has been asked.`; closed
+  `You said you can't make it.`, `You're in line — your group is due to be asked Wed 30 Sep, 10:00.`; closed
   states `You were in.`, `You were in before it was cancelled.`, `You said you couldn't make
   it.` and so on.
 - **Four button states, tellable apart without colour:** unanswered `I'm in` has an accent
@@ -272,7 +272,8 @@ One form. Name, venue, address; day and how often; kickoff and minutes; minimum 
   group chat (push only), ask players how it went, tell a player when I hand them the pick.
   Each has a hint and its timing. A channel the admin has switched off is disabled and says so.
   On a phone each row is a card.
-- `Invites` — `Ask in priority order`, the fallback when short, and `Edit the invite order →`.
+- `Invites` — `Ask in priority order` and `Edit the invite order →`. Head starts live on the
+  invite order; a save whose new times would ask a group after the cut-off is refused here.
 - `Advanced` — time zone, venue link, how long a result stays open to argument.
 - `Archive this game` (danger link) at the foot.
 
@@ -356,8 +357,13 @@ emailed — you'll need to tell them yourself…", the places left or the over-l
 delegate).
 
 ### 3.8 Invite order — `GET/POST /g/:id/invites`
-For `Ask in priority order`: a group select per member and an order per group; "everyone else"
-is shown last, named, with no remove control. Scriptless. Saving acts at once.
+For `Ask in priority order`: a group select per member; an order and a head start ("asked N
+waking hours after the group above") per group; "everyone else" shown last, named, with no
+remove control and a choice between a head start and "only if the groups above can't fill the
+game". `When each group is asked` lays the slowest schedule against the next fixture, marking a
+group asked after the cut-off (three hours before kickoff) in the warning colour. `Save invite
+order`, then `Check schedule`, which shows the proposed times without saving. A schedule that
+does not fit is refused with the longest head start that would. Scriptless. Saving acts at once.
 
 ### 3.8a Replace the invite link — `/g/:id/invite/rotate`
 Says it cannot count who holds the link, and the one number it knows (the squad, who are not

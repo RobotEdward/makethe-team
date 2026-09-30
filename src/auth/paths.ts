@@ -264,7 +264,7 @@ export function inviteMemberPath(gameId: string, fixtureId: string, playerId: st
   return `/g/${gameId}/f/${fixtureId}/invite/player/${playerId}`;
 }
 
-/** The owner's "invite the next group now" button on a fixture (M34, BR-43). */
+/** The owner's "invite the next group now" button on a fixture (M34). */
 export function inviteNextPath(gameId: string, fixtureId: string): string {
   return `/g/${gameId}/f/${fixtureId}/invite/next`;
 }

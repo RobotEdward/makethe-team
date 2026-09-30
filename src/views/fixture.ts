@@ -76,6 +76,8 @@ export interface FixturePageOptions {
      * and saying it to somebody looking at four empty slots is simply untrue.
      */
     heldByInviteOrder?: boolean;
+    /** When their invite group is asked, from `inviteDuePhrase` (M69). */
+    inviteDue?: string | null;
   };
   /** Echoed into the form action so the POST carries the same token. */
   token: string;
@@ -240,7 +242,7 @@ function viewerHeadline(
  * viewer's own) has nothing to fabricate a dummy value for.
  */
 export function viewerHeadlineOpen(
-  viewer: Pick<FixturePageOptions["viewer"], "status" | "waitlistRank" | "heldByInviteOrder">,
+  viewer: Pick<FixturePageOptions["viewer"], "status" | "waitlistRank" | "heldByInviteOrder" | "inviteDue">,
 ): string {
   switch (viewer.status) {
     case "in":
@@ -251,7 +253,8 @@ export function viewerHeadlineOpen(
       // dashboard) leaves the flag off and gets the unnumbered wording, which
       // is true of both.
       if (viewer.heldByInviteOrder === true) {
-        return "You're in as soon as the core group has been asked.";
+        const due = viewer.inviteDue ?? null;
+        return due === null ? "You're in line for when your group is asked." : `You're in line — your group is ${due}.`;
       }
       const rank = viewer.waitlistRank ?? null;
       return rank === null

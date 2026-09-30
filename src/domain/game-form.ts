@@ -48,14 +48,6 @@ export const DEFAULT_SHORT_WARNING_OFFSET_HOURS = 12;
 export const DEFAULT_RESULT_PROMPT_OFFSET_HOURS = 0;
 
 /**
- * The fallback select's "never" option (BR-44), as the option value and as the
- * string the parser recognises. One constant, because a select offering a word
- * the parser does not know would reject the owner's own choice with a field
- * error they cannot clear from the form.
- */
-export const GATED_FALLBACK_NEVER = "never";
-
-/**
  * The windows an owner may pick for how long a result stays arguable (M57,
  * BR-37), in hours after full time.
  *
@@ -158,8 +150,6 @@ export interface GameFormValues {
   /** Hours after full time before a result locks (BR-37). */
   resultLockHoursAfter: number;
   gatedInvitesEnabled: boolean;
-  /** Hours before kickoff; null is BR-44's "never". */
-  gatedFallbackHoursBefore: number | null;
 }
 
 export interface FieldError {
@@ -395,26 +385,6 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
   const gatedInvitesEnabled = body["gatedInvitesEnabledSubmitted"] !== undefined &&
     typeof body["gatedInvitesEnabled"] === "string";
 
-  // Absent is the create form's silence and "never" is the owner saying it out
-  // loud; both are BR-44's null. Bounded by the same ceiling as the short
-  // warning, because both name an offset back from the same kickoff.
-  const fallbackSubmitted = body["gatedFallbackHoursBefore"] !== undefined;
-  const fallbackNever = text(body["gatedFallbackHoursBefore"]) === GATED_FALLBACK_NEVER;
-  const gatedFallbackHoursBefore = !fallbackSubmitted || fallbackNever
-    ? null
-    : integer(body["gatedFallbackHoursBefore"]);
-  if (
-    fallbackSubmitted && !fallbackNever &&
-    (gatedFallbackHoursBefore === null ||
-      gatedFallbackHoursBefore < 0 ||
-      gatedFallbackHoursBefore > MAX_WARNING_OFFSET_HOURS)
-  ) {
-    fail(
-      "gatedFallbackHoursBefore",
-      `Ask the next group between 0 and ${MAX_WARNING_OFFSET_HOURS} hours before kickoff, or never.`,
-    );
-  }
-
   if (errors.length > 0) return { ok: false, errors, warnings };
 
   return {
@@ -445,7 +415,6 @@ export function parseGameForm(body: Record<string, unknown>): GameFormResult {
       resultPromptOffsetHours: resultPromptOffsetHours!,
       resultLockHoursAfter: resultLockHoursAfter!,
       gatedInvitesEnabled,
-      gatedFallbackHoursBefore,
     },
   };
 }

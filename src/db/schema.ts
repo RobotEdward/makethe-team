@@ -252,14 +252,21 @@ export const games = sqliteTable("games", {
    */
   gatedInvitesEnabled: integer("gated_invites_enabled", { mode: "boolean" }).notNull().default(false),
   /**
-   * How many hours before kickoff the fallback release starts (BR-44), or null
-   * for never.
-   *
-   * Nullable rather than a sentinel integer: "never" is a real choice an owner
-   * makes — release only on a decline — and a magic 0 or -1 is the kind of
-   * value a later reader mistakes for "at kickoff".
+   * Unread since M69, which replaced this fallback with head starts
+   * (`everyoneElseAskAfterHours` below, `invite_tiers.ask_after_hours`).
+   * Dropped by a later migration, once no running worker selects it.
    */
   gatedFallbackHoursBefore: integer("gated_fallback_hours_before"),
+  /**
+   * M69. `invite_tiers.ask_after_hours` for the implicit final group, which
+   * has no row of its own to carry it. Null means that group is asked only
+   * when the groups above cannot fill the game — never by the clock.
+   *
+   * Replaces `gatedFallbackHoursBefore` above, which nothing reads since M69
+   * and a later migration drops (not this one: `migrations apply` runs before
+   * `wrangler deploy`, and the old worker selects it by name).
+   */
+  everyoneElseAskAfterHours: integer("everyone_else_ask_after_hours").default(12),
   inviteToken: text("invite_token").notNull(),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
   /**
@@ -352,6 +359,12 @@ export const inviteTiers = sqliteTable(
     gameId: text("game_id").notNull().references(() => games.id),
     name: text("name").notNull(),
     position: integer("position").notNull(),
+    /**
+     * How many waking hours after the group before it this group is asked
+     * (M69). Ignored for the first group, which is asked when the fixture
+     * opens. `planReleases` holds the rule that reads it.
+     */
+    askAfterHours: integer("ask_after_hours").notNull().default(12),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull().default(nowMs),
   },
   (t) => [index("invite_tiers_game_position_idx").on(t.gameId, t.position)],

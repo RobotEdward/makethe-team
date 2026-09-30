@@ -99,16 +99,15 @@ describe("the owner notifications matrix", () => {
 /**
  * The Invites fieldset's dependent controls (M52).
  *
- * With "Ask in priority order" off, the fallback select and the invite-order
- * link below it are inert — the order is not consulted at all — but they
+ * With "Ask in priority order" off, the invite-order link is inert — the order is not consulted at all — but they
  * rendered fully enabled and at full contrast, which the M52 design review
  * read as inert settings presented as live ones.
  *
  * They are dimmed rather than `disabled`, and the dimming is CSS rather than
- * script. Disabling them would stop an owner turning priority order on and
- * setting its fallback in the same pass, which is the only pass most owners
- * will make; and `:has()` lets the state follow the checkbox live with no
- * JavaScript, so it is still right on a page that never runs any.
+ * script: `:has()` lets the state follow the checkbox live with no
+ * JavaScript, so it is still right on a page that never runs any. The
+ * fallback select that once sat here went in M69; head starts are set in the
+ * invite order itself.
  */
 describe("the Invites fieldset's dependants", () => {
   const render = (gated: boolean) =>
@@ -127,13 +126,12 @@ describe("the Invites fieldset's dependants", () => {
     expect(render(false)).toContain("only while");
   });
 
-  it("leaves them submittable, so one pass can turn it on and set it up", () => {
-    // Never `disabled`: an owner ticking the switch and choosing the fallback
-    // in the same save is the ordinary case.
+  it("no longer offers the fallback select M69 replaced with head starts", () => {
     const html = render(false);
     const fieldset = /<fieldset class="notify-group">\s*<legend>Invites<\/legend>([\s\S]*?)<\/fieldset>/.exec(html)?.[1] ?? "";
 
-    expect(fieldset).toContain("gatedFallbackHoursBefore");
+    expect(fieldset).toContain("gatedInvitesEnabled");
+    expect(fieldset).not.toContain("gatedFallbackHoursBefore");
     expect(fieldset).not.toContain("disabled");
   });
 });

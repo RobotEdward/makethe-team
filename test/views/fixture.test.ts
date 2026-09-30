@@ -1424,6 +1424,16 @@ describe("the answer block (M20 B7)", () => {
 });
 
 describe("a player held by the invite order reads a different reason (BR-40a)", () => {
+  it("says when their group is due, once it is known (M69)", () => {
+    const headline = viewerHeadlineOpen({
+      status: "waitlisted",
+      heldByInviteOrder: true,
+      inviteDue: "due to be asked Wed 30 Sep, 10:00",
+    });
+
+    expect(headline).toBe("You're in line — your group is due to be asked Wed 30 Sep, 10:00.");
+  });
+
   it("explains the gate instead of quoting a place in the queue", () => {
     const headline = viewerHeadlineOpen({
       status: "waitlisted",
@@ -1431,7 +1441,7 @@ describe("a player held by the invite order reads a different reason (BR-40a)", 
       heldByInviteOrder: true,
     });
 
-    expect(headline).toBe("You're in as soon as the core group has been asked.");
+    expect(headline).toBe("You're in line for when your group is asked.");
     // The rank is suppressed, not merely unmentioned: "third in line" is a
     // claim about a queue for a full fixture, and this player may well be
     // looking at four empty slots.

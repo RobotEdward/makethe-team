@@ -65,14 +65,14 @@ describe("gated invite schema", () => {
 
 describe("loadInviteState", () => {
   it("returns null for a fixture that does not exist", async () => {
-    expect(await loadInviteState(db, crypto.randomUUID(), NOW)).toBeNull();
+    expect(await loadInviteState(db, crypto.randomUUID())).toBeNull();
   });
 
   it("reports an ungated game as ungated (BR-39)", async () => {
     const gameId = await insertGame(db);
     const fixtureId = await insertFixture(db, gameId);
 
-    const state = await loadInviteState(db, fixtureId, NOW);
+    const state = await loadInviteState(db, fixtureId);
 
     expect(state?.gated).toBe(false);
   });
@@ -92,7 +92,7 @@ describe("loadInviteState", () => {
       await insertResponse(db, fixtureId, playerId, { status: "pending" });
     }
 
-    const state = await loadInviteState(db, fixtureId, NOW);
+    const state = await loadInviteState(db, fixtureId);
 
     expect(state?.tiers.map((tier) => tier.tierId)).toEqual([first, second, null]);
     expect(state?.tiers[0]?.members.map((member) => member.playerId)).toEqual(["p-core"]);
@@ -105,7 +105,7 @@ describe("loadInviteState", () => {
     const playerId = await insertPlayer(db);
     await insertMembership(db, gameId, playerId);
 
-    const state = await loadInviteState(db, fixtureId, NOW);
+    const state = await loadInviteState(db, fixtureId);
 
     expect(state?.tiers[0]?.members[0]).toMatchObject({ playerId, status: null, invitedAt: null });
   });
@@ -116,7 +116,7 @@ describe("loadInviteState", () => {
     const playerId = await insertPlayer(db);
     await insertMembership(db, gameId, playerId, { active: false });
 
-    const state = await loadInviteState(db, fixtureId, NOW);
+    const state = await loadInviteState(db, fixtureId);
 
     expect(state?.tiers[0]?.members).toHaveLength(0);
   });
@@ -127,40 +127,23 @@ describe("loadInviteState", () => {
     const guestId = await insertPlayer(db, { isGuest: true, email: null });
     await insertResponse(db, fixtureId, guestId, { status: "in", source: "owner" });
 
-    const state = await loadInviteState(db, fixtureId, NOW);
+    const state = await loadInviteState(db, fixtureId);
 
     expect(state?.guestInCount).toBe(1);
     expect(state?.tiers.flatMap((tier) => tier.members)).toHaveLength(0);
   });
 
-  it("reports the fallback as due only once the offset has passed (BR-44)", async () => {
-    const gameId = await insertGame(db, {
-      gatedInvitesEnabled: true,
-      gatedFallbackHoursBefore: 12,
-    });
-    const fixtureId = await insertFixture(db, gameId, {
-      kicksOffAt: new Date("2026-08-25T18:00:00Z"),
-    });
+  it("carries each group's head start, the final group's from the game (M69)", async () => {
+    const gameId = await insertGame(db, { gatedInvitesEnabled: true, everyoneElseAskAfterHours: null });
+    const tierId = await insertInviteTier(db, gameId, { name: "Standby", position: 1, askAfterHours: 6 });
+    const fixtureId = await insertFixture(db, gameId);
 
-    const before = await loadInviteState(db, fixtureId, new Date("2026-08-25T05:59:00Z"));
-    const after = await loadInviteState(db, fixtureId, new Date("2026-08-25T06:01:00Z"));
+    const state = await loadInviteState(db, fixtureId);
 
-    expect(before?.fallbackDue).toBe(false);
-    expect(after?.fallbackDue).toBe(true);
-  });
-
-  it("never reports the fallback as due when it is switched off", async () => {
-    const gameId = await insertGame(db, {
-      gatedInvitesEnabled: true,
-      gatedFallbackHoursBefore: null,
-    });
-    const fixtureId = await insertFixture(db, gameId, {
-      kicksOffAt: new Date("2026-08-25T18:00:00Z"),
-    });
-
-    const state = await loadInviteState(db, fixtureId, new Date("2026-08-25T17:59:00Z"));
-
-    expect(state?.fallbackDue).toBe(false);
+    expect(state?.tiers.map((tier) => [tier.tierId, tier.askAfterHours])).toEqual([
+      [tierId, 6],
+      [null, null],
+    ]);
   });
 });
 

@@ -69,7 +69,7 @@ export class FixtureCapacity extends DurableObject<Bindings> {
     const db = getDb(this.env.DB);
     const now = new Date(input.now);
 
-    const state = await loadInviteState(db, fixtureId, now);
+    const state = await loadInviteState(db, fixtureId);
     if (!state) return { kind: "skipped", reason: "fixture-not-found" };
 
     const [fixture] = await db.select().from(fixtures).where(eq(fixtures.id, fixtureId));
@@ -104,8 +104,12 @@ export class FixtureCapacity extends DurableObject<Bindings> {
       tiers: state.tiers,
       guestInCount: state.guestInCount,
       maxPlayers: state.maxPlayers,
-      minPlayers: state.minPlayers,
-      fallbackDue: state.fallbackDue,
+      now,
+      timeZone: state.timeZone,
+      // An open fixture always carries `opened_at`; `now` is only a fallback
+      // for a row written before that column was set on every open.
+      openedAt: state.openedAt ?? now,
+      kicksOffAt: state.kicksOffAt,
       force: input.force ?? false,
     });
 

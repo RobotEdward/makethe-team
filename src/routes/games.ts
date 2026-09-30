@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, notInArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, ne, notInArray } from "drizzle-orm";
 import { Hono } from "hono";
 import type { PageNav } from "../views/layout.js";
 import type { Context } from "hono";
@@ -54,12 +54,16 @@ import { createGame } from "../domain/create-game.js";
 import { displayName } from "../domain/display-name.js";
 import { fixtureView, takingChanges } from "../domain/fixture-view.js";
 import { rosterEditable } from "../domain/result-lock.js";
-import { GATED_FALLBACK_NEVER, parseGameForm, parseNotificationCells } from "../domain/game-form.js";
-import { inviteGateApplies, loadInviteOrder } from "../db/invite-queries.js";
+import { parseGameForm, parseNotificationCells, type FieldError } from "../domain/game-form.js";
+import { inviteGateApplies, loadInviteOrder, type OrderedTier } from "../db/invite-queries.js";
+import { parseInviteOrderForm } from "../domain/invite-order-form.js";
+import { planSchedule, representativeTimes } from "../domain/invite-schedule.js";
+import { dueAt, releaseStamp } from "../domain/invite-tiers.js";
+import { isWaking } from "../domain/waking-hours.js";
 import { inviteTiers, memberships } from "../db/schema.js";
 import { inviteOrderPath } from "../auth/paths.js";
 import { renderInviteOrderPage } from "../views/invite-order.js";
-import type { InviteProgressParams } from "../views/invite-order.js";
+import type { InviteProgressParams, SchedulePreview } from "../views/invite-order.js";
 import { parseGuestName } from "../domain/guest-name.js";
 import { parseRecurrenceRule } from "../domain/recurrence/parse.js";
 import { removeMember } from "../domain/remove-member.js";
@@ -85,7 +89,14 @@ import {
   type TeamAssignment,
   type TeamId,
 } from "../domain/teams.js";
-import { formatLocalDate, formatLocalDateTime, formatLocalShortDate, formatLocalTime } from "../domain/time/zone.js";
+import {
+  formatLocalCompactDateTime,
+  formatLocalDate,
+  formatLocalDateTime,
+  formatLocalShortDate,
+  formatLocalTime,
+  toLocalParts,
+} from "../domain/time/zone.js";
 import { squadForViewer, standingsForViewer } from "../domain/squad-visibility.js";
 import { countFixturesByPropagation, updateGame } from "../domain/update-game.js";
 import type { AppEnv } from "../env.js";
@@ -119,6 +130,7 @@ import { derivedResultWords, outcomeNames, type ResultPanelParams } from "../vie
 import { renderSquadMemberPage } from "../views/squad-member.js";
 import { rowName } from "../views/team-picker.js";
 import { notifyPromotedPlayer, notifyReleasedSubs } from "./respond.js";
+import { inviteDuePhrase } from "./invite-due.js";
 
 /**
  * Owner-facing game management, mounted at `/g/*` (see `GAMES_PREFIX` in
@@ -848,21 +860,119 @@ gamesRoutes.get("/g/:id/invites", requirePlayer, async (c) => {
   if (game === null) return c.text("Not found", 404);
 
   const tiers = await loadInviteOrder(db, game.id);
-  return c.html(
-    renderInviteOrderPage({
-      nav: pageNav(c, "games"),
-      gameId: game.id,
-      gameName: game.name,
-      squadSize: tiers.reduce((total, tier) => total + tier.members.length, 0),
-      tiers: tiers.map((tier) => ({
-        tierId: tier.tierId,
-        name: tier.name,
-        position: tier.position,
-        members: tier.members.map((member) => ({ playerId: member.playerId, name: member.name })),
-      })),
-    }),
-  );
+  return c.html(await inviteOrderPage(c, db, game, tiers));
 });
+
+/**
+ * The editor page for an order — stored, or proposed by a submission the
+ * owner is checking or must fix — with its schedule laid against the Game's
+ * next fixture.
+ */
+async function inviteOrderPage(
+  c: Context<AppEnv>,
+  db: Db,
+  game: typeof games.$inferSelect,
+  tiers: OrderedTier[],
+  problem?: string,
+): Promise<string> {
+  const { preview } = await scheduleFor(db, game, tiers);
+  return renderInviteOrderPage({
+    nav: pageNav(c, "games"),
+    gameId: game.id,
+    gameName: game.name,
+    squadSize: tiers.reduce((total, tier) => total + tier.members.length, 0),
+    tiers: tiers.map((tier) => ({
+      tierId: tier.tierId,
+      name: tier.name,
+      position: tier.position,
+      askAfterHours: tier.askAfterHours,
+      members: tier.members.map((member) => ({ playerId: member.playerId, name: member.name })),
+    })),
+    schedule: preview,
+    ...(problem === undefined ? {} : { problem }),
+  });
+}
+
+/**
+ * Lay an order against the Game's next fixture (M69): the preview the editor
+ * shows, and the problem that refuses a save.
+ *
+ * The fixture only supplies a *date*; the open and kickoff times are rebuilt
+ * from `settings`, which default to the Game's own. That is what lets the game
+ * form check a kickoff time or reminder the owner is only now proposing.
+ */
+async function scheduleFor(
+  db: Db,
+  game: typeof games.$inferSelect,
+  tiers: OrderedTier[],
+  settings: {
+    timezone: string;
+    kickoffTime: string;
+    reminderDaysBefore: number;
+    reminderLocalTime: string;
+  } = game,
+): Promise<{ preview: SchedulePreview | null; problem: string | null }> {
+  const [next] = await db
+    .select({ kicksOffAt: fixtures.kicksOffAt })
+    .from(fixtures)
+    .where(
+      and(
+        eq(fixtures.gameId, game.id),
+        inArray(fixtures.lifecycle, ["scheduled", "open"]),
+        gt(fixtures.kicksOffAt, new Date(Date.now())),
+      ),
+    )
+    .orderBy(asc(fixtures.kicksOffAt))
+    .limit(1);
+  if (next === undefined) return { preview: null, problem: null };
+
+  const zone = settings.timezone;
+  const { openAt, kicksOffAt } = representativeTimes(settings, toLocalParts(next.kicksOffAt, zone));
+  const schedule = planSchedule({
+    tiers: tiers.map((tier) => ({
+      name: tier.name,
+      askAfterHours: tier.askAfterHours,
+      memberCount: tier.members.length,
+    })),
+    openAt,
+    kicksOffAt,
+    timeZone: zone,
+  });
+
+  const at = (instant: Date): string => formatLocalCompactDateTime(instant, zone);
+  const cutoffLocal = formatLocalTime(schedule.cutoff, zone);
+  const preview: SchedulePreview = {
+    kickoffLocal: at(kicksOffAt),
+    cutoffLocal,
+    rows: schedule.asks.map((ask) => {
+      switch (ask.kind) {
+        case "opens":
+          return { name: ask.name, when: `${at(ask.askAt)} · when the game opens`, late: false };
+        case "timed":
+          return {
+            name: ask.name,
+            when: `${at(ask.askAt)}${ask.late ? ` · after ${cutoffLocal}` : ask.pausedOvernight ? " · paused overnight" : ""}`,
+            late: ask.late,
+          };
+        case "when-needed":
+          return { name: ask.name, when: "only if the groups above can't fill the game", late: false };
+        case "empty":
+          return { name: ask.name, when: "skipped · nobody in it", late: false };
+      }
+    }),
+  };
+
+  const found = schedule.problem;
+  const problem =
+    found === null
+      ? null
+      : `${found.name} would be asked ${at(found.askAt)}, after ${cutoffLocal} — three hours before kickoff is the latest a group is asked. ${
+          found.longestThatFits === null
+            ? "Shorten a head start above it."
+            : `The longest head start that fits is ${found.longestThatFits} ${found.longestThatFits === 1 ? "hour" : "hours"}.`
+        }`;
+  return { preview, problem };
+}
 
 /**
  * Re-run every open fixture's invite order after the order itself changed.
@@ -900,14 +1010,13 @@ async function reconcileInviteOrder(
 }
 
 /**
- * Save the whole order and every member's tier in one submission.
+ * Save the whole order — members' groups, positions and head starts — in one
+ * submission, or show it back unsaved for "Check schedule" (M69).
  *
- * **Every tier id in the form is checked against this Game's own tiers**, and
- * anything else is written as null rather than rejected. That check is the
- * only thing standing behind `memberships.invite_tier_id`: SQLite cannot
- * express "the referenced tier belongs to this Game", so a hand-built request
- * naming another squad's tier would otherwise be stored, and the invite order
- * of two unrelated Games would be quietly entangled.
+ * A schedule that would ask a group after the cut-off is refused with the
+ * proposal shown back, rather than saved and left to the live rule's safety
+ * net: the owner can fix it now, and an owner who never sees the problem
+ * promises their subs a time the game will not keep.
  */
 gamesRoutes.post("/g/:id/invites", requirePlayer, async (c) => {
   if (wrongOrigin(c)) return c.text("Forbidden", 403);
@@ -917,51 +1026,55 @@ gamesRoutes.post("/g/:id/invites", requirePlayer, async (c) => {
   if (game === null) return c.text("Not found", 404);
 
   const form = await c.req.parseBody();
-  const tiers = await loadInviteOrder(db, game.id);
-  const ownTierIds = new Set(
-    tiers.map((tier) => tier.tierId).filter((tierId): tierId is string => tierId !== null),
-  );
+  const proposed = parseInviteOrderForm(await loadInviteOrder(db, game.id), form);
 
-  const statements = [];
-
-  for (const tier of tiers) {
-    for (const member of tier.members) {
-      const raw = form[`tier-${member.playerId}`];
-      if (typeof raw !== "string") continue;
-      const target = ownTierIds.has(raw) ? raw : null;
-      if (target === tier.tierId) continue;
-      statements.push(
-        db
-          .update(memberships)
-          .set({ inviteTierId: target })
-          .where(and(eq(memberships.gameId, game.id), eq(memberships.playerId, member.playerId))),
-      );
-    }
+  if (proposed.error !== null) {
+    return c.html(await inviteOrderPage(c, db, game, proposed.tiers, proposed.error), 422);
+  }
+  if (form["intent"] === "preview") {
+    return c.html(await inviteOrderPage(c, db, game, proposed.tiers));
+  }
+  const { problem } = await scheduleFor(db, game, proposed.tiers);
+  if (problem !== null) {
+    return c.html(await inviteOrderPage(c, db, game, proposed.tiers, problem), 422);
   }
 
-  for (const tierId of ownTierIds) {
-    const raw = form[`position-${tierId}`];
-    if (typeof raw !== "string") continue;
-    const position = Number.parseInt(raw, 10);
-    // A blank or junk box leaves the tier where it is rather than sending it
-    // to the front: `Number.parseInt("")` is NaN, and writing that would make
-    // every ordering comparison false.
-    if (!Number.isInteger(position) || position < 1) continue;
-    statements.push(
+  const statements = [
+    ...proposed.memberMoves.map((move) =>
+      db
+        .update(memberships)
+        .set({ inviteTierId: move.tierId })
+        .where(and(eq(memberships.gameId, game.id), eq(memberships.playerId, move.playerId))),
+    ),
+    ...proposed.positions.map((entry) =>
       db
         .update(inviteTiers)
-        .set({ position })
-        .where(and(eq(inviteTiers.gameId, game.id), eq(inviteTiers.id, tierId))),
-    );
-  }
+        .set({ position: entry.position })
+        .where(and(eq(inviteTiers.gameId, game.id), eq(inviteTiers.id, entry.tierId))),
+    ),
+    ...proposed.askAfterHours.map((entry) =>
+      db
+        .update(inviteTiers)
+        .set({ askAfterHours: entry.hours })
+        .where(and(eq(inviteTiers.gameId, game.id), eq(inviteTiers.id, entry.tierId))),
+    ),
+    ...(proposed.everyoneElseAskAfterHours === undefined
+      ? []
+      : [
+          db
+            .update(games)
+            .set({ everyoneElseAskAfterHours: proposed.everyoneElseAskAfterHours })
+            .where(eq(games.id, game.id)),
+        ]),
+  ];
 
   // Same cast `updateGame` uses: D1's batch signature wants a non-empty
-  // tuple, and the length check above is what actually guarantees it.
+  // tuple, and the length check is what actually guarantees it.
   if (statements.length > 0) {
     await db.batch(statements as [typeof statements[number], ...typeof statements]);
-    // Only when something actually moved. A save that changed nothing owes no
-    // reconcile, and firing one anyway would put a background task and its
-    // reads behind every idle press of the button.
+    // Only when something actually changed. A shorter head start can be
+    // already due, and a moved member can land in a released tier; an idle
+    // press owes nothing.
     await reconcileInviteOrder(c, db, game.id, new Date(Date.now()));
   }
 
@@ -980,22 +1093,7 @@ gamesRoutes.post("/g/:id/invites/tier", requirePlayer, async (c) => {
   const name = typeof form["name"] === "string" ? form["name"].trim() : "";
   if (name === "") {
     const tiers = await loadInviteOrder(db, game.id);
-    return c.html(
-      renderInviteOrderPage({
-        nav: pageNav(c, "games"),
-        gameId: game.id,
-        gameName: game.name,
-        squadSize: tiers.reduce((total, tier) => total + tier.members.length, 0),
-        tiers: tiers.map((tier) => ({
-          tierId: tier.tierId,
-          name: tier.name,
-          position: tier.position,
-          members: tier.members.map((member) => ({ playerId: member.playerId, name: member.name })),
-        })),
-        problem: "Give the group a name.",
-      }),
-      422,
-    );
+    return c.html(await inviteOrderPage(c, db, game, tiers, "Give the group a name."), 422);
   }
 
   const existing = await loadInviteOrder(db, game.id);
@@ -1186,10 +1284,6 @@ gamesRoutes.get("/g/:id/edit", requirePlayer, async (c) => {
         resultPromptOffsetHours: String(game.resultPromptOffsetHours),
         resultLockHoursAfter: String(game.resultLockHoursAfter),
         gatedInvitesEnabled: game.gatedInvitesEnabled ? "on" : "",
-        gatedFallbackHoursBefore:
-          game.gatedFallbackHoursBefore === null
-            ? GATED_FALLBACK_NEVER
-            : String(game.gatedFallbackHoursBefore),
       },
       errors: [],
       warnings: [],
@@ -1222,7 +1316,7 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
   const form = await c.req.parseBody();
   const parsed = parseGameForm(form);
 
-  if (!parsed.ok) {
+  const refuse = async (errors: FieldError[], warnings: typeof parsed.warnings) => {
     // The propagation notice is recomputed rather than omitted: it warns about
     // the destructive half of this operation ("this will update 4 scheduled
     // fixtures"), and a redisplay is exactly when the owner is re-reading the
@@ -1233,13 +1327,13 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
 
     return c.html(
       renderGameFormPage({
-      nav: pageNav(c, "games"),
+        nav: pageNav(c, "games"),
         action: gameEditPath(game.id),
         heading: `Edit ${game.name}`,
         submitLabel: "Save changes",
         values: submittedValues(form),
-        errors: parsed.errors,
-        warnings: parsed.warnings,
+        errors,
+        warnings,
         showAdvanced: true,
         // Same reason as the GET: without it the redisplayed form loses its
         // gating section, so an unrelated validation error would look like the
@@ -1253,6 +1347,22 @@ gamesRoutes.post("/g/:id/edit", requirePlayer, async (c) => {
       }),
       422,
     );
+  };
+
+  if (!parsed.ok) return refuse(parsed.errors, parsed.warnings);
+
+  // M69: a new kickoff time, opening time or timezone can push a group the
+  // invite order used to fit past the cut-off. Checked here, against the
+  // settings being proposed, because the invite-order editor only checks
+  // when the order itself is saved.
+  if (parsed.values.gatedInvitesEnabled) {
+    const { problem } = await scheduleFor(db, game, await loadInviteOrder(db, game.id), parsed.values);
+    if (problem !== null) {
+      return refuse(
+        [{ field: "kickoffTime", message: `${problem} Change the times here, or shorten a head start in the invite order.` }],
+        parsed.warnings,
+      );
+    }
   }
 
   await updateGame({ db, game, values: parsed.values, actorPlayerId: c.get("player")!.id, now });
@@ -1742,41 +1852,48 @@ async function inviteProgressParams(
     return undefined;
   }
 
-  const rendered = tiers.map((tier) => {
-    // Hand invites (M46) are skipped for the reason `planReleases` skips
-    // them: one sub invited out of turn does not release their tier. Reading
-    // it as released hid the button that releases the rest of it.
-    const stamps = tier.members
-      .filter((member) => !member.invitedIndividually)
-      .map((member) => member.invitedAt)
-      .filter((invitedAt): invitedAt is Date => invitedAt !== null);
-    const askedAt =
-      stamps.length === 0
-        ? null
-        : stamps.reduce((earliest, stamp) => (stamp < earliest ? stamp : earliest));
+  const at = (instant: Date): string => formatLocalCompactDateTime(instant, game.timezone);
+  const now = new Date(Date.now());
+  // `releaseStamp` skips hand invites (M46): one sub invited out of turn does
+  // not release their tier, and reading it as released once hid the button
+  // that releases the rest of it.
+
+  // Empty groups are skipped by the release rule, so the panel skips them too
+  // rather than offering to "invite" nobody.
+  const live = tiers.filter((tier) => tier.members.length > 0);
+  const nextIndex = live.findIndex((tier) => releaseStamp(tier) === null);
+
+  const dueNote = (tier: OrderedTier, index: number): string => {
+    if (tier.askAfterHours === null) return "only if the groups above can't fill the game";
+    if (index !== nextIndex) {
+      return `${tier.askAfterHours} waking ${tier.askAfterHours === 1 ? "hour" : "hours"} after ${live[index - 1]!.name}`;
+    }
+    if (fixture.inCount >= fixture.maxPlayers) return "held while the game is full";
+    const previous = index === 0 ? null : releaseStamp(live[index - 1]!);
+    const due = dueAt(previous ?? fixture.openedAt ?? now, tier.askAfterHours, fixture.kicksOffAt, game.timezone);
+    if (due > now) return `due ${at(due)}`;
+    return isWaking(now, game.timezone) ? "due now · asked within the hour" : "due now · asked at 06:00";
+  };
+
+  const rendered = live.map((tier, index) => {
+    const askedAt = releaseStamp(tier);
+    const count = (status: string): number => tier.members.filter((member) => member.status === status).length;
     return {
       name: tier.name,
-      askedAtLocal: askedAt === null ? null : formatLocalDateTime(askedAt, game.timezone),
-      inCount: tier.members.filter((member) => member.status === "in").length,
-      outCount: tier.members.filter((member) => member.status === "out").length,
-      waitingCount: tier.members.filter((member) => member.status === "waitlisted").length,
+      askedAtLocal: askedAt === null ? null : at(askedAt),
+      inCount: count("in"),
+      outCount: count("out"),
+      pendingCount: count("pending"),
+      waitingCount: count("waitlisted"),
       memberCount: tier.members.length,
+      dueNote: askedAt === null ? dueNote(tier, index) : null,
     };
   });
-
-  const nextIndex = rendered.findIndex((tier) => tier.askedAtLocal === null);
 
   return {
     gameId: game.id,
     fixtureId: fixture.id,
     tiers: rendered,
-    // The sentence the panel exists for. Null when the owner has switched the
-    // fallback off, in which case the held tiers really do wait for a decline
-    // and saying otherwise would be a promise the sweep never keeps.
-    fallbackNote:
-      game.gatedFallbackHoursBefore === null
-        ? null
-        : `asked automatically at ${game.gatedFallbackHoursBefore}h before, if still short`,
     canReleaseNext: nextIndex !== -1,
     nextTierName: nextIndex === -1 ? null : (rendered[nextIndex]?.name ?? null),
   };
@@ -1949,6 +2066,10 @@ export async function renderPlayerFixture(
   });
   const viewerInvited =
     inviteRows.find((row) => row.playerId === viewerPlayerId)?.invitedAt != null;
+  const inviteDue =
+    orderIsRunning && !viewerInvited
+      ? await inviteDuePhrase(db, fixtureId, viewerPlayerId, new Date(Date.now()))
+      : null;
 
   return c.html(
     renderPlayerFixturePage({
@@ -1987,6 +2108,7 @@ export async function renderPlayerFixture(
       // M34, BR-40. Copy only — the viewer may still answer, and nothing on
       // this page is disabled on the strength of it.
       notYetInvited: orderIsRunning && !viewerInvited,
+      inviteDue,
       // BR-40a: they answered, and the order is what they are waiting on.
       // Read off the squad row the page is already rendering rather than
       // queried again, so the paragraph and the roster beside it cannot
@@ -2240,7 +2362,7 @@ gamesRoutes.post("/g/:id/f/:fixtureId/open", requirePlayer, async (c) => {
 /**
  * The owner's "invite the next group now" button (M34).
  *
- * `force: true`, so BR-43's veto does not apply: the owner is looking at the
+ * `force: true`, so neither the clock nor a full game holds it back: the owner is looking at the
  * numbers and has decided anyway, and a button that silently did nothing when
  * the fixture happened to be full would be worse than no button.
  *

@@ -131,6 +131,8 @@ export interface PlayerFixtureParams {
    * wrong sentence on exactly the pages that show the reader least.
    */
   heldByInviteOrder?: boolean;
+  /** When the viewer's invite group is asked, from `inviteDuePhrase` (M69). */
+  inviteDue?: string | null;
   /**
    * Set only when this page is an organiser reading their own fixture as the
    * squad reads it (M61); `undefined` for every ordinary member.
@@ -139,7 +141,8 @@ export interface PlayerFixtureParams {
 }
 
 /**
- * "The core group is being asked first" (M34, BR-40a).
+ * "Other groups are asked first" (M34, BR-40a), with when this viewer's
+ * group is due (M69).
  *
  * Two sentences, because by M43 there are two states behind this flag and
  * telling a player who has already volunteered that they "haven't been asked"
@@ -153,14 +156,23 @@ function renderNotYetInvited(params: PlayerFixtureParams): string {
   if (params.notYetInvited !== true) return "";
   if (params.lifecycle !== "open" && params.lifecycle !== "scheduled") return "";
 
+  const due = params.inviteDue ?? null;
   if (params.heldByInviteOrder === true) {
-    return `
-      <p class="nudge">You're in as soon as the core group has been asked. They get first
-      refusal — if a spot is still going when that's done, it's yours.</p>`;
+    return due === null
+      ? `
+      <p class="nudge">You're in line for when your group is asked. If a place is still free
+      then, it's yours.</p>`
+      : `
+      <p class="nudge">You're in line. Your group is ${escapeHtml(due)}, and if a place is
+      still free then, it's yours.</p>`;
   }
-  return `
-    <p class="nudge">You haven't been asked yet. The core group is being asked first —
-    we'll let you know if a spot opens up.</p>`;
+  return due === null
+    ? `
+    <p class="nudge">You haven't been asked yet. Other groups are asked first — we'll let
+    you know if a place opens up.</p>`
+    : `
+    <p class="nudge">You haven't been asked yet. Your group is ${escapeHtml(due)} —
+    we'll let you know.</p>`;
 }
 
 export function renderPlayerFixturePage(params: PlayerFixtureParams): string {
