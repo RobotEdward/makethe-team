@@ -357,8 +357,10 @@ emailed — you'll need to tell them yourself…", the places left or the over-l
 delegate).
 
 ### 3.8 Invite order — `GET/POST /g/:id/invites`
-For `Ask in priority order`: a group select per member; an order and a head start ("asked N
-waking hours after the group above") per group; "everyone else" shown last, named, with no
+For `Ask in priority order`: a group select per member (sized on its `.select` wrapper, so the
+chevron is part of the control); per group, `Move up`/`Move down` beside its number — disabled
+where there is nowhere to go, since the core group is chosen by membership and "everyone else" is
+pinned last — and a head start ("asked N waking hours after the group above"); "everyone else" shown last, named, with no
 remove control and a choice between a head start and "only if the groups above can't fill the
 game". `When each group is asked` lays the slowest schedule against the next fixture, marking a
 group asked after the cut-off (three hours before kickoff) in the warning colour. `Save invite

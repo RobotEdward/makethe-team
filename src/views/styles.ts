@@ -1361,13 +1361,24 @@ export const INVITE_ORDER_CSS = `
      select claims its widest option's width, the name is squeezed to whatever
      is left, and a two-word name wraps to one word per line. */
   .invite-name { flex: 1 1 40%; min-width: 0; }
-  .invite-select { flex: 1 1 55%; min-width: 0; max-width: 60%; }
-  .invite-select, .invite-pos {
-    font: inherit; font-size: var(--t-support); color: var(--fg);
-    background: var(--field); border: 1px solid var(--line);
-    border-radius: var(--r-field); padding: var(--s-0) var(--s-1);
+  /* The size goes on the .select wrapper, never the select: the wrapper draws
+     the chevron, and the transparent select must fill it for a tap on the
+     chevron to open the list. Sized on the select, the select shrank to part
+     of the wrapper and the chevron sat over dead space. */
+  .invite-members .select { flex: 1 1 55%; min-width: 0; max-width: 60%; }
+  .invite-select {
+    width: 100%; font: inherit; font-size: var(--t-support); color: var(--fg);
+    border: 1px solid var(--line); border-radius: var(--r-field);
+    padding: var(--s-1) var(--s-2); min-height: 2.75rem; cursor: pointer;
   }
-  .invite-pos { width: 3.5rem; }
+  .invite-move { display: flex; gap: var(--s-0); flex: none; width: calc(2 * 2.25rem + var(--s-0)); }
+  .invite-move button {
+    width: 2.25rem; height: 2.25rem; display: grid; place-items: center; cursor: pointer;
+    border: 1px solid var(--line); border-radius: var(--r-field);
+    background: var(--field); color: var(--fg); padding: 0;
+  }
+  .invite-move button:disabled { opacity: 0.35; cursor: default; }
+  .invite-move-up .icon { transform: rotate(180deg); }
   .invite-ord { list-style: none; margin: 0; padding: 0; counter-reset: invite-tier; }
   .invite-ord > li {
     display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1);
@@ -1395,10 +1406,12 @@ export const INVITE_ORDER_CSS = `
     flex: 1; font: inherit; border-radius: var(--r-field); border: 2px solid var(--line);
     background: var(--bg); color: var(--fg); padding: var(--s-1) var(--s-2); min-width: 8rem;
   }
-  /* A full-width second line under the group, indented past the number badge. */
+  /* A full-width second line under the group, indented past the number badge
+     and the move buttons so it starts under the group name. */
   .invite-when {
     flex-basis: 100%; display: flex; flex-direction: column; gap: var(--s-1);
-    padding-left: calc(1.5rem + var(--s-1)); color: var(--mut); font-size: var(--t-support);
+    padding-left: calc(1.5rem + 4.5rem + var(--s-0) + 2 * var(--s-1));
+    color: var(--mut); font-size: var(--t-support);
   }
   .invite-when-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-0) var(--s-1); }
   .invite-hours {

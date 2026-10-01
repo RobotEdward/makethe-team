@@ -217,32 +217,74 @@ describe("the invite-order editor", () => {
     expect(rows).toHaveLength(1);
   });
 
-  it("reorders tiers by position", async () => {
+  /** Core, then A and B in the "Then" list, for the move buttons. */
+  async function threeGroups() {
     const { cookie, gameId } = await ownedGatedGame();
-    const first = await insertInviteTier(db, gameId, { name: "First", position: 1 });
-    const second = await insertInviteTier(db, gameId, { name: "Second", position: 2 });
+    const core = await insertInviteTier(db, gameId, { name: "Core", position: 1 });
+    const a = await insertInviteTier(db, gameId, { name: "Alpha", position: 2 });
+    const b = await insertInviteTier(db, gameId, { name: "Bravo", position: 3 });
+    const positions = async () =>
+      Object.fromEntries(
+        (await db.select().from(inviteTiers).where(eq(inviteTiers.gameId, gameId))).map((row) => [
+          row.name,
+          row.position,
+        ]),
+      );
+    return { cookie, gameId, core, a, b, positions };
+  }
 
-    await appPost(
-      `/g/${gameId}/invites`,
-      { [`position-${first}`]: "5", [`position-${second}`]: "1" },
-      cookie,
-    );
+  it("moves a group down, swapping it with the one below", async () => {
+    const { cookie, gameId, a, positions } = await threeGroups();
 
-    const rows = await db.select().from(inviteTiers).where(eq(inviteTiers.gameId, gameId));
-    expect(rows.find((row) => row.id === first)?.position).toBe(5);
-    expect(rows.find((row) => row.id === second)?.position).toBe(1);
+    const response = await appPost(`/g/${gameId}/invites`, { move: `down:${a}` }, cookie);
+
+    expect(response.status).toBe(303);
+    expect(await positions()).toEqual({ Core: 1, Alpha: 3, Bravo: 2 });
   });
 
-  it("leaves a tier where it is when the position box is junk", async () => {
-    const { cookie, gameId } = await ownedGatedGame();
-    const tier = await insertInviteTier(db, gameId, { name: "Core", position: 3 });
+  it("moves a group up, swapping it with the one above", async () => {
+    const { cookie, gameId, b, positions } = await threeGroups();
 
-    await appPost(`/g/${gameId}/invites`, { [`position-${tier}`]: "" }, cookie);
+    await appPost(`/g/${gameId}/invites`, { move: `up:${b}` }, cookie);
 
-    const [row] = await db.select().from(inviteTiers).where(eq(inviteTiers.id, tier));
-    // Not NaN, and not 0: writing either would make every ordering comparison
-    // against this tier false and quietly send it to the front.
-    expect(row?.position).toBe(3);
+    expect(await positions()).toEqual({ Core: 1, Alpha: 3, Bravo: 2 });
+  });
+
+  it("moves nothing past either end of the list", async () => {
+    // The first group in the list stays below the core group — the core is
+    // chosen by who is in it — and the last stays above Everyone else.
+    const { cookie, gameId, a, b, positions } = await threeGroups();
+
+    await appPost(`/g/${gameId}/invites`, { move: `up:${a}` }, cookie);
+    await appPost(`/g/${gameId}/invites`, { move: `down:${b}` }, cookie);
+
+    expect(await positions()).toEqual({ Core: 1, Alpha: 2, Bravo: 3 });
+  });
+
+  it("ignores a move naming another game's group", async () => {
+    const { cookie, gameId, positions } = await threeGroups();
+    const otherGameId = await insertGame(db, { gatedInvitesEnabled: true });
+    await insertInviteTier(db, otherGameId, { name: "Theirs", position: 1 });
+    const theirs = await insertInviteTier(db, otherGameId, { name: "Theirs too", position: 2 });
+
+    await appPost(`/g/${gameId}/invites`, { move: `up:${theirs}` }, cookie);
+
+    expect(await positions()).toEqual({ Core: 1, Alpha: 2, Bravo: 3 });
+  });
+
+  it("offers each move only where there is somewhere to go", async () => {
+    const { cookie, gameId, a, b } = await threeGroups();
+
+    const html = await (await SELF.fetch(`${ORIGIN}/g/${gameId}/invites`, { headers: { cookie } })).text();
+
+    const button = (direction: string, id: string) =>
+      new RegExp(`<button[^>]*value="${direction}:${id}"[^>]*>`).exec(html)?.[0] ?? "";
+    expect(button("up", a)).toContain("disabled");
+    expect(button("down", a)).not.toContain("disabled");
+    expect(button("up", b)).not.toContain("disabled");
+    expect(button("down", b)).toContain("disabled");
+    expect(button("down", a)).toContain('aria-label="Move Alpha down"');
+    expect(html).not.toContain("invite-pos");
   });
 });
 

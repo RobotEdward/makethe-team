@@ -6,7 +6,7 @@ import {
   inviteTierPath,
 } from "../auth/paths.js";
 import { MAX_ASK_AFTER_HOURS } from "../domain/invite-schedule.js";
-import { escapeHtml, layout, type PageNav } from "./layout.js";
+import { escapeHtml, icon, layout, type PageNav } from "./layout.js";
 import { INVITE_ORDER_CSS, FORM_CSS } from "./styles.js";
 
 /** One member as the editor lists them. */
@@ -119,6 +119,11 @@ export function renderInviteOrderPage(params: InviteOrderParams): string {
 <p class="invite-sub">${escapeHtml(gameName)} · ${squadSize} in squad</p>
 ${problem}
 <form method="post" action="${escapeHtml(inviteOrderPath(gameId))}">
+  <!-- Pressing Enter in a box submits the form's first submit button. The
+       move buttons below come before Save, and the first of them is often
+       disabled, which would make Enter do nothing at all — so a hidden Save
+       goes first. -->
+  <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">Save invite order</button>
   <section class="invite-box">
     <h2 class="invite-cap">${escapeHtml(coreHeading)}</h2>
     ${core === undefined ? "" : renderMembers(core, tiers)}
@@ -140,7 +145,7 @@ ${problem}
       rest.length === 0
         ? ""
         : `<ol class="invite-ord">
-      ${rest.map((tier) => renderOrderRow(tier)).join("")}
+      ${rest.map((tier, index) => renderOrderRow(tier, index > 0, rest[index + 1]?.tierId != null)).join("")}
     </ol>`
     }
   </section>
@@ -149,7 +154,6 @@ ${problem}
 
   ${rest.map((tier) => renderMembersFor(tier, tiers)).join("")}
 
-  <!-- Save first: pressing Enter in a box submits the first button. -->
   <div class="invite-actions">
     <button type="submit" class="button">Save invite order</button>
     <button type="submit" name="intent" value="preview" class="button quiet">Check schedule</button>
@@ -276,7 +280,22 @@ function renderSchedule(schedule: SchedulePreview | null, hasLaterGroups: boolea
   </section>`;
 }
 
-function renderOrderRow(tier: OrderTier): string {
+/**
+ * Move up and Move down (M69 follow-up), replacing the position number box
+ * that sat beside Remove and read as a stray setting.
+ *
+ * Submit buttons of the main form, so a move saves whatever else is pending
+ * with it — the same single save every other control on this page makes.
+ * Disabled at the ends rather than hidden, so every row's controls line up.
+ */
+function moveButtons(tier: OrderTier, canMoveUp: boolean, canMoveDown: boolean): string {
+  const button = (direction: "up" | "down", enabled: boolean): string =>
+    `<button type="submit" name="move" value="${direction}:${escapeHtml(tier.tierId!)}" class="invite-move-${direction}"
+             aria-label="Move ${escapeHtml(tier.name)} ${direction}"${enabled ? "" : " disabled"}>${icon("chevron")}</button>`;
+  return `<span class="invite-move">${button("up", canMoveUp)}${button("down", canMoveDown)}</span>`;
+}
+
+function renderOrderRow(tier: OrderTier, canMoveUp: boolean, canMoveDown: boolean): string {
   const names =
     tier.members.length === 0 ? "nobody yet" : tier.members.map((member) => member.name).join(", ");
 
@@ -288,6 +307,7 @@ function renderOrderRow(tier: OrderTier): string {
     const whenNeeded = tier.askAfterHours === null;
     return `
     <li class="invite-implicit">
+      <span class="invite-move" aria-hidden="true"></span>
       <span class="invite-grp">${escapeHtml(tier.name)}
         <span class="invite-who">${escapeHtml(names)}</span>
       </span>
@@ -312,12 +332,10 @@ function renderOrderRow(tier: OrderTier): string {
   const id = escapeHtml(tier.tierId);
   return `
     <li>
+      ${moveButtons(tier, canMoveUp, canMoveDown)}
       <span class="invite-grp">${escapeHtml(tier.name)}
         <span class="invite-who">${escapeHtml(names)}</span>
       </span>
-      <label class="visually-hidden" for="pos-${id}">Position of ${escapeHtml(tier.name)}</label>
-      <input id="pos-${id}" class="invite-pos" type="number" min="1" max="99"
-             name="position-${id}" value="${tier.position}">
       <button type="submit" form="delete-${id}" class="invite-remove">Remove</button>
       <span class="invite-when">
         <span class="invite-when-line">

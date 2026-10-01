@@ -58,21 +58,28 @@ export function parseInviteOrderForm(
 
   const positions: ProposedOrder["positions"] = [];
   const askAfterHours: ProposedOrder["askAfterHours"] = [];
+
+  // In the order `loadInviteOrder` read them: (position, created_at).
   const stored = current.filter((tier) => tier.tierId !== null);
-  const proposedStored = stored.map((tier) => {
-    const id = tier.tierId!;
-    let position = tier.position;
-    const rawPosition = form[`position-${id}`];
-    if (typeof rawPosition === "string") {
-      const parsed = Number.parseInt(rawPosition, 10);
-      // A blank or junk box leaves the tier where it is rather than sending it
-      // to the front: `Number.parseInt("")` is NaN, and writing that would make
-      // every ordering comparison false.
-      if (Number.isInteger(parsed) && parsed >= 1 && parsed !== tier.position) {
-        position = parsed;
-        positions.push({ tierId: id, position });
-      }
+  const order = [...stored];
+  const move = typeof form["move"] === "string" ? /^(up|down):(.+)$/.exec(form["move"]) : null;
+  if (move !== null) {
+    const from = order.findIndex((tier) => tier.tierId === move[2]);
+    const to = move[1] === "up" ? from - 1 : from + 1;
+    // Index 0 is the core group, chosen by who is in it rather than moved
+    // into; the implicit tier is not in `order` at all, so nothing passes it.
+    // An id from another Game finds nothing (-1) and moves nothing.
+    if (from >= 1 && to >= 1 && to < order.length) {
+      [order[from], order[to]] = [order[to]!, order[from]!];
     }
+  }
+
+  const proposedStored = order.map((tier, index) => {
+    const id = tier.tierId!;
+    // Renumbered 1..n rather than swapping two values, so positions that
+    // drifted apart or collided over time are tidied by the first move.
+    const position = index + 1;
+    if (position !== tier.position) positions.push({ tierId: id, position });
 
     let hours = tier.askAfterHours;
     const parsedHours = parseHours(form[`after-${id}`]);
@@ -99,9 +106,6 @@ export function parseInviteOrderForm(
     }
   }
 
-  // Stable, so two groups given the same number keep their current order —
-  // which is the (position, created_at) order `loadInviteOrder` reads back.
-  proposedStored.sort((a, b) => a.position - b.position);
   const tiers: OrderedTier[] = [
     ...proposedStored,
     { ...implicit, askAfterHours: everyoneElse, members: [] },
