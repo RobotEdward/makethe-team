@@ -41,3 +41,16 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # GitHub disables scheduled workflows after 60 days without a push, and the
+  # backup would stop silently during a quiet spell. Re-enabling the workflow
+  # through the API resets that clock. Its own job, so the token holding
+  # actions:write never shares a job with the production secrets.
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/backup.yml/enable"
+        env:
+          GH_TOKEN: ${{ github.token }}
